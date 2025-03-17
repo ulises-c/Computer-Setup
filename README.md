@@ -44,7 +44,7 @@ Useful programs and packages for a computer.
 <summary>Requires Hardware</summary>
 
 1. CyberPower PowerPanel Personal | [Download](https://www.cyberpowersystems.com/products/software/power-panel-personal/)
-   1. Used to monitor and test CyberPower UPS
+   1. Used to monitor and test CyberPower UPS (Uninterruptible Power Supply), useful if a power outage occurs
 2. Epson Perfection V39 II | [Download](https://epson.com/Support/Scanners/Perfection-Series/Epson-Perfection-V39-II/s/SPT_B11B268201)
    1. Document and photo scanner
 
