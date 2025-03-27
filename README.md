@@ -51,10 +51,12 @@ Useful programs and packages for a computer.
 </details>
 
 <details>
-<summary>Cloud Storage</summary>
+<summary>Cloud Storage and Data Management</summary>
 
 1. Google Drive | [Download](https://support.google.com/a/users/answer/13022292?hl=en#drive_desktop_install)
    1. Google drive cloud storage
+2. Syncthing | [Download](https://syncthing.net/downloads/) | [GitHub](https://syncthing.net/downloads/)
+   1. Sync files across devices
 
 </details>
 
