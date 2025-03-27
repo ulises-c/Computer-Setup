@@ -19,6 +19,8 @@ Useful programs and packages for a computer.
    1. Enhanced notes app
 4. OBS
    1. Open source broadcasting and recording software
+5. Apollo | [GitHub](https://github.com/ClassicOldSong/Apollo)
+   1. Desktop streaming host (stream PC to another device)
 
 </details>
 
