@@ -17,6 +17,8 @@ Useful programs and packages for a computer.
    1. Open source web browser
 3. Notion | [Download](https://www.notion.com/desktop)
    1. Enhanced notes app
+4. OBS
+   1. Open source broadcasting and recording software
 
 </details>
 
@@ -37,6 +39,8 @@ Useful programs and packages for a computer.
 
 1. Spotify | [Download](https://www.spotify.com/us/download/other/)
    1. Music player
+2. Steam | [Download](https://store.steampowered.com/about/)
+   1. Game library
 
 </details>
 
@@ -47,6 +51,8 @@ Useful programs and packages for a computer.
    1. Used to monitor and test CyberPower UPS (Uninterruptible Power Supply), useful if a power outage occurs
 2. Epson Perfection V39 II | [Download](https://epson.com/Support/Scanners/Perfection-Series/Epson-Perfection-V39-II/s/SPT_B11B268201)
    1. Document and photo scanner
+3. Stream Deck | [Download](https://www.elgato.com/us/en/s/downloads)
+   1. LCD macro keys
 
 </details>
 
@@ -97,5 +103,25 @@ Useful programs and packages for a computer.
    1. Photo editor, free version & pay once
 6. Davinci Resolve | [Mac App Store](https://apps.apple.com/us/app/davinci-resolve/id571213070?mt=12)
    1. Video editor, free
+
+</details>
+
+<!-- End of macOS -->
+
+---
+
+<!-- Start of Windows -->
+
+## Windows
+
+**This section is specifically for software that is exclusive to Windows**
+
+<details>
+<summary>Utilities</summary>
+
+1. SoundSwitch | [Download](https://soundswitch.aaflalo.me/#) | [GitHub](https://github.com/Belphemur/SoundSwitch)
+   1. SoundSwitch offers you the opportunity to switch your playback and recording devices using simple hotkeys.
+2. Powertoys | [Download](https://learn.microsoft.com/en-us/windows/powertoys/) | [GitHub](https://github.com/microsoft/PowerToys)
+   1. Microsoft PowerToys is a set of utilities for power users to tune and streamline their Windows experience for greater productivity.
 
 </details>
