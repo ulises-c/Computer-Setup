@@ -26,8 +26,37 @@ prompt() {
 }
 
 prompt EMAIL "Email (comment in key)"
-prompt GIT_HOST "Git host (e.g. github.com, gitlab.com)"
-prompt KEY_NAME "Key file name (no path)" "id_ed25519_${GIT_HOST//./_}"
+
+# ---- Git host selection ----
+if [[ -z "$GIT_HOST" ]]; then
+  echo ""
+  echo "Select a Git host:"
+  echo "  1) github.com"
+  echo "  2) gitlab.com"
+  echo "  3) bitbucket.org"
+  echo "  4) hf.co"
+  echo "  0) Custom"
+  read -r -p "Choice [1]: " host_choice
+  case "${host_choice:-1}" in
+    1) GIT_HOST="github.com" ;;
+    2) GIT_HOST="gitlab.com" ;;
+    3) GIT_HOST="bitbucket.org" ;;
+    4) GIT_HOST="hf.co" ;;
+    0)
+      read -r -p "Git host: " GIT_HOST
+      if [[ -z "$GIT_HOST" ]]; then
+        echo "Error: GIT_HOST cannot be empty." >&2
+        exit 1
+      fi
+      ;;
+    *)
+      echo "Invalid choice." >&2
+      exit 1
+      ;;
+  esac
+fi
+
+prompt KEY_NAME "Key file name (no path)" "${GIT_HOST%%.*}"
 
 SSH_DIR="$HOME/.ssh"
 KEY_PATH="$SSH_DIR/$KEY_NAME"
