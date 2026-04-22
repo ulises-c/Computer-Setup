@@ -58,6 +58,27 @@ fi
 
 prompt KEY_NAME "Key file name (no path)" "${GIT_HOST%%.*}"
 
+# ---- Optional passphrase ----
+SSH_PASSPHRASE="${SSH_PASSPHRASE:-}"
+if [[ -z "$SSH_PASSPHRASE" ]]; then
+  read -r -p "Add a passphrase to the key? (y/N): " use_passphrase
+  case "${use_passphrase:-N}" in
+    y|Y)
+      read -r -s -p "Passphrase: " SSH_PASSPHRASE
+      echo ""
+      read -r -s -p "Confirm passphrase: " SSH_PASSPHRASE2
+      echo ""
+      if [[ "$SSH_PASSPHRASE" != "$SSH_PASSPHRASE2" ]]; then
+        echo "Error: passphrases do not match." >&2
+        exit 1
+      fi
+      ;;
+    *)
+      SSH_PASSPHRASE=""
+      ;;
+  esac
+fi
+
 SSH_DIR="$HOME/.ssh"
 KEY_PATH="$SSH_DIR/$KEY_NAME"
 PUB_PATH="$KEY_PATH.pub"
@@ -83,7 +104,7 @@ fi
 
 if [[ ! -f "$KEY_PATH" ]]; then
   # ed25519 doesn't use -b; that's for RSA.
-  ssh-keygen -t ed25519 -C "$EMAIL" -f "$KEY_PATH" -N ""
+  ssh-keygen -t ed25519 -C "$EMAIL" -f "$KEY_PATH" -N "$SSH_PASSPHRASE"
 fi
 
 chmod 600 "$KEY_PATH"
@@ -94,14 +115,8 @@ if [[ -z "${SSH_AUTH_SOCK:-}" ]]; then
   eval "$(ssh-agent -s)" >/dev/null
 fi
 
-# ---- Add key to agent (macOS keychain optional) ----
-if [[ "$(uname -s)" == "Darwin" ]]; then
-  # If you want Keychain persistence, use:
-  # ssh-add --apple-use-keychain "$KEY_PATH"
-  ssh-add "$KEY_PATH"
-else
-  ssh-add "$KEY_PATH"
-fi
+# ---- Add key to agent ----
+ssh-add "$KEY_PATH"
 
 # ---- Update ~/.ssh/config idempotently ----
 touch "$CFG_PATH"
