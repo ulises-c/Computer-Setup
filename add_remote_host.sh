@@ -1,12 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ---- Check dependencies ----
+if ! command -v sshpass &>/dev/null; then
+  echo "Note: sshpass is not installed. You will be prompted for the remote password manually during key installation."
+  echo "      To avoid this: brew install sshpass  (or apt install sshpass)"
+  echo ""
+  USE_SSHPASS=false
+else
+  USE_SSHPASS=true
+fi
+
 # ---- Inputs (can be provided as env vars or will be prompted) ----
 HOST_ALIAS="${HOST_ALIAS:-}"
-HOSTNAME="${HOSTNAME:-}"
+REMOTE_HOST="${REMOTE_HOST:-}"
 REMOTE_USER="${REMOTE_USER:-}"
 PORT="${PORT:-}"
-EMAIL="${EMAIL:-}"
 KEY_NAME="${KEY_NAME:-}"
 
 prompt() {
@@ -29,11 +38,25 @@ prompt() {
 }
 
 prompt HOST_ALIAS   "SSH alias (friendly name, e.g. homepc)"
-prompt HOSTNAME     "Remote hostname or IP (e.g. 192.168.1.100 or mypc.local)"
-prompt REMOTE_USER  "Remote username" "$USER"
+prompt REMOTE_HOST     "Remote hostname or IP (e.g. 192.168.1.100 or mypc.local)"
+prompt REMOTE_USER  "Remote username"
 prompt PORT         "SSH port" "22"
-prompt EMAIL        "Email (comment in key)"
 prompt KEY_NAME     "Key file name (no path)" "$HOST_ALIAS"
+
+# ---- Remote account password (optional, used once for ssh-copy-id) ----
+REMOTE_PASSWORD="${REMOTE_PASSWORD:-}"
+if [[ "$USE_SSHPASS" == true && -z "$REMOTE_PASSWORD" ]]; then
+  read -r -s -p "Remote account password for $REMOTE_USER@$REMOTE_HOST (leave blank to be prompted later): " REMOTE_PASSWORD
+  echo ""
+  if [[ -n "$REMOTE_PASSWORD" ]]; then
+    read -r -s -p "Confirm password: " REMOTE_PASSWORD2
+    echo ""
+    if [[ "$REMOTE_PASSWORD" != "$REMOTE_PASSWORD2" ]]; then
+      echo "Error: passwords do not match." >&2
+      exit 1
+    fi
+  fi
+fi
 
 # ---- Optional passphrase ----
 SSH_PASSPHRASE="${SSH_PASSPHRASE:-}"
@@ -80,7 +103,7 @@ if [[ -f "$KEY_PATH" || -f "$PUB_PATH" ]]; then
 fi
 
 if [[ ! -f "$KEY_PATH" ]]; then
-  ssh-keygen -t ed25519 -C "$EMAIL" -f "$KEY_PATH" -N "$SSH_PASSPHRASE"
+  ssh-keygen -t ed25519 -C "$HOST_ALIAS" -f "$KEY_PATH" -N "$SSH_PASSPHRASE"
 fi
 
 chmod 600 "$KEY_PATH"
@@ -91,8 +114,12 @@ if [[ -z "${SSH_AUTH_SOCK:-}" ]]; then
   eval "$(ssh-agent -s)" >/dev/null
 fi
 
-# ---- Add key to agent ----
-ssh-add "$KEY_PATH"
+# ---- Add key to agent (store passphrase in Keychain on macOS) ----
+if [[ "$(uname)" == "Darwin" ]]; then
+  ssh-add --apple-use-keychain "$KEY_PATH"
+else
+  ssh-add "$KEY_PATH"
+fi
 
 # ---- Update ~/.ssh/config idempotently ----
 touch "$CFG_PATH"
@@ -110,19 +137,25 @@ mv "$tmp_cfg" "$CFG_PATH"
 {
   echo ""
   echo "Host $HOST_ALIAS"
-  echo "  HostName $HOSTNAME"
+  echo "  HostName $REMOTE_HOST"
   echo "  User $REMOTE_USER"
   echo "  Port $PORT"
   echo "  AddKeysToAgent yes"
+  if [[ "$(uname)" == "Darwin" ]]; then
+    echo "  UseKeychain yes"
+  fi
   echo "  IdentityFile $KEY_PATH"
   echo "  IdentitiesOnly yes"
 } >> "$CFG_PATH"
 
 # ---- Copy public key to remote ----
 echo ""
-echo "Copying public key to $REMOTE_USER@$HOSTNAME:$PORT ..."
-echo "(You will be prompted for the remote password.)"
-ssh-copy-id -i "$PUB_PATH" -p "$PORT" "$REMOTE_USER@$HOSTNAME"
+echo "Copying public key to $REMOTE_USER@$REMOTE_HOST:$PORT ..."
+if [[ "$USE_SSHPASS" == true && -n "$REMOTE_PASSWORD" ]]; then
+  sshpass -p "$REMOTE_PASSWORD" ssh-copy-id -o PubkeyAuthentication=no -i "$PUB_PATH" -p "$PORT" "$REMOTE_USER@$REMOTE_HOST"
+else
+  ssh-copy-id -o PubkeyAuthentication=no -i "$PUB_PATH" -p "$PORT" "$REMOTE_USER@$REMOTE_HOST"
+fi
 
 # ---- Test SSH connection ----
 echo ""
