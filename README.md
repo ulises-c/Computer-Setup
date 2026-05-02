@@ -17,10 +17,18 @@ Useful programs and packages for a computer.
    1. Open source web browser
 3. Notion | [Download](https://www.notion.com/desktop)
    1. Enhanced notes app
-4. OBS
+4. OBS | [Download](https://obsproject.com/)
    1. Open source broadcasting and recording software
 5. Apollo | [GitHub](https://github.com/ClassicOldSong/Apollo)
    1. Desktop streaming host (stream PC to another device)
+6. VLC | [Download](https://www.videolan.org/vlc/)
+   1. Open source media player that plays nearly every video and audio format
+7. Tailscale | [Download](https://tailscale.com/download)
+   1. Zero-config VPN built on WireGuard — connect all your devices on a private network with no port forwarding
+8. Docker | [Download](https://www.docker.com/products/docker-desktop/)
+   1. Containerization platform for building and running isolated application environments
+9. Claude | [Download](https://claude.ai/download)
+   1. Anthropic's AI assistant desktop app
 
 </details>
 
@@ -111,6 +119,12 @@ Useful programs and packages for a computer.
    1. Fast, customizable system info display (like neofetch) with full Apple Silicon chip and sensor support
 6. sshpass | [brew](https://formulae.brew.sh/formula/sshpass)
    1. Enables non-interactive SSH password authentication in scripts — required by `add_remote_host.sh`
+7. Goodnotes | [Mac App Store](https://apps.apple.com/us/app/goodnotes-6/id1444383602)
+   1. Handwriting and note-taking app with Apple Pencil support; syncs across Mac and iPad
+8. Spark | [Download](https://sparkmailapp.com/) | [Mac App Store](https://apps.apple.com/us/app/spark-mail-ai-email-app/id1176895641)
+   1. Smart email client with AI features and clean cross-device sync
+9. Amazon Photos | [Mac App Store](https://apps.apple.com/us/app/amazon-photos/id621574163)
+   1. Unlimited full-resolution photo backup for Amazon Prime members
 
 </details>
 

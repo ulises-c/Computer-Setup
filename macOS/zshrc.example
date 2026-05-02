@@ -1,0 +1,113 @@
+# -------------------------------------------------------------------------------------------------
+
+# ═══════════════════════════════════════════════════════════════
+#  ~/.zshrc  —  macOS zsh config (Ghostty + Apple Silicon)
+# ═══════════════════════════════════════════════════════════════
+
+# Requires fastfetch via brew
+
+# ── Instant prompt (keep at very top if using Powerlevel10k) ──
+# [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]] && \
+#   source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
+
+
+# ═══════════════════════════════════════════════════════════════
+#  PATH
+# ═══════════════════════════════════════════════════════════════
+export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
+export PATH="$HOME/.local/bin:$PATH"
+
+
+# ═══════════════════════════════════════════════════════════════
+#  HISTORY
+# ═══════════════════════════════════════════════════════════════
+HISTFILE="$HOME/.zsh_history"
+HISTSIZE=10000
+SAVEHIST=10000
+setopt SHARE_HISTORY
+setopt HIST_IGNORE_DUPS
+setopt HIST_IGNORE_SPACE
+setopt HIST_REDUCE_BLANKS
+
+
+# ═══════════════════════════════════════════════════════════════
+#  COMPLETION
+# ═══════════════════════════════════════════════════════════════
+autoload -Uz compinit && compinit
+zstyle ':completion:*' menu select
+zstyle ':completion:*' matcher-list 'm:{a-z}={A-Z}'
+zstyle ':completion:*' list-colors "${(s.:.)LS_COLORS}"
+
+
+# ═══════════════════════════════════════════════════════════════
+#  OPTIONS
+# ═══════════════════════════════════════════════════════════════
+setopt AUTO_CD
+setopt CORRECT
+setopt GLOB_DOTS
+setopt NO_BEEP
+
+
+# ═══════════════════════════════════════════════════════════════
+#  PROMPT
+# ═══════════════════════════════════════════════════════════════
+autoload -Uz vcs_info
+precmd() { vcs_info }
+zstyle ':vcs_info:git:*' formats ' (%b)'
+setopt PROMPT_SUBST
+PROMPT='%F{blue}%n%f%F{white}@%f%F{cyan}%m%f %F{yellow}%~%f%F{magenta}${vcs_info_msg_0_}%f %# '
+
+
+# ═══════════════════════════════════════════════════════════════
+#  ALIASES
+# ═══════════════════════════════════════════════════════════════
+alias ls='ls -G'
+alias ll='ls -lAh'
+alias la='ls -A'
+alias ..='cd ..'
+alias ...='cd ../..'
+alias grep='grep --color=auto'
+alias df='df -h'
+alias du='du -sh'
+alias reload='source ~/.zshrc'
+
+# Homebrew
+alias brewup='brew update && brew upgrade && brew cleanup'
+
+# Git
+alias gs='git status'
+alias ga='git add'
+alias gc='git commit'
+alias gp='git push'
+alias gl='git log --oneline --graph --decorate'
+
+
+# ═══════════════════════════════════════════════════════════════
+#  ENVIRONMENT
+# ═══════════════════════════════════════════════════════════════
+export EDITOR='nano'
+export LANG='en_US.UTF-8'
+export LC_ALL='en_US.UTF-8'
+
+
+# ═══════════════════════════════════════════════════════════════
+#  HOMEBREW COMPLETIONS
+# ═══════════════════════════════════════════════════════════════
+if command -v brew &>/dev/null; then
+    FPATH="$(brew --prefix)/share/zsh/site-functions:$FPATH"
+fi
+
+
+# ═══════════════════════════════════════════════════════════════
+#  SYSINFO DISPLAY  (Ghostty startup)
+# ═══════════════════════════════════════════════════════════════
+[[ -o interactive && "$TERM_PROGRAM" == "ghostty" ]] && fastfetch
+
+# -------------------------------------------------------------------------------------------------
+
+# Created by `pipx` on 2026-02-01 10:15:48
+export PATH="$PATH:/Users/ulises/.local/bin"
+
+# zsh auto suggestions & syntax highlighting (installed via Homebrew)
+source $(brew --prefix)/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+source $(brew --prefix)/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
