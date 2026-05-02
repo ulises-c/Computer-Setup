@@ -151,19 +151,84 @@ mv "$tmp_cfg" "$CFG_PATH"
 # ---- Copy public key to remote ----
 echo ""
 echo "Copying public key to $REMOTE_USER@$REMOTE_HOST:$PORT ..."
-if [[ "$USE_SSHPASS" == true && -n "$REMOTE_PASSWORD" ]]; then
-  sshpass -p "$REMOTE_PASSWORD" ssh-copy-id -o PubkeyAuthentication=no -i "$PUB_PATH" -p "$PORT" "$REMOTE_USER@$REMOTE_HOST"
-else
-  ssh-copy-id -o PubkeyAuthentication=no -i "$PUB_PATH" -p "$PORT" "$REMOTE_USER@$REMOTE_HOST"
+SSH_BASE_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -p "$PORT")
+# Base64 is only used for the sshpass path: sshpass creates a PTY that intercepts stdin,
+# so the key must travel inline in the command string. Key-based and interactive auth
+# don't have that problem — they can use a plain stdin pipe.
+PUB_KEY_B64="$(base64 < "$PUB_PATH" | tr -d '\n')"
+APPEND_CMD="mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+APPEND_CMD_B64="mkdir -p ~/.ssh && chmod 700 ~/.ssh && printf '%s\n' '${PUB_KEY_B64}' | base64 -d >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+
+# Run a command with a hard wall-clock timeout; ConnectTimeout alone doesn't cover auth hangs
+ssh_with_timeout() {
+  local secs="$1"; shift
+  "$@" &
+  local pid=$!
+  local rc=0
+  { sleep "$secs" && kill "$pid" 2>/dev/null; } &
+  local watcher=$!
+  wait "$pid" 2>/dev/null || rc=$?
+  { kill "$watcher" && wait "$watcher"; } 2>/dev/null || true
+  return $rc
+}
+
+copy_key() {
+  # 1. Try BatchMode first (existing agent keys, Tailscale auth, etc.) with stdin pipe.
+  #    No sshpass = no PTY = stdin works correctly.
+  if ssh_with_timeout 10 ssh "${SSH_BASE_OPTS[@]}" -o BatchMode=yes \
+      "$REMOTE_USER@$REMOTE_HOST" "$APPEND_CMD" < "$PUB_PATH" 2>/dev/null; then
+    echo "Key copied (BatchMode/agent auth)."
+    return 0
+  fi
+  # 2. sshpass with password — must use base64 inline to avoid PTY swallowing stdin.
+  if [[ "$USE_SSHPASS" == true && -n "$REMOTE_PASSWORD" ]]; then
+    if ssh_with_timeout 15 sshpass -p "$REMOTE_PASSWORD" ssh "${SSH_BASE_OPTS[@]}" \
+        -o PubkeyAuthentication=no "$REMOTE_USER@$REMOTE_HOST" "$APPEND_CMD_B64"; then
+      echo "Key copied (password auth)."
+      return 0
+    fi
+  fi
+  # 3. Interactive fallback — user types password at the prompt; stdin pipe is safe here too.
+  if ssh "${SSH_BASE_OPTS[@]}" -o PubkeyAuthentication=no \
+      "$REMOTE_USER@$REMOTE_HOST" "$APPEND_CMD" < "$PUB_PATH"; then
+    echo "Key copied (interactive auth)."
+    return 0
+  fi
+  return 1
+}
+
+KEY_COPIED=false
+if copy_key; then
+  # Verify the key actually landed in authorized_keys (guards against false-positive exits)
+  KEY_SEGMENT="$(awk '{print $2}' "$PUB_PATH")"
+  VERIFY_CMD="grep -qF '${KEY_SEGMENT}' ~/.ssh/authorized_keys"
+  if ssh_with_timeout 10 ssh "${SSH_BASE_OPTS[@]}" -o BatchMode=yes \
+      "$REMOTE_USER@$REMOTE_HOST" "$VERIFY_CMD" 2>/dev/null; then
+    KEY_COPIED=true
+  else
+    echo "Warning: copy appeared to succeed but key not found in remote authorized_keys." >&2
+    KEY_COPIED=false
+  fi
+fi
+
+if [[ "$KEY_COPIED" == false ]]; then
+  echo ""
+  echo "Automatic key copy failed. SSH into the remote machine and run:" >&2
+  echo "" >&2
+  echo "  echo '$(cat "$PUB_PATH")' >> ~/.ssh/authorized_keys" >&2
 fi
 
 # ---- Test SSH connection ----
 echo ""
-echo "Testing SSH connection via alias '$HOST_ALIAS' ..."
-if ssh -o BatchMode=yes "$HOST_ALIAS" exit 2>/dev/null; then
+echo "Testing SSH connection to $REMOTE_USER@$REMOTE_HOST ..."
+# Test the new key directly (bypasses SSH config alias restrictions like IdentitiesOnly)
+if ssh_with_timeout 10 ssh -o BatchMode=yes -o StrictHostKeyChecking=no \
+    -o IdentitiesOnly=yes -i "$KEY_PATH" -p "$PORT" \
+    "$REMOTE_USER@$REMOTE_HOST" exit 2>/dev/null; then
   echo "Success — key-based auth is working."
 else
-  echo "Warning: connection test failed. Check that sshd is running on the remote and the key was accepted." >&2
+  echo "Key-based auth test failed. If this is a Tailscale SSH host, try connecting"
+  echo "manually to confirm: ssh $HOST_ALIAS" >&2
 fi
 
 echo ""
