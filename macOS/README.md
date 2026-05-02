@@ -14,8 +14,9 @@
    1. Python project and dependency manager (install via pipx)
 3. Docker | [Download](https://www.docker.com/products/docker-desktop/)
    1. Containerization platform for building and running isolated application environments
-4. Codeburn | [npm](https://www.npmjs.com/package/codeburn)
-   1. CLI tool for burning code to images — install via `npm install -g codeburn`
+4. Node.js | [Download](https://nodejs.org/) | [brew](https://formulae.brew.sh/formula/node)
+   1. JavaScript runtime — see [node_packages.md](node_packages.md) for the full list of useful global packages
+   2. Packages: `codeburn`, and more
 
 ## Utilities
 
