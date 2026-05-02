@@ -4,17 +4,18 @@
 
 1. Homebrew | [Download](https://brew.sh/)
    1. The missing package manager for macOS — see [brew_packages.md](brew_packages.md) for the full list of useful formulae
-   2. Packages: `gh`, `hf`, `git-lfs`, `git-xet`, `fastfetch`, `ghostty`, `pipx`, `pyenv`, `poppler`, `sshpass`, `zsh-autosuggestions`, `zsh-syntax-highlighting`, `mongodb-community`, and more
+   2. Packages: `gh`, `hf`, `git-lfs`, `git-xet`, `fastfetch`, `ghostty`, `pipx`, `pyenv`, `poppler`, `sshpass`, `zsh-autosuggestions`, `zsh-syntax-highlighting`, `mongodb-community`, `htop`, `nvtop`, `asitop`, and more
+2. pipx | [brew](https://formulae.brew.sh/formula/pipx)
+   1. Installs Python CLI tools in isolated virtual environments — see [pipx_packages.md](pipx_packages.md) for the full list
+   2. Packages: `poetry`, `fluidtop`, and more
 
 ## Development
 
 1. VS Code | [Download](https://code.visualstudio.com/download)
    1. IDE with extensions
-2. poetry | [GitHub](https://github.com/python-poetry/poetry)
-   1. Python project and dependency manager (install via pipx)
-3. Docker | [Download](https://www.docker.com/products/docker-desktop/)
+2. Docker | [Download](https://www.docker.com/products/docker-desktop/)
    1. Containerization platform for building and running isolated application environments
-4. Node.js | [Download](https://nodejs.org/) | [brew](https://formulae.brew.sh/formula/node)
+3. Node.js | [Download](https://nodejs.org/) | [brew](https://formulae.brew.sh/formula/node)
    1. JavaScript runtime — see [node_packages.md](node_packages.md) for the full list of useful global packages
    2. Packages: `codeburn`, and more
 

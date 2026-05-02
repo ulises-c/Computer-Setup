@@ -27,3 +27,9 @@ Install via `brew install <name>` unless noted otherwise.
 12. mongodb-community | [brew tap](https://www.mongodb.com/docs/manual/tutorial/install-mongodb-on-os-x/) | [Download](https://www.mongodb.com/try/download/community)
     1. MongoDB Community Server; installing via the `mongodb/brew` tap also provides `mongosh` and `mongodb-database-tools`
     2. Install: `brew tap mongodb/brew && brew install mongodb-community`
+13. htop | [brew](https://formulae.brew.sh/formula/htop) | [GitHub](https://github.com/htop-dev/htop)
+    1. Interactive process viewer — colorized, scrollable alternative to `top` with per-core CPU, memory, and swap meters
+14. nvtop | [brew](https://formulae.brew.sh/formula/nvtop) | [GitHub](https://github.com/Syllo/nvtop)
+    1. GPU process monitor similar to htop — supports NVIDIA, AMD, Intel, and Apple Silicon GPUs
+15. asitop | [brew](https://formulae.brew.sh/formula/asitop) | [GitHub](https://github.com/tlkh/asitop)
+    1. Performance monitoring TUI for Apple Silicon — shows CPU, GPU, ANE, memory bandwidth, and power usage in real time; requires `sudo`
