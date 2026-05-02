@@ -25,9 +25,19 @@ prompt() {
   printf -v "$var_name" '%s' "$value"
 }
 
-prompt NAME  "Full name"
-prompt EMAIL "Email"
+prompt NAME   "Full name"
+prompt EMAIL  "Primary email"
 prompt EXPIRY "Key expiry (e.g. 1y, 2y, 0 for no expiry)" "2y"
+
+# ---- Collect additional emails ----
+EXTRA_EMAILS=()
+echo ""
+echo "Enter additional emails to attach to this key (one per line, empty line to finish):"
+while true; do
+  read -r -p "  Additional email (or Enter to finish): " extra
+  [[ -z "$extra" ]] && break
+  EXTRA_EMAILS+=("$extra")
+done
 
 # ---- Generate key ----
 echo ""
@@ -59,6 +69,19 @@ fi
 
 echo ""
 echo "Key ID: $KEY_ID"
+
+# ---- Add extra UIDs ----
+for extra_email in "${EXTRA_EMAILS[@]+"${EXTRA_EMAILS[@]}"}"; do
+  echo "Adding UID: $NAME <$extra_email>..."
+  gpg --command-fd 0 --no-tty --edit-key "$KEY_ID" <<EOF
+adduid
+$NAME
+$extra_email
+
+O
+save
+EOF
+done
 
 # ---- Show public key ----
 echo ""
