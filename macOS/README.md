@@ -4,24 +4,17 @@
 
 1. Homebrew | [Download](https://brew.sh/)
    1. The missing package manager for macOS — see [brew_packages.md](brew_packages.md) for the full list of useful formulae
+   2. Packages: `gh`, `hf`, `git-lfs`, `git-xet`, `fastfetch`, `ghostty`, `pipx`, `pyenv`, `poppler`, `sshpass`, `zsh-autosuggestions`, `zsh-syntax-highlighting`, `mongodb-community`, and more
 
 ## Development
 
 1. VS Code | [Download](https://code.visualstudio.com/download)
    1. IDE with extensions
-2. GitHub CLI | [brew](https://formulae.brew.sh/formula/gh) | [GitHub](https://github.com/cli/cli)
-   1. Create PRs, manage issues, clone repos, and run Actions from the terminal
-3. Hugging Face CLI | [brew](https://formulae.brew.sh/formula/hf) | [Docs](https://huggingface.co/docs/huggingface_hub/guides/cli)
-   1. Download, upload, and manage ML models, datasets, and Spaces
-4. Ghostty | [Download](https://ghostty.org/) | [brew](https://formulae.brew.sh/cask/ghostty)
-   1. GPU-accelerated terminal emulator with native macOS feel
-5. pipx | [brew](https://formulae.brew.sh/formula/pipx)
-   1. Installs Python CLI tools in isolated virtual environments
-6. poetry | [GitHub](https://github.com/python-poetry/poetry)
+2. poetry | [GitHub](https://github.com/python-poetry/poetry)
    1. Python project and dependency manager (install via pipx)
-7. Docker | [Download](https://www.docker.com/products/docker-desktop/)
+3. Docker | [Download](https://www.docker.com/products/docker-desktop/)
    1. Containerization platform for building and running isolated application environments
-8. Codeburn | [npm](https://www.npmjs.com/package/codeburn)
+4. Codeburn | [npm](https://www.npmjs.com/package/codeburn)
    1. CLI tool for burning code to images — install via `npm install -g codeburn`
 
 ## Utilities
