@@ -118,7 +118,7 @@ Useful programs and packages for a computer.
 5. fastfetch | [GitHub](https://github.com/fastfetch-cli/fastfetch) | [brew](https://formulae.brew.sh/formula/fastfetch)
    1. Fast, customizable system info display (like neofetch) with full Apple Silicon chip and sensor support
 6. sshpass | [brew](https://formulae.brew.sh/formula/sshpass)
-   1. Enables non-interactive SSH password authentication in scripts — required by `add_remote_host.sh`
+   1. Enables non-interactive SSH password authentication in scripts — required by `SSH_and_GPG/add_remote_host.sh`
 7. Goodnotes | [Mac App Store](https://apps.apple.com/us/app/goodnotes-6/id1444383602)
    1. Handwriting and note-taking app with Apple Pencil support; syncs across Mac and iPad
 8. Spark | [Download](https://sparkmailapp.com/) | [Mac App Store](https://apps.apple.com/us/app/spark-mail-ai-email-app/id1176895641)
