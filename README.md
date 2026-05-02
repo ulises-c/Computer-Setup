@@ -33,6 +33,24 @@ Useful programs and packages for a computer.
    1. Python version and virtual environment manager
 3. poetry | [GitHub](https://github.com/python-poetry/poetry)
    1. Python project manager
+4. GitHub CLI | [Download](https://cli.github.com/) | [GitHub](https://github.com/cli/cli) | [brew](https://formulae.brew.sh/formula/gh)
+   1. Official GitHub CLI — create PRs, manage issues, clone repos, and run Actions from the terminal
+5. pipx | [GitHub](https://github.com/pypa/pipx) | [brew](https://formulae.brew.sh/formula/pipx)
+   1. Install Python CLI tools in isolated virtual environments so they don't pollute the global Python install
+6. git-lfs | [Download](https://git-lfs.com/) | [GitHub](https://github.com/git-lfs/git-lfs) | [brew](https://formulae.brew.sh/formula/git-lfs)
+   1. Git extension for versioning large binary files (audio, video, datasets, model weights) outside the main git object store
+7. Hugging Face CLI (hf) | [Docs](https://huggingface.co/docs/huggingface_hub/guides/cli) | [GitHub](https://github.com/huggingface/huggingface_hub) | [brew](https://formulae.brew.sh/formula/hf)
+   1. Download, upload, and manage models, datasets, and Spaces on the Hugging Face Hub
+8. git-xet | [GitHub](https://github.com/huggingface/xet-core) | [brew](https://formulae.brew.sh/formula/git-xet)
+   1. Git LFS plugin that uses the Xet protocol for efficient storage of large ML model files on the Hugging Face Hub
+9. poppler | [Homepage](https://poppler.freedesktop.org/) | [brew](https://formulae.brew.sh/formula/poppler)
+   1. PDF rendering library that ships CLI utilities: `pdftotext`, `pdfimages`, `pdfinfo`, `pdftoppm` — useful for scripting PDF workflows
+10. zsh-autosuggestions | [GitHub](https://github.com/zsh-users/zsh-autosuggestions) | [brew](https://formulae.brew.sh/formula/zsh-autosuggestions)
+    1. Fish-style history-based command suggestions for zsh — press → to accept
+11. zsh-syntax-highlighting | [GitHub](https://github.com/zsh-users/zsh-syntax-highlighting) | [brew](https://formulae.brew.sh/formula/zsh-syntax-highlighting)
+    1. Real-time syntax highlighting for zsh — valid commands appear green, invalid ones red, before you press Enter
+12. MongoDB Community | [Download](https://www.mongodb.com/try/download/community) | [brew](https://formulae.brew.sh/formula/mongodb-community)
+    1. Open source document database; the brew tap (`mongodb/brew`) also installs `mongosh` (shell) and `mongodb-database-tools` (import/export)
 
 </details>
 
@@ -85,8 +103,14 @@ Useful programs and packages for a computer.
    1. Used to keep a Mac awake, even if the lid is shut
 2. Rectangle | [Download](https://rectangleapp.com/) | [GitHub](https://github.com/rxhanson/Rectangle)
    1. Open source window management app for macOS
-3. asitop | [brew](https://formulae.brew.sh/formula/asitop) | [github](https://github.com/tlkh/asitop)
+3. asitop | [brew](https://formulae.brew.sh/formula/asitop) | [GitHub](https://github.com/tlkh/asitop)
    1. Performance monitoring CLI tool for Apple Silicon
+4. Ghostty | [Download](https://ghostty.org/) | [GitHub](https://github.com/ghostty-org/ghostty) | [brew](https://formulae.brew.sh/cask/ghostty)
+   1. GPU-accelerated terminal emulator with native macOS feel; fast rendering and built-in multiplexing
+5. fastfetch | [GitHub](https://github.com/fastfetch-cli/fastfetch) | [brew](https://formulae.brew.sh/formula/fastfetch)
+   1. Fast, customizable system info display (like neofetch) with full Apple Silicon chip and sensor support
+6. sshpass | [brew](https://formulae.brew.sh/formula/sshpass)
+   1. Enables non-interactive SSH password authentication in scripts — required by `add_remote_host.sh`
 
 </details>
 
