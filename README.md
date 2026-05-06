@@ -69,6 +69,10 @@ Useful programs and packages for a computer.
    1. Music player
 2. Steam | [Download](https://store.steampowered.com/about/)
    1. Game library
+3. RuneLite | [Download](https://runelite.net/) | [GitHub](https://github.com/runelite/runelite)
+   1. Free, open-source Old School RuneScape client with plugins, GPU rendering, and quality-of-life features
+4. Jagex Launcher | [Download](https://www.jagex.com/en-GB/launcher) *(Windows / macOS)*
+   1. Official launcher for RuneScape and Old School RuneScape; required for account switching and Jagex account login
 
 </details>
 
@@ -146,6 +150,8 @@ Useful programs and packages for a computer.
 
 </details>
 
+See [macOS/README.md](macOS/README.md) for the full macOS software list including brew formulae, pipx packages, and node packages.
+
 <!-- End of macOS -->
 
 ---
@@ -156,6 +162,8 @@ Useful programs and packages for a computer.
 
 **This section is specifically for software that is exclusive to Windows**
 
+See [windows/README.md](windows/README.md) for the full Windows software list.
+
 <details>
 <summary>Utilities</summary>
 
@@ -165,3 +173,45 @@ Useful programs and packages for a computer.
    1. Microsoft PowerToys is a set of utilities for power users to tune and streamline their Windows experience for greater productivity.
 
 </details>
+
+<!-- End of Windows -->
+
+---
+
+<!-- Start of Linux Desktop -->
+
+## Linux Desktop
+
+**This section is specifically for software on Linux desktop environments (e.g. CachyOS)**
+
+See [linux-desktop/README.md](linux-desktop/README.md) for the full Linux Desktop software list.
+
+<details>
+<summary>Gaming</summary>
+
+1. Bolt | [Codeberg](https://codeberg.org/Adamcake/Bolt)
+   1. Open-source, third-party launcher for RuneScape and Old School RuneScape on Linux — replaces the Jagex Launcher which is not available on Linux
+
+</details>
+
+<!-- End of Linux Desktop -->
+
+---
+
+<!-- Start of Linux Server -->
+
+## Linux Server
+
+**This section is specifically for software on Linux servers (e.g. Ubuntu Server)**
+
+See [linux-server/README.md](linux-server/README.md) for the full Linux Server software list.
+
+<details>
+<summary>Utilities</summary>
+
+1. atvloadly | [GitHub](https://github.com/bitxeno/atvloadly)
+   1. Self-hosted web app for sideloading IPA files onto Apple TV — a self-deployable alternative to AltStore/Sideloadly
+
+</details>
+
+<!-- End of Linux Server -->
