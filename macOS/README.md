@@ -32,8 +32,14 @@
 
 ## AI
 
-1. Claude | [Download](https://claude.ai/download)
-   1. Anthropic's AI assistant desktop app
+1. Claude Desktop | [Download](https://claude.ai/download) | [brew](https://formulae.brew.sh/cask/claude)
+   1. Anthropic's official Claude AI desktop app — chat, Projects, and extended context in a native macOS window
+   2. Install: `brew install --cask claude`
+2. Claude Code | [Docs](https://docs.anthropic.com/en/docs/claude-code) | [brew](https://formulae.brew.sh/cask/claude-code) | [npm](https://www.npmjs.com/package/@anthropic-ai/claude-code)
+   1. Terminal-based AI coding assistant from Anthropic — agentic coding, file editing, shell commands, and MCP integrations
+   2. Install (curl): `curl -fsSL https://claude.ai/install.sh | sh`
+   3. Install (brew): `brew install --cask claude-code`
+   4. Install (npm): `npm install -g @anthropic-ai/claude-code`
 
 ## Productivity
 
