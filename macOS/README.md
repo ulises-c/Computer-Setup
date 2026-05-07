@@ -11,11 +11,14 @@
 
 ## Development
 
-1. VS Code | [Download](https://code.visualstudio.com/download)
+1. Ghostty | [Download](https://ghostty.org/) | [brew](https://formulae.brew.sh/cask/ghostty)
+   1. GPU-accelerated terminal emulator — see [ghostty_config.md](ghostty_config.md) for config
+   2. Install: `brew install --cask ghostty`
+2. VS Code | [Download](https://code.visualstudio.com/download)
    1. IDE with extensions
-2. Docker | [Download](https://www.docker.com/products/docker-desktop/)
+3. Docker | [Download](https://www.docker.com/products/docker-desktop/)
    1. Containerization platform for building and running isolated application environments
-3. Node.js | [Download](https://nodejs.org/) | [brew](https://formulae.brew.sh/formula/node)
+4. Node.js | [Download](https://nodejs.org/) | [brew](https://formulae.brew.sh/formula/node)
    1. JavaScript runtime — see [node_packages.md](node_packages.md) for the full list of useful global packages
    2. Packages: `codeburn`, and more
 
