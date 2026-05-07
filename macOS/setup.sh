@@ -40,11 +40,15 @@ fi
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 
+# nvm appended last in .zshrc so it wins over brew's node on every source
 add_to_zshrc 'export NVM_DIR="$HOME/.nvm"'
 add_to_zshrc '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"'
+add_to_zshrc 'nvm use --delete-prefix default --silent 2>/dev/null'
 
-nvm install --lts
-nvm alias default node
+# Install current LTS (v24 "Krypton" as of 2025) and set as default
+nvm install 'lts/*'
+nvm alias default 'lts/*'
+nvm use default
 
 # ── Python version ────────────────────────────────────────────────────────────
 PYTHON_VERSION="3.12.13"
@@ -94,8 +98,9 @@ rm -rf ~/.local/pipx/shared
 pipx ensurepath
 
 # Node-dependent tools — installed after nvm/node is set up
-brew tap getagentseal/codeburn
-brew install codeburn
+# codeburn installed via npm (not brew tap) to avoid pulling in brew's node,
+# which conflicts with nvm and causes PATH issues
+npm install -g codeburn
 
 # Installs and launches the native macOS menubar app (Swift, macOS only)
 # The codeburn CLI itself is cross-platform; the menubar is a separate install
