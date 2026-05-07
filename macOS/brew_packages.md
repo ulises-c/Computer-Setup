@@ -14,6 +14,13 @@ Install via `brew install <name>` unless noted otherwise.
    1. Fast, customizable system info display with full Apple Silicon chip and sensor support; shows on Ghostty startup in the example zshrc
 6. pipx | [brew](https://formulae.brew.sh/formula/pipx) | [GitHub](https://github.com/pypa/pipx)
    1. Installs Python CLI tools in isolated virtual environments — avoids polluting the global Python install
+   2. **macOS Tahoe:** brew's Python bottles link against the system `libexpat`, which is missing symbols on Tahoe — causing `ensurepip` to fail. Use pyenv + expat instead (handled automatically by [setup.sh](setup.sh)):
+      ```sh
+      brew install pyenv expat
+      pyenv install 3.12.13 && pyenv global 3.12.13
+      export PIPX_DEFAULT_PYTHON="$HOME/.pyenv/versions/3.12.13/bin/python3.12"
+      rm -rf ~/.local/pipx/shared
+      ```
 7. pyenv | [brew](https://formulae.brew.sh/formula/pyenv) | [GitHub](https://github.com/pyenv/pyenv)
    1. Manages multiple Python versions and virtual environments
 8. poppler | [brew](https://formulae.brew.sh/formula/poppler) | [Homepage](https://poppler.freedesktop.org/)
