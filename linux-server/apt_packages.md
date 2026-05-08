@@ -90,7 +90,7 @@ These require their own installer or setup — not handled by `setup.sh`.
 
 1. claude-code | [Docs](https://docs.anthropic.com/en/docs/claude-code)
    1. Terminal-based AI coding assistant from Anthropic — agentic coding, file editing, shell commands, and MCP integrations
-   2. Install via curl per the official docs
+   2. Install: `curl -fsSL https://claude.ai/install.sh | bash`
 2. docker-ce | [Docs](https://docs.docker.com/engine/install/ubuntu/) | [GitHub](https://github.com/docker/docker-ce)
    1. Container platform — official Docker Engine for Linux
    2. Convenience script (installs CE, CLI, compose plugin, and containerd): `curl -fsSL https://get.docker.com | sudo sh`

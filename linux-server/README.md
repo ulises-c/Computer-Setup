@@ -69,7 +69,9 @@ bash SSH_and_GPG/create_gpg_key.sh
 
 ### 4. claude-code
 
-Install via curl per the [official docs](https://docs.anthropic.com/en/docs/claude-code).
+```sh
+curl -fsSL https://claude.ai/install.sh | bash
+```
 
 ### 5. Docker services
 
