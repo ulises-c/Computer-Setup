@@ -105,6 +105,51 @@ Run through this after `bash linux-server/setup.sh` completes.
   ```
   Access at `http://<server-ip>:8080` — default login: `admin` / `admin` (change immediately).
 
+### Watchtower
+- [ ] Start:
+  ```sh
+  cd linux-server/watchtower && docker compose up -d
+  ```
+  Checks for updated images daily at 3am and restarts containers automatically.
+
+### Uptime Kuma
+- [ ] Start:
+  ```sh
+  cd linux-server/uptime-kuma && docker compose up -d
+  ```
+  Access at `http://<server-ip>:3001` — create an admin account on first visit.
+- [ ] Add monitors for each service (use `http://localhost:<port>` for internal checks).
+- [ ] Create a status page with slug `default` (Dashboards → New Status Page) for the Homepage widget.
+
+### Nginx Proxy Manager
+- [ ] Start:
+  ```sh
+  cd linux-server/nginx-proxy-manager && docker compose up -d
+  ```
+  Access admin UI at `http://<server-ip>:81` — default login: `admin@example.com` / `changeme`.
+- [ ] Change email and password immediately after first login.
+
+### ntfy
+- [ ] Start:
+  ```sh
+  cd linux-server/ntfy && docker compose up -d
+  ```
+  Access at `http://<server-ip>:5080`.
+- [ ] Install the ntfy app on your phone, add your server URL, and subscribe to a topic (e.g. `alerts`).
+- [ ] Configure Uptime Kuma and Watchtower to send notifications via ntfy.
+
+### Syncthing
+- [ ] Add volume mounts to `linux-server/syncthing/docker-compose.yml` for each folder you want to sync.
+- [ ] Start:
+  ```sh
+  cd linux-server/syncthing && docker compose up -d
+  ```
+  Access at `http://<server-ip>:8384`.
+- [ ] Get your API key: Actions → Settings → API Key — add to `linux-server/homepage/.env`:
+  ```
+  HOMEPAGE_VAR_SYNCTHING_KEY=<api-key>
+  ```
+
 ### AdGuard Home
 - [ ] Free up port 53 from systemd-resolved:
   ```sh
@@ -115,7 +160,7 @@ Run through this after `bash linux-server/setup.sh` completes.
   ```sh
   cd linux-server/adguard && docker compose up -d
   ```
-- [ ] Open `http://<server-ip>:3001` for the setup wizard:
+- [ ] Open `http://<server-ip>:3003` for the setup wizard:
   - Set web UI port → `80` (maps to host port `8083`)
   - Set DNS port → `53`
   - Create admin username and password

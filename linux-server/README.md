@@ -195,11 +195,49 @@ cd linux-server/homepage && docker compose restart
       ```
    3. Access at `http://<server-ip>:8765`; runs a test every 6 hours by default (configurable via `SPEEDTEST_SCHEDULE` in `.env`)
 
-8. pi-hole | [GitHub](https://github.com/pi-hole/pi-hole) | [Docs](https://docs.pi-hole.net)
-   1. Network-wide DNS ad blocker — blocks ads and trackers at the DNS level for every device on the network; includes a query log and allowlist/blocklist management
-   2. Not yet configured
+8. watchtower | [GitHub](https://github.com/containrrr/watchtower) | [Docs](https://containrrr.dev/watchtower/)
+   1. Automatically pulls updated Docker images and restarts containers — runs daily at 3am by default
+   2. Deploy:
+      ```sh
+      cd linux-server/watchtower && docker compose up -d
+      ```
 
-9. AdGuard Home | [GitHub](https://github.com/AdguardTeam/AdGuardHome) | [Docs](https://adguard-dns.io/kb/adguard-home/overview/)
+9. uptime kuma | [GitHub](https://github.com/louislam/uptime-kuma) | [Docs](https://github.com/louislam/uptime-kuma/wiki)
+   1. Self-hosted uptime monitor with status pages and alerts (email, ntfy, Discord, etc.)
+   2. Deploy:
+      ```sh
+      cd linux-server/uptime-kuma && docker compose up -d
+      ```
+   3. Access at `http://<server-ip>:3001`; create an admin account on first visit
+   4. Add monitors for each service, then create a status page with slug `default` for the Homepage widget
+
+10. nginx proxy manager | [GitHub](https://github.com/jc21/nginx-proxy-manager) | [Docs](https://nginxproxymanager.com/guide/)
+    1. Reverse proxy with a web UI — assign clean hostnames to services and get SSL certs via Let's Encrypt automatically
+    2. Deploy:
+       ```sh
+       cd linux-server/nginx-proxy-manager && docker compose up -d
+       ```
+    3. Access admin UI at `http://<server-ip>:81`; default login: `admin@example.com` / `changeme` — update immediately
+
+11. ntfy | [GitHub](https://github.com/binwiederhier/ntfy) | [Docs](https://docs.ntfy.sh)
+    1. Self-hosted push notification service — send alerts from any service to your phone or desktop via the ntfy app
+    2. Deploy:
+       ```sh
+       cd linux-server/ntfy && docker compose up -d
+       ```
+    3. Access at `http://<server-ip>:5080`; subscribe to topics in the ntfy app using your server URL
+
+12. syncthing | [GitHub](https://github.com/syncthing/syncthing) | [Docs](https://docs.syncthing.net)
+    1. Decentralized file sync across devices — no cloud required; syncs directly between your server and other devices
+    2. Deploy:
+       ```sh
+       cd linux-server/syncthing && docker compose up -d
+       ```
+    3. Access at `http://<server-ip>:8384`
+    4. Add volume mounts to `docker-compose.yml` for each folder you want to sync, then configure them in the web UI
+    5. Get your API key from Actions → Settings → API Key and add it to `linux-server/homepage/.env` for the Homepage widget
+
+13. AdGuard Home | [GitHub](https://github.com/AdguardTeam/AdGuardHome) | [Docs](https://adguard-dns.io/kb/adguard-home/overview/)
    1. Network-wide DNS ad and tracker blocker — modern UI, DNS-over-HTTPS/TLS, and per-client rules
    2. **Prerequisites** — Ubuntu's `systemd-resolved` binds to port 53 and must be told to stop using it:
       ```sh
@@ -211,10 +249,26 @@ cd linux-server/homepage && docker compose restart
       cd linux-server/adguard
       docker compose up -d
       ```
-   4. Open `http://<server-ip>:3001` for the first-run setup wizard
+   4. Open `http://<server-ip>:3003` for the first-run setup wizard
       - Set the web UI port to **80** (maps to host port 8083)
       - Set the DNS port to **53**
       - Create your admin username and password
    5. After setup, access the web UI at `http://<server-ip>:8083`
    6. Point your router's DNS (or individual devices) to `<server-ip>` to start filtering
    7. Add credentials to `linux-server/homepage/.env` to enable the stats widget on Homepage
+
+14. pi-hole | [GitHub](https://github.com/pi-hole/pi-hole) | [Docs](https://docs.pi-hole.net)
+    1. Network-wide DNS ad blocker — alternative to AdGuard Home
+    2. Not yet configured
+
+15. Immich | [GitHub](https://github.com/immich-app/immich) | [Docs](https://immich.app/docs)
+    1. Self-hosted photo and video backup — Google Photos alternative with mobile apps, face recognition, and timeline view
+    2. Not yet configured
+
+16. Jellyfin | [GitHub](https://github.com/jellyfin/jellyfin) | [Docs](https://jellyfin.org/docs/)
+    1. Self-hosted media server — stream your own movies, TV shows, and music to any device
+    2. Not yet configured
+
+17. Home Assistant | [GitHub](https://github.com/home-assistant/core) | [Docs](https://www.home-assistant.io/docs/)
+    1. Open source smart home hub — integrates with thousands of devices and services
+    2. Not yet configured
