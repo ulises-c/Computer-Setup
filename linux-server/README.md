@@ -62,11 +62,19 @@ The web UI runs on `localhost:8088` and `tailscale_ip:5252`. Homepage uses the l
 
 4. filebrowser | [GitHub](https://github.com/filebrowser/filebrowser) | [Docs](https://filebrowser.org)
    1. Web-based file manager — browse, upload, download, edit, and share files on the server from any browser
-   2. Not yet configured
+   2. Deploy:
+      ```sh
+      cd linux-server/filebrowser
+      cp .env.example .env        # set FB_ROOT to the path you want to browse
+      touch filebrowser.db        # required — prevents Docker creating it as a directory
+      docker compose up -d
+      ```
+   3. Access at `http://<server-ip>:8080`; default login is `admin` / `admin` — change on first login
 
-5. cockpit | [GitHub](https://github.com/cockpit-project/cockpit) | [Docs](https://cockpit.project.org)
-   1. Web-based server admin UI — system metrics, journal logs, network config, storage, and service management; installs as a system package rather than Docker
-   2. Not yet configured
+5. cockpit | [GitHub](https://github.com/cockpit-project/cockpit) | [Docs](https://cockpit-project.org)
+   1. Web-based server admin UI — system metrics, journal logs, network config, storage, and service management
+   2. Installed as a system package by `setup.sh` (not Docker); enabled automatically via systemd socket activation
+   3. Access at `https://<server-ip>:9090`; log in with your Linux username and password
 
 6. pi-hole | [GitHub](https://github.com/pi-hole/pi-hole) | [Docs](https://docs.pi-hole.net)
    1. Network-wide DNS ad blocker — blocks ads and trackers at the DNS level for every device on the network; includes a query log and allowlist/blocklist management

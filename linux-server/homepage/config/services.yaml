@@ -11,6 +11,17 @@
         description: Docker manager
         server: my-docker
         container: portainer
+    - filebrowser:
+        icon: mdi-folder-network
+        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:8080
+        description: Web file manager
+        server: my-docker
+        container: filebrowser
+    - cockpit:
+        icon: mdi-monitor-dashboard
+        href: https://{{HOMEPAGE_VAR_SERVER_IP}}:9090
+        description: Server admin UI
+        ping: https://localhost:9090
     - atvloadly:
         icon: mdi-television-play
         href: http://{{HOMEPAGE_VAR_SERVER_IP}}:5533

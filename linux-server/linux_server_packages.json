@@ -133,6 +133,13 @@
     "description": "Interactive disk usage analyzer — essential for managing storage on a file server"
   },
   {
+    "name": "cockpit",
+    "package_manager": "apt",
+    "priority": "medium",
+    "optional": false,
+    "description": "Web-based server admin UI — system metrics, journal logs, network config, storage, and service management; access at https://<server-ip>:9090"
+  },
+  {
     "name": "curl",
     "package_manager": "apt",
     "priority": "medium",

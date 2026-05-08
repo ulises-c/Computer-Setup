@@ -59,7 +59,11 @@ Tested on Ubuntu Server LTS. Most packages work on other Debian-based distros.
     1. Modern terminal text editor with mouse support, syntax highlighting, and familiar keybindings (Ctrl+S, Ctrl+C, etc.)
 18. ncdu | [apt](https://packages.ubuntu.com/search?keywords=ncdu) | [Homepage](https://dev.yorhel.nl/ncdu)
     1. Interactive disk usage analyzer — essential for managing storage on a file server
-19. sshpass | [apt](https://packages.ubuntu.com/search?keywords=sshpass) | [Homepage](https://sourceforge.net/projects/sshpass/)
+19. cockpit | [apt](https://packages.ubuntu.com/search?keywords=cockpit) | [Homepage](https://cockpit-project.org/)
+    1. Web-based server admin UI — system metrics, journal logs, network config, storage, and service management
+    2. Enabled automatically via systemd socket activation on install; access at `https://<server-ip>:9090`
+    3. Login with your Linux username and password
+20. sshpass | [apt](https://packages.ubuntu.com/search?keywords=sshpass) | [Homepage](https://sourceforge.net/projects/sshpass/)
     1. Non-interactive SSH password authentication — used by `SSH_and_GPG/add_remote_host.sh`
 
 ## Optional
