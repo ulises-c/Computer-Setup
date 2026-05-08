@@ -245,6 +245,17 @@ for svc in homepage speedtest-tracker filebrowser; do
   fi
 done
 
+# Inject HOSTNAME so docker compose resolves ${HOSTNAME} in homepage/docker-compose.yml
+HOMEPAGE_ENV="$SCRIPT_DIR/homepage/.env"
+if [[ -f "$HOMEPAGE_ENV" ]] && ! grep -q "^HOSTNAME=" "$HOMEPAGE_ENV" 2>/dev/null; then
+  if [[ "$DRY_RUN" == true ]]; then
+    echo "  [dry-run] inject HOSTNAME=$(hostname) into homepage/.env"
+  else
+    echo "HOSTNAME=$(hostname)" >> "$HOMEPAGE_ENV"
+    echo "  injected HOSTNAME into homepage/.env"
+  fi
+fi
+
 # Auto-generate APP_KEY for speedtest-tracker
 if [[ -f "$SCRIPT_DIR/speedtest-tracker/.env" ]]; then
   if ! grep -qE "^APP_KEY=base64:.+" "$SCRIPT_DIR/speedtest-tracker/.env" 2>/dev/null; then
@@ -310,8 +321,11 @@ else
   echo "  4. Fill in linux-server/homepage/.env then restart Homepage:"
   echo "       cd linux-server/homepage && docker compose restart"
   echo ""
-  echo "  See linux-server/post-install.md for service URLs and first-login"
-  echo "  configuration (Portainer, AdGuard, Filebrowser, Uptime Kuma, etc.)."
-  echo ""
   echo "================================================================"
+  echo ""
+  if command -v bat &>/dev/null; then
+    bat "$SCRIPT_DIR/post-install.md"
+  else
+    cat "$SCRIPT_DIR/post-install.md"
+  fi
 fi
