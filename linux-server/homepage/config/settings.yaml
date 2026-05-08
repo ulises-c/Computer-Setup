@@ -3,6 +3,7 @@ theme: dark
 color: slate
 headerStyle: clean
 hideVersion: true
+allowedHosts: "{{HOMEPAGE_VAR_SERVER_IP}},localhost"
 
 layout:
   System:
