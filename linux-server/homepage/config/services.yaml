@@ -28,6 +28,17 @@
         description: Apple TV IPA sideloader
         server: my-docker
         container: atvloadly
+    - adguard home:
+        icon: si-adguard
+        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:8083
+        description: DNS ad blocker
+        server: my-docker
+        container: adguardhome
+        widget:
+          type: adguardhome
+          url: http://localhost:8083
+          username: "{{HOMEPAGE_VAR_ADGUARD_USER}}"
+          password: "{{HOMEPAGE_VAR_ADGUARD_PASS}}"
     - tailscale:
         icon: si-tailscale
         href: http://{{HOMEPAGE_VAR_TAILSCALE_IP}}:5252

@@ -81,5 +81,21 @@ The web UI runs on `localhost:8088` and `tailscale_ip:5252`. Homepage uses the l
    2. Not yet configured
 
 7. AdGuard Home | [GitHub](https://github.com/AdguardTeam/AdGuardHome) | [Docs](https://adguard-dns.io/kb/adguard-home/overview/)
-   1. Network-wide DNS ad and tracker blocker — alternative to Pi-hole with a modern UI, DNS-over-HTTPS/TLS support, and per-client rules
-   2. Not yet configured
+   1. Network-wide DNS ad and tracker blocker — modern UI, DNS-over-HTTPS/TLS, and per-client rules
+   2. **Prerequisites** — Ubuntu's `systemd-resolved` binds to port 53 and must be told to stop using it:
+      ```sh
+      sudo sed -i 's/#DNSStubListener=yes/DNSStubListener=no/' /etc/systemd/resolved.conf
+      sudo systemctl restart systemd-resolved
+      ```
+   3. Deploy:
+      ```sh
+      cd linux-server/adguard
+      docker compose up -d
+      ```
+   4. Open `http://<server-ip>:3001` for the first-run setup wizard
+      - Set the web UI port to **80** (maps to host port 8083)
+      - Set the DNS port to **53**
+      - Create your admin username and password
+   5. After setup, access the web UI at `http://<server-ip>:8083`
+   6. Point your router's DNS (or individual devices) to `<server-ip>` to start filtering
+   7. Add credentials to `linux-server/homepage/.env` to enable the stats widget on Homepage
