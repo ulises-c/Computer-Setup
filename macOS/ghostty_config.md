@@ -1,6 +1,6 @@
 # Ghostty Config
 
-Located at `~/.config/ghostty/config`.
+Located at `~/Library/Application Support/com.mitchellh.ghostty/config.ghostty` on macOS.
 
 ```
 theme = Dark Pastel
