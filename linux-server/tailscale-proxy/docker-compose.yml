@@ -1,0 +1,8 @@
+services:
+  tailscale-proxy:
+    build: .
+    container_name: tailscale-proxy
+    network_mode: host
+    env_file:
+      - .env
+    restart: unless-stopped

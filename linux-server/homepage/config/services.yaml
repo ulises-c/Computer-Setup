@@ -64,7 +64,7 @@
         server: my-docker
         container: adguardhome
         widget:
-          type: adguardhome
+          type: adguard
           url: http://localhost:8083
           username: "{{HOMEPAGE_VAR_ADGUARD_USER}}"
           password: "{{HOMEPAGE_VAR_ADGUARD_PASS}}"
@@ -81,9 +81,20 @@
         server: my-docker
         container: syncthing
         widget:
-          type: syncthing
-          url: http://localhost:8384
-          key: "{{HOMEPAGE_VAR_SYNCTHING_KEY}}"
+          type: customapi
+          url: http://localhost:8384/rest/system/status
+          headers:
+            X-API-Key: "{{HOMEPAGE_VAR_SYNCTHING_KEY}}"
+          mappings:
+            - field: uptime
+              label: Uptime
+              format: duration
+            - field: cpuPercent
+              label: CPU
+              format: percent
+            - field: alloc
+              label: Memory
+              format: bytes
     - filebrowser:
         icon: mdi-folder-network
         href: http://{{HOMEPAGE_VAR_SERVER_IP}}:8080
@@ -101,6 +112,15 @@
         href: http://{{HOMEPAGE_VAR_TAILSCALE_IP}}:5252
         description: Zero-config VPN
         widget:
-          type: tailscale
-          deviceid: "{{HOMEPAGE_VAR_TAILSCALE_DEVICE_ID}}"
-          key: "{{HOMEPAGE_VAR_TAILSCALE_KEY}}"
+          type: customapi
+          url: http://localhost:8089
+          mappings:
+            - field: addresses.0
+              label: Address
+              format: text
+            - field: lastSeen
+              label: Last Seen
+              format: relativeDate
+            - field: expires
+              label: Key Expires
+              format: relativeDate

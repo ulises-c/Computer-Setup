@@ -3,13 +3,7 @@
     cpu: true
     memory: true
     disk: /
-    refresh: 3000
-
-- network:
-    label: network
-    interfaces:
-      - eno2
-      - wlo1
+    network: eno2
     refresh: 3000
 
 - datetime:
