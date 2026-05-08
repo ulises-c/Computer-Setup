@@ -1,26 +1,55 @@
 #!/bin/zsh
 # macOS initial setup script
-# Usage: zsh macOS/setup.sh [--optional]
+# Usage: zsh macOS/setup.sh [--optional] [--dry-run]
 #   --optional  also install low-priority optional packages
+#   --dry-run   print all commands without executing anything
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PACKAGES_JSON="$SCRIPT_DIR/macOS_packages.json"
 INCLUDE_OPTIONAL=false
-[[ "${1:-}" == "--optional" ]] && INCLUDE_OPTIONAL=true
+DRY_RUN=false
+
+for arg in "$@"; do
+  case "$arg" in
+    --optional) INCLUDE_OPTIONAL=true ;;
+    --dry-run)  DRY_RUN=true ;;
+  esac
+done
 
 ZSHRC="$HOME/.zshrc"
 
-add_to_zshrc() {
-  local line="$1"
-  grep -qF "$line" "$ZSHRC" 2>/dev/null || echo "$line" >> "$ZSHRC"
+# ── Run helpers ───────────────────────────────────────────────────────────────
+
+run() {
+  if [[ "$DRY_RUN" == true ]]; then
+    echo "  [dry-run] $*"
+  else
+    "$@"
+  fi
 }
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+run_eval() {
+  if [[ "$DRY_RUN" == true ]]; then
+    echo "  [dry-run] eval: $1"
+  else
+    eval "$1"
+  fi
+}
+
+add_to_zshrc() {
+  local line="$1"
+  if [[ "$DRY_RUN" == true ]]; then
+    echo "  [dry-run] add to .zshrc: $line"
+  else
+    grep -qF "$line" "$ZSHRC" 2>/dev/null || echo "$line" >> "$ZSHRC"
+  fi
+}
+
+# ── Package install helpers ───────────────────────────────────────────────────
 
 brew_install() {
-  # Batch install all standard brew formulae for a given priority (no install_command)
   local priority="$1" optional_filter="$2"
   local names
   names=$(jq -r --arg p "$priority" --argjson opt "$optional_filter" \
@@ -30,7 +59,7 @@ brew_install() {
         (.install_command == null or .install_command == "") and
         (if $opt then true else .optional == false end)
       ) | .name] | join(" ")' "$PACKAGES_JSON")
-  [[ -n "$names" ]] && brew install $names
+  [[ -n "$names" ]] && run brew install $names
 }
 
 brew_cask_install() {
@@ -42,7 +71,7 @@ brew_cask_install() {
         .priority == $p and
         (if $opt then true else .optional == false end)
       ) | .name] | join(" ")' "$PACKAGES_JSON")
-  [[ -n "$names" ]] && brew install --cask $names
+  [[ -n "$names" ]] && run brew install --cask $names
 }
 
 pipx_install() {
@@ -53,7 +82,7 @@ pipx_install() {
         .priority == $p and
         (if $opt then true else .optional == false end)
       ) | .name' "$PACKAGES_JSON" | while read -r name; do
-    pipx install "$name"
+    run pipx install "$name"
   done
 }
 
@@ -66,11 +95,10 @@ npm_install() {
         .priority == $p and
         (if $opt then true else .optional == false end)
       ) | .name] | join(" ")' "$PACKAGES_JSON")
-  [[ -n "$names" ]] && npm install -g $names
+  [[ -n "$names" ]] && run npm install -g $names
 }
 
 brew_custom_install() {
-  # Packages with a custom install_command (e.g. brew tap + install)
   local priority="$1" optional_filter="$2"
   jq -r --arg p "$priority" --argjson opt "$optional_filter" \
     '.[] | select(
@@ -79,7 +107,7 @@ brew_custom_install() {
         (.install_command != null and .install_command != "") and
         (if $opt then true else .optional == false end)
       ) | .install_command' "$PACKAGES_JSON" | while read -r cmd; do
-    eval "$cmd"
+    run_eval "$cmd"
   done
 }
 
@@ -98,14 +126,14 @@ print_app_store_reminders() {
 # ── Homebrew ──────────────────────────────────────────────────────────────────
 if ! command -v brew &>/dev/null; then
   echo "==> Installing Homebrew..."
-  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-  eval "$(/opt/homebrew/bin/brew shellenv)"
+  run /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  run_eval 'eval "$(/opt/homebrew/bin/brew shellenv)"'
 fi
 
 # ── Bootstrap: jq (required to parse macOS_packages.json) ────────────────────
-brew install jq
+run brew install jq
 
-# ── High-priority brew formulae (includes pyenv, expat, pipx) ────────────────
+# ── High-priority brew formulae (pyenv, expat, pipx) ─────────────────────────
 echo "==> Installing high-priority brew formulae..."
 brew_install "high" false
 
@@ -115,40 +143,49 @@ brew_install "high" false
 PYTHON_VERSION="3.12.13"
 PYENV_PYTHON="$HOME/.pyenv/versions/$PYTHON_VERSION/bin/python3.12"
 
-if ! pyenv versions | grep -q "$PYTHON_VERSION"; then
+if [[ "$DRY_RUN" == true ]]; then
+  echo "  [dry-run] pyenv install $PYTHON_VERSION"
+  echo "  [dry-run] pyenv global $PYTHON_VERSION"
+elif ! pyenv versions 2>/dev/null | grep -q "$PYTHON_VERSION"; then
   echo "==> Installing Python $PYTHON_VERSION via pyenv..."
   LDFLAGS="-L/opt/homebrew/opt/expat/lib" \
   CPPFLAGS="-I/opt/homebrew/opt/expat/include" \
   PKG_CONFIG_PATH="/opt/homebrew/opt/expat/lib/pkgconfig" \
     pyenv install "$PYTHON_VERSION"
+  pyenv global "$PYTHON_VERSION"
 fi
-pyenv global "$PYTHON_VERSION"
 
 add_to_zshrc 'export PYENV_ROOT="$HOME/.pyenv"'
 add_to_zshrc 'export PATH="$PYENV_ROOT/bin:$PATH"'
 add_to_zshrc 'eval "$(pyenv init -)"'
 add_to_zshrc "export PIPX_DEFAULT_PYTHON=\"$PYENV_PYTHON\""
 
-export PYENV_ROOT="$HOME/.pyenv"
-export PATH="$PYENV_ROOT/bin:$PATH"
-eval "$(pyenv init -)"
-export PIPX_DEFAULT_PYTHON="$PYENV_PYTHON"
+if [[ "$DRY_RUN" == false ]]; then
+  export PYENV_ROOT="$HOME/.pyenv"
+  export PATH="$PYENV_ROOT/bin:$PATH"
+  eval "$(pyenv init -)"
+  export PIPX_DEFAULT_PYTHON="$PYENV_PYTHON"
+fi
 
 # ── Node (nvm) ────────────────────────────────────────────────────────────────
-# nvm installed via curl per nvm's own recommendation — brew install nvm causes
-# PATH issues. nvm is kept last in .zshrc so it wins over brew's node.
-if [ ! -d "$HOME/.nvm" ]; then
+# nvm installed via curl — brew install nvm causes PATH issues.
+# nvm is kept last in .zshrc so it wins over brew's node.
+if [[ "$DRY_RUN" == true ]]; then
+  echo "  [dry-run] install nvm via curl"
+  echo "  [dry-run] nvm install lts/* && nvm alias default lts/*"
+elif [ ! -d "$HOME/.nvm" ]; then
   echo "==> Installing nvm..."
   INSTALL_CMD=$(jq -r '.[] | select(.name == "nvm") | .install_command' "$PACKAGES_JSON")
   eval "$INSTALL_CMD"
 fi
 
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-
-nvm install 'lts/*'
-nvm alias default 'lts/*'
-nvm use default
+if [[ "$DRY_RUN" == false ]]; then
+  export NVM_DIR="$HOME/.nvm"
+  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+  nvm install 'lts/*'
+  nvm alias default 'lts/*'
+  nvm use default
+fi
 
 add_to_zshrc 'export NVM_DIR="$HOME/.nvm"'
 add_to_zshrc '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"'
@@ -159,26 +196,35 @@ echo "==> Installing brew casks..."
 brew_cask_install "medium" false
 
 # ── Ghostty config ────────────────────────────────────────────────────────────
-# Written to the XDG path (~/.config/ghostty/) which works on both macOS and
-# Linux. On macOS the platform-specific path is loaded after XDG and will
-# override it, so we rename it if it exists to keep XDG as the single source.
+# Written to XDG path (~/.config/ghostty/) — works on both macOS and Linux.
+# On macOS the platform-specific path loads after XDG and overrides it,
+# so we rename it if it exists to keep XDG as the single source of truth.
 GHOSTTY_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/ghostty"
 GHOSTTY_CONFIG="$GHOSTTY_CONFIG_DIR/config.ghostty"
-mkdir -p "$GHOSTTY_CONFIG_DIR"
-[[ -f "$GHOSTTY_CONFIG" ]] && cp "$GHOSTTY_CONFIG" "${GHOSTTY_CONFIG}.bak"
-cp "$SCRIPT_DIR/ghostty.config" "$GHOSTTY_CONFIG"
-echo "==> Ghostty config written to $GHOSTTY_CONFIG"
-
 MACOS_GHOSTTY_CONFIG="$HOME/Library/Application Support/com.mitchellh.ghostty/config.ghostty"
-if [[ -f "$MACOS_GHOSTTY_CONFIG" ]]; then
-  mv "$MACOS_GHOSTTY_CONFIG" "${MACOS_GHOSTTY_CONFIG}.bak"
-  echo "==> Renamed macOS-specific Ghostty config to .bak (XDG config takes precedence)"
+
+if [[ "$DRY_RUN" == true ]]; then
+  echo "  [dry-run] mkdir -p $GHOSTTY_CONFIG_DIR"
+  [[ -f "$GHOSTTY_CONFIG" ]] && echo "  [dry-run] backup $GHOSTTY_CONFIG → ${GHOSTTY_CONFIG}.bak"
+  echo "  [dry-run] cp ghostty.config → $GHOSTTY_CONFIG"
+  [[ -f "$MACOS_GHOSTTY_CONFIG" ]] && echo "  [dry-run] rename macOS-specific config to .bak"
+else
+  mkdir -p "$GHOSTTY_CONFIG_DIR"
+  [[ -f "$GHOSTTY_CONFIG" ]] && cp "$GHOSTTY_CONFIG" "${GHOSTTY_CONFIG}.bak"
+  cp "$SCRIPT_DIR/ghostty.config" "$GHOSTTY_CONFIG"
+  echo "==> Ghostty config written to $GHOSTTY_CONFIG"
+  if [[ -f "$MACOS_GHOSTTY_CONFIG" ]]; then
+    mv "$MACOS_GHOSTTY_CONFIG" "${MACOS_GHOSTTY_CONFIG}.bak"
+    echo "==> Renamed macOS-specific Ghostty config to .bak (XDG takes precedence)"
+  fi
 fi
 
 # ── Medium-priority pipx packages ─────────────────────────────────────────────
 echo "==> Installing pipx packages..."
-rm -rf ~/.local/pipx/shared
-pipx ensurepath
+if [[ "$DRY_RUN" == false ]]; then
+  rm -rf ~/.local/pipx/shared
+  pipx ensurepath
+fi
 pipx_install "medium" false
 
 # ── Medium-priority npm packages ──────────────────────────────────────────────
@@ -186,7 +232,7 @@ echo "==> Installing npm packages..."
 npm_install "medium" false
 
 # Post-install: codeburn menubar (macOS native Swift app)
-codeburn menubar
+run codeburn menubar
 
 # ── Medium-priority brew formulae ─────────────────────────────────────────────
 echo "==> Installing brew formulae..."
@@ -210,4 +256,4 @@ print_app_store_reminders "medium" false
 [[ "$INCLUDE_OPTIONAL" == true ]] && print_app_store_reminders "low" true
 
 echo ""
-echo "Done! Restart your terminal or open a new tab."
+[[ "$DRY_RUN" == true ]] && echo "Dry run complete — nothing was installed." || echo "Done! Restart your terminal or open a new tab."
