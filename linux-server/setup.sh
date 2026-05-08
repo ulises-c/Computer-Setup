@@ -175,6 +175,17 @@ else
 fi
 echo "    Run 'sudo tailscale up' to authenticate and connect to your Tailnet."
 
+# ── Docker ────────────────────────────────────────────────────────────────────
+echo ""
+if ! command -v docker &>/dev/null; then
+  echo "==> Installing Docker..."
+  run curl -fsSL https://get.docker.com | sudo sh
+  run sudo usermod -aG docker "$USER"
+  echo "    Docker installed. Log out and back in for the docker group to take effect."
+else
+  echo "==> Docker already installed ($(docker --version | head -1))"
+fi
+
 # ── Manual install reminders ──────────────────────────────────────────────────
 CUSTOM_REMINDERS="$(print_custom_reminders "medium")"
 [[ "$INCLUDE_OPTIONAL" == true ]] && CUSTOM_REMINDERS+="$(print_custom_reminders "low")"
@@ -193,7 +204,7 @@ else
   echo " Done. Next steps:"
   echo "================================================================"
   echo ""
-  echo "  1. Log out and back in (or 'exec zsh') to start using zsh"
+  echo "  1. Log out and back in — activates zsh and the docker group"
   echo ""
   echo "  2. Authenticate Tailscale and enable the web UI service:"
   echo "       sudo tailscale up"
@@ -207,11 +218,16 @@ else
   echo "       bash SSH_and_GPG/create_ssh_key.sh"
   echo "       bash SSH_and_GPG/create_gpg_key.sh"
   echo ""
-  echo "  4. Start the Homepage dashboard:"
-  echo "       cd linux-server/homepage"
-  echo "       cp .env.example .env  # update values"
-  echo "       docker compose up -d"
-  echo "       # Access at http://\$(hostname).local:3000"
+  echo "  4. Install nvm + Node, then claude-code:"
+  echo "       curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash"
+  echo "       # re-open shell, then:"
+  echo "       nvm install lts/* && nvm alias default lts/*"
+  echo "       npm install -g @anthropic-ai/claude-code"
+  echo ""
+  echo "  5. Start Docker services — see linux-server/README.md for full details"
+  echo "       cd linux-server/homepage && cp .env.example .env && docker compose up -d"
+  echo ""
+  echo "  See linux-server/README.md ## Next steps for the complete checklist."
   echo ""
   echo "================================================================"
 fi

@@ -40,6 +40,97 @@ tailscale status --json | jq -r '.Self.ID'
 - [`tmux.conf`](tmux.conf) — tmux config with mouse support, vi copy mode, and a status bar; copied to `~/.tmux.conf` by `setup.sh`
 - [`linux_server_packages.json`](linux_server_packages.json) — machine-readable package manifest used by `setup.sh`
 
+## Next steps
+
+`setup.sh` handles packages, zsh, tmux, Tailscale, and Docker. Everything below is manual and should be done in order after the script finishes.
+
+### 1. Restart your shell
+
+Log out and back in. This activates zsh as your default shell and adds you to the `docker` group (required to run Docker without sudo).
+
+### 2. Tailscale
+
+```sh
+sudo tailscale up
+sudo tailscale set --operator=$USER
+mkdir -p ~/.config/systemd/user
+cp linux-server/tailscale-web.service ~/.config/systemd/user/
+systemctl --user enable --now tailscale-web
+loginctl enable-linger $USER
+```
+
+### 3. SSH / GPG keys
+
+```sh
+bash SSH_and_GPG/create_ssh_key.sh
+bash SSH_and_GPG/create_gpg_key.sh
+```
+
+### 4. nvm + Node + claude-code
+
+```sh
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+# re-open shell, then:
+nvm install lts/* && nvm alias default lts/*
+npm install -g @anthropic-ai/claude-code
+```
+
+### 5. Docker services
+
+Start services in this order. Most just need `docker compose up -d`; exceptions are noted.
+
+```sh
+# Homepage — update .env with your server hostname and Tailscale IP first
+cd linux-server/homepage && cp .env.example .env
+# edit .env, then:
+docker compose up -d
+# Access at http://<server-ip>:3000
+
+# Portainer
+cd linux-server/portainer && docker compose up -d
+# Access at http://<server-ip>:9000 — create admin account within 5 minutes
+
+# Glances
+cd linux-server/glances && docker compose up -d
+# Access at http://<server-ip>:61208
+
+# Speedtest Tracker — requires APP_KEY before first run
+cd linux-server/speedtest-tracker && cp .env.example .env
+echo "base64:$(openssl rand -base64 32)"  # paste as APP_KEY in .env
+docker compose up -d
+# Access at http://<server-ip>:8765
+
+# Filebrowser — touch db file first or Docker creates it as a directory
+cd linux-server/filebrowser && cp .env.example .env
+touch filebrowser.db
+docker compose up -d
+# Access at http://<server-ip>:8080 — default login: admin / admin (change immediately)
+
+# AdGuard Home — fix systemd-resolved conflict first
+sudo sed -i 's/#DNSStubListener=yes/DNSStubListener=no/' /etc/systemd/resolved.conf
+sudo systemctl restart systemd-resolved
+cd linux-server/adguard && docker compose up -d
+# Open http://<server-ip>:3001 for setup wizard
+# Set web UI port → 80, DNS port → 53, create admin account
+# After setup: http://<server-ip>:8083
+```
+
+### 6. Tailscale widget credentials
+
+Create an OAuth client at `tailscale.com/admin/settings/oauth` with the `devices:read` scope, then fill in `linux-server/homepage/.env`:
+
+```sh
+tailscale status --json | jq -r '.Self.ID'   # your device ID
+```
+
+Set `HOMEPAGE_VAR_TAILSCALE_DEVICE_ID` and `HOMEPAGE_VAR_TAILSCALE_KEY` in the `.env`, then restart Homepage:
+
+```sh
+cd linux-server/homepage && docker compose restart
+```
+
+---
+
 ## Docker services
 
 1. homepage | [GitHub](https://github.com/gethomepage/homepage) | [Docs](https://gethomepage.dev)
