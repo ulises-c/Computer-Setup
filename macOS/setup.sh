@@ -160,12 +160,18 @@ brew_cask_install "medium" false
 
 # ── Ghostty config ────────────────────────────────────────────────────────────
 # Written to the XDG path (~/.config/ghostty/) which works on both macOS and
-# Linux. On macOS the platform-specific path is also supported but XDG is
-# preferred for cross-platform consistency.
+# Linux. On macOS the platform-specific path is loaded after XDG and will
+# override it, so we rename it if it exists to keep XDG as the single source.
 GHOSTTY_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/ghostty"
 mkdir -p "$GHOSTTY_CONFIG_DIR"
 cp "$SCRIPT_DIR/ghostty.config" "$GHOSTTY_CONFIG_DIR/config.ghostty"
 echo "==> Ghostty config written to $GHOSTTY_CONFIG_DIR/config.ghostty"
+
+MACOS_GHOSTTY_CONFIG="$HOME/Library/Application Support/com.mitchellh.ghostty/config.ghostty"
+if [[ -f "$MACOS_GHOSTTY_CONFIG" ]]; then
+  mv "$MACOS_GHOSTTY_CONFIG" "${MACOS_GHOSTTY_CONFIG}.bak"
+  echo "==> Renamed macOS-specific Ghostty config to .bak (XDG config takes precedence)"
+fi
 
 # ── Medium-priority pipx packages ─────────────────────────────────────────────
 echo "==> Installing pipx packages..."
