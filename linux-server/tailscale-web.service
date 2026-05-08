@@ -1,7 +1,6 @@
 [Unit]
 Description=Tailscale Web UI
-After=tailscaled.service
-Requires=tailscaled.service
+After=network-online.target
 
 [Service]
 ExecStart=tailscale web
