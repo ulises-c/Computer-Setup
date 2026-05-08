@@ -55,6 +55,15 @@ print_custom_reminders() {
   [[ -n "$items" ]] && echo "$items"
 }
 
+print_npm_reminders() {
+  local priority="$1"
+  local items
+  items=$(jq -r --arg p "$priority" \
+    '[.[] | select(.package_manager == "npm" and .priority == $p) | .name] | join(" ")' \
+    "$PACKAGES_JSON")
+  [[ -n "$items" ]] && echo "  npm install -g $items"
+}
+
 # ── Bootstrap: jq ────────────────────────────────────────────────────────────
 # jq is needed to parse the packages JSON — install it first if missing.
 if ! command -v jq &>/dev/null; then
@@ -151,6 +160,14 @@ echo ""
 echo "Install these manually (require their own repo setup):"
 print_custom_reminders "medium"
 [[ "$INCLUDE_OPTIONAL" == true ]] && print_custom_reminders "low"
+
+NPM_PKGS=$(jq -r '[.[] | select(.package_manager == "npm" and .priority == "medium") | .name] | join(" ")' "$PACKAGES_JSON")
+if [[ -n "$NPM_PKGS" ]]; then
+  echo ""
+  echo "After installing nvm + Node, run:"
+  print_npm_reminders "medium"
+  [[ "$INCLUDE_OPTIONAL" == true ]] && print_npm_reminders "low"
+fi
 
 echo ""
 [[ "$DRY_RUN" == true ]] && echo "Dry run complete — nothing was installed." || echo "Done. Log out and back in to start using zsh."
