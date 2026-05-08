@@ -225,9 +225,9 @@
   {
     "name": "tailscale",
     "package_manager": "custom",
-    "priority": "low",
-    "optional": true,
+    "priority": "medium",
+    "optional": false,
     "install_command": "curl -fsSL https://tailscale.com/install.sh | sudo sh",
-    "description": "Zero-config VPN — access the server from anywhere without port forwarding"
+    "description": "Zero-config VPN — access the server from anywhere without port forwarding; run setup_tailscale.sh after installing"
   }
 ]
