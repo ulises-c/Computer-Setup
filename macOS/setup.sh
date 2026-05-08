@@ -158,6 +158,12 @@ add_to_zshrc 'nvm use --delete-prefix default --silent 2>/dev/null'
 echo "==> Installing high-priority brew casks..."
 brew_cask_install "high" false
 
+# ── Ghostty config ────────────────────────────────────────────────────────────
+GHOSTTY_CONFIG_DIR="$HOME/Library/Application Support/com.mitchellh.ghostty"
+mkdir -p "$GHOSTTY_CONFIG_DIR"
+cp "$SCRIPT_DIR/ghostty.config" "$GHOSTTY_CONFIG_DIR/config.ghostty"
+echo "==> Ghostty config written to $GHOSTTY_CONFIG_DIR/config.ghostty"
+
 # ── High-priority pipx packages ───────────────────────────────────────────────
 echo "==> Installing high-priority pipx packages..."
 rm -rf ~/.local/pipx/shared
