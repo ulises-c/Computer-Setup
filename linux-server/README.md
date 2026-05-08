@@ -12,7 +12,18 @@ bash linux-server/setup.sh --dry-run   # preview without installing
 
 After running, log out and back in to start using zsh.
 
-After setup.sh completes, run `sudo tailscale up` to authenticate Tailscale and connect to your Tailnet.
+After setup.sh completes, authenticate Tailscale and enable the persistent web UI:
+
+```sh
+sudo tailscale up
+sudo tailscale set --operator=$USER
+mkdir -p ~/.config/systemd/user
+cp linux-server/tailscale-web.service ~/.config/systemd/user/
+systemctl --user enable --now tailscale-web
+loginctl enable-linger $USER   # keeps the service running without a login session
+```
+
+The web UI runs on `localhost:8088` and `tailscale_ip:5252`. Homepage uses the localhost ping for its status dot and links to the Tailscale IP for access from any Tailscale device.
 
 ## Files
 

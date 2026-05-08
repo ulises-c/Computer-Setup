@@ -7,10 +7,6 @@
         container: atvloadly
     - tailscale:
         icon: si-tailscale
-        href: https://login.tailscale.com/admin
+        href: http://{{HOMEPAGE_VAR_TAILSCALE_IP}}:5252
         description: Zero-config VPN
-        target: _blank
-        widget:
-          type: tailscale
-          deviceid: "{{HOMEPAGE_VAR_TAILSCALE_DEVICE_ID}}"
-          key: "{{HOMEPAGE_VAR_TAILSCALE_API_KEY}}"
+        ping: http://localhost:8088
