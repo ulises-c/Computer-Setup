@@ -1,0 +1,375 @@
+[
+  {
+    "name": "jq",
+    "package_manager": "brew",
+    "priority": "high",
+    "optional": false,
+    "description": "JSON processor — required to parse this file in setup.sh"
+  },
+  {
+    "name": "expat",
+    "package_manager": "brew",
+    "priority": "high",
+    "optional": false,
+    "description": "XML parsing library — required for pyenv to compile Python correctly on macOS Tahoe"
+  },
+  {
+    "name": "pyenv",
+    "package_manager": "brew",
+    "priority": "high",
+    "optional": false,
+    "description": "Python version manager — compiles from source to avoid broken Homebrew bottles on macOS Tahoe"
+  },
+  {
+    "name": "nvm",
+    "package_manager": "curl",
+    "priority": "high",
+    "optional": false,
+    "install_command": "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash",
+    "description": "Node version manager — installed via curl per nvm recommendation; brew install causes PATH issues"
+  },
+  {
+    "name": "pipx",
+    "package_manager": "brew",
+    "priority": "high",
+    "optional": false,
+    "description": "Installs Python CLI tools in isolated virtual environments"
+  },
+  {
+    "name": "fastfetch",
+    "package_manager": "brew",
+    "priority": "high",
+    "optional": false,
+    "description": "Fast system info display — shown on Ghostty startup"
+  },
+  {
+    "name": "gh",
+    "package_manager": "brew",
+    "priority": "high",
+    "optional": false,
+    "description": "GitHub CLI — PRs, issues, Actions from the terminal"
+  },
+  {
+    "name": "git-lfs",
+    "package_manager": "brew",
+    "priority": "high",
+    "optional": false,
+    "description": "Git extension for versioning large binary files"
+  },
+  {
+    "name": "git-xet",
+    "package_manager": "brew",
+    "priority": "high",
+    "optional": false,
+    "description": "Git LFS plugin using the Xet protocol for Hugging Face Hub"
+  },
+  {
+    "name": "gnupg",
+    "package_manager": "brew",
+    "priority": "high",
+    "optional": false,
+    "description": "GPG — required for commit signing"
+  },
+  {
+    "name": "hf",
+    "package_manager": "brew",
+    "priority": "high",
+    "optional": false,
+    "description": "Hugging Face Hub CLI — download, upload, and manage ML models"
+  },
+  {
+    "name": "htop",
+    "package_manager": "brew",
+    "priority": "high",
+    "optional": false,
+    "description": "Interactive process viewer — colorized alternative to top"
+  },
+  {
+    "name": "mactop",
+    "package_manager": "brew",
+    "priority": "high",
+    "optional": false,
+    "description": "Apple Silicon system monitor — CPU, GPU, ANE, memory, power in real-time TUI"
+  },
+  {
+    "name": "micro",
+    "package_manager": "brew",
+    "priority": "high",
+    "optional": false,
+    "description": "Modern terminal text editor with mouse support and familiar keybindings"
+  },
+  {
+    "name": "nvtop",
+    "package_manager": "brew",
+    "priority": "high",
+    "optional": false,
+    "description": "GPU process monitor — complements htop with GPU visibility"
+  },
+  {
+    "name": "sshpass",
+    "package_manager": "brew",
+    "priority": "high",
+    "optional": false,
+    "description": "Non-interactive SSH password authentication — used by add_remote_host.sh"
+  },
+  {
+    "name": "tmux",
+    "package_manager": "brew",
+    "priority": "high",
+    "optional": false,
+    "description": "Terminal multiplexer — split panes, persist sessions across disconnects"
+  },
+  {
+    "name": "zsh-autosuggestions",
+    "package_manager": "brew",
+    "priority": "high",
+    "optional": false,
+    "description": "Fish-style history-based suggestions for zsh"
+  },
+  {
+    "name": "zsh-syntax-highlighting",
+    "package_manager": "brew",
+    "priority": "high",
+    "optional": false,
+    "description": "Real-time syntax highlighting in zsh"
+  },
+  {
+    "name": "ghostty",
+    "package_manager": "brew-cask",
+    "priority": "high",
+    "optional": false,
+    "description": "GPU-accelerated terminal emulator with native macOS feel"
+  },
+  {
+    "name": "claude",
+    "package_manager": "brew-cask",
+    "priority": "high",
+    "optional": false,
+    "description": "Anthropic Claude desktop app"
+  },
+  {
+    "name": "claude-code",
+    "package_manager": "brew-cask",
+    "priority": "high",
+    "optional": false,
+    "description": "Claude Code — terminal-based AI coding assistant"
+  },
+  {
+    "name": "firefox",
+    "package_manager": "brew-cask",
+    "priority": "high",
+    "optional": false,
+    "description": "Open source web browser"
+  },
+  {
+    "name": "mac-mouse-fix",
+    "package_manager": "brew-cask",
+    "priority": "high",
+    "optional": false,
+    "description": "Decouples mouse scroll speed from trackpad settings"
+  },
+  {
+    "name": "rectangle",
+    "package_manager": "brew-cask",
+    "priority": "high",
+    "optional": false,
+    "description": "Open source window management"
+  },
+  {
+    "name": "visual-studio-code",
+    "package_manager": "brew-cask",
+    "priority": "high",
+    "optional": false,
+    "description": "Code editor with extensions"
+  },
+  {
+    "name": "poetry",
+    "package_manager": "pipx",
+    "priority": "high",
+    "optional": false,
+    "description": "Python project and dependency manager"
+  },
+  {
+    "name": "codeburn",
+    "package_manager": "npm",
+    "priority": "high",
+    "optional": false,
+    "description": "Track AI coding token usage by task, tool, model, and project"
+  },
+  {
+    "name": "llama.cpp",
+    "package_manager": "brew",
+    "priority": "medium",
+    "optional": false,
+    "description": "LLM inference engine — run local models on CPU and Apple Silicon GPU"
+  },
+  {
+    "name": "caffeine",
+    "package_manager": "brew-cask",
+    "priority": "medium",
+    "optional": false,
+    "description": "Simple menubar toggle to keep Mac awake"
+  },
+  {
+    "name": "readdle-spark",
+    "package_manager": "brew-cask",
+    "priority": "medium",
+    "optional": false,
+    "description": "Smart email client with AI features"
+  },
+  {
+    "name": "notion",
+    "package_manager": "brew-cask",
+    "priority": "medium",
+    "optional": false,
+    "description": "Notes and project management"
+  },
+  {
+    "name": "obs",
+    "package_manager": "brew-cask",
+    "priority": "medium",
+    "optional": false,
+    "description": "Open source broadcasting and screen recording"
+  },
+  {
+    "name": "vlc",
+    "package_manager": "brew-cask",
+    "priority": "medium",
+    "optional": false,
+    "description": "Open source media player for nearly every format"
+  },
+  {
+    "name": "google-drive",
+    "package_manager": "brew-cask",
+    "priority": "medium",
+    "optional": false,
+    "description": "Google Drive desktop client"
+  },
+  {
+    "name": "amazon-photos",
+    "package_manager": "brew-cask",
+    "priority": "medium",
+    "optional": false,
+    "description": "Unlimited full-resolution photo backup for Amazon Prime members"
+  },
+  {
+    "name": "Bitwarden",
+    "package_manager": "app-store",
+    "priority": "high",
+    "optional": false,
+    "description": "Open source password manager — App Store version required for browser integration"
+  },
+  {
+    "name": "Tailscale",
+    "package_manager": "app-store",
+    "priority": "high",
+    "optional": false,
+    "description": "Zero-config VPN — App Store version required for network extension entitlements"
+  },
+  {
+    "name": "Photomator",
+    "package_manager": "app-store",
+    "priority": "medium",
+    "optional": false,
+    "description": "Photo editor — free version with pay-once upgrade"
+  },
+  {
+    "name": "Goodnotes",
+    "package_manager": "app-store",
+    "priority": "medium",
+    "optional": true,
+    "description": "Handwriting and note-taking app with Apple Pencil support"
+  },
+  {
+    "name": "poppler",
+    "package_manager": "brew",
+    "priority": "low",
+    "optional": true,
+    "description": "PDF CLI tools — pdftotext, pdfimages, pdfinfo, pdftoppm"
+  },
+  {
+    "name": "ffmpeg",
+    "package_manager": "brew",
+    "priority": "low",
+    "optional": true,
+    "description": "Audio/video processing toolkit"
+  },
+  {
+    "name": "exiftool",
+    "package_manager": "brew",
+    "priority": "low",
+    "optional": true,
+    "description": "Read and write metadata in photos, videos, and other files"
+  },
+  {
+    "name": "tesseract",
+    "package_manager": "brew",
+    "priority": "low",
+    "optional": true,
+    "description": "OCR engine — extract text from images and scanned documents"
+  },
+  {
+    "name": "smartmontools",
+    "package_manager": "brew",
+    "priority": "low",
+    "optional": true,
+    "description": "Monitor SSD/HDD health via S.M.A.R.T. data"
+  },
+  {
+    "name": "octave",
+    "package_manager": "brew",
+    "priority": "low",
+    "optional": true,
+    "description": "MATLAB-compatible numerical computing environment"
+  },
+  {
+    "name": "qemu",
+    "package_manager": "brew",
+    "priority": "low",
+    "optional": true,
+    "description": "Machine emulator — run x86, ARM, and other architectures on Apple Silicon"
+  },
+  {
+    "name": "gogcli",
+    "package_manager": "brew",
+    "priority": "low",
+    "optional": true,
+    "description": "Google Workspace CLI — Gmail, Calendar, Drive, Docs, and more in the terminal"
+  },
+  {
+    "name": "mongodb-community",
+    "package_manager": "brew",
+    "priority": "low",
+    "optional": true,
+    "install_command": "brew tap mongodb/brew && brew install mongodb-community",
+    "description": "MongoDB Community Server — includes mongosh and mongodb-database-tools"
+  },
+  {
+    "name": "fluidtop",
+    "package_manager": "pipx",
+    "priority": "low",
+    "optional": true,
+    "description": "Apple Silicon performance monitor with AI workload focus — alternative to mactop"
+  },
+  {
+    "name": "exifread",
+    "package_manager": "pipx",
+    "priority": "low",
+    "optional": true,
+    "description": "Python CLI for reading EXIF metadata from JPEG and TIFF photos"
+  },
+  {
+    "name": "Pixelmator Pro",
+    "package_manager": "app-store",
+    "priority": "low",
+    "optional": true,
+    "description": "Photo editor — pay once"
+  },
+  {
+    "name": "Amphetamine",
+    "package_manager": "app-store",
+    "priority": "low",
+    "optional": true,
+    "description": "Keep Mac awake with scheduling and app triggers — more powerful alternative to Caffeine"
+  }
+]
