@@ -1,7 +1,8 @@
 #!/bin/zsh
 # macOS initial setup script
-# Usage: zsh macOS/setup.sh [--optional] [--dry-run]
+# Usage: zsh macOS/setup.sh [--optional] [--work] [--dry-run]
 #   --optional  also install low-priority optional packages
+#   --work      also install work packages (Slack, Zoom, Outlook)
 #   --dry-run   print all commands without executing anything
 
 set -e
@@ -9,11 +10,13 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PACKAGES_JSON="$SCRIPT_DIR/macOS_packages.json"
 INCLUDE_OPTIONAL=false
+INCLUDE_WORK=false
 DRY_RUN=false
 
 for arg in "$@"; do
   case "$arg" in
     --optional) INCLUDE_OPTIONAL=true ;;
+    --work)     INCLUDE_WORK=true ;;
     --dry-run)  DRY_RUN=true ;;
   esac
 done
@@ -56,6 +59,7 @@ brew_install() {
     '[.[] | select(
         .package_manager == "brew" and
         .priority == $p and
+        (.work != true) and
         (.install_command == null or .install_command == "") and
         (if $opt then true else .optional == false end)
       ) | .name] | join(" ")' "$PACKAGES_JSON")
@@ -69,6 +73,7 @@ brew_cask_install() {
     '[.[] | select(
         .package_manager == "brew-cask" and
         .priority == $p and
+        (.work != true) and
         (if $opt then true else .optional == false end)
       ) | .name] | join(" ")' "$PACKAGES_JSON")
   [[ -n "$names" ]] && run brew install --cask ${=names}
@@ -80,6 +85,7 @@ pipx_install() {
     '.[] | select(
         .package_manager == "pipx" and
         .priority == $p and
+        (.work != true) and
         (if $opt then true else .optional == false end)
       ) | .name' "$PACKAGES_JSON" | while read -r name; do
     run pipx install "$name"
@@ -93,6 +99,7 @@ npm_install() {
     '[.[] | select(
         .package_manager == "npm" and
         .priority == $p and
+        (.work != true) and
         (if $opt then true else .optional == false end)
       ) | .name] | join(" ")' "$PACKAGES_JSON")
   [[ -n "$names" ]] && run npm install -g ${=names}
@@ -104,6 +111,7 @@ brew_custom_install() {
     '.[] | select(
         .package_manager == "brew" and
         .priority == $p and
+        (.work != true) and
         (.install_command != null and .install_command != "") and
         (if $opt then true else .optional == false end)
       ) | .install_command' "$PACKAGES_JSON" | while read -r cmd; do
@@ -118,6 +126,7 @@ print_app_store_reminders() {
     '.[] | select(
         .package_manager == "app-store" and
         .priority == $p and
+        (.work != true) and
         (if $opt then true else .optional == false end)
       ) | "  - \(.name): \(.description)"' "$PACKAGES_JSON")
   [[ -n "$apps" ]] && echo "$apps"
@@ -248,6 +257,20 @@ if [[ "$INCLUDE_OPTIONAL" == true ]]; then
   brew_cask_install "low" true
   pipx_install "low" true
   npm_install "low" true
+fi
+
+# ── Work packages (--work flag) ───────────────────────────────────────────────
+if [[ "$INCLUDE_WORK" == true ]]; then
+  echo "==> Installing work packages..."
+  names=$(jq -r '[.[] | select(.work == true and .package_manager == "brew-cask") | .name] | join(" ")' "$PACKAGES_JSON")
+  [[ -n "$names" ]] && run brew install --cask ${=names}
+  names=$(jq -r '[.[] | select(.work == true and .package_manager == "brew") | .name] | join(" ")' "$PACKAGES_JSON")
+  [[ -n "$names" ]] && run brew install ${=names}
+  work_app_store=$(jq -r '.[] | select(.work == true and .package_manager == "app-store") | "  - \(.name): \(.description)"' "$PACKAGES_JSON")
+  if [[ -n "$work_app_store" ]]; then
+    echo "Install these work apps from the App Store:"
+    echo "$work_app_store"
+  fi
 fi
 
 # ── App Store reminders ───────────────────────────────────────────────────────

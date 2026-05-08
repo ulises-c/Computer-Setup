@@ -239,11 +239,42 @@
     "description": "Unlimited full-resolution photo backup for Amazon Prime members"
   },
   {
+    "name": "discord",
+    "package_manager": "brew-cask",
+    "priority": "medium",
+    "optional": false,
+    "description": "Voice, video, and text chat platform"
+  },
+  {
     "name": "poetry",
     "package_manager": "pipx",
     "priority": "medium",
     "optional": false,
     "description": "Python project and dependency manager"
+  },
+  {
+    "name": "slack",
+    "package_manager": "brew-cask",
+    "priority": "medium",
+    "optional": false,
+    "work": true,
+    "description": "Team messaging and collaboration"
+  },
+  {
+    "name": "zoom",
+    "package_manager": "brew-cask",
+    "priority": "medium",
+    "optional": false,
+    "work": true,
+    "description": "Video conferencing"
+  },
+  {
+    "name": "microsoft-outlook",
+    "package_manager": "brew-cask",
+    "priority": "medium",
+    "optional": false,
+    "work": true,
+    "description": "Email client for Microsoft 365"
   },
   {
     "name": "codeburn",
@@ -314,6 +345,13 @@
     "priority": "low",
     "optional": true,
     "description": "Google Workspace CLI — Gmail, Calendar, Drive, Docs, and more in the terminal"
+  },
+  {
+    "name": "docker",
+    "package_manager": "brew-cask",
+    "priority": "low",
+    "optional": true,
+    "description": "Container platform — Docker Desktop for Mac"
   },
   {
     "name": "fluidtop",

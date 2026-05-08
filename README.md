@@ -2,216 +2,130 @@
 
 Useful programs and packages for a computer.
 
+For OS-specific software and install instructions, see:
+- [macOS/README.md](macOS/README.md)
+- [linux-desktop/README.md](linux-desktop/README.md) — CachyOS
+- [linux-server/README.md](linux-server/README.md) — Ubuntu Server, Raspberry Pi OS
+- [windows/README.md](windows/README.md)
+
 ---
 
-## Cross Platform
-
-**Programs that are available across multiple operating systems**
+## Utilities
 
 <details>
-<summary>Utilities</summary>
+<summary>Expand</summary>
 
-1. Bitwarden | [Download](https://bitwarden.com/download/) | [GitHub](https://github.com/bitwarden)
+1. Bitwarden | macOS · Linux · Windows | [Download](https://bitwarden.com/download/) | [GitHub](https://github.com/bitwarden)
    1. Open source password manager
-2. Firefox | [Download](https://www.mozilla.org/en-US/firefox/new/)
-   1. Open source web browser
-3. Notion | [Download](https://www.notion.com/desktop)
-   1. Enhanced notes app
-4. OBS | [Download](https://obsproject.com/)
-   1. Open source broadcasting and recording software
-5. Apollo | [GitHub](https://github.com/ClassicOldSong/Apollo)
-   1. Desktop streaming host (stream PC to another device)
-6. VLC | [Download](https://www.videolan.org/vlc/)
-   1. Open source media player that plays nearly every video and audio format
-7. Tailscale | [Download](https://tailscale.com/download)
-   1. Zero-config VPN built on WireGuard — connect all your devices on a private network with no port forwarding
-8. Docker | [Download](https://www.docker.com/products/docker-desktop/)
-   1. Containerization platform for building and running isolated application environments
-9. Claude | [Download](https://claude.ai/download)
+2. Claude | macOS · Windows | [Download](https://claude.ai/download)
    1. Anthropic's AI assistant desktop app
+3. Discord | macOS · Linux · Windows | [Download](https://discord.com/download)
+   1. Voice, video, and text chat platform
+4. Docker | macOS · Linux · Windows | [Download](https://www.docker.com/products/docker-desktop/)
+   1. Containerization platform for building and running isolated application environments
+5. Firefox | macOS · Linux · Windows | [Download](https://www.mozilla.org/en-US/firefox/new/)
+   1. Open source web browser
+6. Notion | macOS · Windows | [Download](https://www.notion.com/desktop)
+   1. Notes and project management
+7. OBS | macOS · Linux · Windows | [Download](https://obsproject.com/)
+   1. Open source broadcasting and recording software
+8. Apollo | macOS · Linux · Windows | [GitHub](https://github.com/ClassicOldSong/Apollo)
+   1. Desktop streaming host — stream your PC to another device
+9. Tailscale | macOS · Linux · Windows | [Download](https://tailscale.com/download)
+   1. Zero-config VPN built on WireGuard — connect all your devices on a private network
+10. VLC | macOS · Linux · Windows | [Download](https://www.videolan.org/vlc/)
+    1. Open source media player for nearly every format
 
 </details>
 
-<details>
-<summary>Development</summary>
+## Development
 
-1. VS Code | [Download](https://code.visualstudio.com/download)
+<details>
+<summary>Expand</summary>
+
+1. VS Code | macOS · Linux · Windows | [Download](https://code.visualstudio.com/download)
    1. IDE with extensions
-2. pyenv | [GitHub](https://github.com/pyenv/pyenv) | [brew](https://formulae.brew.sh/formula/pyenv#default)
-   1. Python version and virtual environment manager
-3. poetry | [GitHub](https://github.com/python-poetry/poetry)
-   1. Python project manager
-4. GitHub CLI | [Download](https://cli.github.com/) | [GitHub](https://github.com/cli/cli) | [brew](https://formulae.brew.sh/formula/gh)
+2. GitHub CLI | macOS · Linux · Windows | [Download](https://cli.github.com/) | [GitHub](https://github.com/cli/cli) | [brew](https://formulae.brew.sh/formula/gh)
    1. Official GitHub CLI — create PRs, manage issues, clone repos, and run Actions from the terminal
-5. pipx | [GitHub](https://github.com/pypa/pipx) | [brew](https://formulae.brew.sh/formula/pipx)
+3. pyenv | macOS · Linux | [GitHub](https://github.com/pyenv/pyenv) | [brew](https://formulae.brew.sh/formula/pyenv#default)
+   1. Python version and virtual environment manager
+4. poetry | macOS · Linux · Windows | [GitHub](https://github.com/python-poetry/poetry)
+   1. Python project manager
+5. pipx | macOS · Linux · Windows | [GitHub](https://github.com/pypa/pipx) | [brew](https://formulae.brew.sh/formula/pipx)
    1. Install Python CLI tools in isolated virtual environments so they don't pollute the global Python install
-6. git-lfs | [Download](https://git-lfs.com/) | [GitHub](https://github.com/git-lfs/git-lfs) | [brew](https://formulae.brew.sh/formula/git-lfs)
-   1. Git extension for versioning large binary files (audio, video, datasets, model weights) outside the main git object store
-7. Hugging Face CLI (hf) | [Docs](https://huggingface.co/docs/huggingface_hub/guides/cli) | [GitHub](https://github.com/huggingface/huggingface_hub) | [brew](https://formulae.brew.sh/formula/hf)
+6. git-lfs | macOS · Linux · Windows | [Download](https://git-lfs.com/) | [GitHub](https://github.com/git-lfs/git-lfs) | [brew](https://formulae.brew.sh/formula/git-lfs)
+   1. Git extension for versioning large binary files (audio, video, datasets, model weights)
+7. Hugging Face CLI (hf) | macOS · Linux · Windows | [Docs](https://huggingface.co/docs/huggingface_hub/guides/cli) | [GitHub](https://github.com/huggingface/huggingface_hub) | [brew](https://formulae.brew.sh/formula/hf)
    1. Download, upload, and manage models, datasets, and Spaces on the Hugging Face Hub
-8. git-xet | [GitHub](https://github.com/huggingface/xet-core) | [brew](https://formulae.brew.sh/formula/git-xet)
+8. git-xet | macOS · Linux · Windows | [GitHub](https://github.com/huggingface/xet-core) | [brew](https://formulae.brew.sh/formula/git-xet)
    1. Git LFS plugin that uses the Xet protocol for efficient storage of large ML model files on the Hugging Face Hub
-9. poppler | [Homepage](https://poppler.freedesktop.org/) | [brew](https://formulae.brew.sh/formula/poppler)
-   1. PDF rendering library that ships CLI utilities: `pdftotext`, `pdfimages`, `pdfinfo`, `pdftoppm` — useful for scripting PDF workflows
-10. zsh-autosuggestions | [GitHub](https://github.com/zsh-users/zsh-autosuggestions) | [brew](https://formulae.brew.sh/formula/zsh-autosuggestions)
+9. poppler | macOS · Linux · Windows | [Homepage](https://poppler.freedesktop.org/) | [brew](https://formulae.brew.sh/formula/poppler)
+   1. PDF rendering library that ships CLI utilities: `pdftotext`, `pdfimages`, `pdfinfo`, `pdftoppm`
+10. zsh-autosuggestions | macOS · Linux | [GitHub](https://github.com/zsh-users/zsh-autosuggestions) | [brew](https://formulae.brew.sh/formula/zsh-autosuggestions)
     1. Fish-style history-based command suggestions for zsh — press → to accept
-11. zsh-syntax-highlighting | [GitHub](https://github.com/zsh-users/zsh-syntax-highlighting) | [brew](https://formulae.brew.sh/formula/zsh-syntax-highlighting)
+11. zsh-syntax-highlighting | macOS · Linux | [GitHub](https://github.com/zsh-users/zsh-syntax-highlighting) | [brew](https://formulae.brew.sh/formula/zsh-syntax-highlighting)
     1. Real-time syntax highlighting for zsh — valid commands appear green, invalid ones red, before you press Enter
-12. MongoDB Community | [Download](https://www.mongodb.com/try/download/community) | [brew](https://formulae.brew.sh/formula/mongodb-community)
-    1. Open source document database; the brew tap (`mongodb/brew`) also installs `mongosh` (shell) and `mongodb-database-tools` (import/export)
+12. MongoDB Community | macOS · Linux · Windows | [Download](https://www.mongodb.com/try/download/community) | [brew](https://formulae.brew.sh/formula/mongodb-community)
+    1. Open source document database; the brew tap (`mongodb/brew`) also installs `mongosh` and `mongodb-database-tools`
 
 </details>
 
-<details>
-<summary>Entertainment</summary>
+## Entertainment
 
-1. Spotify | [Download](https://www.spotify.com/us/download/other/)
-   1. Music player
-2. Steam | [Download](https://store.steampowered.com/about/)
+<details>
+<summary>Expand</summary>
+
+1. Spotify | macOS · Linux · Windows | [Download](https://www.spotify.com/us/download/other/)
+   1. Music streaming
+2. Steam | macOS · Linux · Windows | [Download](https://store.steampowered.com/about/)
    1. Game library
-3. RuneLite | [Download](https://runelite.net/) | [GitHub](https://github.com/runelite/runelite)
+3. RuneLite | macOS · Linux · Windows | [Download](https://runelite.net/) | [GitHub](https://github.com/runelite/runelite)
    1. Free, open-source Old School RuneScape client with plugins, GPU rendering, and quality-of-life features
-4. Jagex Launcher | [Download](https://www.jagex.com/en-GB/launcher) *(Windows / macOS)*
-   1. Official launcher for RuneScape and Old School RuneScape; required for account switching and Jagex account login
+4. Jagex Launcher | macOS · Windows | [Download](https://www.jagex.com/en-GB/launcher)
+   1. Official launcher for RuneScape and Old School RuneScape — required for Jagex account login
+5. Bolt | Linux | [Codeberg](https://codeberg.org/Adamcake/Bolt)
+   1. Open-source RuneScape/OSRS launcher for Linux — replaces Jagex Launcher which is not available on Linux
 
 </details>
+
+## Requires Hardware
 
 <details>
-<summary>Requires Hardware</summary>
+<summary>Expand</summary>
 
-1. CyberPower PowerPanel Personal | [Download](https://www.cyberpowersystems.com/products/software/power-panel-personal/)
-   1. Used to monitor and test CyberPower UPS (Uninterruptible Power Supply), useful if a power outage occurs
-2. Epson Perfection V39 II | [Download](https://epson.com/Support/Scanners/Perfection-Series/Epson-Perfection-V39-II/s/SPT_B11B268201)
-   1. Document and photo scanner
-3. Stream Deck | [Download](https://www.elgato.com/us/en/s/downloads)
-   1. LCD macro keys
+1. CyberPower PowerPanel Personal | macOS · Linux · Windows | [Download](https://www.cyberpowersystems.com/products/software/power-panel-personal/)
+   1. Monitor and manage CyberPower UPS devices — useful when a power outage occurs
+2. Epson Perfection V39 II | macOS · Windows | [Download](https://epson.com/Support/Scanners/Perfection-Series/Epson-Perfection-V39-II/s/SPT_B11B268201)
+   1. Document and photo scanner — install Epson Scan 2
+3. Epson FastFoto FF-680W | macOS · Windows | [Download](https://epson.com/Support/Scanners/FastFoto-Series/Epson-FastFoto-FF-680W/s/SPT_B11B239201)
+   1. High-speed photo scanner — install Epson FastFoto and Epson Scan 2
+4. Stream Deck | macOS · Windows | [Download](https://www.elgato.com/us/en/s/downloads)
+   1. LCD macro key controller
 
 </details>
+
+## Work
 
 <details>
-<summary>Cloud Storage and Data Management</summary>
+<summary>Expand</summary>
 
-1. Google Drive | [Download](https://support.google.com/a/users/answer/13022292?hl=en#drive_desktop_install)
-   1. Google drive cloud storage
-2. Syncthing | [Download](https://syncthing.net/downloads/) | [GitHub](https://syncthing.net/downloads/)
-   1. Sync files across devices
+1. Slack | macOS · Linux · Windows | [Download](https://slack.com/downloads)
+   1. Team messaging and collaboration
+2. Zoom | macOS · Linux · Windows | [Download](https://zoom.us/download)
+   1. Video conferencing
+3. Microsoft Outlook | macOS · Windows | [Download](https://www.microsoft.com/en-us/microsoft-365/outlook/outlook-for-mac)
+   1. Email client for Microsoft 365
 
 </details>
 
-<!-- End of Cross Platform -->
-
----
-
-<!-- Start of macOS -->
-
-## macOS
-
-**This section is specifically for software that is exclusive to macOS**
+## Cloud Storage & Data Management
 
 <details>
-<summary>Utilities</summary>
+<summary>Expand</summary>
 
-1. Amphetamine | [Mac App Store](https://apps.apple.com/us/app/amphetamine/id937984704?mt=12)
-   1. Used to keep a Mac awake, even if the lid is shut
-2. Rectangle | [Download](https://rectangleapp.com/) | [GitHub](https://github.com/rxhanson/Rectangle)
-   1. Open source window management app for macOS
-3. asitop | [brew](https://formulae.brew.sh/formula/asitop) | [GitHub](https://github.com/tlkh/asitop)
-   1. Performance monitoring CLI tool for Apple Silicon
-4. Ghostty | [Download](https://ghostty.org/) | [GitHub](https://github.com/ghostty-org/ghostty) | [brew](https://formulae.brew.sh/cask/ghostty)
-   1. GPU-accelerated terminal emulator with native macOS feel; fast rendering and built-in multiplexing
-5. fastfetch | [GitHub](https://github.com/fastfetch-cli/fastfetch) | [brew](https://formulae.brew.sh/formula/fastfetch)
-   1. Fast, customizable system info display (like neofetch) with full Apple Silicon chip and sensor support
-6. sshpass | [brew](https://formulae.brew.sh/formula/sshpass)
-   1. Enables non-interactive SSH password authentication in scripts — required by `SSH_and_GPG/add_remote_host.sh`
-7. Goodnotes | [Mac App Store](https://apps.apple.com/us/app/goodnotes-6/id1444383602)
-   1. Handwriting and note-taking app with Apple Pencil support; syncs across Mac and iPad
-8. Spark | [Download](https://sparkmailapp.com/) | [Mac App Store](https://apps.apple.com/us/app/spark-mail-ai-email-app/id1176895641)
-   1. Smart email client with AI features and clean cross-device sync
-9. Amazon Photos | [Mac App Store](https://apps.apple.com/us/app/amazon-photos/id621574163)
-   1. Unlimited full-resolution photo backup for Amazon Prime members
+1. Google Drive | macOS · Windows | [Download](https://www.google.com/drive/download/)
+   1. Google Drive cloud storage desktop client
+2. Syncthing | macOS · Linux · Windows | [Download](https://syncthing.net/downloads/) | [GitHub](https://syncthing.net/downloads/)
+   1. Sync files across devices — decentralized, no cloud required
 
 </details>
-
-<details>
-<summary>Creative Tools</summary>
-
-1. Affinity Designer 2 | [Mac App Store](https://apps.apple.com/us/app/affinity-designer-2/id1616831348?mt=12)
-   1. Design tool, pay once
-2. Affinity Photo 2 | [Mac App Store](https://apps.apple.com/us/app/affinity-photo-2-image-editor/id1616822987?mt=12)
-   1. Photo editor, pay once
-3. Final Cut Pro | [Mac App Store](https://apps.apple.com/us/app/final-cut-pro/id424389933?mt=12)
-   1. Video editor, pay once
-4. Pixelmator Pro | [Mac App Store](https://apps.apple.com/us/app/pixelmator-pro/id1289583905?mt=12)
-   1. Photo editor, pay once
-5. Photomator | [Mac App Store](https://apps.apple.com/us/app/photomator-photo-editor/id1444636541)
-   1. Photo editor, free version & pay once
-6. Davinci Resolve | [Mac App Store](https://apps.apple.com/us/app/davinci-resolve/id571213070?mt=12)
-   1. Video editor, free
-
-</details>
-
-See [macOS/README.md](macOS/README.md) for the full macOS software list including brew formulae, pipx packages, and node packages.
-
-<!-- End of macOS -->
-
----
-
-<!-- Start of Windows -->
-
-## Windows
-
-**This section is specifically for software that is exclusive to Windows**
-
-See [windows/README.md](windows/README.md) for the full Windows software list.
-
-<details>
-<summary>Utilities</summary>
-
-1. SoundSwitch | [Download](https://soundswitch.aaflalo.me/#) | [GitHub](https://github.com/Belphemur/SoundSwitch)
-   1. SoundSwitch offers you the opportunity to switch your playback and recording devices using simple hotkeys.
-2. Powertoys | [Download](https://learn.microsoft.com/en-us/windows/powertoys/) | [GitHub](https://github.com/microsoft/PowerToys)
-   1. Microsoft PowerToys is a set of utilities for power users to tune and streamline their Windows experience for greater productivity.
-
-</details>
-
-<!-- End of Windows -->
-
----
-
-<!-- Start of Linux Desktop -->
-
-## Linux Desktop
-
-**This section is specifically for software on Linux desktop environments (e.g. CachyOS)**
-
-See [linux-desktop/README.md](linux-desktop/README.md) for the full Linux Desktop software list.
-
-<details>
-<summary>Gaming</summary>
-
-1. Bolt | [Codeberg](https://codeberg.org/Adamcake/Bolt)
-   1. Open-source, third-party launcher for RuneScape and Old School RuneScape on Linux — replaces the Jagex Launcher which is not available on Linux
-
-</details>
-
-<!-- End of Linux Desktop -->
-
----
-
-<!-- Start of Linux Server -->
-
-## Linux Server
-
-**This section is specifically for software on Linux servers (e.g. Ubuntu Server)**
-
-See [linux-server/README.md](linux-server/README.md) for the full Linux Server software list.
-
-<details>
-<summary>Utilities</summary>
-
-1. atvloadly | [GitHub](https://github.com/bitxeno/atvloadly)
-   1. Self-hosted web app for sideloading IPA files onto Apple TV — a self-deployable alternative to AltStore/Sideloadly
-
-</details>
-
-<!-- End of Linux Server -->
