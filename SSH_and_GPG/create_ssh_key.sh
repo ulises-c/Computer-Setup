@@ -158,5 +158,35 @@ echo ""
 echo "Testing SSH connection to git@$GIT_HOST ..."
 ssh -T "git@$GIT_HOST" || true
 
+# ---- Configure git identity if not already set ----
+existing_name="$(git config --global user.name 2>/dev/null || true)"
+existing_email="$(git config --global user.email 2>/dev/null || true)"
+
+if [[ -z "$existing_name" || -z "$existing_email" ]]; then
+  echo ""
+  read -r -p "Configure git user.name / user.email? (Y/n): " yn_git
+  case "${yn_git:-Y}" in
+    n|N) ;;
+    *)
+      if [[ -z "$existing_name" ]]; then
+        read -r -p "Full name for git commits: " git_name
+        if [[ -n "$git_name" ]]; then
+          git config --global user.name "$git_name"
+          echo "git user.name set to: $git_name"
+        fi
+      else
+        echo "git user.name already set to: $existing_name (skipping)"
+      fi
+
+      if [[ -z "$existing_email" ]]; then
+        git config --global user.email "$EMAIL"
+        echo "git user.email set to: $EMAIL"
+      else
+        echo "git user.email already set to: $existing_email (skipping)"
+      fi
+      ;;
+  esac
+fi
+
 echo ""
 echo "Done. If you saw a success message (e.g., 'You've successfully authenticated'), you're set."

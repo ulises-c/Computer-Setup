@@ -101,6 +101,23 @@ case "${yn:-Y}" in
     git config --global user.signingkey "$KEY_ID"
     git config --global commit.gpgsign true
     echo "git configured to sign commits with $KEY_ID."
+
+    existing_name="$(git config --global user.name 2>/dev/null || true)"
+    existing_email="$(git config --global user.email 2>/dev/null || true)"
+
+    if [[ -z "$existing_name" ]]; then
+      git config --global user.name "$NAME"
+      echo "git user.name set to: $NAME"
+    else
+      echo "git user.name already set to: $existing_name (skipping)"
+    fi
+
+    if [[ -z "$existing_email" ]]; then
+      git config --global user.email "$EMAIL"
+      echo "git user.email set to: $EMAIL"
+    else
+      echo "git user.email already set to: $existing_email (skipping)"
+    fi
     ;;
 esac
 
