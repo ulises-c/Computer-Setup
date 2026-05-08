@@ -60,6 +60,8 @@ Install via `brew install <name>` unless noted otherwise.
     1. MATLAB-compatible numerical computing environment — matrix operations, plotting, and scripting
 25. qemu | [brew](https://formulae.brew.sh/formula/qemu) | [Homepage](https://www.qemu.org/)
     1. Machine emulator and virtualizer — run x86, ARM, and other architectures on Apple Silicon
+26. gogcli | [brew](https://formulae.brew.sh/formula/gogcli) | [Homepage](https://gogcli.sh/)
+    1. Google Workspace CLI — Gmail, Calendar, Drive, Docs, Sheets, Slides, and more in the terminal; built for scripts, CI, and coding agents
 
 ## Casks
 
@@ -73,3 +75,23 @@ Install via `brew install --cask <name>`.
    1. Anthropic's official Claude AI desktop app — chat, Projects, and extended context in a native macOS window
 4. claude-code | [brew](https://formulae.brew.sh/cask/claude-code) | [Docs](https://docs.anthropic.com/en/docs/claude-code)
    1. Terminal-based AI coding assistant from Anthropic — agentic coding, file editing, shell commands, and MCP integrations
+5. caffeine | [brew](https://formulae.brew.sh/cask/caffeine) | [Homepage](https://intelliscapesolutions.com/apps/caffeine)
+   1. Simple menubar toggle to keep your Mac awake
+6. rectangle | [brew](https://formulae.brew.sh/cask/rectangle) | [Homepage](https://rectangleapp.com/)
+   1. Open source window management — snap windows with keyboard shortcuts or drag to screen edges
+7. firefox | [brew](https://formulae.brew.sh/cask/firefox) | [Homepage](https://www.mozilla.org/en-US/firefox/)
+   1. Open source web browser
+8. visual-studio-code | [brew](https://formulae.brew.sh/cask/visual-studio-code) | [Homepage](https://code.visualstudio.com/)
+   1. Code editor with extensions
+9. readdle-spark | [brew](https://formulae.brew.sh/cask/readdle-spark) | [Homepage](https://sparkmailapp.com/)
+   1. Smart email client by Readdle with AI features and clean cross-device sync
+10. notion | [brew](https://formulae.brew.sh/cask/notion) | [Homepage](https://www.notion.com/)
+    1. Notes and project management
+11. obs | [brew](https://formulae.brew.sh/cask/obs) | [Homepage](https://obsproject.com/)
+    1. Open source broadcasting and screen recording
+12. vlc | [brew](https://formulae.brew.sh/cask/vlc) | [Homepage](https://www.videolan.org/vlc/)
+    1. Open source media player for nearly every format
+13. google-drive | [brew](https://formulae.brew.sh/cask/google-drive) | [Homepage](https://www.google.com/drive/download/)
+    1. Google Drive desktop client
+14. amazon-photos | [brew](https://formulae.brew.sh/cask/amazon-photos) | [Homepage](https://www.amazon.com/Amazon-Photos/b?node=13234696011)
+    1. Unlimited full-resolution photo backup for Amazon Prime members
