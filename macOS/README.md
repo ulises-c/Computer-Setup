@@ -89,6 +89,20 @@
 8. Affinity Designer 2 | [Mac App Store](https://apps.apple.com/us/app/affinity-designer-2/id1616831348?mt=12)
    1. Vector design tool, pay once
 
+## Work
+
+Install with `zsh setup.sh --work`.
+
+1. Slack | [brew](https://formulae.brew.sh/cask/slack)
+   1. Team messaging and collaboration
+   2. Install: `brew install --cask slack`
+2. Zoom | [brew](https://formulae.brew.sh/cask/zoom)
+   1. Video conferencing
+   2. Install: `brew install --cask zoom`
+3. Microsoft Outlook | [brew](https://formulae.brew.sh/cask/microsoft-outlook)
+   1. Email client for Microsoft 365
+   2. Install: `brew install --cask microsoft-outlook`
+
 ## Cloud Storage
 
 1. Google Drive | [Download](https://www.google.com/drive/download/) | [brew](https://formulae.brew.sh/cask/google-drive)

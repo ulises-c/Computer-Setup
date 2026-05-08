@@ -253,6 +253,30 @@
     "description": "Python project and dependency manager"
   },
   {
+    "name": "slack",
+    "package_manager": "brew-cask",
+    "priority": "medium",
+    "optional": false,
+    "work": true,
+    "description": "Team messaging and collaboration"
+  },
+  {
+    "name": "zoom",
+    "package_manager": "brew-cask",
+    "priority": "medium",
+    "optional": false,
+    "work": true,
+    "description": "Video conferencing"
+  },
+  {
+    "name": "microsoft-outlook",
+    "package_manager": "brew-cask",
+    "priority": "medium",
+    "optional": false,
+    "work": true,
+    "description": "Email client for Microsoft 365"
+  },
+  {
     "name": "codeburn",
     "package_manager": "npm",
     "priority": "medium",

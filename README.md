@@ -104,6 +104,20 @@ For OS-specific software and install instructions, see:
 
 </details>
 
+## Work
+
+<details>
+<summary>Expand</summary>
+
+1. Slack | macOS · Linux · Windows | [Download](https://slack.com/downloads)
+   1. Team messaging and collaboration
+2. Zoom | macOS · Linux · Windows | [Download](https://zoom.us/download)
+   1. Video conferencing
+3. Microsoft Outlook | macOS · Windows | [Download](https://www.microsoft.com/en-us/microsoft-365/outlook/outlook-for-mac)
+   1. Email client for Microsoft 365
+
+</details>
+
 ## Cloud Storage & Data Management
 
 <details>
