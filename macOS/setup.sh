@@ -159,7 +159,10 @@ echo "==> Installing brew casks..."
 brew_cask_install "medium" false
 
 # ── Ghostty config ────────────────────────────────────────────────────────────
-GHOSTTY_CONFIG_DIR="$HOME/Library/Application Support/com.mitchellh.ghostty"
+# Written to the XDG path (~/.config/ghostty/) which works on both macOS and
+# Linux. On macOS the platform-specific path is also supported but XDG is
+# preferred for cross-platform consistency.
+GHOSTTY_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/ghostty"
 mkdir -p "$GHOSTTY_CONFIG_DIR"
 cp "$SCRIPT_DIR/ghostty.config" "$GHOSTTY_CONFIG_DIR/config.ghostty"
 echo "==> Ghostty config written to $GHOSTTY_CONFIG_DIR/config.ghostty"
