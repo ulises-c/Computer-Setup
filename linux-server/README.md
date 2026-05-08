@@ -59,3 +59,19 @@ The web UI runs on `localhost:8088` and `tailscale_ip:5252`. Homepage uses the l
 3. atvloadly | [GitHub](https://github.com/bitxeno/atvloadly)
    1. Self-hosted web app for sideloading IPA files onto Apple TV — a self-deployable alternative to AltStore/Sideloadly
    2. Deploy: `docker run -d --name atvloadly --restart=unless-stopped -p 5533:80 bitxeno/atvloadly`
+
+4. filebrowser | [GitHub](https://github.com/filebrowser/filebrowser) | [Docs](https://filebrowser.org)
+   1. Web-based file manager — browse, upload, download, edit, and share files on the server from any browser
+   2. Not yet configured
+
+5. cockpit | [GitHub](https://github.com/cockpit-project/cockpit) | [Docs](https://cockpit.project.org)
+   1. Web-based server admin UI — system metrics, journal logs, network config, storage, and service management; installs as a system package rather than Docker
+   2. Not yet configured
+
+6. pi-hole | [GitHub](https://github.com/pi-hole/pi-hole) | [Docs](https://docs.pi-hole.net)
+   1. Network-wide DNS ad blocker — blocks ads and trackers at the DNS level for every device on the network; includes a query log and allowlist/blocklist management
+   2. Not yet configured
+
+7. AdGuard Home | [GitHub](https://github.com/AdguardTeam/AdGuardHome) | [Docs](https://adguard-dns.io/kb/adguard-home/overview/)
+   1. Network-wide DNS ad and tracker blocker — alternative to Pi-hole with a modern UI, DNS-over-HTTPS/TLS support, and per-client rules
+   2. Not yet configured
