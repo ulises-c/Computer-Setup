@@ -10,5 +10,5 @@ services:
     env_file:
       - .env
     environment:
-      HOMEPAGE_ALLOWED_HOSTS: "${HOMEPAGE_VAR_SERVER_IP}:3000"
+      HOMEPAGE_ALLOWED_HOSTS: "${HOSTNAME}:3000,${HOSTNAME}.local:3000,localhost:3000"
     restart: unless-stopped
