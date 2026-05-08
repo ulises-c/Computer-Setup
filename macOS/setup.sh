@@ -163,9 +163,11 @@ brew_cask_install "medium" false
 # Linux. On macOS the platform-specific path is loaded after XDG and will
 # override it, so we rename it if it exists to keep XDG as the single source.
 GHOSTTY_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/ghostty"
+GHOSTTY_CONFIG="$GHOSTTY_CONFIG_DIR/config.ghostty"
 mkdir -p "$GHOSTTY_CONFIG_DIR"
-cp "$SCRIPT_DIR/ghostty.config" "$GHOSTTY_CONFIG_DIR/config.ghostty"
-echo "==> Ghostty config written to $GHOSTTY_CONFIG_DIR/config.ghostty"
+[[ -f "$GHOSTTY_CONFIG" ]] && cp "$GHOSTTY_CONFIG" "${GHOSTTY_CONFIG}.bak"
+cp "$SCRIPT_DIR/ghostty.config" "$GHOSTTY_CONFIG"
+echo "==> Ghostty config written to $GHOSTTY_CONFIG"
 
 MACOS_GHOSTTY_CONFIG="$HOME/Library/Application Support/com.mitchellh.ghostty/config.ghostty"
 if [[ -f "$MACOS_GHOSTTY_CONFIG" ]]; then
