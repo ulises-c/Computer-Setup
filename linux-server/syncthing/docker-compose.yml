@@ -1,0 +1,19 @@
+services:
+  syncthing:
+    image: lscr.io/linuxserver/syncthing:latest
+    container_name: syncthing
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Los_Angeles
+    ports:
+      - "8384:8384"         # web UI
+      - "22000:22000/tcp"   # sync protocol
+      - "22000:22000/udp"   # sync protocol (QUIC)
+      - "21027:21027/udp"   # local discovery
+    volumes:
+      - ./config:/config
+      # Add a volume mount for each folder you want to sync, then configure
+      # the path inside Syncthing's web UI. Example:
+      # - /mnt/data:/sync/data

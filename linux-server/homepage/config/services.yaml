@@ -1,0 +1,106 @@
+- Services:
+    - homepage:
+        icon: mdi-view-dashboard
+        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:3000
+        description: Server dashboard
+        server: my-docker
+        container: homepage
+    - portainer:
+        icon: si-portainer
+        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:9000
+        description: Docker manager
+        server: my-docker
+        container: portainer
+    - watchtower:
+        icon: mdi-autorenew
+        description: Automatic container updates
+        server: my-docker
+        container: watchtower
+    - cockpit:
+        icon: mdi-monitor-dashboard
+        href: https://{{HOMEPAGE_VAR_SERVER_IP}}:9090
+        description: Server admin UI
+        ping: https://localhost:9090
+    - uptime kuma:
+        icon: si-uptimekuma
+        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:3001
+        description: Uptime monitor
+        server: my-docker
+        container: uptime-kuma
+        widget:
+          type: uptimekuma
+          url: http://localhost:3001
+          slug: default
+    - glances:
+        icon: si-glances
+        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:61208
+        description: System monitor
+        server: my-docker
+        container: glances
+        widget:
+          type: glances
+          url: http://localhost:61208
+          version: 4
+          metric: cpu
+    - nginx proxy manager:
+        icon: si-nginxproxymanager
+        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:81
+        description: Reverse proxy + SSL
+        server: my-docker
+        container: nginx-proxy-manager
+    - speedtest tracker:
+        icon: mdi-speedometer
+        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:8765
+        description: ISP speed monitor
+        server: my-docker
+        container: speedtest-tracker
+        widget:
+          type: speedtest
+          url: http://localhost:8765
+    - adguard home:
+        icon: si-adguard
+        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:8083
+        description: DNS ad blocker
+        server: my-docker
+        container: adguardhome
+        widget:
+          type: adguardhome
+          url: http://localhost:8083
+          username: "{{HOMEPAGE_VAR_ADGUARD_USER}}"
+          password: "{{HOMEPAGE_VAR_ADGUARD_PASS}}"
+    - ntfy:
+        icon: si-ntfy
+        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:5080
+        description: Push notifications
+        server: my-docker
+        container: ntfy
+    - syncthing:
+        icon: si-syncthing
+        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:8384
+        description: File sync
+        server: my-docker
+        container: syncthing
+        widget:
+          type: syncthing
+          url: http://localhost:8384
+          key: "{{HOMEPAGE_VAR_SYNCTHING_KEY}}"
+    - filebrowser:
+        icon: mdi-folder-network
+        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:8080
+        description: Web file manager
+        server: my-docker
+        container: filebrowser
+    - atvloadly:
+        icon: mdi-television-play
+        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:5533
+        description: Apple TV IPA sideloader
+        server: my-docker
+        container: atvloadly
+    - tailscale:
+        icon: si-tailscale
+        href: http://{{HOMEPAGE_VAR_TAILSCALE_IP}}:5252
+        description: Zero-config VPN
+        widget:
+          type: tailscale
+          deviceid: "{{HOMEPAGE_VAR_TAILSCALE_DEVICE_ID}}"
+          key: "{{HOMEPAGE_VAR_TAILSCALE_KEY}}"

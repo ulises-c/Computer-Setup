@@ -1,0 +1,12 @@
+[Unit]
+Description=Tailscale Web UI
+After=tailscaled.service
+Requires=tailscaled.service
+
+[Service]
+ExecStart=tailscale web
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

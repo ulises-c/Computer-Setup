@@ -1,0 +1,13 @@
+title: Home Server
+theme: dark
+color: slate
+headerStyle: clean
+hideVersion: true
+
+layout:
+  System:
+    style: row
+    columns: 2
+  Services:
+    style: row
+    columns: 3
