@@ -131,7 +131,8 @@ if ! command -v brew &>/dev/null; then
 fi
 
 # ── Bootstrap: jq (required to parse macOS_packages.json) ────────────────────
-run brew install jq
+# jq is system-provided on macOS; only install via brew if missing.
+command -v jq &>/dev/null || run brew install jq
 
 # ── High-priority brew formulae (pyenv, expat, pipx) ─────────────────────────
 echo "==> Installing high-priority brew formulae..."

@@ -2,9 +2,9 @@
   {
     "name": "jq",
     "package_manager": "brew",
-    "priority": "high",
-    "optional": false,
-    "description": "JSON processor — required to parse this file in setup.sh"
+    "priority": "low",
+    "optional": true,
+    "description": "JSON processor — system-provided on macOS; brew version only needed if the system one is missing or outdated"
   },
   {
     "name": "expat",
