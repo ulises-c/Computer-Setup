@@ -105,6 +105,13 @@
     "description": "Interactive process viewer — colorized alternative to top"
   },
   {
+    "name": "nvtop",
+    "package_manager": "apt",
+    "priority": "medium",
+    "optional": false,
+    "description": "GPU process monitor — complements htop with GPU visibility"
+  },
+  {
     "name": "tmux",
     "package_manager": "apt",
     "priority": "medium",
