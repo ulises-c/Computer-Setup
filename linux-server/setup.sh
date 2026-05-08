@@ -162,11 +162,43 @@ fi
 echo "    Run 'sudo tailscale up' to authenticate and connect to your Tailnet."
 
 # ── Manual install reminders ──────────────────────────────────────────────────
-echo ""
-echo "Install these manually (require their own repo setup):"
-print_custom_reminders "medium"
-[[ "$INCLUDE_OPTIONAL" == true ]] && print_custom_reminders "low"
+CUSTOM_REMINDERS="$(print_custom_reminders "medium")"
+[[ "$INCLUDE_OPTIONAL" == true ]] && CUSTOM_REMINDERS+="$(print_custom_reminders "low")"
+if [[ -n "$CUSTOM_REMINDERS" ]]; then
+  echo ""
+  echo "Install these manually (require their own repo setup):"
+  echo "$CUSTOM_REMINDERS"
+fi
 
-
+# ── Post-install steps ────────────────────────────────────────────────────────
 echo ""
-[[ "$DRY_RUN" == true ]] && echo "Dry run complete — nothing was installed." || echo "Done. Log out and back in to start using zsh."
+if [[ "$DRY_RUN" == true ]]; then
+  echo "Dry run complete — nothing was installed."
+else
+  echo "================================================================"
+  echo " Done. Next steps:"
+  echo "================================================================"
+  echo ""
+  echo "  1. Log out and back in (or 'exec zsh') to start using zsh"
+  echo ""
+  echo "  2. Authenticate Tailscale:"
+  echo "       sudo tailscale up"
+  echo ""
+  echo "  3. Install Node via nvm (required for claude-code):"
+  echo "       source ~/.zshrc"
+  echo "       curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash"
+  echo "       nvm install lts/* && nvm alias default lts/*"
+  echo "       npm install -g @anthropic-ai/claude-code"
+  echo ""
+  echo "  4. Set up SSH / GPG keys:"
+  echo "       bash SSH_and_GPG/create_ssh_key.sh"
+  echo "       bash SSH_and_GPG/create_gpg_key.sh"
+  echo ""
+  echo "  5. Start the Homepage dashboard:"
+  echo "       cd linux-server/homepage"
+  echo "       cp .env.example .env  # update values"
+  echo "       docker compose up -d"
+  echo "       # Access at http://\$(hostname).local:3000"
+  echo ""
+  echo "================================================================"
+fi
