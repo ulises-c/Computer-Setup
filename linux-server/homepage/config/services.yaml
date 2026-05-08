@@ -22,6 +22,17 @@
         href: https://{{HOMEPAGE_VAR_SERVER_IP}}:9090
         description: Server admin UI
         ping: https://localhost:9090
+    - glances:
+        icon: si-glances
+        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:61208
+        description: System monitor
+        server: my-docker
+        container: glances
+        widget:
+          type: glances
+          url: http://localhost:61208
+          version: 4
+          metric: cpu
     - atvloadly:
         icon: mdi-television-play
         href: http://{{HOMEPAGE_VAR_SERVER_IP}}:5533
@@ -39,8 +50,20 @@
           url: http://localhost:8083
           username: "{{HOMEPAGE_VAR_ADGUARD_USER}}"
           password: "{{HOMEPAGE_VAR_ADGUARD_PASS}}"
+    - speedtest tracker:
+        icon: mdi-speedometer
+        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:8765
+        description: ISP speed monitor
+        server: my-docker
+        container: speedtest-tracker
+        widget:
+          type: speedtest
+          url: http://localhost:8765
     - tailscale:
         icon: si-tailscale
         href: http://{{HOMEPAGE_VAR_TAILSCALE_IP}}:5252
         description: Zero-config VPN
-        ping: http://localhost:8088
+        widget:
+          type: tailscale
+          deviceid: "{{HOMEPAGE_VAR_TAILSCALE_DEVICE_ID}}"
+          key: "{{HOMEPAGE_VAR_TAILSCALE_KEY}}"

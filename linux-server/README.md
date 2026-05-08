@@ -23,7 +23,14 @@ systemctl --user enable --now tailscale-web
 loginctl enable-linger $USER   # keeps the service running without a login session
 ```
 
-The web UI runs on `localhost:8088` and `tailscale_ip:5252`. Homepage uses the localhost ping for its status dot and links to the Tailscale IP for access from any Tailscale device.
+The web UI runs on `localhost:8088` and `tailscale_ip:5252`. Homepage links to the Tailscale IP for access from any Tailscale device.
+
+To enable the Tailscale widget on Homepage, create an OAuth client at `tailscale.com/admin/settings/oauth` with the `devices:read` scope, then add the credentials to `linux-server/homepage/.env`:
+
+```sh
+# Get your device ID
+tailscale status --json | jq -r '.Self.ID'
+```
 
 ## Files
 
@@ -76,11 +83,31 @@ The web UI runs on `localhost:8088` and `tailscale_ip:5252`. Homepage uses the l
    2. Installed as a system package by `setup.sh` (not Docker); enabled automatically via systemd socket activation
    3. Access at `https://<server-ip>:9090`; log in with your Linux username and password
 
-6. pi-hole | [GitHub](https://github.com/pi-hole/pi-hole) | [Docs](https://docs.pi-hole.net)
+6. glances | [GitHub](https://github.com/nicolargo/glances) | [Docs](https://glances.readthedocs.io)
+   1. Real-time system monitor — CPU, memory, disk I/O, network, processes, temperatures, and Docker containers in one view
+   2. Deploy:
+      ```sh
+      cd linux-server/glances
+      docker compose up -d
+      ```
+   3. Access at `http://<server-ip>:61208`; the Homepage widget shows live CPU stats on the service card
+
+7. speedtest tracker | [GitHub](https://github.com/alexjustesen/speedtest-tracker) | [Docs](https://docs.speedtest-tracker.dev)
+   1. Scheduled ISP speed tests with history graphs — tracks ping, download, and upload over time
+   2. Deploy:
+      ```sh
+      cd linux-server/speedtest-tracker
+      cp .env.example .env
+      echo "base64:$(openssl rand -base64 32)"   # paste output as APP_KEY in .env
+      docker compose up -d
+      ```
+   3. Access at `http://<server-ip>:8765`; runs a test every 6 hours by default (configurable via `SPEEDTEST_SCHEDULE` in `.env`)
+
+8. pi-hole | [GitHub](https://github.com/pi-hole/pi-hole) | [Docs](https://docs.pi-hole.net)
    1. Network-wide DNS ad blocker — blocks ads and trackers at the DNS level for every device on the network; includes a query log and allowlist/blocklist management
    2. Not yet configured
 
-7. AdGuard Home | [GitHub](https://github.com/AdguardTeam/AdGuardHome) | [Docs](https://adguard-dns.io/kb/adguard-home/overview/)
+9. AdGuard Home | [GitHub](https://github.com/AdguardTeam/AdGuardHome) | [Docs](https://adguard-dns.io/kb/adguard-home/overview/)
    1. Network-wide DNS ad and tracker blocker — modern UI, DNS-over-HTTPS/TLS, and per-client rules
    2. **Prerequisites** — Ubuntu's `systemd-resolved` binds to port 53 and must be told to stop using it:
       ```sh
