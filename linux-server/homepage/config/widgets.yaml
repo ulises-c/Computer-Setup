@@ -1,0 +1,13 @@
+- resources:
+    label: system
+    cpu: true
+    memory: true
+    disk: /
+    refresh: 3000
+
+- datetime:
+    text_size: xl
+    format:
+      timeStyle: short
+      dateStyle: short
+      hourCycle: h23

@@ -21,6 +21,17 @@ After running, log out and back in to start using zsh.
 
 ## Docker services
 
-1. atvloadly | [GitHub](https://github.com/bitxeno/atvloadly)
+1. homepage | [GitHub](https://github.com/gethomepage/homepage) | [Docs](https://gethomepage.dev)
+   1. Lightweight server dashboard — system stats, running service cards with live Docker status
+   2. Deploy:
+      ```sh
+      cd linux-server/homepage
+      cp .env.example .env        # update HOMEPAGE_VAR_SERVER_IP
+      docker compose up -d
+      ```
+   3. Access at `http://<server-ip>:3000`
+   4. Add new services in `config/services.yaml` — each card supports `server: my-docker` + `container: <name>` for live status
+
+2. atvloadly | [GitHub](https://github.com/bitxeno/atvloadly)
    1. Self-hosted web app for sideloading IPA files onto Apple TV — a self-deployable alternative to AltStore/Sideloadly
    2. Deploy: `docker run -d --name atvloadly --restart=unless-stopped -p 5533:80 bitxeno/atvloadly`
