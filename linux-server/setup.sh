@@ -142,9 +142,13 @@ echo ""
 if [[ ! -f "$HOME/.zshrc" ]]; then
   run cp "$SCRIPT_DIR/zshrc.example" "$HOME/.zshrc"
   echo "==> ~/.zshrc installed from zshrc.example"
+elif ! diff -q "$SCRIPT_DIR/zshrc.example" "$HOME/.zshrc" &>/dev/null; then
+  BACKUP="$HOME/.zshrc.bak.$(date +%Y%m%d_%H%M%S)"
+  run cp "$HOME/.zshrc" "$BACKUP"
+  run cp "$SCRIPT_DIR/zshrc.example" "$HOME/.zshrc"
+  echo "==> ~/.zshrc updated (backup saved to $BACKUP)"
 else
-  echo "==> ~/.zshrc already exists — skipping"
-  echo "    Reference: $SCRIPT_DIR/zshrc.example"
+  echo "==> ~/.zshrc already up to date"
 fi
 
 # ── Tailscale ─────────────────────────────────────────────────────────────────
