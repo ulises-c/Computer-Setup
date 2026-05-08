@@ -154,9 +154,9 @@ add_to_zshrc 'export NVM_DIR="$HOME/.nvm"'
 add_to_zshrc '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"'
 add_to_zshrc 'nvm use --delete-prefix default --silent 2>/dev/null'
 
-# ── High-priority brew casks ──────────────────────────────────────────────────
-echo "==> Installing high-priority brew casks..."
-brew_cask_install "high" false
+# ── Medium-priority brew casks ────────────────────────────────────────────────
+echo "==> Installing brew casks..."
+brew_cask_install "medium" false
 
 # ── Ghostty config ────────────────────────────────────────────────────────────
 GHOSTTY_CONFIG_DIR="$HOME/Library/Application Support/com.mitchellh.ghostty"
@@ -164,29 +164,27 @@ mkdir -p "$GHOSTTY_CONFIG_DIR"
 cp "$SCRIPT_DIR/ghostty.config" "$GHOSTTY_CONFIG_DIR/config.ghostty"
 echo "==> Ghostty config written to $GHOSTTY_CONFIG_DIR/config.ghostty"
 
-# ── High-priority pipx packages ───────────────────────────────────────────────
-echo "==> Installing high-priority pipx packages..."
+# ── Medium-priority pipx packages ─────────────────────────────────────────────
+echo "==> Installing pipx packages..."
 rm -rf ~/.local/pipx/shared
 pipx ensurepath
-pipx_install "high" false
+pipx_install "medium" false
 
-# ── High-priority npm packages ────────────────────────────────────────────────
-echo "==> Installing high-priority npm packages..."
-npm_install "high" false
+# ── Medium-priority npm packages ──────────────────────────────────────────────
+echo "==> Installing npm packages..."
+npm_install "medium" false
 
 # Post-install: codeburn menubar (macOS native Swift app)
 codeburn menubar
 
-# ── Medium-priority packages ──────────────────────────────────────────────────
-echo "==> Installing medium-priority packages..."
+# ── Medium-priority brew formulae ─────────────────────────────────────────────
+echo "==> Installing brew formulae..."
 brew_install "medium" false
-brew_cask_install "medium" false
-pipx_install "medium" false
-npm_install "medium" false
 
-# ── Optional low-priority packages ────────────────────────────────────────────
+# ── Optional low-priority packages (--optional flag) ──────────────────────────
+# priority "none" packages are never auto-installed regardless of flags
 if [[ "$INCLUDE_OPTIONAL" == true ]]; then
-  echo "==> Installing optional packages..."
+  echo "==> Installing optional (low) packages..."
   brew_install "low" true
   brew_custom_install "low" true
   brew_cask_install "low" true
@@ -197,7 +195,6 @@ fi
 # ── App Store reminders ───────────────────────────────────────────────────────
 echo ""
 echo "Install these manually from the App Store:"
-print_app_store_reminders "high" false
 print_app_store_reminders "medium" false
 [[ "$INCLUDE_OPTIONAL" == true ]] && print_app_store_reminders "low" true
 
