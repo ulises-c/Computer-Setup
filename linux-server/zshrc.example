@@ -100,9 +100,9 @@ export LC_ALL='en_US.UTF-8'
 
 
 # ═══════════════════════════════════════════════════════════════
-#  SYSINFO DISPLAY  (login shells only — SSH in, not tmux panes)
+#  SYSINFO DISPLAY  (every interactive shell — SSH, tmux panes, clear && zsh)
 # ═══════════════════════════════════════════════════════════════
-[[ -o login ]] && command -v fastfetch &>/dev/null && fastfetch
+[[ -o interactive ]] && command -v fastfetch &>/dev/null && fastfetch
 
 
 # ═══════════════════════════════════════════════════════════════
