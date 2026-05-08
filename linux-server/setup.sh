@@ -56,11 +56,14 @@ print_custom_reminders() {
 }
 
 
+# ── apt update ───────────────────────────────────────────────────────────────
+echo "==> Updating package list..."
+run sudo apt update
+
 # ── Bootstrap: jq ────────────────────────────────────────────────────────────
 # jq is needed to parse the packages JSON — install it first if missing.
 if ! command -v jq &>/dev/null; then
   echo "==> Bootstrapping jq..."
-  run sudo apt update
   run sudo apt install -y jq
 fi
 
@@ -134,7 +137,7 @@ ZSH_BIN="$(command -v zsh 2>/dev/null || true)"
 if [[ -n "$ZSH_BIN" && "$SHELL" != "$ZSH_BIN" ]]; then
   echo ""
   echo "==> Setting zsh as default shell..."
-  run chsh -s "$ZSH_BIN"
+  run sudo usermod -s "$ZSH_BIN" "$USER"
 fi
 
 # ── zshrc ─────────────────────────────────────────────────────────────────────
@@ -184,6 +187,15 @@ if ! command -v docker &>/dev/null; then
   echo "    Docker installed. Log out and back in for the docker group to take effect."
 else
   echo "==> Docker already installed ($(docker --version | head -1))"
+fi
+
+# ── Cockpit ───────────────────────────────────────────────────────────────────
+echo ""
+if systemctl is-active --quiet cockpit.socket 2>/dev/null; then
+  echo "==> Cockpit already running"
+else
+  echo "==> Enabling cockpit..."
+  run sudo systemctl enable --now cockpit.socket
 fi
 
 # ── Manual install reminders ──────────────────────────────────────────────────
