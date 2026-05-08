@@ -239,6 +239,13 @@
     "description": "Unlimited full-resolution photo backup for Amazon Prime members"
   },
   {
+    "name": "discord",
+    "package_manager": "brew-cask",
+    "priority": "medium",
+    "optional": false,
+    "description": "Voice, video, and text chat platform"
+  },
+  {
     "name": "poetry",
     "package_manager": "pipx",
     "priority": "medium",
@@ -314,6 +321,13 @@
     "priority": "low",
     "optional": true,
     "description": "Google Workspace CLI — Gmail, Calendar, Drive, Docs, and more in the terminal"
+  },
+  {
+    "name": "docker",
+    "package_manager": "brew-cask",
+    "priority": "low",
+    "optional": true,
+    "description": "Container platform — Docker Desktop for Mac"
   },
   {
     "name": "fluidtop",
