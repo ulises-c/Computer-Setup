@@ -1,20 +1,14 @@
-# -------------------------------------------------------------------------------------------------
-
 # ═══════════════════════════════════════════════════════════════
-#  ~/.zshrc  —  macOS zsh config (Ghostty + Apple Silicon)
+#  ~/.zshrc  —  Linux server zsh config (Ubuntu Server)
 # ═══════════════════════════════════════════════════════════════
-
-# Requires fastfetch via brew
-
-# ── Instant prompt (keep at very top if using Powerlevel10k) ──
-# [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]] && \
-#   source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
+# Requires: zsh, zsh-autosuggestions, zsh-syntax-highlighting,
+#           fastfetch, fzf, bat (batcat), fd-find (fdfind), eza
+# Install:  bash linux-server/setup.sh
 
 
 # ═══════════════════════════════════════════════════════════════
 #  PATH
 # ═══════════════════════════════════════════════════════════════
-export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
 export PATH="$HOME/.local/bin:$PATH"
 
 
@@ -49,7 +43,7 @@ setopt NO_BEEP
 
 
 # ═══════════════════════════════════════════════════════════════
-#  PROMPT
+#  PROMPT  (branch · * unstaged · + staged)
 # ═══════════════════════════════════════════════════════════════
 autoload -Uz vcs_info
 precmd() { vcs_info }
@@ -66,9 +60,9 @@ PROMPT='%F{blue}%n%f%F{white}@%f%F{cyan}%m%f %F{yellow}%~%f${vcs_info_msg_0_} %#
 # ═══════════════════════════════════════════════════════════════
 #  ALIASES
 # ═══════════════════════════════════════════════════════════════
-alias ls='ls -G'
-alias ll='ls -lAh'
-alias la='ls -A'
+alias ls='ls --color=auto'
+alias ll='eza -lAh --git'
+alias la='eza -A'
 alias ..='cd ..'
 alias ...='cd ../..'
 alias grep='grep --color=auto'
@@ -76,8 +70,9 @@ alias df='df -h'
 alias du='du -sh'
 alias reload='source ~/.zshrc'
 
-# Homebrew
-alias brewup='brew update && brew upgrade && brew cleanup'
+# Ubuntu binary name shims
+alias bat='batcat'
+alias fd='fdfind'
 
 # Git
 alias gs='git status'
@@ -90,29 +85,30 @@ alias gl='git log --oneline --graph --decorate'
 # ═══════════════════════════════════════════════════════════════
 #  ENVIRONMENT
 # ═══════════════════════════════════════════════════════════════
-export EDITOR='nano'
+export EDITOR='micro'
 export LANG='en_US.UTF-8'
 export LC_ALL='en_US.UTF-8'
 
 
 # ═══════════════════════════════════════════════════════════════
-#  HOMEBREW COMPLETIONS
+#  FZF  (apt install fzf)
 # ═══════════════════════════════════════════════════════════════
-if command -v brew &>/dev/null; then
-    FPATH="$(brew --prefix)/share/zsh/site-functions:$FPATH"
-fi
+[[ -f /usr/share/doc/fzf/examples/key-bindings.zsh ]] && \
+  source /usr/share/doc/fzf/examples/key-bindings.zsh
+[[ -f /usr/share/doc/fzf/examples/completion.zsh ]] && \
+  source /usr/share/doc/fzf/examples/completion.zsh
 
 
 # ═══════════════════════════════════════════════════════════════
-#  SYSINFO DISPLAY  (Ghostty startup)
+#  SYSINFO DISPLAY  (login shells only — SSH in, not tmux panes)
 # ═══════════════════════════════════════════════════════════════
-[[ -o interactive && "$TERM_PROGRAM" == "ghostty" ]] && fastfetch
+[[ -o login ]] && command -v fastfetch &>/dev/null && fastfetch
 
-# -------------------------------------------------------------------------------------------------
 
-# Created by `pipx` on 2026-02-01 10:15:48
-export PATH="$PATH:/Users/ulises/.local/bin"
-
-# zsh auto suggestions & syntax highlighting (installed via Homebrew)
-source $(brew --prefix)/share/zsh-autosuggestions/zsh-autosuggestions.zsh
-source $(brew --prefix)/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+# ═══════════════════════════════════════════════════════════════
+#  PLUGINS  (apt install zsh-autosuggestions zsh-syntax-highlighting)
+# ═══════════════════════════════════════════════════════════════
+[[ -f /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh ]] && \
+  source /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+[[ -f /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh ]] && \
+  source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh

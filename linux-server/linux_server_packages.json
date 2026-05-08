@@ -1,0 +1,207 @@
+[
+  {
+    "name": "zsh",
+    "package_manager": "apt",
+    "priority": "high",
+    "optional": false,
+    "description": "Z shell — common shell across all devices; installed first so plugins below are available"
+  },
+  {
+    "name": "zsh-autosuggestions",
+    "package_manager": "apt",
+    "priority": "high",
+    "optional": false,
+    "description": "Fish-style history-based suggestions for zsh"
+  },
+  {
+    "name": "zsh-syntax-highlighting",
+    "package_manager": "apt",
+    "priority": "high",
+    "optional": false,
+    "description": "Real-time syntax highlighting in zsh"
+  },
+  {
+    "name": "fastfetch",
+    "package_manager": "apt",
+    "priority": "medium",
+    "optional": false,
+    "description": "Fast system info display — shown on login shell startup; requires fastfetch PPA (setup.sh adds it)"
+  },
+  {
+    "name": "fzf",
+    "package_manager": "apt",
+    "priority": "medium",
+    "optional": false,
+    "description": "Fuzzy finder — Ctrl+R history search, Ctrl+T file search; key bindings sourced in zshrc"
+  },
+  {
+    "name": "ripgrep",
+    "package_manager": "apt",
+    "priority": "medium",
+    "optional": false,
+    "description": "Fast recursive grep replacement — command: rg"
+  },
+  {
+    "name": "bat",
+    "package_manager": "apt",
+    "priority": "medium",
+    "optional": false,
+    "description": "cat with syntax highlighting and git integration — Ubuntu installs binary as batcat; zshrc aliases bat=batcat"
+  },
+  {
+    "name": "fd-find",
+    "package_manager": "apt",
+    "priority": "medium",
+    "optional": false,
+    "description": "Fast and user-friendly find alternative — Ubuntu installs binary as fdfind; zshrc aliases fd=fdfind"
+  },
+  {
+    "name": "eza",
+    "package_manager": "apt",
+    "priority": "medium",
+    "optional": false,
+    "description": "Modern ls replacement with icons and git status — not in standard Ubuntu repos; setup.sh adds the eza community apt repo"
+  },
+  {
+    "name": "gh",
+    "package_manager": "apt",
+    "priority": "medium",
+    "optional": false,
+    "description": "GitHub CLI — PRs, issues, Actions from the terminal; setup.sh adds the GitHub CLI apt repo"
+  },
+  {
+    "name": "git",
+    "package_manager": "apt",
+    "priority": "medium",
+    "optional": false,
+    "description": "Version control — usually pre-installed on Ubuntu Server"
+  },
+  {
+    "name": "git-lfs",
+    "package_manager": "apt",
+    "priority": "medium",
+    "optional": false,
+    "description": "Git extension for versioning large binary files"
+  },
+  {
+    "name": "gnupg",
+    "package_manager": "apt",
+    "priority": "medium",
+    "optional": false,
+    "description": "GPG — required for commit signing"
+  },
+  {
+    "name": "sshpass",
+    "package_manager": "apt",
+    "priority": "medium",
+    "optional": false,
+    "description": "Non-interactive SSH password authentication — used by SSH_and_GPG/add_remote_host.sh"
+  },
+  {
+    "name": "htop",
+    "package_manager": "apt",
+    "priority": "medium",
+    "optional": false,
+    "description": "Interactive process viewer — colorized alternative to top"
+  },
+  {
+    "name": "tmux",
+    "package_manager": "apt",
+    "priority": "medium",
+    "optional": false,
+    "description": "Terminal multiplexer — split panes, persist sessions across SSH disconnects"
+  },
+  {
+    "name": "micro",
+    "package_manager": "apt",
+    "priority": "medium",
+    "optional": false,
+    "description": "Modern terminal text editor with mouse support and familiar keybindings"
+  },
+  {
+    "name": "ncdu",
+    "package_manager": "apt",
+    "priority": "medium",
+    "optional": false,
+    "description": "Interactive disk usage analyzer — essential for managing storage on a file server"
+  },
+  {
+    "name": "curl",
+    "package_manager": "apt",
+    "priority": "medium",
+    "optional": false,
+    "description": "HTTP client — usually pre-installed; required by various install scripts"
+  },
+  {
+    "name": "wget",
+    "package_manager": "apt",
+    "priority": "medium",
+    "optional": false,
+    "description": "HTTP file downloader — used by setup.sh for apt key imports"
+  },
+  {
+    "name": "jq",
+    "package_manager": "apt",
+    "priority": "medium",
+    "optional": false,
+    "description": "JSON processor — required by setup.sh to parse this file"
+  },
+  {
+    "name": "samba",
+    "package_manager": "apt",
+    "priority": "low",
+    "optional": true,
+    "description": "SMB/CIFS file sharing — exposes network shares to macOS and Windows; requires manual smb.conf configuration after install"
+  },
+  {
+    "name": "smartmontools",
+    "package_manager": "apt",
+    "priority": "low",
+    "optional": true,
+    "description": "Monitor SSD/HDD health via S.M.A.R.T. data — use: smartctl -a /dev/sdX"
+  },
+  {
+    "name": "nmap",
+    "package_manager": "apt",
+    "priority": "low",
+    "optional": true,
+    "description": "Network scanner — discover hosts and open ports on the local network"
+  },
+  {
+    "name": "net-tools",
+    "package_manager": "apt",
+    "priority": "low",
+    "optional": true,
+    "description": "Legacy network utilities — ifconfig, netstat, route"
+  },
+  {
+    "name": "ffmpeg",
+    "package_manager": "apt",
+    "priority": "low",
+    "optional": true,
+    "description": "Audio/video processing toolkit"
+  },
+  {
+    "name": "libimage-exiftool-perl",
+    "package_manager": "apt",
+    "priority": "low",
+    "optional": true,
+    "description": "Read and write metadata in photos, videos, and other files — command: exiftool"
+  },
+  {
+    "name": "docker-ce",
+    "package_manager": "custom",
+    "priority": "medium",
+    "optional": false,
+    "install_command": "curl -fsSL https://get.docker.com | sudo sh",
+    "description": "Container platform — official Docker Engine for Linux; convenience script installs CE, CLI, compose plugin, and containerd"
+  },
+  {
+    "name": "tailscale",
+    "package_manager": "custom",
+    "priority": "low",
+    "optional": true,
+    "install_command": "curl -fsSL https://tailscale.com/install.sh | sudo sh",
+    "description": "Zero-config VPN — access the server from anywhere without port forwarding"
+  }
+]
