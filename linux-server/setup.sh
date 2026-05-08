@@ -227,7 +227,7 @@ else
   echo "  5. Start Docker services — see linux-server/README.md for full details"
   echo "       cd linux-server/homepage && cp .env.example .env && docker compose up -d"
   echo ""
-  echo "  See linux-server/README.md ## Next steps for the complete checklist."
+  echo "  See linux-server/post-install.md for the complete checklist."
   echo ""
   echo "================================================================"
 fi

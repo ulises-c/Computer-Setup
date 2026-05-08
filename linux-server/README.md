@@ -35,6 +35,7 @@ tailscale status --json | jq -r '.Self.ID'
 ## Files
 
 - [`setup.sh`](setup.sh) — automated install script
+- [`post-install.md`](post-install.md) — step-by-step checklist to follow after setup.sh
 - [`apt_packages.md`](apt_packages.md) — full package list with descriptions and links
 - [`zshrc.example`](zshrc.example) — reference zsh config; copied to `~/.zshrc` by `setup.sh` if none exists
 - [`tmux.conf`](tmux.conf) — tmux config with mouse support, vi copy mode, and a status bar; copied to `~/.tmux.conf` by `setup.sh`
