@@ -1,12 +1,13 @@
-# Post-install checklist
+# Post-setup configuration
 
-Run through this after `bash linux-server/setup.sh` completes.
+`setup.sh` has installed packages and started all Docker services.
+Complete these remaining steps.
 
 ---
 
 ## 1. Restart your shell
 
-- [ ] Log out and back in (activates zsh as default shell and adds you to the `docker` group)
+- [ ] Log out and back in — activates zsh as default shell and enables `docker` without sudo
 
 ---
 
@@ -20,20 +21,12 @@ Run through this after `bash linux-server/setup.sh` completes.
   ```sh
   sudo tailscale set --operator=$USER
   ```
-- [ ] Enable the persistent web UI as a user service:
-  ```sh
-  mkdir -p ~/.config/systemd/user
-  cp linux-server/tailscale-web.service ~/.config/systemd/user/
-  systemctl --user enable --now tailscale-web
-  loginctl enable-linger $USER
-  ```
-  Web UI available at `localhost:8088` and `<tailscale-ip>:5252`.
 
 ---
 
 ## 3. SSH / GPG keys
 
-- [ ] Create SSH key and configure remote hosts:
+- [ ] Create SSH key:
   ```sh
   bash SSH_and_GPG/create_ssh_key.sh
   ```
@@ -44,143 +37,78 @@ Run through this after `bash linux-server/setup.sh` completes.
 
 ---
 
-## 4. claude-code
+## 4. Homepage .env
 
-- [ ] Install via curl:
-  ```sh
-  curl -fsSL https://claude.ai/install.sh | bash
-  ```
+Edit `linux-server/homepage/.env`, then restart:
+```sh
+cd linux-server/homepage && docker compose restart
+```
 
----
-
-## 5. Docker services
-
-### Homepage
-- [ ] Configure and start:
-  ```sh
-  cd linux-server/homepage
-  cp .env.example .env
-  # edit .env — set HOMEPAGE_VAR_SERVER_IP to your hostname (e.g. ollie-server.local)
-  #              set HOMEPAGE_VAR_TAILSCALE_IP (tailscale ip -4)
-  docker compose up -d
-  ```
-  Access at `http://<server-ip>:3000`
-
-### Portainer
-- [ ] Start:
-  ```sh
-  cd linux-server/portainer && docker compose up -d
-  ```
-  Access at `http://<server-ip>:9000` — create your admin account **within 5 minutes** or the container must be restarted.
-
-### Glances
-- [ ] Start:
-  ```sh
-  cd linux-server/glances && docker compose up -d
-  ```
-  Access at `http://<server-ip>:61208`
-
-### Speedtest Tracker
-- [ ] Generate `APP_KEY`, configure, and start:
-  ```sh
-  cd linux-server/speedtest-tracker
-  cp .env.example .env
-  echo "base64:$(openssl rand -base64 32)"   # paste output as APP_KEY in .env
-  docker compose up -d
-  ```
-  Access at `http://<server-ip>:8765`
-
-### Filebrowser
-- [ ] Configure and start:
-  ```sh
-  cd linux-server/filebrowser
-  cp .env.example .env          # set FB_ROOT to the path you want to browse
-  touch filebrowser.db          # required — prevents Docker creating it as a directory
-  docker compose up -d
-  ```
-  Access at `http://<server-ip>:8080` — default login: `admin` / `admin` (change immediately).
-
-### Watchtower
-- [ ] Start:
-  ```sh
-  cd linux-server/watchtower && docker compose up -d
-  ```
-  Checks for updated images daily at 3am and restarts containers automatically.
-
-### Uptime Kuma
-- [ ] Start:
-  ```sh
-  cd linux-server/uptime-kuma && docker compose up -d
-  ```
-  Access at `http://<server-ip>:3001` — create an admin account on first visit.
-- [ ] Add monitors for each service (use `http://localhost:<port>` for internal checks).
-- [ ] Create a status page with slug `default` (Dashboards → New Status Page) for the Homepage widget.
-
-### Nginx Proxy Manager
-- [ ] Start:
-  ```sh
-  cd linux-server/nginx-proxy-manager && docker compose up -d
-  ```
-  Access admin UI at `http://<server-ip>:81` — default login: `admin@example.com` / `changeme`.
-- [ ] Change email and password immediately after first login.
-
-### ntfy
-- [ ] Start:
-  ```sh
-  cd linux-server/ntfy && docker compose up -d
-  ```
-  Access at `http://<server-ip>:5080`.
-- [ ] Install the ntfy app on your phone, add your server URL, and subscribe to a topic (e.g. `alerts`).
-- [ ] Configure Uptime Kuma and Watchtower to send notifications via ntfy.
-
-### Syncthing
-- [ ] Add volume mounts to `linux-server/syncthing/docker-compose.yml` for each folder you want to sync.
-- [ ] Start:
-  ```sh
-  cd linux-server/syncthing && docker compose up -d
-  ```
-  Access at `http://<server-ip>:8384`.
-- [ ] Get your API key: Actions → Settings → API Key — add to `linux-server/homepage/.env`:
-  ```
-  HOMEPAGE_VAR_SYNCTHING_KEY=<api-key>
-  ```
-
-### AdGuard Home
-- [ ] Free up port 53 from systemd-resolved:
-  ```sh
-  sudo sed -i 's/#DNSStubListener=yes/DNSStubListener=no/' /etc/systemd/resolved.conf
-  sudo systemctl restart systemd-resolved
-  ```
-- [ ] Start:
-  ```sh
-  cd linux-server/adguard && docker compose up -d
-  ```
-- [ ] Open `http://<server-ip>:3003` for the setup wizard:
-  - Set web UI port → `80` (maps to host port `8083`)
-  - Set DNS port → `53`
-  - Create admin username and password
-- [ ] Point your router's DNS to `<server-ip>` to enable network-wide filtering.
-- [ ] Add credentials to `linux-server/homepage/.env`:
-  ```
-  HOMEPAGE_VAR_ADGUARD_USER=<your-username>
-  HOMEPAGE_VAR_ADGUARD_PASS=<your-password>
-  ```
+| Variable | How to get the value |
+|---|---|
+| `HOMEPAGE_VAR_SERVER_IP` | Your server hostname (e.g. `ollie-server.local`) |
+| `HOMEPAGE_VAR_TAILSCALE_IP` | `tailscale ip -4` |
+| `HOMEPAGE_VAR_TAILSCALE_DEVICE_ID` | `tailscale status --json \| jq -r '.Self.ID'` |
+| `HOMEPAGE_VAR_TAILSCALE_KEY` | OAuth client from `tailscale.com/admin/settings/oauth` (scope: `devices:read`) |
+| `HOMEPAGE_VAR_ADGUARD_USER` / `_PASS` | Set after AdGuard wizard (step 5 below) |
+| `HOMEPAGE_VAR_SYNCTHING_KEY` | Set after Syncthing is running (step 5 below) |
 
 ---
 
-## 6. Tailscale widget (Homepage)
+## 5. First-login service setup
 
-- [ ] Create an OAuth client at `tailscale.com/admin/settings/oauth` with the `devices:read` scope.
-- [ ] Get your device ID:
+### Portainer — http://\<server-ip\>:9000
+- [ ] Create admin account **within 5 minutes** — if you miss the window, restart the container
+
+### Filebrowser — http://\<server-ip\>:8080
+- [ ] Default login: `admin` / `admin` — change immediately
+- [ ] Optionally update `FB_ROOT` in `linux-server/filebrowser/.env` to limit the browsable path, then restart:
   ```sh
-  tailscale status --json | jq -r '.Self.ID'
+  cd linux-server/filebrowser && docker compose restart
   ```
-- [ ] Add to `linux-server/homepage/.env`:
-  ```
-  HOMEPAGE_VAR_TAILSCALE_DEVICE_ID=<device-id>
-  HOMEPAGE_VAR_TAILSCALE_KEY=<oauth-client-secret>
-  ```
-- [ ] Restart Homepage to apply:
+
+### Uptime Kuma — http://\<server-ip\>:3001
+- [ ] Create admin account on first visit
+- [ ] Add monitors for each service (use `http://localhost:<port>` for internal checks)
+- [ ] Create a status page with slug `default` (used by the Homepage widget)
+
+### Nginx Proxy Manager — http://\<server-ip\>:81
+- [ ] Default login: `admin@example.com` / `changeme` — change immediately
+
+### ntfy — http://\<server-ip\>:5080
+- [ ] Install the ntfy app on your phone, add your server URL, subscribe to a topic (e.g. `alerts`)
+- [ ] Configure Uptime Kuma and Watchtower to send notifications via ntfy
+
+### AdGuard Home — http://\<server-ip\>:3003
+- [ ] Complete the setup wizard:
+  - Web UI port → `80` (maps to host port `8083`)
+  - DNS port → `53`
+  - Create admin credentials — then add them to `homepage/.env`
+- [ ] Point your router's DNS to `<server-ip>` for network-wide filtering
+
+### Syncthing — http://\<server-ip\>:8384
+- [ ] Add volume mounts to `linux-server/syncthing/docker-compose.yml` for each folder to sync, then restart:
   ```sh
-  cd linux-server/homepage && docker compose restart
+  cd linux-server/syncthing && docker compose restart
   ```
+- [ ] Get API key: Actions → Settings → API Key — add to `homepage/.env` as `HOMEPAGE_VAR_SYNCTHING_KEY`
+
+---
+
+## 6. Service reference
+
+| Service | URL | Notes |
+|---|---|---|
+| Homepage | http://\<server-ip\>:3000 | |
+| Portainer | http://\<server-ip\>:9000 | Create admin within 5 min |
+| Glances | http://\<server-ip\>:61208 | |
+| Speedtest Tracker | http://\<server-ip\>:8765 | |
+| Filebrowser | http://\<server-ip\>:8080 | Default: admin / admin |
+| Watchtower | — | Background only, no UI |
+| Uptime Kuma | http://\<server-ip\>:3001 | |
+| Nginx Proxy Manager | http://\<server-ip\>:81 | Default: admin@example.com / changeme |
+| ntfy | http://\<server-ip\>:5080 | |
+| Syncthing | http://\<server-ip\>:8384 | |
+| AdGuard Home | http://\<server-ip\>:3003 | Run setup wizard |
+| Cockpit | https://\<server-ip\>:9090 | |
+| Tailscale Web UI | http://localhost:8088 | After `tailscale up` |

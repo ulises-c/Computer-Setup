@@ -199,6 +199,86 @@ else
   run sudo systemctl enable --now cockpit.socket
 fi
 
+# ── Tailscale web service ─────────────────────────────────────────────────────
+echo ""
+SERVICE_DST="$HOME/.config/systemd/user/tailscale-web.service"
+if [[ ! -f "$SERVICE_DST" ]] || ! diff -q "$SCRIPT_DIR/tailscale-web.service" "$SERVICE_DST" &>/dev/null; then
+  echo "==> Installing Tailscale web service..."
+  run mkdir -p "$HOME/.config/systemd/user"
+  run cp "$SCRIPT_DIR/tailscale-web.service" "$SERVICE_DST"
+  run systemctl --user daemon-reload
+  run systemctl --user enable --now tailscale-web
+else
+  echo "==> Tailscale web service already installed"
+fi
+run loginctl enable-linger "$USER"
+
+# ── claude-code ───────────────────────────────────────────────────────────────
+echo ""
+if ! command -v claude &>/dev/null; then
+  echo "==> Installing claude-code..."
+  run curl -fsSL https://claude.ai/install.sh | bash
+else
+  echo "==> claude-code already installed"
+fi
+
+# ── AdGuard: free port 53 ─────────────────────────────────────────────────────
+echo ""
+RESOLVED_CONF="/etc/systemd/resolved.conf"
+if ! grep -q "^DNSStubListener=no" "$RESOLVED_CONF" 2>/dev/null; then
+  echo "==> Freeing port 53 for AdGuard..."
+  run sudo sed -i 's/#DNSStubListener=yes/DNSStubListener=no/' "$RESOLVED_CONF"
+  run sudo systemctl restart systemd-resolved
+else
+  echo "==> Port 53 already free for AdGuard"
+fi
+
+# ── Docker .env files ─────────────────────────────────────────────────────────
+echo ""
+echo "==> Setting up Docker service .env files..."
+for svc in homepage speedtest-tracker filebrowser; do
+  if [[ -f "$SCRIPT_DIR/$svc/.env.example" && ! -f "$SCRIPT_DIR/$svc/.env" ]]; then
+    run cp "$SCRIPT_DIR/$svc/.env.example" "$SCRIPT_DIR/$svc/.env"
+    echo "  created $svc/.env"
+  else
+    echo "  ✓ $svc/.env"
+  fi
+done
+
+# Auto-generate APP_KEY for speedtest-tracker
+if [[ -f "$SCRIPT_DIR/speedtest-tracker/.env" ]]; then
+  if ! grep -qE "^APP_KEY=base64:.+" "$SCRIPT_DIR/speedtest-tracker/.env" 2>/dev/null; then
+    if [[ "$DRY_RUN" == true ]]; then
+      echo "  [dry-run] generate APP_KEY in speedtest-tracker/.env"
+    else
+      APP_KEY="base64:$(openssl rand -base64 32)"
+      sed -i "s|^APP_KEY=.*|APP_KEY=$APP_KEY|" "$SCRIPT_DIR/speedtest-tracker/.env"
+      echo "  auto-generated APP_KEY for speedtest-tracker"
+    fi
+  fi
+fi
+
+# Filebrowser needs an empty db file (Docker would create it as a directory otherwise)
+FB_DB="$SCRIPT_DIR/filebrowser/filebrowser.db"
+if [[ ! -f "$FB_DB" ]]; then
+  run touch "$FB_DB"
+  echo "  created filebrowser/filebrowser.db"
+fi
+
+# ── Docker services ───────────────────────────────────────────────────────────
+echo ""
+echo "==> Starting Docker services..."
+for svc in homepage portainer glances speedtest-tracker filebrowser watchtower \
+           uptime-kuma nginx-proxy-manager ntfy syncthing adguard; do
+  svc_dir="$SCRIPT_DIR/$svc"
+  if [[ -d "$svc_dir" && -f "$svc_dir/docker-compose.yml" ]]; then
+    echo "  $svc..."
+    if ! run sudo docker compose -f "$svc_dir/docker-compose.yml" up -d; then
+      echo "  Warning: $svc failed to start"
+    fi
+  fi
+done
+
 # ── Manual install reminders ──────────────────────────────────────────────────
 CUSTOM_REMINDERS="$(print_custom_reminders "medium")"
 [[ "$INCLUDE_OPTIONAL" == true ]] && CUSTOM_REMINDERS+="$(print_custom_reminders "low")"
@@ -208,36 +288,30 @@ if [[ -n "$CUSTOM_REMINDERS" ]]; then
   echo "$CUSTOM_REMINDERS"
 fi
 
-# ── Post-install steps ────────────────────────────────────────────────────────
+# ── Done ─────────────────────────────────────────────────────────────────────
 echo ""
 if [[ "$DRY_RUN" == true ]]; then
   echo "Dry run complete — nothing was installed."
 else
   echo "================================================================"
-  echo " Done. Next steps:"
+  echo " Done. A few manual steps remain:"
   echo "================================================================"
   echo ""
-  echo "  1. Log out and back in — activates zsh and the docker group"
+  echo "  1. Log out and back in — activates zsh and 'docker' without sudo"
   echo ""
-  echo "  2. Authenticate Tailscale and enable the web UI service:"
+  echo "  2. Authenticate Tailscale:"
   echo "       sudo tailscale up"
   echo "       sudo tailscale set --operator=\$USER"
-  echo "       mkdir -p ~/.config/systemd/user"
-  echo "       cp linux-server/tailscale-web.service ~/.config/systemd/user/"
-  echo "       systemctl --user enable --now tailscale-web"
-  echo "       loginctl enable-linger \$USER"
   echo ""
-  echo "  3. Set up SSH / GPG keys:"
+  echo "  3. SSH / GPG keys:"
   echo "       bash SSH_and_GPG/create_ssh_key.sh"
   echo "       bash SSH_and_GPG/create_gpg_key.sh"
   echo ""
-  echo "  4. Install claude-code:"
-  echo "       curl -fsSL https://claude.ai/install.sh | bash"
+  echo "  4. Fill in linux-server/homepage/.env then restart Homepage:"
+  echo "       cd linux-server/homepage && docker compose restart"
   echo ""
-  echo "  5. Start Docker services — see linux-server/README.md for full details"
-  echo "       cd linux-server/homepage && cp .env.example .env && docker compose up -d"
-  echo ""
-  echo "  See linux-server/post-install.md for the complete checklist."
+  echo "  See linux-server/post-install.md for service URLs and first-login"
+  echo "  configuration (Portainer, AdGuard, Filebrowser, Uptime Kuma, etc.)."
   echo ""
   echo "================================================================"
 fi
