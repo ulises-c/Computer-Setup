@@ -59,7 +59,7 @@ brew_install() {
         (.install_command == null or .install_command == "") and
         (if $opt then true else .optional == false end)
       ) | .name] | join(" ")' "$PACKAGES_JSON")
-  [[ -n "$names" ]] && run brew install $names
+  [[ -n "$names" ]] && run brew install ${=names}
 }
 
 brew_cask_install() {
@@ -71,7 +71,7 @@ brew_cask_install() {
         .priority == $p and
         (if $opt then true else .optional == false end)
       ) | .name] | join(" ")' "$PACKAGES_JSON")
-  [[ -n "$names" ]] && run brew install --cask $names
+  [[ -n "$names" ]] && run brew install --cask ${=names}
 }
 
 pipx_install() {
@@ -95,7 +95,7 @@ npm_install() {
         .priority == $p and
         (if $opt then true else .optional == false end)
       ) | .name] | join(" ")' "$PACKAGES_JSON")
-  [[ -n "$names" ]] && run npm install -g $names
+  [[ -n "$names" ]] && run npm install -g ${=names}
 }
 
 brew_custom_install() {
