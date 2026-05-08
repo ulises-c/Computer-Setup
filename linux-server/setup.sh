@@ -151,6 +151,20 @@ else
   echo "==> ~/.zshrc already up to date"
 fi
 
+# ── tmux config ───────────────────────────────────────────────────────────────
+echo ""
+if [[ ! -f "$HOME/.tmux.conf" ]]; then
+  run cp "$SCRIPT_DIR/tmux.conf" "$HOME/.tmux.conf"
+  echo "==> ~/.tmux.conf installed from tmux.conf"
+elif ! diff -q "$SCRIPT_DIR/tmux.conf" "$HOME/.tmux.conf" &>/dev/null; then
+  TMUX_BACKUP="$HOME/.tmux.conf.bak.$(date +%Y%m%d_%H%M%S)"
+  run cp "$HOME/.tmux.conf" "$TMUX_BACKUP"
+  run cp "$SCRIPT_DIR/tmux.conf" "$HOME/.tmux.conf"
+  echo "==> ~/.tmux.conf updated (backup saved to $TMUX_BACKUP)"
+else
+  echo "==> ~/.tmux.conf already up to date"
+fi
+
 # ── Tailscale ─────────────────────────────────────────────────────────────────
 echo ""
 if ! command -v tailscale &>/dev/null; then

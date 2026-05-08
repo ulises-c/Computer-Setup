@@ -1,4 +1,10 @@
 - Services:
+    - homepage:
+        icon: mdi-view-dashboard
+        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:3000
+        description: Server dashboard
+        server: my-docker
+        container: homepage
     - atvloadly:
         icon: mdi-television-play
         href: http://{{HOMEPAGE_VAR_SERVER_IP}}:5533

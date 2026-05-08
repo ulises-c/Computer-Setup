@@ -30,6 +30,7 @@ The web UI runs on `localhost:8088` and `tailscale_ip:5252`. Homepage uses the l
 - [`setup.sh`](setup.sh) — automated install script
 - [`apt_packages.md`](apt_packages.md) — full package list with descriptions and links
 - [`zshrc.example`](zshrc.example) — reference zsh config; copied to `~/.zshrc` by `setup.sh` if none exists
+- [`tmux.conf`](tmux.conf) — tmux config with mouse support, vi copy mode, and a status bar; copied to `~/.tmux.conf` by `setup.sh`
 - [`linux_server_packages.json`](linux_server_packages.json) — machine-readable package manifest used by `setup.sh`
 
 ## Docker services

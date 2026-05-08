@@ -46,21 +46,23 @@ Install via `brew install <name>` unless noted otherwise.
     1. Apple Silicon system monitor — shows CPU/GPU/ANE/memory/power usage in a real-time TUI; requires `sudo`
 18. micro | [brew](https://formulae.brew.sh/formula/micro) | [GitHub](https://github.com/zyedidia/micro)
     1. Modern terminal text editor with mouse support, syntax highlighting, and familiar keybindings (Ctrl+S, Ctrl+C, etc.)
-19. tmux | [brew](https://formulae.brew.sh/formula/tmux) | [GitHub](https://github.com/tmux/tmux)
+19. eza | [brew](https://formulae.brew.sh/formula/eza) | [GitHub](https://github.com/eza-community/eza)
+    1. Modern `ls` replacement — color output, icons, git-aware status column, and tree view; used as `ll`/`la` aliases in the example zshrc
+20. tmux | [brew](https://formulae.brew.sh/formula/tmux) | [GitHub](https://github.com/tmux/tmux)
     1. Terminal multiplexer — split panes, persist sessions across disconnects, and run background processes
-20. ffmpeg | [brew](https://formulae.brew.sh/formula/ffmpeg) | [Homepage](https://ffmpeg.org/)
+21. ffmpeg | [brew](https://formulae.brew.sh/formula/ffmpeg) | [Homepage](https://ffmpeg.org/)
     1. Audio/video processing toolkit — convert, trim, encode, stream, and extract frames from media files
-21. exiftool | [brew](https://formulae.brew.sh/formula/exiftool) | [Homepage](https://exiftool.org/)
+22. exiftool | [brew](https://formulae.brew.sh/formula/exiftool) | [Homepage](https://exiftool.org/)
     1. Read and write metadata (EXIF, IPTC, XMP) in photos, videos, and other files
-22. tesseract | [brew](https://formulae.brew.sh/formula/tesseract) | [GitHub](https://github.com/tesseract-ocr/tesseract)
+23. tesseract | [brew](https://formulae.brew.sh/formula/tesseract) | [GitHub](https://github.com/tesseract-ocr/tesseract)
     1. OCR engine — extract text from images and scanned documents via CLI or library
-23. smartmontools | [brew](https://formulae.brew.sh/formula/smartmontools) | [Homepage](https://www.smartmontools.org/)
+24. smartmontools | [brew](https://formulae.brew.sh/formula/smartmontools) | [Homepage](https://www.smartmontools.org/)
     1. Monitor SSD/HDD health via S.M.A.R.T. data; `smartctl -a /dev/disk0` shows drive status
-24. octave | [brew](https://formulae.brew.sh/formula/octave) | [Homepage](https://octave.org/)
+25. octave | [brew](https://formulae.brew.sh/formula/octave) | [Homepage](https://octave.org/)
     1. MATLAB-compatible numerical computing environment — matrix operations, plotting, and scripting
-25. qemu | [brew](https://formulae.brew.sh/formula/qemu) | [Homepage](https://www.qemu.org/)
+26. qemu | [brew](https://formulae.brew.sh/formula/qemu) | [Homepage](https://www.qemu.org/)
     1. Machine emulator and virtualizer — run x86, ARM, and other architectures on Apple Silicon
-26. gogcli | [brew](https://formulae.brew.sh/formula/gogcli) | [Homepage](https://gogcli.sh/)
+27. gogcli | [brew](https://formulae.brew.sh/formula/gogcli) | [Homepage](https://gogcli.sh/)
     1. Google Workspace CLI — Gmail, Calendar, Drive, Docs, Sheets, Slides, and more in the terminal; built for scripts, CI, and coding agents
 
 ## Casks

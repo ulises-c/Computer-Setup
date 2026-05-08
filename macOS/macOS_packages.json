@@ -127,6 +127,13 @@
     "description": "Terminal multiplexer — split panes, persist sessions across disconnects"
   },
   {
+    "name": "eza",
+    "package_manager": "brew",
+    "priority": "medium",
+    "optional": false,
+    "description": "Modern ls replacement — colors, icons, git status, tree view"
+  },
+  {
     "name": "zsh-autosuggestions",
     "package_manager": "brew",
     "priority": "medium",

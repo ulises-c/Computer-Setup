@@ -5,6 +5,12 @@
     disk: /
     refresh: 3000
 
+- network:
+    label: network
+    interfaces:
+      - eno2
+    refresh: 3000
+
 - datetime:
     text_size: xl
     format:

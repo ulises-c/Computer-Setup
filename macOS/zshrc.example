@@ -67,8 +67,13 @@ PROMPT='%F{blue}%n%f%F{white}@%f%F{cyan}%m%f %F{yellow}%~%f${vcs_info_msg_0_} %#
 #  ALIASES
 # ═══════════════════════════════════════════════════════════════
 alias ls='ls -G'
-alias ll='ls -lAh'
-alias la='ls -A'
+if command -v eza &>/dev/null; then
+  alias ll='eza -lah --git'
+  alias la='eza -a'
+else
+  alias ll='ls -lAh'
+  alias la='ls -A'
+fi
 alias ..='cd ..'
 alias ...='cd ../..'
 alias grep='grep --color=auto'
@@ -90,7 +95,7 @@ alias gl='git log --oneline --graph --decorate'
 # ═══════════════════════════════════════════════════════════════
 #  ENVIRONMENT
 # ═══════════════════════════════════════════════════════════════
-export EDITOR='nano'
+export EDITOR='micro'
 export LANG='en_US.UTF-8'
 export LC_ALL='en_US.UTF-8'
 

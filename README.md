@@ -5,7 +5,10 @@ Useful programs and packages for a computer.
 For OS-specific software and install instructions, see:
 - [macOS/README.md](macOS/README.md)
 - [linux-desktop/README.md](linux-desktop/README.md) — CachyOS
-- [linux-server/README.md](linux-server/README.md) — Ubuntu Server, Raspberry Pi OS
+- [linux-server/README.md](linux-server/README.md) — Ubuntu Server LTS
+  - `setup.sh` installs zsh, eza, bat, fastfetch, tmux, GitHub CLI, Tailscale, and more
+  - Homepage dashboard (Docker) — system stats, running service cards with live Docker status
+  - Tailscale web UI as a persistent systemd user service
 - [windows/README.md](windows/README.md)
 
 ---
