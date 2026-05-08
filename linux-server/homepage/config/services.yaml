@@ -5,6 +5,12 @@
         description: Server dashboard
         server: my-docker
         container: homepage
+    - portainer:
+        icon: si-portainer
+        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:9000
+        description: Docker manager
+        server: my-docker
+        container: portainer
     - atvloadly:
         icon: mdi-television-play
         href: http://{{HOMEPAGE_VAR_SERVER_IP}}:5533

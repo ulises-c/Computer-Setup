@@ -46,6 +46,16 @@ The web UI runs on `localhost:8088` and `tailscale_ip:5252`. Homepage uses the l
    3. Access at `http://<server-ip>:3000`
    4. Add new services in `config/services.yaml` — each card supports `server: my-docker` + `container: <name>` for live status
 
-2. atvloadly | [GitHub](https://github.com/bitxeno/atvloadly)
+2. portainer | [GitHub](https://github.com/portainer/portainer) | [Docs](https://docs.portainer.io)
+   1. Web UI for managing Docker containers, images, volumes, and networks
+   2. Deploy:
+      ```sh
+      cd linux-server/portainer
+      docker compose up -d
+      ```
+   3. Access at `http://<server-ip>:9000` (HTTP) or `https://<server-ip>:9443` (HTTPS, self-signed cert)
+   4. On first launch, set up an admin account within 5 minutes or the setup will time out
+
+3. atvloadly | [GitHub](https://github.com/bitxeno/atvloadly)
    1. Self-hosted web app for sideloading IPA files onto Apple TV — a self-deployable alternative to AltStore/Sideloadly
    2. Deploy: `docker run -d --name atvloadly --restart=unless-stopped -p 5533:80 bitxeno/atvloadly`
