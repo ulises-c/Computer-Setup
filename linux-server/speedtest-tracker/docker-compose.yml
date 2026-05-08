@@ -8,6 +8,7 @@ services:
     environment:
       - PUID=1000
       - PGID=1000
+      - TZ=America/Los_Angeles
       - DB_CONNECTION=sqlite
     ports:
       - "8765:80"

@@ -207,6 +207,7 @@
     "package_manager": "custom",
     "priority": "medium",
     "optional": false,
+    "handled_by_setup": true,
     "install_command": "curl -fsSL https://get.docker.com | sudo sh",
     "description": "Container platform — official Docker Engine for Linux; convenience script installs CE, CLI, compose plugin, and containerd"
   },

@@ -8,6 +8,7 @@ services:
     network_mode: host
     environment:
       - GLANCES_OPT=-w
+      - TZ=America/Los_Angeles
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /etc/os-release:/etc/os-release:ro

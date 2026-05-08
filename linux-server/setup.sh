@@ -28,13 +28,6 @@ run() {
   fi
 }
 
-run_eval() {
-  if [[ "$DRY_RUN" == true ]]; then
-    echo "  [dry-run] eval: $1"
-  else
-    eval "$1"
-  fi
-}
 
 apt_install() {
   local priority="$1"
@@ -80,23 +73,31 @@ fi
 # eza — not in standard Ubuntu repos
 if ! apt-cache show eza &>/dev/null 2>&1; then
   echo "==> Adding eza apt repo..."
-  run sudo apt install -y gpg
-  wget -qO- https://raw.githubusercontent.com/eza-community/eza/main/deb.asc \
-    | sudo gpg --dearmor -o /etc/apt/keyrings/gierens.gpg
-  echo "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" \
-    | sudo tee /etc/apt/sources.list.d/gierens.list > /dev/null
-  sudo chmod 644 /etc/apt/keyrings/gierens.gpg /etc/apt/sources.list.d/gierens.list
+  if [[ "$DRY_RUN" != true ]]; then
+    sudo apt install -y gpg
+    wget -qO- https://raw.githubusercontent.com/eza-community/eza/main/deb.asc \
+      | sudo gpg --dearmor -o /etc/apt/keyrings/gierens.gpg
+    echo "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" \
+      | sudo tee /etc/apt/sources.list.d/gierens.list > /dev/null
+    sudo chmod 644 /etc/apt/keyrings/gierens.gpg /etc/apt/sources.list.d/gierens.list
+  else
+    echo "  [dry-run] add eza community apt repo"
+  fi
   NEED_UPDATE=true
 fi
 
 # gh — GitHub CLI apt repo
 if ! command -v gh &>/dev/null; then
   echo "==> Adding GitHub CLI apt repo..."
-  wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-    | sudo gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg
-  sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
-  echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-    | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+  if [[ "$DRY_RUN" != true ]]; then
+    wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      | sudo gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg
+    sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+  else
+    echo "  [dry-run] add GitHub CLI apt repo"
+  fi
   NEED_UPDATE=true
 fi
 

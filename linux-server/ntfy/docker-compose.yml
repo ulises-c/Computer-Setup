@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     command: serve
     environment:
-      - TZ=UTC
+      - TZ=America/Los_Angeles
     ports:
       - "5080:80"
     volumes:

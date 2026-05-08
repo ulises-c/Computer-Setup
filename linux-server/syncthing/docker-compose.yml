@@ -6,7 +6,7 @@ services:
     environment:
       - PUID=1000
       - PGID=1000
-      - TZ=UTC
+      - TZ=America/Los_Angeles
     ports:
       - "8384:8384"         # web UI
       - "22000:22000/tcp"   # sync protocol
