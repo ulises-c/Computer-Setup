@@ -3,7 +3,8 @@ theme: dark
 color: slate
 headerStyle: clean
 hideVersion: true
-allowedHosts: "{{HOMEPAGE_VAR_SERVER_IP}},localhost"
+# allowedHosts: "{{HOMEPAGE_VAR_SERVER_IP}},localhost,192.168.1.72,192.168.1.71"
+allowedHosts: "192.168.1.72,localhost"
 
 layout:
   System:
