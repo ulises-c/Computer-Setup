@@ -5,3 +5,12 @@
         description: Apple TV IPA sideloader
         server: my-docker
         container: atvloadly
+    - tailscale:
+        icon: si-tailscale
+        href: https://login.tailscale.com/admin
+        description: Zero-config VPN
+        target: _blank
+        widget:
+          type: tailscale
+          deviceid: "{{HOMEPAGE_VAR_TAILSCALE_DEVICE_ID}}"
+          key: "{{HOMEPAGE_VAR_TAILSCALE_API_KEY}}"
