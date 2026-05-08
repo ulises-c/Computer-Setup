@@ -12,16 +12,11 @@ bash linux-server/setup.sh --dry-run   # preview without installing
 
 After running, log out and back in to start using zsh.
 
-```sh
-# Tailscale VPN (run after setup.sh)
-bash linux-server/setup_tailscale.sh           # basic
-bash linux-server/setup_tailscale.sh --ssh     # also enable Tailscale SSH
-```
+After setup.sh completes, run `sudo tailscale up` to authenticate Tailscale and connect to your Tailnet.
 
 ## Files
 
 - [`setup.sh`](setup.sh) — automated install script
-- [`setup_tailscale.sh`](setup_tailscale.sh) — Tailscale install + authentication
 - [`apt_packages.md`](apt_packages.md) — full package list with descriptions and links
 - [`zshrc.example`](zshrc.example) — reference zsh config; copied to `~/.zshrc` by `setup.sh` if none exists
 - [`linux_server_packages.json`](linux_server_packages.json) — machine-readable package manifest used by `setup.sh`

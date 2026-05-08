@@ -227,7 +227,8 @@
     "package_manager": "custom",
     "priority": "medium",
     "optional": false,
+    "handled_by_setup": true,
     "install_command": "curl -fsSL https://tailscale.com/install.sh | sudo sh",
-    "description": "Zero-config VPN — access the server from anywhere without port forwarding; run setup_tailscale.sh after installing"
+    "description": "Zero-config VPN — access the server from anywhere without port forwarding; installed by setup.sh, run 'sudo tailscale up' to authenticate"
   }
 ]

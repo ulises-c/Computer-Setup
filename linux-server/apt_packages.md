@@ -99,9 +99,4 @@ These require their own installer or setup — not handled by `setup.sh`.
    2. Convenience script (installs CE, CLI, compose plugin, and containerd): `curl -fsSL https://get.docker.com | sudo sh`
 4. tailscale | [Docs](https://tailscale.com/download/linux) | [Homepage](https://tailscale.com/)
    1. Zero-config VPN — access the server from anywhere without port forwarding or firewall rules
-   2. Use `setup_tailscale.sh` rather than installing manually — it handles install, authentication, and optional flags:
-      ```sh
-      bash linux-server/setup_tailscale.sh                        # basic
-      bash linux-server/setup_tailscale.sh --ssh                  # enable Tailscale SSH
-      bash linux-server/setup_tailscale.sh --advertise-exit-node  # use server as exit node
-      ```
+   2. Installed automatically by `setup.sh`; run `sudo tailscale up` afterwards to authenticate and connect to your Tailnet

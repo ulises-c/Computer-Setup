@@ -49,7 +49,7 @@ print_custom_reminders() {
   local priority="$1"
   local items
   items=$(jq -r --arg p "$priority" \
-    '.[] | select(.package_manager == "custom" and .priority == $p) |
+    '.[] | select(.package_manager == "custom" and .priority == $p and (.handled_by_setup != true)) |
      "  - \(.name)\n    \(.description)\n    Install: \(.install_command)"' \
     "$PACKAGES_JSON")
   [[ -n "$items" ]] && echo "$items"
@@ -146,6 +146,16 @@ else
   echo "==> ~/.zshrc already exists — skipping"
   echo "    Reference: $SCRIPT_DIR/zshrc.example"
 fi
+
+# ── Tailscale ─────────────────────────────────────────────────────────────────
+echo ""
+if ! command -v tailscale &>/dev/null; then
+  echo "==> Installing Tailscale..."
+  run curl -fsSL https://tailscale.com/install.sh | sudo sh
+else
+  echo "==> Tailscale already installed ($(tailscale version | head -1))"
+fi
+echo "    Run 'sudo tailscale up' to authenticate and connect to your Tailnet."
 
 # ── Manual install reminders ──────────────────────────────────────────────────
 echo ""
