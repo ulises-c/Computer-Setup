@@ -44,17 +44,9 @@ Run through this after `bash linux-server/setup.sh` completes.
 
 ---
 
-## 4. nvm + Node + claude-code
+## 4. claude-code
 
-- [ ] Install nvm:
-  ```sh
-  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-  ```
-- [ ] Re-open your shell, then install Node and claude-code:
-  ```sh
-  nvm install lts/* && nvm alias default lts/*
-  npm install -g @anthropic-ai/claude-code
-  ```
+- [ ] Install via curl per the [official docs](https://docs.anthropic.com/en/docs/claude-code)
 
 ---
 

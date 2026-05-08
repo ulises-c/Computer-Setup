@@ -67,14 +67,9 @@ bash SSH_and_GPG/create_ssh_key.sh
 bash SSH_and_GPG/create_gpg_key.sh
 ```
 
-### 4. nvm + Node + claude-code
+### 4. claude-code
 
-```sh
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-# re-open shell, then:
-nvm install lts/* && nvm alias default lts/*
-npm install -g @anthropic-ai/claude-code
-```
+Install via curl per the [official docs](https://docs.anthropic.com/en/docs/claude-code).
 
 ### 5. Docker services
 

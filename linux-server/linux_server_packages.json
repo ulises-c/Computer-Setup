@@ -203,25 +203,6 @@
     "description": "Read and write metadata in photos, videos, and other files — command: exiftool"
   },
   {
-    "name": "nvm",
-    "package_manager": "custom",
-    "priority": "medium",
-    "optional": false,
-    "install_command": "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash",
-    "install_alternatives": [
-      "wget -qO- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash",
-      "sudo apt install nodejs npm"
-    ],
-    "description": "Node version manager — required before installing npm packages; after install run: nvm install lts/* && nvm alias default lts/*"
-  },
-  {
-    "name": "claude-code",
-    "package_manager": "npm",
-    "priority": "medium",
-    "optional": false,
-    "description": "Claude Code — terminal-based AI coding assistant; requires nvm + Node installed first"
-  },
-  {
     "name": "docker-ce",
     "package_manager": "custom",
     "priority": "medium",

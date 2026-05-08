@@ -88,19 +88,12 @@ Install with `bash linux-server/setup.sh --optional`.
 
 These require their own installer or setup — not handled by `setup.sh`.
 
-1. nvm | [GitHub](https://github.com/nvm-sh/nvm)
-   1. Node version manager — required before installing any npm packages (e.g. claude-code)
-   2. After install, run: `nvm install lts/* && nvm alias default lts/*`
-   3. **Default (curl):** `curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash`
-   4. **Alternatives:**
-      - wget: `wget -qO- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash`
-      - apt (system Node, no version management): `sudo apt install nodejs npm`
-2. claude-code | [npm](https://www.npmjs.com/package/@anthropic-ai/claude-code) | [Docs](https://docs.anthropic.com/en/docs/claude-code)
+1. claude-code | [Docs](https://docs.anthropic.com/en/docs/claude-code)
    1. Terminal-based AI coding assistant from Anthropic — agentic coding, file editing, shell commands, and MCP integrations
-   2. Requires nvm + Node installed first: `npm install -g @anthropic-ai/claude-code`
-3. docker-ce | [Docs](https://docs.docker.com/engine/install/ubuntu/) | [GitHub](https://github.com/docker/docker-ce)
+   2. Install via curl per the official docs
+2. docker-ce | [Docs](https://docs.docker.com/engine/install/ubuntu/) | [GitHub](https://github.com/docker/docker-ce)
    1. Container platform — official Docker Engine for Linux
    2. Convenience script (installs CE, CLI, compose plugin, and containerd): `curl -fsSL https://get.docker.com | sudo sh`
-4. tailscale | [Docs](https://tailscale.com/download/linux) | [Homepage](https://tailscale.com/)
+3. tailscale | [Docs](https://tailscale.com/download/linux) | [Homepage](https://tailscale.com/)
    1. Zero-config VPN — access the server from anywhere without port forwarding or firewall rules
    2. Installed automatically by `setup.sh`; run `sudo tailscale up` afterwards to authenticate and connect to your Tailnet
