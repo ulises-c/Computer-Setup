@@ -4,7 +4,7 @@ services:
     container_name: nginx-proxy-manager
     restart: unless-stopped
     ports:
-      - "80:80"       # HTTP proxy
+      - "8090:80"     # HTTP proxy (moved off 80 — Homepage serves on port 80 directly)
       - "443:443"     # HTTPS proxy
       - "81:81"       # admin UI
     volumes:
