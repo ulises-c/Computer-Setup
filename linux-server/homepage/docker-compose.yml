@@ -9,6 +9,6 @@ services:
     env_file:
       - .env
     environment:
-      HOMEPAGE_ALLOWED_HOSTS: "${HOSTNAME}:3000,${HOSTNAME}.local:3000,${HOSTNAME}.local,localhost:3000,192.168.1.72:3000,192.168.1.72"
+      HOMEPAGE_ALLOWED_HOSTS: "${HOSTNAME}:3000,${HOSTNAME}.local:3000,${HOSTNAME}.local,localhost:3000,${SERVER_IP}:3000,${SERVER_IP}"
       HOSTNAME: "0.0.0.0"
     restart: unless-stopped
