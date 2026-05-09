@@ -9,7 +9,7 @@ services:
     env_file:
       - .env
     environment:
-      HOMEPAGE_ALLOWED_HOSTS: "${HOSTNAME},${HOSTNAME}.local,localhost,${SERVER_IP}"
+      HOMEPAGE_ALLOWED_HOSTS: "${HOSTNAME},${HOSTNAME}.local,localhost,${SERVER_IP},${TAILSCALE_HOSTNAME}"
       HOSTNAME: "0.0.0.0"
-      PORT: "80"
+      PORT: "3000"
     restart: unless-stopped

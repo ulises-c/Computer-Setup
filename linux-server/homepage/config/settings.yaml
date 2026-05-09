@@ -5,9 +5,9 @@ headerStyle: clean
 hideVersion: true
 
 layout:
-  System:
-    style: row
-    columns: 2
-  Services:
-    style: row
-    columns: 3
+  Management:
+    style: column
+  Network:
+    style: column
+  Storage:
+    style: column

@@ -12,25 +12,13 @@ bash linux-server/setup.sh --dry-run   # preview without installing
 
 After running, log out and back in to start using zsh.
 
-After setup.sh completes, authenticate Tailscale and enable the persistent web UI:
+After setup.sh completes, authenticate Tailscale:
 
 ```sh
 sudo tailscale up
-sudo tailscale set --operator=$USER
-mkdir -p ~/.config/systemd/user
-cp linux-server/tailscale-web.service ~/.config/systemd/user/
-systemctl --user enable --now tailscale-web
-loginctl enable-linger $USER   # keeps the service running without a login session
 ```
 
-The web UI runs on `localhost:8088` and `tailscale_ip:5252`. Homepage links to the Tailscale IP for access from any Tailscale device.
-
-To enable the Tailscale widget on Homepage, create an OAuth client at `tailscale.com/admin/settings/oauth` with the `devices:read` scope, then add the credentials to `linux-server/homepage/.env`:
-
-```sh
-# Get your device ID
-tailscale status --json | jq -r '.Self.ID'
-```
+`setup.sh` handles the Tailscale web UI service, Docker services, and `.env` scaffolding automatically. See `post-install.md` for the remaining manual steps.
 
 ## Files
 
@@ -54,11 +42,9 @@ Log out and back in. This activates zsh as your default shell and adds you to th
 ```sh
 sudo tailscale up
 sudo tailscale set --operator=$USER
-mkdir -p ~/.config/systemd/user
-cp linux-server/tailscale-web.service ~/.config/systemd/user/
-systemctl --user enable --now tailscale-web
-loginctl enable-linger $USER
 ```
+
+The Tailscale web UI service is installed and started by `setup.sh`. The web UI is available at `localhost:8088` and `tailscale_ip:5252`.
 
 ### 3. SSH / GPG keys
 
@@ -78,11 +64,11 @@ curl -fsSL https://claude.ai/install.sh | bash
 Start services in this order. Most just need `docker compose up -d`; exceptions are noted.
 
 ```sh
-# Homepage — update .env with your server hostname and Tailscale IP first
+# Homepage — update .env with your server details first (see post-install.md)
 cd linux-server/homepage && cp .env.example .env
 # edit .env, then:
 docker compose up -d
-# Access at http://<server-ip>:3000
+# Access at http://<server-ip>:3000 (or https://<tailscale-hostname> after HTTPS setup)
 
 # Portainer
 cd linux-server/portainer && docker compose up -d
@@ -98,9 +84,9 @@ echo "base64:$(openssl rand -base64 32)"  # paste as APP_KEY in .env
 docker compose up -d
 # Access at http://<server-ip>:8765
 
-# Filebrowser — touch db file first or Docker creates it as a directory
+# Filebrowser
 cd linux-server/filebrowser && cp .env.example .env
-touch filebrowser.db
+# Optionally set FB_ROOT in .env to limit the browsable path (defaults to /)
 docker compose up -d
 # Access at http://<server-ip>:8080 — default login: admin / admin (change immediately)
 
@@ -113,19 +99,32 @@ cd linux-server/adguard && docker compose up -d
 # After setup: http://<server-ip>:8083
 ```
 
-### 6. Tailscale widget credentials
+### 6. Tailscale widget
 
-Create an OAuth client at `tailscale.com/admin/settings/oauth` with the `devices:read` scope, then fill in `linux-server/homepage/.env`:
+The Tailscale widget uses a local OAuth proxy (`linux-server/tailscale-proxy`) to avoid 90-day API key rotation.
+
+1. Create an OAuth client at `tailscale.com/admin/settings/oauth` with scope **Core - Read**
+2. Get your device ID: `tailscale status --json | jq -r '.Self.ID'`
+3. Fill in `linux-server/tailscale-proxy/.env` with the client ID, client secret, and device ID
+4. Start the proxy:
+   ```sh
+   cd linux-server/tailscale-proxy && docker compose up -d
+   ```
+
+### 7. HTTPS
+
+Get a TLS cert from Tailscale and configure NPM to terminate HTTPS:
 
 ```sh
-tailscale status --json | jq -r '.Self.ID'   # your device ID
+tailscale cert <your-tailscale-hostname>   # e.g. ollie-server.tail01d63b.ts.net
 ```
 
-Set `HOMEPAGE_VAR_TAILSCALE_DEVICE_ID` and `HOMEPAGE_VAR_TAILSCALE_KEY` in the `.env`, then restart Homepage:
+In NPM admin (`http://<server-ip>:81`):
+1. **SSL Certificates → Add Custom Certificate** — paste the `.crt` and `.key` file contents
+2. **Proxy Hosts → Add** — domain: your Tailscale hostname, forward to `http://<server-ip>:3000`, enable SSL with the custom cert
+3. **Redirection Hosts → Add** — domain: `<hostname>.local`, redirect to `https://<tailscale-hostname>` (301)
 
-```sh
-cd linux-server/homepage && docker compose restart
-```
+> Requires enabling HTTPS certificates in the Tailscale admin console: `login.tailscale.com/admin/dns`
 
 ---
 
@@ -161,8 +160,7 @@ cd linux-server/homepage && docker compose restart
    2. Deploy:
       ```sh
       cd linux-server/filebrowser
-      cp .env.example .env        # set FB_ROOT to the path you want to browse
-      touch filebrowser.db        # required — prevents Docker creating it as a directory
+      cp .env.example .env        # optionally set FB_ROOT to limit the browsable path (defaults to /)
       docker compose up -d
       ```
    3. Access at `http://<server-ip>:8080`; default login is `admin` / `admin` — change on first login
@@ -208,15 +206,26 @@ cd linux-server/homepage && docker compose restart
    3. Access at `http://<server-ip>:3001`; create an admin account on first visit
    4. Add monitors for each service, then create a status page with slug `default` for the Homepage widget
 
-10. nginx proxy manager | [GitHub](https://github.com/jc21/nginx-proxy-manager) | [Docs](https://nginxproxymanager.com/guide/)
-    1. Reverse proxy with a web UI — assign clean hostnames to services and get SSL certs via Let's Encrypt automatically
+10. tailscale-proxy
+    1. Tiny local HTTP server that exchanges Tailscale OAuth credentials for an access token and proxies device API requests — used by the Homepage Tailscale widget to avoid 90-day key rotation
+    2. Deploy:
+       ```sh
+       cd linux-server/tailscale-proxy
+       cp .env.example .env   # fill in TAILSCALE_CLIENT_ID, TAILSCALE_CLIENT_SECRET, TAILSCALE_DEVICE_ID
+       docker compose up -d   # builds the image on first run
+       ```
+    3. Listens on `localhost:8089`; Homepage queries it via `customapi` widget
+
+11. nginx proxy manager | [GitHub](https://github.com/jc21/nginx-proxy-manager) | [Docs](https://nginxproxymanager.com/guide/)
+    1. Reverse proxy with a web UI — handles HTTPS termination for Homepage (Tailscale cert) and HTTP→HTTPS redirect
     2. Deploy:
        ```sh
        cd linux-server/nginx-proxy-manager && docker compose up -d
        ```
     3. Access admin UI at `http://<server-ip>:81`; default login: `admin@example.com` / `changeme` — update immediately
+    4. See step 7 above for HTTPS configuration
 
-11. ntfy | [GitHub](https://github.com/binwiederhier/ntfy) | [Docs](https://docs.ntfy.sh)
+12. ntfy | [GitHub](https://github.com/binwiederhier/ntfy) | [Docs](https://docs.ntfy.sh)
     1. Self-hosted push notification service — send alerts from any service to your phone or desktop via the ntfy app
     2. Deploy:
        ```sh
@@ -224,7 +233,7 @@ cd linux-server/homepage && docker compose restart
        ```
     3. Access at `http://<server-ip>:5080`; subscribe to topics in the ntfy app using your server URL
 
-12. syncthing | [GitHub](https://github.com/syncthing/syncthing) | [Docs](https://docs.syncthing.net)
+13. syncthing | [GitHub](https://github.com/syncthing/syncthing) | [Docs](https://docs.syncthing.net)
     1. Decentralized file sync across devices — no cloud required; syncs directly between your server and other devices
     2. Deploy:
        ```sh
@@ -234,7 +243,7 @@ cd linux-server/homepage && docker compose restart
     4. Add volume mounts to `docker-compose.yml` for each folder you want to sync, then configure them in the web UI
     5. Get your API key from Actions → Settings → API Key and add it to `linux-server/homepage/.env` for the Homepage widget
 
-13. AdGuard Home | [GitHub](https://github.com/AdguardTeam/AdGuardHome) | [Docs](https://adguard-dns.io/kb/adguard-home/overview/)
+14. AdGuard Home | [GitHub](https://github.com/AdguardTeam/AdGuardHome) | [Docs](https://adguard-dns.io/kb/adguard-home/overview/)
    1. Network-wide DNS ad and tracker blocker — modern UI, DNS-over-HTTPS/TLS, and per-client rules
    2. **Prerequisites** — Ubuntu's `systemd-resolved` binds to port 53 and must be told to stop using it:
       ```sh
@@ -254,18 +263,18 @@ cd linux-server/homepage && docker compose restart
    6. Point your router's DNS (or individual devices) to `<server-ip>` to start filtering
    7. Add credentials to `linux-server/homepage/.env` to enable the stats widget on Homepage
 
-14. pi-hole | [GitHub](https://github.com/pi-hole/pi-hole) | [Docs](https://docs.pi-hole.net)
+15. pi-hole | [GitHub](https://github.com/pi-hole/pi-hole) | [Docs](https://docs.pi-hole.net)
     1. Network-wide DNS ad blocker — alternative to AdGuard Home
     2. Not yet configured
 
-15. Immich | [GitHub](https://github.com/immich-app/immich) | [Docs](https://immich.app/docs)
+16. Immich | [GitHub](https://github.com/immich-app/immich) | [Docs](https://immich.app/docs)
     1. Self-hosted photo and video backup — Google Photos alternative with mobile apps, face recognition, and timeline view
     2. Not yet configured
 
-16. Jellyfin | [GitHub](https://github.com/jellyfin/jellyfin) | [Docs](https://jellyfin.org/docs/)
+17. Jellyfin | [GitHub](https://github.com/jellyfin/jellyfin) | [Docs](https://jellyfin.org/docs/)
     1. Self-hosted media server — stream your own movies, TV shows, and music to any device
     2. Not yet configured
 
-17. Home Assistant | [GitHub](https://github.com/home-assistant/core) | [Docs](https://www.home-assistant.io/docs/)
+18. Home Assistant | [GitHub](https://github.com/home-assistant/core) | [Docs](https://www.home-assistant.io/docs/)
     1. Open source smart home hub — integrates with thousands of devices and services
     2. Not yet configured
