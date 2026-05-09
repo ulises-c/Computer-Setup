@@ -48,14 +48,54 @@ cd linux-server/homepage && docker compose restart
 |---|---|
 | `HOMEPAGE_VAR_SERVER_IP` | Your server hostname (e.g. `ollie-server.local`) |
 | `HOMEPAGE_VAR_TAILSCALE_IP` | `tailscale ip -4` |
-| `HOMEPAGE_VAR_TAILSCALE_DEVICE_ID` | `tailscale status --json \| jq -r '.Self.ID'` |
-| `HOMEPAGE_VAR_TAILSCALE_KEY` | OAuth client from `tailscale.com/admin/settings/oauth` (scope: `devices:read`) |
 | `HOMEPAGE_VAR_ADGUARD_USER` / `_PASS` | Set after AdGuard wizard (step 5 below) |
 | `HOMEPAGE_VAR_SYNCTHING_KEY` | Set after Syncthing is running (step 5 below) |
+| `HOSTNAME` | `hostname` |
+| `SERVER_IP` | `hostname -I \| awk '{print $1}'` |
+| `TAILSCALE_HOSTNAME` | `tailscale status --json \| jq -r '.Self.DNSName' \| sed 's/\.$//'` |
 
 ---
 
-## 5. First-login service setup
+---
+
+## 5. Tailscale widget (tailscale-proxy)
+
+The Homepage Tailscale widget uses a local OAuth proxy to avoid 90-day key rotation.
+
+- [ ] Create an OAuth client at `tailscale.com/admin/settings/oauth` — scope: **Core - Read**
+- [ ] Fill in `linux-server/tailscale-proxy/.env`:
+
+  | Variable | Value |
+  |---|---|
+  | `TAILSCALE_CLIENT_ID` | OAuth client ID |
+  | `TAILSCALE_CLIENT_SECRET` | OAuth client secret |
+  | `TAILSCALE_DEVICE_ID` | `tailscale status --json \| jq -r '.Self.ID'` |
+
+- [ ] Start the proxy:
+  ```sh
+  cd linux-server/tailscale-proxy && docker compose up -d
+  ```
+
+---
+
+## 6. HTTPS
+
+- [ ] Enable HTTPS certificates in the Tailscale admin console: `login.tailscale.com/admin/dns`
+- [ ] Get a TLS cert:
+  ```sh
+  tailscale cert <your-tailscale-hostname>
+  # e.g. tailscale cert ollie-server.tail01d63b.ts.net
+  ```
+- [ ] In NPM admin (`http://<server-ip>:81`):
+  - **SSL Certificates → Add Custom Certificate** — paste `.crt` and `.key` file contents; save as e.g. "tailscale cert"
+  - **Proxy Hosts → Add** — domain: `<tailscale-hostname>`, forward to `http://<server-ip>:3000`, SSL: select the custom cert
+  - **Redirection Hosts → Add** — domain: `<hostname>.local`, scheme: https, forward to `<tailscale-hostname>`, HTTP code: 301
+
+> The Tailscale cert is valid for ~90 days. Renew by re-running `tailscale cert` and updating the cert in NPM.
+
+---
+
+## 7. First-login service setup
 
 ### Portainer — http://\<server-ip\>:9000
 - [ ] Create admin account **within 5 minutes** — if you miss the window, restart the container
@@ -74,6 +114,7 @@ cd linux-server/homepage && docker compose restart
 
 ### Nginx Proxy Manager — http://\<server-ip\>:81
 - [ ] Default login: `admin@example.com` / `changeme` — change immediately
+- [ ] Configure HTTPS proxy and redirect (see step 6 above)
 
 ### ntfy — http://\<server-ip\>:5080
 - [ ] Install the ntfy app on your phone, add your server URL, subscribe to a topic (e.g. `alerts`)
@@ -95,11 +136,11 @@ cd linux-server/homepage && docker compose restart
 
 ---
 
-## 6. Service reference
+## 8. Service reference
 
 | Service | URL | Notes |
 |---|---|---|
-| Homepage | http://\<server-ip\>:3000 | |
+| Homepage | https://\<tailscale-hostname\> | Primary; or http://\<server-ip\>:3000 on LAN |
 | Portainer | http://\<server-ip\>:9000 | Create admin within 5 min |
 | Glances | http://\<server-ip\>:61208 | |
 | Speedtest Tracker | http://\<server-ip\>:8765 | |
@@ -109,6 +150,7 @@ cd linux-server/homepage && docker compose restart
 | Nginx Proxy Manager | http://\<server-ip\>:81 | Default: admin@example.com / changeme |
 | ntfy | http://\<server-ip\>:5080 | |
 | Syncthing | http://\<server-ip\>:8384 | |
-| AdGuard Home | http://\<server-ip\>:3003 | Run setup wizard |
+| AdGuard Home | http://\<server-ip\>:8083 | Run setup wizard at :3003 first |
 | Cockpit | https://\<server-ip\>:9090 | |
 | Tailscale Web UI | http://localhost:8088 | After `tailscale up` |
+| Tailscale proxy | http://localhost:8089 | Internal — used by Homepage widget |

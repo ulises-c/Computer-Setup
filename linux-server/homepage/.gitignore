@@ -1,6 +1,0 @@
-.env
-config/custom.css
-config/custom.js
-config/kubernetes.yaml
-config/proxmox.yaml
-config/logs/

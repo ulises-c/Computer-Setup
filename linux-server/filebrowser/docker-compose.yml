@@ -7,4 +7,4 @@ services:
       - "8080:80"
     volumes:
       - ${FB_ROOT:-/}:/srv
-      - ./filebrowser.db:/database.db
+      - ./database:/database

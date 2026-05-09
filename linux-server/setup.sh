@@ -45,7 +45,7 @@ print_custom_reminders() {
     '.[] | select(.package_manager == "custom" and .priority == $p and (.handled_by_setup != true)) |
      "  - \(.name)\n    \(.description)\n    Install: \(.install_command)"' \
     "$PACKAGES_JSON")
-  [[ -n "$items" ]] && echo "$items"
+  [[ -n "$items" ]] && echo "$items" || true
 }
 
 
@@ -236,7 +236,7 @@ fi
 # ── Docker .env files ─────────────────────────────────────────────────────────
 echo ""
 echo "==> Setting up Docker service .env files..."
-for svc in homepage speedtest-tracker filebrowser; do
+for svc in homepage speedtest-tracker filebrowser tailscale-proxy; do
   if [[ -f "$SCRIPT_DIR/$svc/.env.example" && ! -f "$SCRIPT_DIR/$svc/.env" ]]; then
     run cp "$SCRIPT_DIR/$svc/.env.example" "$SCRIPT_DIR/$svc/.env"
     echo "  created $svc/.env"
@@ -245,14 +245,33 @@ for svc in homepage speedtest-tracker filebrowser; do
   fi
 done
 
-# Inject HOSTNAME so docker compose resolves ${HOSTNAME} in homepage/docker-compose.yml
+# Fill derivable values into homepage/.env (replace placeholders or append if missing)
 HOMEPAGE_ENV="$SCRIPT_DIR/homepage/.env"
-if [[ -f "$HOMEPAGE_ENV" ]] && ! grep -q "^HOSTNAME=" "$HOMEPAGE_ENV" 2>/dev/null; then
-  if [[ "$DRY_RUN" == true ]]; then
-    echo "  [dry-run] inject HOSTNAME=$(hostname) into homepage/.env"
-  else
-    echo "HOSTNAME=$(hostname)" >> "$HOMEPAGE_ENV"
-    echo "  injected HOSTNAME into homepage/.env"
+if [[ -f "$HOMEPAGE_ENV" ]]; then
+  _fill_env() {
+    local key="$1" val="$2"
+    if [[ "$DRY_RUN" == true ]]; then
+      echo "  [dry-run] $key → $val"
+      return
+    fi
+    if grep -q "^$key=" "$HOMEPAGE_ENV"; then
+      sed -i "s|^$key=.*|$key=$val|" "$HOMEPAGE_ENV"
+    else
+      echo "$key=$val" >> "$HOMEPAGE_ENV"
+    fi
+    echo "  $key → $val"
+  }
+
+  _fill_env HOSTNAME "$(hostname)"
+  _fill_env SERVER_IP "$(hostname -I | awk '{print $1}')"
+
+  if command -v tailscale &>/dev/null; then
+    TS_HOSTNAME=$(tailscale status --json 2>/dev/null | jq -r '.Self.DNSName // empty' | sed 's/\.$//')
+    if [[ -n "$TS_HOSTNAME" ]]; then
+      _fill_env TAILSCALE_HOSTNAME "$TS_HOSTNAME"
+    else
+      echo "  TAILSCALE_HOSTNAME → (skipped — run 'tailscale up' then re-run setup.sh)"
+    fi
   fi
 fi
 
@@ -269,18 +288,11 @@ if [[ -f "$SCRIPT_DIR/speedtest-tracker/.env" ]]; then
   fi
 fi
 
-# Filebrowser needs an empty db file (Docker would create it as a directory otherwise)
-FB_DB="$SCRIPT_DIR/filebrowser/filebrowser.db"
-if [[ ! -f "$FB_DB" ]]; then
-  run touch "$FB_DB"
-  echo "  created filebrowser/filebrowser.db"
-fi
-
 # ── Docker services ───────────────────────────────────────────────────────────
 echo ""
 echo "==> Starting Docker services..."
 for svc in homepage portainer glances speedtest-tracker filebrowser watchtower \
-           uptime-kuma nginx-proxy-manager ntfy syncthing adguard; do
+           uptime-kuma nginx-proxy-manager ntfy syncthing adguard tailscale-proxy; do
   svc_dir="$SCRIPT_DIR/$svc"
   if [[ -d "$svc_dir" && -f "$svc_dir/docker-compose.yml" ]]; then
     echo "  $svc..."
@@ -318,7 +330,10 @@ else
   echo "       bash SSH_and_GPG/create_ssh_key.sh"
   echo "       bash SSH_and_GPG/create_gpg_key.sh"
   echo ""
-  echo "  4. Fill in linux-server/homepage/.env then restart Homepage:"
+  echo "  4. Authenticate Tailscale, then re-run setup.sh to auto-fill TAILSCALE_HOSTNAME:"
+  echo "       sudo tailscale up"
+  echo "       bash linux-server/setup.sh"
+  echo "     Then fill in any remaining values in linux-server/homepage/.env and restart:"
   echo "       cd linux-server/homepage && docker compose restart"
   echo ""
   echo "================================================================"
