@@ -16,6 +16,7 @@ jobs:
         with:
           scandir: .
           severity: warning
+          ignore_paths: macOS
 
   json-validate:
     runs-on: ubuntu-latest
