@@ -104,9 +104,10 @@ RPROMPT='${_cmd_duration:+%F{242}${_cmd_duration}%f}'
 # ═══════════════════════════════════════════════════════════════
 alias ls='ls --color=auto'
 if command -v eza &>/dev/null; then
-  alias ll='eza -lah --git --icons'
-  alias la='eza -a --icons'
-  alias lt='eza --tree --icons --level=2'
+  alias ll='eza -lah --git --icons --group-directories-first'
+  alias la='eza -a --icons --group-directories-first'
+  alias lt='eza --tree --icons --level=2 --group-directories-first'
+  alias ls='eza -al --color=always --icons --group-directories-first'
 else
   alias ll='ls -lAh'
   alias la='ls -A'
@@ -119,6 +120,12 @@ alias reload='source ~/.zshrc'
 # Ubuntu binary name shims (bat → batcat, fd → fdfind)
 [[ -x /usr/bin/batcat ]] && ! command -v bat &>/dev/null && alias bat='batcat'
 [[ -x /usr/bin/fdfind ]] && ! command -v fd  &>/dev/null && alias fd='fdfind'
+
+# Colorized man pages via bat
+if command -v bat &>/dev/null; then
+  export MANPAGER="sh -c 'col -bx | bat -l man -p'"
+  export MANROFFOPT="-c"
+fi
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -179,6 +186,16 @@ bindkey '^[[A' history-substring-search-up
 bindkey '^[[B' history-substring-search-down
 bindkey '^[OA' history-substring-search-up
 bindkey '^[OB' history-substring-search-down
+
+
+# ═══════════════════════════════════════════════════════════════
+#  NOTIFY  (desktop notification after long commands)
+# ═══════════════════════════════════════════════════════════════
+# Requires: notify-send (libnotify), xdotool or wmctrl (focus detection)
+# Loaded via antidote (marzocchi/zsh-notify)
+zstyle ':notify:*' command-complete-timeout 30
+zstyle ':notify:*' error-title "Command failed"
+zstyle ':notify:*' success-title "Command finished"
 
 
 # ═══════════════════════════════════════════════════════════════

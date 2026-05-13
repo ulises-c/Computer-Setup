@@ -190,6 +190,21 @@
     "description": "Non-interactive SSH password authentication — used by SSH_and_GPG/add_remote_host.sh"
   },
   {
+    "name": "libnotify-bin",
+    "package_manager": { "ubuntu": "apt", "arch": "yay" },
+    "arch_name": "libnotify",
+    "priority": "medium",
+    "optional": false,
+    "description": "Desktop notifications CLI (notify-send) — used by zsh-notify plugin"
+  },
+  {
+    "name": "xdotool",
+    "package_manager": { "ubuntu": "apt", "arch": "yay" },
+    "priority": "medium",
+    "optional": false,
+    "description": "X11 window automation — used by zsh-notify for terminal focus detection"
+  },
+  {
     "name": "tailscale",
     "package_manager": { "ubuntu": "custom", "arch": "yay" },
     "install_command": { "ubuntu": "curl -fsSL https://tailscale.com/install.sh | sudo sh" },

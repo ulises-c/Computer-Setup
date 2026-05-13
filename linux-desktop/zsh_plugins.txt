@@ -18,3 +18,6 @@ zsh-users/zsh-history-substring-search
 
 # Fish-style abbreviations
 olets/zsh-abbr
+
+# Desktop notifications for long-running commands (like fish done.fish)
+marzocchi/zsh-notify
