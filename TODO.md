@@ -17,3 +17,29 @@ Port the linux-desktop zsh enhancements to the macOS config. See
 - [ ] Add zoxide init
 - [ ] Add FZF keybindings and completion (Homebrew paths)
 - [ ] Create macOS zsh_plugins.txt
+
+## linux-desktop (personal) — CachyOS / Arch
+
+Test and validate the linux-desktop setup on the personal CachyOS desktop
+(Arch-based, yay as AUR helper). The package JSON already has Arch support
+(`package_manager.arch`, `arch_name` overrides) but nothing has been tested.
+
+- [ ] Create an Arch-aware setup script (or extend `setup.sh` with distro detection)
+- [ ] Verify all `arch_name` overrides resolve to real AUR/pacman packages
+- [ ] Test antidote, zsh-notify, eza icons, and zoxide on CachyOS
+- [ ] Handle CachyOS defaults that may conflict (e.g., existing fish config)
+- [ ] Add personal-only packages: discord, spotify, steam, bolt-launcher, notion
+- [ ] Test `--personal` flag end-to-end
+- [ ] Create PR for CachyOS support
+
+## linux-server — Raspberry Pi 4
+
+Set up the Raspberry Pi 4 headless server config under `linux-server/`.
+
+- [ ] Audit existing linux-server/ files and update as needed
+- [ ] Create or update packages JSON for the Pi (arm64, Debian-based)
+- [ ] Create setup script for headless server (no GUI packages, no snap)
+- [ ] Zsh config (server variant — no Ghostty, no fastfetch on launch, no desktop notifications)
+- [ ] Tailscale, Docker, SSH hardening
+- [ ] Homepage dashboard config (already exists under linux-server/homepage/)
+- [ ] Test on Raspberry Pi 4
