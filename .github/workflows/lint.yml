@@ -35,3 +35,24 @@ jobs:
             fi
           done
           exit $failed
+
+  zsh-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install zsh
+        run: sudo apt-get update && sudo apt-get install -y zsh
+
+      - name: Run zsh -n on zsh scripts
+        run: |
+          failed=0
+          for f in $(find . -not -path './.git/*' \( \( -name '*.sh' -path '*/macOS/*' \) -o -name '*.zsh' -o -name 'zshrc.example' \)); do
+            if zsh -n "$f" 2>&1; then
+              echo "✓ $f"
+            else
+              echo "❌ Syntax error: $f"
+              failed=1
+            fi
+          done
+          exit $failed

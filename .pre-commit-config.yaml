@@ -6,6 +6,15 @@ repos:
         args: [--severity=warning]
         exclude: ^macOS/
 
+  - repo: local
+    hooks:
+      - id: zsh-syntax-check
+        name: zsh -n (syntax check)
+        language: system
+        entry: zsh -n
+        types: [file]
+        files: (^macOS/.*\.sh$|\.zsh$|zshrc\.example$)
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
