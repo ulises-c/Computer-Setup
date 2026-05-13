@@ -255,6 +255,7 @@
     "package_manager": { "ubuntu": "apt", "arch": "yay" },
     "priority": "medium",
     "optional": false,
+    "environment": ["personal"],
     "description": "Open source media player for nearly every format"
   },
   {
@@ -262,6 +263,7 @@
     "package_manager": { "ubuntu": "snap", "arch": "yay" },
     "priority": "medium",
     "optional": false,
+    "environment": ["personal"],
     "description": "Voice, video, and text chat platform"
   },
   {
