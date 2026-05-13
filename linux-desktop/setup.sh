@@ -175,15 +175,15 @@ pipx_install() {
 
 npm_install() {
   local priority="$1"
-  local names
+  local ef names
+  ef=$(env_filter)
   names=$(jq -r --arg p "$priority" --arg d "$DISTRO" \
-    "$(env_filter) as \$ef |
-     [.[] | select(
+    "[.[] | select(
         .package_manager[\$d] == \"npm\" and
         .priority == \$p and
-        \$ef
+        $ef
       ) | .name] | join(\" \")" \
-    "$PACKAGES_JSON" 2>/dev/null || true)
+    "$PACKAGES_JSON")
   # shellcheck disable=SC2086
   [[ -n "$names" ]] && run npm install -g $names
 }
@@ -373,6 +373,8 @@ fi
 # ── npm packages ─────────────────────────────────────────────────────────────
 echo ""
 echo "==> Installing npm packages..."
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 if command -v npm &>/dev/null; then
   npm_install "medium"
 else
