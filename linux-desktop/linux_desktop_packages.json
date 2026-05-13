@@ -215,11 +215,12 @@
   },
   {
     "name": "claude-desktop",
-    "package_manager": { "ubuntu": "apt", "arch": "yay" },
+    "package_manager": { "ubuntu": "custom", "arch": "yay" },
     "arch_name": "claude-desktop-bin",
+    "install_command": { "ubuntu": "curl -fsSL https://pkg.claude-desktop-debian.dev/KEY.gpg | sudo gpg --dearmor -o /usr/share/keyrings/claude-desktop.gpg && echo 'deb [signed-by=/usr/share/keyrings/claude-desktop.gpg arch=amd64,arm64] https://pkg.claude-desktop-debian.dev stable main' | sudo tee /etc/apt/sources.list.d/claude-desktop.list && sudo apt update && sudo apt install -y claude-desktop" },
     "priority": "medium",
     "optional": false,
-    "description": "Anthropic Claude desktop app — Ubuntu uses official .deb repo"
+    "description": "Anthropic Claude desktop app — Ubuntu uses aaddrick/claude-desktop-debian apt repo"
   },
   {
     "name": "visual-studio-code",
@@ -258,7 +259,6 @@
     "package_manager": { "ubuntu": "apt", "arch": "yay" },
     "priority": "medium",
     "optional": false,
-    "environment": ["personal"],
     "description": "Open source media player for nearly every format"
   },
   {
@@ -324,6 +324,7 @@
     "install_command": { "ubuntu": "pipx install huggingface-hub[cli]" },
     "priority": "medium",
     "optional": false,
+    "environment": ["personal"],
     "description": "Hugging Face Hub CLI — download, upload, and manage ML models"
   },
   {
@@ -333,6 +334,7 @@
     "install_command": { "ubuntu": "curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/huggingface/xet-core/refs/heads/main/git_xet/install.sh | sh" },
     "priority": "medium",
     "optional": false,
+    "environment": ["personal"],
     "description": "Git LFS plugin using the Xet protocol for Hugging Face Hub"
   },
   {
@@ -395,6 +397,7 @@
     "arch_name": "notion-app-electron",
     "priority": "low",
     "optional": true,
+    "environment": ["personal"],
     "description": "Notes and project management — unofficial snap/AUR packages on Linux"
   },
   {
@@ -426,6 +429,7 @@
     "package_manager": { "ubuntu": "apt", "arch": "yay" },
     "priority": "none",
     "optional": true,
+    "environment": ["work"],
     "description": "MATLAB-compatible numerical computing environment"
   },
   {
