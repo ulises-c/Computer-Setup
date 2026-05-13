@@ -1,0 +1,20 @@
+# ═══════════════════════════════════════════════════════════════
+#  ~/.zsh_plugins.txt  —  antidote plugin list
+# ═══════════════════════════════════════════════════════════════
+# antidote clones these from GitHub and generates a static
+# source file. Run `antidote update` to pull latest versions.
+
+# Extra completion definitions (load before compinit)
+zsh-users/zsh-completions kind:fpath path:src
+
+# Fish-style autosuggestions
+zsh-users/zsh-autosuggestions
+
+# Syntax highlighting (load near end — must see all widgets)
+zsh-users/zsh-syntax-highlighting
+
+# Substring history search (load after syntax highlighting)
+zsh-users/zsh-history-substring-search
+
+# Fish-style abbreviations
+olets/zsh-abbr

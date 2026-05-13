@@ -7,18 +7,18 @@
     "description": "Z shell — common shell across all devices; install first so plugins are available"
   },
   {
-    "name": "zsh-autosuggestions",
+    "name": "zsh-antidote",
     "package_manager": { "ubuntu": "apt", "arch": "yay" },
     "priority": "high",
     "optional": false,
-    "description": "Fish-style history-based suggestions for zsh"
+    "description": "Lightweight zsh plugin manager — handles autosuggestions, syntax highlighting, completions, substring search, and abbreviations via a plugins file"
   },
   {
-    "name": "zsh-syntax-highlighting",
+    "name": "zoxide",
     "package_manager": { "ubuntu": "apt", "arch": "yay" },
     "priority": "high",
     "optional": false,
-    "description": "Real-time syntax highlighting in zsh"
+    "description": "Smarter cd — learns your frequent directories, use z to jump instantly"
   },
   {
     "name": "pyenv",
@@ -62,9 +62,10 @@
   {
     "name": "ghostty",
     "package_manager": { "ubuntu": "snap", "arch": "yay" },
+    "install_command": { "ubuntu": "sudo snap install ghostty --classic" },
     "priority": "medium",
     "optional": false,
-    "description": "GPU-accelerated terminal emulator"
+    "description": "GPU-accelerated terminal emulator — requires --classic on snap for full system access"
   },
   {
     "name": "fastfetch",
@@ -200,8 +201,8 @@
     "name": "docker",
     "package_manager": { "ubuntu": "custom", "arch": "yay" },
     "install_command": { "ubuntu": "curl -fsSL https://get.docker.com | sudo sh" },
-    "priority": "medium",
-    "optional": false,
+    "priority": "low",
+    "optional": true,
     "description": "Container platform — official Docker Engine for Linux"
   },
   {
@@ -223,10 +224,12 @@
   {
     "name": "visual-studio-code",
     "package_manager": { "ubuntu": "snap", "arch": "yay" },
+    "ubuntu_name": "code",
     "arch_name": "visual-studio-code-bin",
+    "install_command": { "ubuntu": "sudo snap install code --classic" },
     "priority": "medium",
     "optional": false,
-    "description": "Code editor with extensions"
+    "description": "Code editor with extensions — requires --classic on snap"
   },
   {
     "name": "firefox",
@@ -327,7 +330,7 @@
     "name": "git-xet",
     "package_manager": { "ubuntu": "custom", "arch": "yay" },
     "arch_name": "git-xet-bin",
-    "install_command": { "ubuntu": "curl -fsSL https://raw.githubusercontent.com/huggingface/xet-core/main/install.sh | bash" },
+    "install_command": { "ubuntu": "curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/huggingface/xet-core/refs/heads/main/git_xet/install.sh | sh" },
     "priority": "medium",
     "optional": false,
     "description": "Git LFS plugin using the Xet protocol for Hugging Face Hub"

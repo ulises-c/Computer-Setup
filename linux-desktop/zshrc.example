@@ -1,0 +1,187 @@
+# ═══════════════════════════════════════════════════════════════
+#  ~/.zshrc  —  Linux desktop zsh config (Ubuntu / Arch)
+# ═══════════════════════════════════════════════════════════════
+# Requires: zsh, zsh-antidote, zoxide, fastfetch, fzf, bat, fd, eza
+# Plugins managed by antidote — see ~/.zsh_plugins.txt
+# Install:  bash linux-desktop/setup.sh
+
+
+# ═══════════════════════════════════════════════════════════════
+#  PATH
+# ═══════════════════════════════════════════════════════════════
+export PATH="$HOME/.local/bin:$PATH"
+
+
+# ═══════════════════════════════════════════════════════════════
+#  HISTORY
+# ═══════════════════════════════════════════════════════════════
+HISTFILE="$HOME/.zsh_history"
+HISTSIZE=10000
+SAVEHIST=10000
+setopt SHARE_HISTORY
+setopt HIST_IGNORE_DUPS
+setopt HIST_IGNORE_SPACE
+setopt HIST_REDUCE_BLANKS
+
+
+# ═══════════════════════════════════════════════════════════════
+#  ANTIDOTE  (plugin manager)
+# ═══════════════════════════════════════════════════════════════
+# antidote sources all plugins listed in ~/.zsh_plugins.txt:
+#   zsh-completions, zsh-autosuggestions, zsh-syntax-highlighting,
+#   zsh-history-substring-search, zsh-abbr
+if [[ -f /usr/share/zsh-antidote/antidote.zsh ]]; then
+  source /usr/share/zsh-antidote/antidote.zsh
+  antidote load
+fi
+
+
+# ═══════════════════════════════════════════════════════════════
+#  COMPLETION
+# ═══════════════════════════════════════════════════════════════
+autoload -Uz compinit && compinit
+zstyle ':completion:*' menu select
+zstyle ':completion:*' matcher-list 'm:{a-z}={A-Z}'
+zstyle ':completion:*' list-colors "${(s.:.)LS_COLORS}"
+zstyle ':completion:*' group-name ''
+zstyle ':completion:*:descriptions' format '%F{yellow}── %d ──%f'
+
+
+# ═══════════════════════════════════════════════════════════════
+#  OPTIONS
+# ═══════════════════════════════════════════════════════════════
+setopt AUTO_CD
+setopt CORRECT
+setopt GLOB_DOTS
+setopt NO_BEEP
+
+
+# ═══════════════════════════════════════════════════════════════
+#  PROMPT  (branch · * unstaged · + staged · duration right)
+# ═══════════════════════════════════════════════════════════════
+autoload -Uz vcs_info
+
+_prompt_precmd() {
+  local exit_code=$?
+  vcs_info
+  _last_exit=$exit_code
+  _cmd_end=$EPOCHSECONDS
+  if (( _cmd_start > 0 && _cmd_end - _cmd_start >= 2 )); then
+    local elapsed=$(( _cmd_end - _cmd_start ))
+    local mins=$(( elapsed / 60 ))
+    local secs=$(( elapsed % 60 ))
+    if (( mins > 0 )); then
+      _cmd_duration="${mins}m${secs}s"
+    else
+      _cmd_duration="${secs}s"
+    fi
+  else
+    _cmd_duration=""
+  fi
+  _cmd_start=0
+}
+
+_prompt_preexec() {
+  _cmd_start=$EPOCHSECONDS
+}
+
+precmd_functions+=(_prompt_precmd)
+preexec_functions+=(_prompt_preexec)
+
+zstyle ':vcs_info:*'      enable            git
+zstyle ':vcs_info:*'      check-for-changes true
+zstyle ':vcs_info:git:*'  stagedstr         '%F{green}+%f'
+zstyle ':vcs_info:git:*'  unstagedstr       '%F{red}*%f'
+zstyle ':vcs_info:git:*'  formats           ' (%F{magenta}%b%f%u%c)'
+zstyle ':vcs_info:git:*'  actionformats     ' (%F{magenta}%b%f|%F{yellow}%a%f%u%c)'
+setopt PROMPT_SUBST
+PROMPT='%F{blue}%n%f%F{white}@%f%F{cyan}%m%f %F{yellow}%~%f${vcs_info_msg_0_} %# '
+RPROMPT='${_cmd_duration:+%F{242}${_cmd_duration}%f}'
+
+
+# ═══════════════════════════════════════════════════════════════
+#  ALIASES
+# ═══════════════════════════════════════════════════════════════
+alias ls='ls --color=auto'
+if command -v eza &>/dev/null; then
+  alias ll='eza -lah --git --icons'
+  alias la='eza -a --icons'
+  alias lt='eza --tree --icons --level=2'
+else
+  alias ll='ls -lAh'
+  alias la='ls -A'
+fi
+alias grep='grep --color=auto'
+alias df='df -h'
+alias du='du -sh'
+alias reload='source ~/.zshrc'
+
+# Ubuntu binary name shims (bat → batcat, fd → fdfind)
+[[ -x /usr/bin/batcat ]] && ! command -v bat &>/dev/null && alias bat='batcat'
+[[ -x /usr/bin/fdfind ]] && ! command -v fd  &>/dev/null && alias fd='fdfind'
+
+
+# ═══════════════════════════════════════════════════════════════
+#  ABBREVIATIONS  (fish-style — expand inline, history shows real command)
+# ═══════════════════════════════════════════════════════════════
+if type abbr &>/dev/null; then
+  abbr set -q gs='git status' 2>/dev/null
+  abbr set -q ga='git add' 2>/dev/null
+  abbr set -q gc='git commit' 2>/dev/null
+  abbr set -q gp='git push' 2>/dev/null
+  abbr set -q gl='git log --oneline --graph --decorate' 2>/dev/null
+  abbr set -q ..='cd ..' 2>/dev/null
+  abbr set -q ...='cd ../..' 2>/dev/null
+fi
+
+
+# ═══════════════════════════════════════════════════════════════
+#  ENVIRONMENT
+# ═══════════════════════════════════════════════════════════════
+export EDITOR='micro'
+export LANG='en_US.UTF-8'
+export LC_ALL='en_US.UTF-8'
+
+
+# ═══════════════════════════════════════════════════════════════
+#  ZOXIDE  (smarter cd — learns frequent directories)
+# ═══════════════════════════════════════════════════════════════
+command -v zoxide &>/dev/null && eval "$(zoxide init zsh)"
+
+
+# ═══════════════════════════════════════════════════════════════
+#  FZF
+# ═══════════════════════════════════════════════════════════════
+# Ubuntu (apt)
+[[ -f /usr/share/doc/fzf/examples/key-bindings.zsh ]] && \
+  source /usr/share/doc/fzf/examples/key-bindings.zsh
+[[ -f /usr/share/doc/fzf/examples/completion.zsh ]] && \
+  source /usr/share/doc/fzf/examples/completion.zsh
+# Arch (pacman)
+[[ -f /usr/share/fzf/key-bindings.zsh ]] && \
+  source /usr/share/fzf/key-bindings.zsh
+[[ -f /usr/share/fzf/completion.zsh ]] && \
+  source /usr/share/fzf/completion.zsh
+
+
+# ═══════════════════════════════════════════════════════════════
+#  SYNTAX HIGHLIGHTING  (path underlining + bracket matching)
+# ═══════════════════════════════════════════════════════════════
+ZSH_HIGHLIGHT_HIGHLIGHTERS=(main brackets pattern)
+ZSH_HIGHLIGHT_STYLES[path]='fg=cyan,underline'
+ZSH_HIGHLIGHT_STYLES[path_prefix]='fg=cyan,underline'
+
+
+# ═══════════════════════════════════════════════════════════════
+#  HISTORY SUBSTRING SEARCH  (Up/Down filter like fish)
+# ═══════════════════════════════════════════════════════════════
+bindkey '^[[A' history-substring-search-up
+bindkey '^[[B' history-substring-search-down
+bindkey '^[OA' history-substring-search-up
+bindkey '^[OB' history-substring-search-down
+
+
+# ═══════════════════════════════════════════════════════════════
+#  SYSINFO DISPLAY  (Ghostty startup)
+# ═══════════════════════════════════════════════════════════════
+[[ -o interactive && "$TERM_PROGRAM" == "ghostty" ]] && fastfetch
