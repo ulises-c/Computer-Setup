@@ -40,4 +40,12 @@ for hook in "$REPO_DIR/hooks/"*.sh; do
   echo "Linked: hooks/$(basename "$hook")"
 done
 
+# Warn on Ubuntu 24.04+ if the bwrap AppArmor profile isn't set up
+if grep -qi 'ubuntu' /etc/os-release 2>/dev/null && ! [[ -f /etc/apparmor.d/bwrap ]]; then
+  echo ""
+  echo "⚠  Ubuntu detected: run setup-linux-sandbox.sh (with sudo) to enable sandboxing."
+  echo "   bash $REPO_DIR/setup-linux-sandbox.sh"
+fi
+
+echo ""
 echo "Done. Restart Claude Code for changes to take effect."

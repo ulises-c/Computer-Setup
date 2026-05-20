@@ -4,6 +4,14 @@ Version-controlled source of truth for `~/.claude/` settings, hooks, and rules. 
 
 ## Activation
 
+**Linux only — one-time OS setup (Ubuntu 24.04+ requires this):**
+```bash
+sudo apt-get install bubblewrap socat
+bash agentic-ai/Claude/setup-linux-sandbox.sh
+```
+CachyOS/Arch: `yay -S bubblewrap socat` — no AppArmor step needed.
+
+**Then wire up the config:**
 ```bash
 bash agentic-ai/Claude/install.sh
 ```
@@ -22,7 +30,16 @@ Restart Claude Code after running.
 ## What this configures
 
 ### `bypassPermissions`
-Claude auto-approves all tool calls without prompting. The hooks below act as the safety gate.
+Claude auto-approves all tool calls without prompting. The sandbox and hooks below act as the safety gate.
+
+### Sandbox (OS-level isolation)
+Enforced by bubblewrap (Linux) / Seatbelt (macOS) at the kernel level — not bypassable from inside a process.
+
+- **Filesystem**: write access limited to the current working directory by default; reads to `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh` are blocked
+- **Network**: prompts before connecting to any new domain
+- **`allowUnsandboxedCommands: false`**: disables the escape hatch so Claude cannot retry blocked commands outside the sandbox
+
+The sandbox covers **Bash commands and all their child processes** (npm, terraform, kubectl, etc.). The Write/Edit/MultiEdit tools are not sandboxed — they go through the hooks below instead.
 
 ### PreToolUse: `validate-bash.sh` (Bash)
 Blocks dangerous or escalation-prone shell commands:

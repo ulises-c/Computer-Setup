@@ -3,6 +3,18 @@
   "permissions": {
     "defaultMode": "bypassPermissions"
   },
+  "sandbox": {
+    "enabled": true,
+    "filesystem": {
+      "denyRead": [
+        "~/.ssh",
+        "~/.aws",
+        "~/.gnupg",
+        "~/.config/gh"
+      ]
+    },
+    "allowUnsandboxedCommands": false
+  },
   "hooks": {
     "PreToolUse": [
       {
