@@ -25,3 +25,5 @@ linux-server/speedtest-tracker/data/
 linux-server/syncthing/config/
 
 linux-server/uptime-kuma/data/
+
+linux-server/forgejo/data/
