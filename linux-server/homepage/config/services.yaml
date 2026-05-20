@@ -94,7 +94,7 @@
         server: my-docker
         container: ntfy
 
-- Dev:
+- Storage:
     - forgejo:
         icon: si-forgejo
         href: http://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}:3300
@@ -105,8 +105,6 @@
           type: gitea
           url: http://localhost:3300
           key: "{{HOMEPAGE_VAR_FORGEJO_TOKEN}}"
-
-- Storage:
     - syncthing:
         icon: si-syncthing
         href: http://{{HOMEPAGE_VAR_SERVER_IP}}:8384
