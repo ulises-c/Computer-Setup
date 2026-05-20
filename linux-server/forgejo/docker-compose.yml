@@ -1,5 +1,7 @@
 services:
   forgejo:
+    # Pin to a major version tag to avoid surprise upgrades — check latest at:
+    # https://codeberg.org/forgejo/forgejo/releases
     image: codeberg.org/forgejo/forgejo:latest
     container_name: forgejo
     restart: unless-stopped
@@ -16,3 +18,8 @@ services:
       - "2222:22"     # git over SSH
     volumes:
       - ${FORGEJO_DATA_PATH:-./data}:/data
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
