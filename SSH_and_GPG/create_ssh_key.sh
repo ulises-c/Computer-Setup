@@ -28,6 +28,9 @@ prompt() {
 prompt EMAIL "Email (comment in key)"
 
 # ---- Git host selection ----
+IS_FORGEJO="${IS_FORGEJO:-}"
+FORGEJO_HOSTNAME="${FORGEJO_HOSTNAME:-}"
+
 if [[ -z "$GIT_HOST" ]]; then
   echo ""
   echo "Select a Git host:"
@@ -35,6 +38,7 @@ if [[ -z "$GIT_HOST" ]]; then
   echo "  2) gitlab.com"
   echo "  3) bitbucket.org"
   echo "  4) hf.co"
+  echo "  5) Forgejo (self-hosted)"
   echo "  0) Custom"
   read -r -p "Choice [1]: " host_choice
   case "${host_choice:-1}" in
@@ -42,6 +46,17 @@ if [[ -z "$GIT_HOST" ]]; then
     2) GIT_HOST="gitlab.com" ;;
     3) GIT_HOST="bitbucket.org" ;;
     4) GIT_HOST="hf.co" ;;
+    5)
+      IS_FORGEJO=true
+      GIT_HOST="forgejo"
+      if [[ -z "$FORGEJO_HOSTNAME" ]]; then
+        read -r -p "Forgejo server hostname (e.g. hostname.ts.net): " FORGEJO_HOSTNAME
+        if [[ -z "$FORGEJO_HOSTNAME" ]]; then
+          echo "Error: FORGEJO_HOSTNAME cannot be empty." >&2
+          exit 1
+        fi
+      fi
+      ;;
     0)
       read -r -p "Git host: " GIT_HOST
       if [[ -z "$GIT_HOST" ]]; then
@@ -133,14 +148,26 @@ awk -v host="$GIT_HOST" '
 ' "$CFG_PATH" > "$tmp_cfg"
 mv "$tmp_cfg" "$CFG_PATH"
 
-{
-  echo ""
-  echo "Host $GIT_HOST"
-  echo "  AddKeysToAgent yes"
-  # macOS keychain optional:
-  # echo "  UseKeychain yes"
-  echo "  IdentityFile $KEY_PATH"
-} >> "$CFG_PATH"
+if [[ -n "$IS_FORGEJO" ]]; then
+  {
+    echo ""
+    echo "Host $GIT_HOST"
+    echo "  HostName $FORGEJO_HOSTNAME"
+    echo "  Port 2222"
+    echo "  User git"
+    echo "  AddKeysToAgent yes"
+    echo "  IdentityFile $KEY_PATH"
+  } >> "$CFG_PATH"
+else
+  {
+    echo ""
+    echo "Host $GIT_HOST"
+    echo "  AddKeysToAgent yes"
+    # macOS keychain optional:
+    # echo "  UseKeychain yes"
+    echo "  IdentityFile $KEY_PATH"
+  } >> "$CFG_PATH"
+fi
 
 # ---- Show public key ----
 echo ""
@@ -155,8 +182,13 @@ read -r -p "Press [Enter] after adding the public key to your $GIT_HOST account.
 # ---- Test SSH connection ----
 # -T avoids trying to open a shell; -v optional for debugging.
 echo ""
-echo "Testing SSH connection to git@$GIT_HOST ..."
-ssh -T "git@$GIT_HOST" || true
+if [[ -n "$IS_FORGEJO" ]]; then
+  echo "Testing SSH connection to Forgejo ($FORGEJO_HOSTNAME:2222) ..."
+  ssh -T "$GIT_HOST" || true
+else
+  echo "Testing SSH connection to git@$GIT_HOST ..."
+  ssh -T "git@$GIT_HOST" || true
+fi
 
 # ---- Configure git identity if not already set ----
 existing_name="$(git config --global user.name 2>/dev/null || true)"
