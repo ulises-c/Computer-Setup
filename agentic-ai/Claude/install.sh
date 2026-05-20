@@ -22,6 +22,14 @@ fi
 ln -sf "$REPO_DIR/settings.json" "$SETTINGS"
 echo "Linked: settings.json"
 
+# Symlink CLAUDE.md
+ln -sf "$REPO_DIR/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md"
+echo "Linked: CLAUDE.md"
+
+# Symlink rules directory (used by @imports in CLAUDE.md)
+ln -sf "$REPO_DIR/rules" "$CLAUDE_DIR/rules"
+echo "Linked: rules/"
+
 # Create hooks dir if it doesn't exist
 mkdir -p "$HOOKS_DIR"
 

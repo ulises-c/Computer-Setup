@@ -34,4 +34,14 @@ grep -qE 'git[[:space:]]+push[[:space:]].*(-f\b|--force\b).*(main|master)' <<< "
 grep -qE 'git[[:space:]]+push[[:space:]].*(main|master).*(-f\b|--force\b)' <<< "$COMMAND" \
   && block "force-push to main/master"
 
+# sudo escalation (must be explicit, not autonomous)
+grep -qE '(^|[^[:alnum:]_])sudo[[:space:]]' <<< "$COMMAND" \
+  && block "sudo: escalation must be explicit — run the command yourself"
+
+# git add -A / --all / . (bulk staging can silently include secrets)
+grep -qE 'git[[:space:]]+add[[:space:]]+(-A\b|--all\b)' <<< "$COMMAND" \
+  && block "git add -A/--all — stage specific files instead"
+grep -qE 'git[[:space:]]+add[[:space:]]+\.([[:space:]]|$)' <<< "$COMMAND" \
+  && block "git add . — stage specific files instead"
+
 exit 0
