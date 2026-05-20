@@ -263,18 +263,34 @@ In NPM admin (`http://<server-ip>:81`):
    6. Point your router's DNS (or individual devices) to `<server-ip>` to start filtering
    7. Add credentials to `linux-server/homepage/.env` to enable the stats widget on Homepage
 
-15. pi-hole | [GitHub](https://github.com/pi-hole/pi-hole) | [Docs](https://docs.pi-hole.net)
+15. forgejo | [Codeberg](https://codeberg.org/forgejo/forgejo) | [Docs](https://forgejo.org/docs/)
+    1. Lightweight self-hosted git service — GitHub-like web UI, SSH push/pull, repo mirroring; LAN/Tailscale only, no public exposure
+    2. Deploy:
+       ```sh
+       cd linux-server/forgejo
+       cp .env.example .env   # set FORGEJO_DOMAIN to your Tailscale hostname; optionally set FORGEJO_DATA_PATH for external drive
+       docker compose up -d
+       ```
+    3. Web UI at `http://<server-ip>:3300` — complete the setup wizard on first visit, create admin account
+    4. Git over SSH on port `2222`:
+       ```sh
+       git clone ssh://git@<tailscale-hostname>:2222/<username>/<repo>.git
+       ```
+    5. Add your SSH public key in **Settings → SSH / GPG Keys** after creating your account
+    6. To migrate from GitHub: use Forgejo's built-in migration (**+ → New Migration → GitHub**), then optionally configure a push mirror back to GitHub under repo **Settings → Push Mirrors** while validating the setup
+
+16. pi-hole | [GitHub](https://github.com/pi-hole/pi-hole) | [Docs](https://docs.pi-hole.net)
     1. Network-wide DNS ad blocker — alternative to AdGuard Home
     2. Not yet configured
 
-16. Immich | [GitHub](https://github.com/immich-app/immich) | [Docs](https://immich.app/docs)
+17. Immich | [GitHub](https://github.com/immich-app/immich) | [Docs](https://immich.app/docs)
     1. Self-hosted photo and video backup — Google Photos alternative with mobile apps, face recognition, and timeline view
     2. Not yet configured
 
-17. Jellyfin | [GitHub](https://github.com/jellyfin/jellyfin) | [Docs](https://jellyfin.org/docs/)
+18. Jellyfin | [GitHub](https://github.com/jellyfin/jellyfin) | [Docs](https://jellyfin.org/docs/)
     1. Self-hosted media server — stream your own movies, TV shows, and music to any device
     2. Not yet configured
 
-18. Home Assistant | [GitHub](https://github.com/home-assistant/core) | [Docs](https://www.home-assistant.io/docs/)
+19. Home Assistant | [GitHub](https://github.com/home-assistant/core) | [Docs](https://www.home-assistant.io/docs/)
     1. Open source smart home hub — integrates with thousands of devices and services
     2. Not yet configured

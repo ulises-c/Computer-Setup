@@ -94,6 +94,18 @@
         server: my-docker
         container: ntfy
 
+- Dev:
+    - forgejo:
+        icon: si-forgejo
+        href: http://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}:3300
+        description: Self-hosted git
+        server: my-docker
+        container: forgejo
+        widget:
+          type: gitea
+          url: http://localhost:3300
+          key: "{{HOMEPAGE_VAR_FORGEJO_TOKEN}}"
+
 - Storage:
     - syncthing:
         icon: si-syncthing
