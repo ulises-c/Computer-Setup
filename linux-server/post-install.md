@@ -127,6 +127,55 @@ The Homepage Tailscale widget uses a local OAuth proxy to avoid 90-day key rotat
   - Create admin credentials — then add them to `homepage/.env`
 - [ ] Point your router's DNS to `<server-ip>` for network-wide filtering
 
+### Forgejo — http://\<server-ip\>:3300
+
+- [ ] Copy and edit the env file:
+  ```sh
+  cd linux-server/forgejo && cp .env.example .env
+  # Set FORGEJO_DOMAIN to your Tailscale hostname
+  # Optionally set FORGEJO_DATA_PATH to an external drive path
+  ```
+- [ ] Start Forgejo:
+  ```sh
+  docker compose up -d
+  ```
+- [ ] Open `http://<server-ip>:3300` and complete the setup wizard:
+  - Database: SQLite (pre-set)
+  - SSH server domain and port: pre-filled from `.env` — verify they look correct
+  - Application URL: should match `http://<tailscale-hostname>:3300`
+  - Create the admin account at the bottom of the wizard page
+- [ ] Generate a personal access token for the Homepage widget:
+  - Top-right avatar → **Settings → Applications → Generate Token** — scope: all (or read-only is enough for the widget)
+  - Add to `homepage/.env`:
+    - `HOMEPAGE_VAR_FORGEJO_TOKEN=<token>`
+    - `HOMEPAGE_VAR_FORGEJO_DOMAIN=<tailscale-hostname>`
+  - Restart Homepage: `cd linux-server/homepage && docker compose restart`
+- [ ] Add your SSH public key to Forgejo:
+  - **Settings → SSH / GPG Keys → Add Key** — paste `~/.ssh/id_ed25519.pub` (or your key from `create_ssh_key.sh`)
+
+#### Cloning / remotes from Mac
+
+```sh
+# SSH clone (use this for all git operations on Mac)
+git clone ssh://git@<tailscale-hostname>:2222/<username>/<repo>.git
+
+# Set as remote on an existing repo
+git remote set-url origin ssh://git@<tailscale-hostname>:2222/<username>/<repo>.git
+```
+
+#### Migrating an existing repo (e.g. Obsidian vault) from GitHub
+
+1. In Forgejo web UI: **+ → New Migration → GitHub** — imports history, branches, and tags
+2. On Mac, point the local repo at Forgejo:
+   ```sh
+   git remote set-url origin ssh://git@<tailscale-hostname>:2222/<username>/<repo>.git
+   ```
+3. Add GitHub as a push mirror for validation while you transition:
+   - In Forgejo: repo **Settings → Git Hooks → Push Mirrors → Add Push Mirror**
+   - Mirror URL: `https://<github-username>:<github-pat>@github.com/<username>/<repo>.git`
+   - Interval: `24h` (or `0` to push only on demand)
+   - When you're satisfied with Forgejo, delete the mirror and archive the GitHub repo
+
 ### Syncthing — http://\<server-ip\>:8384
 - [ ] Add volume mounts to `linux-server/syncthing/docker-compose.yml` for each folder to sync, then restart:
   ```sh
@@ -154,3 +203,4 @@ The Homepage Tailscale widget uses a local OAuth proxy to avoid 90-day key rotat
 | Cockpit | https://\<server-ip\>:9090 | |
 | Tailscale Web UI | http://localhost:8088 | After `tailscale up` |
 | Tailscale proxy | http://localhost:8089 | Internal — used by Homepage widget |
+| Forgejo | http://\<server-ip\>:3300 | Git over SSH on port 2222 |
