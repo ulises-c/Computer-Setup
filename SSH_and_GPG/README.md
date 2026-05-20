@@ -28,12 +28,13 @@ NAME="Jane Doe" EMAIL="jane@example.com" EXPIRY="1y" bash create_gpg_key.sh
 
 ### `create_ssh_key.sh`
 
-Creates an Ed25519 SSH key for authenticating to a Git host (GitHub, GitLab, Bitbucket, Hugging Face, or custom).
+Creates an Ed25519 SSH key for authenticating to a Git host (GitHub, GitLab, Bitbucket, Hugging Face, Forgejo, or custom).
 
 **What it does:**
 - Prompts for an email (used as the key comment), Git host, key filename, and optional passphrase
 - Generates the key in `~/.ssh/` (skips generation if the key already exists, with an overwrite prompt)
 - Adds the key to `ssh-agent` and updates `~/.ssh/config` with a `Host` block (idempotent)
+- For Forgejo: writes a `forgejo` alias with `HostName`, `Port 2222`, and `User git` so you can clone as `git clone forgejo:<user>/<repo>.git`
 - Prints the public key for pasting into the Git host's settings
 - Tests the SSH connection after you confirm the key has been added
 
@@ -42,6 +43,8 @@ Creates an Ed25519 SSH key for authenticating to a Git host (GitHub, GitLab, Bit
 bash create_ssh_key.sh
 # or pre-fill inputs via env vars:
 EMAIL="jane@example.com" GIT_HOST="github.com" KEY_NAME="github" bash create_ssh_key.sh
+# Forgejo (self-hosted):
+EMAIL="jane@example.com" IS_FORGEJO=true FORGEJO_HOSTNAME="hostname.ts.net" bash create_ssh_key.sh
 ```
 
 ---
