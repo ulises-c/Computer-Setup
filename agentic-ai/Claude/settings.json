@@ -1,19 +1,6 @@
 {
-  "advisorModel": "opus",
   "permissions": {
     "defaultMode": "bypassPermissions"
-  },
-  "sandbox": {
-    "enabled": true,
-    "filesystem": {
-      "denyRead": [
-        "~/.ssh",
-        "~/.aws",
-        "~/.gnupg",
-        "~/.config/gh"
-      ]
-    },
-    "allowUnsandboxedCommands": false
   },
   "hooks": {
     "PreToolUse": [
@@ -58,5 +45,18 @@
         ]
       }
     ]
-  }
+  },
+  "sandbox": {
+    "enabled": true,
+    "allowUnsandboxedCommands": false,
+    "filesystem": {
+      "denyRead": [
+        "~/.ssh",
+        "~/.aws",
+        "~/.config/gh"
+      ]
+    }
+  },
+  "advisorModel": "opus",
+  "skipDangerousModePermissionPrompt": true
 }
