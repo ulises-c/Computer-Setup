@@ -26,6 +26,10 @@ grep -qE '(^|[[:space:]])mkfs([[:space:]]|$)' <<< "$COMMAND" && block "mkfs woul
 # redirect to block device
 grep -qE '>[[:space:]]*/dev/sd' <<< "$COMMAND" && block "redirect to block device"
 
+# redirect to sensitive credential / system paths (covers the gap that validate-write.sh can't close for shell redirects)
+grep -qE '>{1,2}[[:space:]]*((~|\$HOME)/\.(ssh|aws|gnupg|config/gh)|/(etc|usr|boot|sys|proc))' <<< "$COMMAND" \
+  && block "redirect to sensitive path"
+
 # piped shell execution (curl/wget | sh)
 grep -qE '(curl|wget)[[:space:]].*\|[[:space:]]*(sudo[[:space:]]+)?(ba)?sh\b' <<< "$COMMAND" \
   && block "piped shell execution (curl/wget | sh)"

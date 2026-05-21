@@ -90,6 +90,10 @@ echo $?
 echo '{"tool_input":{"command":"git add -A"}}' | bash agentic-ai/Claude/hooks/validate-bash.sh
 echo $?
 
+# Should exit 2 (blocked — redirect to sensitive path)
+echo '{"tool_input":{"command":"echo foo > ~/.ssh/config"}}' | bash agentic-ai/Claude/hooks/validate-bash.sh
+echo $?
+
 # Should exit 0 (allowed)
 echo '{"tool_input":{"command":"ls -la"}}' | bash agentic-ai/Claude/hooks/validate-bash.sh
 echo $?
