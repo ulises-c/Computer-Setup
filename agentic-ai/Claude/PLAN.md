@@ -27,18 +27,20 @@ GPG signing depends on communicating with `gpg-agent` via a Unix socket at `/run
 
 **To verify:** run `git commit --allow-empty -S -m "gpg test"` inside a Claude session and confirm it succeeds without prompts. If it fails, determine whether `/run/user/$UID/gnupg/` needs to be explicitly bind-mounted by patching the Claude Code sandbox config or using `SSH_AUTH_SOCK`-style forwarding.
 
-### 2. Credential pre-resolution via 1Password (optional hardening)
+### 2. Credential pre-resolution via Bitwarden (optional hardening)
 
 Instead of giving the sandbox read access to `~/.config/gh/hosts.yml`, resolve `GH_TOKEN` at shell startup and inject it as an env var. This removes the OAuth token from the sandbox's readable filesystem.
 
 ```bash
 # ~/.zshrc — only outside Claude sessions
 if [[ -z "${CLAUDE_SESSION:-}" ]]; then
-  export GH_TOKEN=$(op read op://Personal/github-cli/credential 2>/dev/null || true)
+  export GH_TOKEN=$(bw get password github-cli 2>/dev/null || true)
 fi
 ```
 
-Then `gh` uses the env var and `~/.config/gh` can go back into `denyRead`. Requires 1Password CLI (`op`).
+Then `gh` uses the env var and `~/.config/gh` can go back into `denyRead`. Requires Bitwarden CLI (`bw`).
+
+> Previously documented with 1Password CLI (`op read op://Personal/github-cli/credential`); same pattern, different secret manager.
 
 Reference: [Making Claude Code Actually Work Autonomously](https://www.linkedin.com/pulse/making-claude-code-actually-work-autonomously-sandbox-daniel-dimitrov-2khnf)
 
