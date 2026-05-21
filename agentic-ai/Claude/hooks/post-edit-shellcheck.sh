@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # PostToolUse hook for Write/Edit/MultiEdit: runs shellcheck on edited .sh files.
 # Exit 2 = block (Claude sees stderr and must fix before continuing).
+set -euo pipefail
+trap 'exit 2' ERR
 
 command -v shellcheck &>/dev/null || exit 0
 

@@ -35,7 +35,7 @@ Claude auto-approves all tool calls without prompting. The sandbox and hooks bel
 ### Sandbox (OS-level isolation)
 Enforced by bubblewrap (Linux) / Seatbelt (macOS) at the kernel level — not bypassable from inside a process.
 
-- **Filesystem**: write access limited to the current working directory by default; reads to `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh` are blocked
+- **Filesystem**: write access limited to the current working directory by default; reads to `~/.ssh` and `~/.aws` are blocked. `~/.gnupg` and `~/.config/gh` are readable and writable — required for GPG commit signing and `gh api` (see [Security tradeoffs](#security-tradeoffs) below)
 - **Network**: prompts before connecting to any new domain
 - **`allowUnsandboxedCommands: false`**: disables the escape hatch so Claude cannot retry blocked commands outside the sandbox
 
@@ -113,6 +113,16 @@ echo $?
 echo '{"tool_input":{"file_path":"/Users/ulises/github/project/main.py"}}' | bash agentic-ai/Claude/hooks/validate-write.sh
 echo $?
 ```
+
+## Security tradeoffs
+
+**`~/.gnupg` and `~/.config/gh` are intentionally readable inside the sandbox.**
+
+GPG signing (`git commit -S`) requires reading the keyring at `~/.gnupg`. `gh api` requires reading the OAuth token at `~/.config/gh/hosts.yml`. Both require write access as well (temp files, token refresh). Putting either in `denyRead` would break those workflows.
+
+The tradeoff: an autonomous agent with `gh api` access effectively has access to your GitHub token. The `validate-write.sh` hook blocks Claude from using Write/Edit tools to modify those paths directly, but Bash commands can still read them. This is the deliberate operating model — `bypassPermissions` + sandbox is a trust boundary, not a zero-trust vault.
+
+**`~/.ssh` and `~/.aws` stay in `denyRead`** because there is no autonomous use case that requires reading SSH private keys or AWS credentials directly — those are user-controlled operations.
 
 ## Adding settings
 

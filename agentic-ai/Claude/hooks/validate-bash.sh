@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # PreToolUse hook for Bash: blocks dangerous command patterns.
 # Exit 2 = block the tool call (stderr is shown to Claude as the reason).
+set -euo pipefail
+trap 'exit 2' ERR
 
-COMMAND=$(cat | jq -r '.tool_input.command // ""')
+COMMAND=$(jq -r '.tool_input.command // ""')
 
 block() {
   printf 'validate-bash.sh blocked: %s\n' "$1" >&2

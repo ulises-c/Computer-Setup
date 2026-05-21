@@ -6,6 +6,8 @@
 #   - has shebang but not executable → flag (meant to run but can't)
 #   - is executable but no shebang  → flag (can run but no interpreter declared)
 # Library/sourced files (no shebang, not executable) are intentionally skipped.
+set -euo pipefail
+trap 'exit 2' ERR
 
 git rev-parse --git-dir &>/dev/null || exit 0
 
@@ -13,7 +15,7 @@ issues=()
 
 while IFS= read -r f; do
   [[ -f "$f" ]] || continue
-  read -r first_line < "$f"
+  read -r first_line < "$f" || first_line=""
   has_shebang=false; is_exec=false
   [[ "$first_line" == '#!'* ]] && has_shebang=true
   [[ -x "$f" ]] && is_exec=true

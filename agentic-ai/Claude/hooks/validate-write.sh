@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # PreToolUse hook for Write/Edit/MultiEdit: blocks writes to sensitive file paths.
 # Exit 2 = block the tool call (stderr is shown to Claude as the reason).
+set -euo pipefail
+trap 'exit 2' ERR
 
 INPUT=$(cat)
 FILE_PATH=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // ""')
