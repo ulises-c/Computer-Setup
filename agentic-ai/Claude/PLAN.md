@@ -18,6 +18,8 @@ Tracks future improvements to `agentic-ai/Claude/`. Current state: `bypassPermis
 - README corrected: accurate `denyRead` docs, security tradeoffs section added
 - **Disabled bwrap sandbox** (`sandbox.enabled: false`): seccomp BPF unconditionally blocks all `AF_UNIX` socket calls on Linux (upstream issue [#44180](https://github.com/anthropics/claude-code/issues/44180), no fix timeline). This breaks GPG commit signing and SSH agent — both required for multi-VCS workflows with signed commits. Hooks remain the primary safety layer; `denyRead`/`allowWrite` config is preserved for re-enablement when #44180 is resolved.
 - **Per-device SSH/GPG keys**: keys are generated per machine, not stored in a password manager. Passphrases (if any) may be stored in a vault, but key material stays on-device.
+- **`denyWrite` entries added**: `/etc`, `/usr`, `/boot`, `/sys`, `/proc` in sandbox `filesystem.denyWrite`. Staged for when #44180 ships; has no effect while `sandbox.enabled: false`.
+- **GH_TOKEN in `install.sh`**: `install.sh` now prompts for a GitHub PAT. When provided, `~/.claude/settings.json` is written as a generated file (not a symlink) with `env.GH_TOKEN` merged in, keeping the token out of the repo. When sandbox is re-enabled, also move `~/.config/gh` back into `denyRead`.
 
 ---
 
@@ -38,19 +40,7 @@ The bwrap sandbox adds meaningful defense-in-depth: kernel-level filesystem isol
 
 Both approaches trade credential access for stronger isolation — appropriate for CI/CD or multi-tenant setups, not personal dev machines requiring GPG signing over SSH remotes.
 
-### 2. GH_TOKEN in settings.json env (deferred)
-
-Store a GitHub PAT directly in `~/.claude/settings.json` under the `env` key so `gh` CLI uses the token without reading `~/.config/gh/hosts.yml`. With the sandbox disabled this is a convenience improvement (not a security one), so it's lower priority.
-
-```json
-"env": {
-  "GH_TOKEN": "ghp_xxxxxxxxxxxxxxxxxxxx"
-}
-```
-
-When the sandbox is re-enabled (item 1), also move `~/.config/gh` back into `denyRead` — at that point the security benefit is restored.
-
-### 3. Railguard evaluation
+### 2. Railguard evaluation
 
 [Railguard](https://github.com/railyard-dev/railguard) is a per-command policy engine that sits between Claude and tool execution (~2ms decision latency). Uses bwrap on Linux. Key capabilities beyond what we have:
 
@@ -61,29 +51,13 @@ When the sandbox is re-enabled (item 1), also move `~/.config/gh` back into `den
 
 **Evaluation path:** `railguard install`, run a session, review its audit log, compare its catch rate against `validate-bash.sh` on a test command corpus. If it catches more than our hooks without adding friction, adopt and simplify the hook layer.
 
-### 4. `enableWeakerNetworkIsolation` — explicit decision needed
+### 3. `enableWeakerNetworkIsolation` — explicit decision needed
 
 Claude Code offers this flag to allow Go-based CLI tools (`gh`, etc.) to verify TLS certificates via `com.apple.trustd.agent` on macOS. On Linux, Go uses system CAs directly so this is a no-op for us. Leave unset.
 
 Reference: [Fixing gh CLI in Claude Code's sandbox](https://zencoder.ai/blog/fixing-gh-cli-in-claude-codes-sandbox)
 
-### 5. Sandbox-level `denyWrite` for system paths
-
-`validate-write.sh` blocks Write/Edit/MultiEdit tools from writing to `/etc`, `/usr`, `/boot`, `/sys`, `/proc`. But a Bash command (`echo foo > /etc/hosts`) bypasses the hook entirely — those are not covered by the sandbox because only `allowWrite` (additive) is configured, not `denyWrite` (restrictive).
-
-Add explicit `denyWrite` entries in `settings.json` to close this gap:
-
-```json
-"filesystem": {
-  "denyRead": ["~/.ssh", "~/.aws"],
-  "denyWrite": ["/etc", "/usr", "/boot", "/sys", "/proc"],
-  "allowWrite": ["~/.gnupg", "~/.config/gh"]
-}
-```
-
-Reference: [NVIDIA AI Workbench — Claude sandbox config](https://docs.nvidia.com/ai-workbench/user-guide/latest/quickstart/quickstart-claude-sandbox.html)
-
-### 6. `enableWeakerNestedSandbox` for container deployments
+### 4. `enableWeakerNestedSandbox` for container deployments
 
 If Claude Code ever runs inside a Docker container, bwrap cannot create user namespaces (nested namespaces are blocked). NVIDIA's config adds `enableWeakerNestedSandbox: true` to fall back to reduced-capability mode that maintains isolation without nested namespaces. Not needed today but document it for when container-based workflows come up.
 
@@ -93,15 +67,15 @@ Reference: [NVIDIA AI Workbench — Claude sandbox config](https://docs.nvidia.c
 
 ## Longer-term
 
-### 7. Network allowlist
+### 5. Network allowlist
 
 Currently, the sandbox prompts for any new outbound domain. A future improvement: maintain an explicit allowlist of trusted domains in `settings.json` (`api.github.com`, `registry.npmjs.org`, etc.) and block unknown domains outright rather than prompting. Reduces interruptions without opening the network broadly.
 
-### 8. Per-project sandbox overrides
+### 6. Per-project sandbox overrides
 
 Some projects need broader write access (e.g., a Docker-based project writing to `/var/lib/...` via `docker`). Mechanism: project-level `.claude/settings.json` with additive `allowWrite` entries that merge with the user-level config.
 
-### 9. `validate-bash.sh` regex hardening
+### 7. `validate-bash.sh` regex hardening
 
 Current patterns are line-oriented and can be bypassed with multi-statement commands. Potential improvements:
 
@@ -109,9 +83,9 @@ Current patterns are line-oriented and can be bypassed with multi-statement comm
 - Flag `base64 -d | sh` and similar encoding-based execution patterns
 - Flag `python -c`, `node -e`, `perl -e` with inline exec patterns
 
-At some point this becomes a reimplementation of Railguard — see item 3 above.
+At some point this becomes a reimplementation of Railguard — see item 2 above.
 
-### 10. PostToolUse: test runner hook
+### 8. PostToolUse: test runner hook
 
 After edits to test-eligible files, run the relevant test suite. `{"decision": "block"}` on failure forces Claude to fix before continuing. Needs per-project configuration (test command varies by project type). Could use a `CLAUDE_TEST_CMD` env var or a `.claude/test-cmd` file per project.
 

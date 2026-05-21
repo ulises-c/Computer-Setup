@@ -54,6 +54,13 @@
         "~/.ssh",
         "~/.aws"
       ],
+      "denyWrite": [
+        "/etc",
+        "/usr",
+        "/boot",
+        "/sys",
+        "/proc"
+      ],
       "allowWrite": [
         "~/.gnupg",
         "~/.config/gh"
