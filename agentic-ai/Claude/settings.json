@@ -52,7 +52,10 @@
     "filesystem": {
       "denyRead": [
         "~/.ssh",
-        "~/.aws",
+        "~/.aws"
+      ],
+      "allowWrite": [
+        "~/.gnupg",
         "~/.config/gh"
       ]
     }
