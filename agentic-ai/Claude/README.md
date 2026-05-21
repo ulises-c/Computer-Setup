@@ -4,14 +4,7 @@ Version-controlled source of truth for `~/.claude/` settings, hooks, and rules. 
 
 ## Activation
 
-**Linux only — one-time OS setup (Ubuntu 24.04+ requires this):**
-```bash
-sudo apt-get install bubblewrap socat
-bash agentic-ai/Claude/setup-linux-sandbox.sh
-```
-CachyOS/Arch: `yay -S bubblewrap socat` — no AppArmor step needed.
-
-**Then wire up the config:**
+**Wire up the config:**
 ```bash
 bash agentic-ai/Claude/install.sh
 ```
@@ -30,16 +23,12 @@ Restart Claude Code after running.
 ## What this configures
 
 ### `bypassPermissions`
-Claude auto-approves all tool calls without prompting. The sandbox and hooks below act as the safety gate.
+Claude auto-approves all tool calls without prompting. The hooks below act as the safety gate.
 
-### Sandbox (OS-level isolation)
-Enforced by bubblewrap (Linux) / Seatbelt (macOS) at the kernel level — not bypassable from inside a process.
+### Sandbox
+`sandbox.enabled` is currently **disabled**. Claude Code's Linux sandbox uses seccomp BPF to block all `AF_UNIX` socket calls — this breaks `gpg-agent` (required for commit signing) and `ssh-agent` (required for SSH push to GitHub, Bitbucket, Forgejo, etc.). Upstream issue [#44180](https://github.com/anthropics/claude-code/issues/44180) tracks the fix. The `denyRead`/`allowWrite` filesystem config is preserved in `settings.json` for re-enablement once the issue is resolved.
 
-- **Filesystem**: write access limited to the current working directory by default; reads to `~/.ssh` and `~/.aws` are blocked. `~/.gnupg` and `~/.config/gh` are readable and writable — required for GPG commit signing and `gh api` (see [Security tradeoffs](#security-tradeoffs) below)
-- **Network**: prompts before connecting to any new domain
-- **`allowUnsandboxedCommands: false`**: disables the escape hatch so Claude cannot retry blocked commands outside the sandbox
-
-The sandbox covers **Bash commands and all their child processes** (npm, terraform, kubectl, etc.). The Write/Edit/MultiEdit tools are not sandboxed — they go through the hooks below instead.
+The hooks below are the primary safety layer.
 
 ### PreToolUse: `validate-bash.sh` (Bash)
 Blocks dangerous or escalation-prone shell commands:
@@ -114,15 +103,15 @@ echo '{"tool_input":{"file_path":"/Users/ulises/github/project/main.py"}}' | bas
 echo $?
 ```
 
-## Security tradeoffs
+## Security model
 
-**`~/.gnupg` and `~/.config/gh` are intentionally readable inside the sandbox.**
+With the sandbox disabled, Claude runs with your user's full filesystem access — the same security surface as Cursor, Copilot, or any terminal session. The hooks are the primary guardrail layer.
 
-GPG signing (`git commit -S`) requires reading the keyring at `~/.gnupg`. `gh api` requires reading the OAuth token at `~/.config/gh/hosts.yml`. Both require write access as well (temp files, token refresh). Putting either in `denyRead` would break those workflows.
+**`validate-write.sh`** still blocks Claude's Write/Edit tools from touching `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh`, and system paths. Bash commands can read those paths, which is intentional — GPG signing and `gh api` both require it.
 
-The tradeoff: an autonomous agent with `gh api` access effectively has access to your GitHub token. The `validate-write.sh` hook blocks Claude from using Write/Edit tools to modify those paths directly, but Bash commands can still read them. This is the deliberate operating model — `bypassPermissions` + sandbox is a trust boundary, not a zero-trust vault.
+**`validate-bash.sh`** blocks catastrophic shell commands regardless of filesystem access.
 
-**`~/.ssh` and `~/.aws` stay in `denyRead`** because there is no autonomous use case that requires reading SSH private keys or AWS credentials directly — those are user-controlled operations.
+The operative trust model: `bypassPermissions` + hooks is a guardrail against accidental damage, not a zero-trust vault. Per-device SSH/GPG keys are the credential strategy — key material stays on the machine, not in a vault.
 
 ## Adding settings
 

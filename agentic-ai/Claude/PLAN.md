@@ -16,33 +16,39 @@ Tracks future improvements to `agentic-ai/Claude/`. Current state: `bypassPermis
 - Fix `cat | jq` anti-pattern in `validate-bash.sh`
 - Fix `read` on empty files in `driftcheck.sh`
 - README corrected: accurate `denyRead` docs, security tradeoffs section added
+- **Disabled bwrap sandbox** (`sandbox.enabled: false`): seccomp BPF unconditionally blocks all `AF_UNIX` socket calls on Linux (upstream issue [#44180](https://github.com/anthropics/claude-code/issues/44180), no fix timeline). This breaks GPG commit signing and SSH agent — both required for multi-VCS workflows with signed commits. Hooks remain the primary safety layer; `denyRead`/`allowWrite` config is preserved for re-enablement when #44180 is resolved.
+- **Per-device SSH/GPG keys**: keys are generated per machine, not stored in a password manager. Passphrases (if any) may be stored in a vault, but key material stays on-device.
 
 ---
 
 ## Near-term
 
-### 1. Verify GPG agent socket access inside sandbox
+### 1. Re-enable sandbox when upstream fixes AF_UNIX blocking
 
-GPG signing depends on communicating with `gpg-agent` via a Unix socket at `/run/user/$UID/gnupg/S.gpg-agent`. Bubblewrap may or may not expose this path depending on how Claude Code constructs the bwrap invocation.
+The bwrap sandbox adds meaningful defense-in-depth: kernel-level filesystem isolation that hooks cannot replicate. Worth re-enabling when feasible.
 
-**To verify:** run `git commit --allow-empty -S -m "gpg test"` inside a Claude session and confirm it succeeds without prompts. If it fails, determine whether `/run/user/$UID/gnupg/` needs to be explicitly bind-mounted by patching the Claude Code sandbox config or using `SSH_AUTH_SOCK`-style forwarding.
+**Blocker:** [#44180](https://github.com/anthropics/claude-code/issues/44180) — seccomp BPF unconditionally blocks AF_UNIX sockets on Linux. No config workaround. Blocks both `gpg-agent` (commit signing) and `ssh-agent` (SSH push), which are hard requirements.
 
-### 2. Credential pre-resolution via Bitwarden (optional hardening)
+**When #44180 ships:** flip `sandbox.enabled` to `true`. The `denyRead`/`allowWrite` filesystem config is already in place. Run `git commit --allow-empty -S` and `git push` to verify GPG signing and SSH agent both work before closing.
 
-Instead of giving the sandbox read access to `~/.config/gh/hosts.yml`, resolve `GH_TOKEN` at shell startup and inject it as an env var. This removes the OAuth token from the sandbox's readable filesystem.
+**Evaluated alternatives (both ruled out for personal dev workflows):**
 
-```bash
-# ~/.zshrc — only outside Claude sessions
-if [[ -z "${CLAUDE_SESSION:-}" ]]; then
-  export GH_TOKEN=$(bw get password github-cli 2>/dev/null || true)
-fi
+- **Docker sandbox** ([docs](https://docs.docker.com/ai/sandboxes/agents/claude-code/)) — containerized Claude Code; credentials live entirely outside the container via OAuth proxy. Designed for untrusted-code execution. No SSH agent or GPG forwarding supported by design.
+- **NVIDIA AI Workbench** ([docs](https://docs.nvidia.com/ai-workbench/user-guide/latest/quickstart/quickstart-claude-sandbox.html)) — bwrap + socat dual-layer isolation; `enableWeakerNestedSandbox: true` for running inside Docker (avoids nested namespace issues). Still blocks credential access. Relevant if Claude Code ever runs inside a container on this setup.
+
+Both approaches trade credential access for stronger isolation — appropriate for CI/CD or multi-tenant setups, not personal dev machines requiring GPG signing over SSH remotes.
+
+### 2. GH_TOKEN in settings.json env (deferred)
+
+Store a GitHub PAT directly in `~/.claude/settings.json` under the `env` key so `gh` CLI uses the token without reading `~/.config/gh/hosts.yml`. With the sandbox disabled this is a convenience improvement (not a security one), so it's lower priority.
+
+```json
+"env": {
+  "GH_TOKEN": "ghp_xxxxxxxxxxxxxxxxxxxx"
+}
 ```
 
-Then `gh` uses the env var and `~/.config/gh` can go back into `denyRead`. Requires Bitwarden CLI (`bw`).
-
-> Previously documented with 1Password CLI (`op read op://Personal/github-cli/credential`); same pattern, different secret manager.
-
-Reference: [Making Claude Code Actually Work Autonomously](https://www.linkedin.com/pulse/making-claude-code-actually-work-autonomously-sandbox-daniel-dimitrov-2khnf)
+When the sandbox is re-enabled (item 1), also move `~/.config/gh` back into `denyRead` — at that point the security benefit is restored.
 
 ### 3. Railguard evaluation
 

@@ -47,7 +47,7 @@
     ]
   },
   "sandbox": {
-    "enabled": true,
+    "enabled": false,
     "allowUnsandboxedCommands": false,
     "filesystem": {
       "denyRead": [
