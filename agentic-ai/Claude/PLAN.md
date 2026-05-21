@@ -59,19 +59,41 @@ Claude Code offers this flag to allow Go-based CLI tools (`gh`, etc.) to verify 
 
 Reference: [Fixing gh CLI in Claude Code's sandbox](https://zencoder.ai/blog/fixing-gh-cli-in-claude-codes-sandbox)
 
+### 5. Sandbox-level `denyWrite` for system paths
+
+`validate-write.sh` blocks Write/Edit/MultiEdit tools from writing to `/etc`, `/usr`, `/boot`, `/sys`, `/proc`. But a Bash command (`echo foo > /etc/hosts`) bypasses the hook entirely — those are not covered by the sandbox because only `allowWrite` (additive) is configured, not `denyWrite` (restrictive).
+
+Add explicit `denyWrite` entries in `settings.json` to close this gap:
+
+```json
+"filesystem": {
+  "denyRead": ["~/.ssh", "~/.aws"],
+  "denyWrite": ["/etc", "/usr", "/boot", "/sys", "/proc"],
+  "allowWrite": ["~/.gnupg", "~/.config/gh"]
+}
+```
+
+Reference: [NVIDIA AI Workbench — Claude sandbox config](https://docs.nvidia.com/ai-workbench/user-guide/latest/quickstart/quickstart-claude-sandbox.html)
+
+### 6. `enableWeakerNestedSandbox` for container deployments
+
+If Claude Code ever runs inside a Docker container, bwrap cannot create user namespaces (nested namespaces are blocked). NVIDIA's config adds `enableWeakerNestedSandbox: true` to fall back to reduced-capability mode that maintains isolation without nested namespaces. Not needed today but document it for when container-based workflows come up.
+
+Reference: [NVIDIA AI Workbench — Claude sandbox config](https://docs.nvidia.com/ai-workbench/user-guide/latest/quickstart/quickstart-claude-sandbox.html), [Docker Claude Code sandbox](https://docs.docker.com/ai/sandboxes/agents/claude-code/)
+
 ---
 
 ## Longer-term
 
-### 5. Network allowlist
+### 7. Network allowlist
 
 Currently, the sandbox prompts for any new outbound domain. A future improvement: maintain an explicit allowlist of trusted domains in `settings.json` (`api.github.com`, `registry.npmjs.org`, etc.) and block unknown domains outright rather than prompting. Reduces interruptions without opening the network broadly.
 
-### 6. Per-project sandbox overrides
+### 8. Per-project sandbox overrides
 
 Some projects need broader write access (e.g., a Docker-based project writing to `/var/lib/...` via `docker`). Mechanism: project-level `.claude/settings.json` with additive `allowWrite` entries that merge with the user-level config.
 
-### 7. `validate-bash.sh` regex hardening
+### 9. `validate-bash.sh` regex hardening
 
 Current patterns are line-oriented and can be bypassed with multi-statement commands. Potential improvements:
 
@@ -81,8 +103,17 @@ Current patterns are line-oriented and can be bypassed with multi-statement comm
 
 At some point this becomes a reimplementation of Railguard — see item 3 above.
 
-### 8. PostToolUse: test runner hook
+### 10. PostToolUse: test runner hook
 
-Pattern from [Claude Code settings article](https://dev.to/shimo4228/stop-using-default-settings-10-claude-code-configs-that-actually-work-243l): after edits to test-eligible files, run the relevant test suite. `{"decision": "block"}` on failure forces Claude to fix before continuing.
+After edits to test-eligible files, run the relevant test suite. `{"decision": "block"}` on failure forces Claude to fix before continuing. Needs per-project configuration (test command varies by project type). Could use a `CLAUDE_TEST_CMD` env var or a `.claude/test-cmd` file per project.
 
-Needs per-project configuration (test command varies by project type). Could use a `CLAUDE_TEST_CMD` env var or a `.claude/test-cmd` file per project.
+---
+
+## References
+
+- [Stop Using Default Settings — 10 Claude Code Configs That Actually Work](https://dev.to/shimo4228/stop-using-default-settings-10-claude-code-configs-that-actually-work-243l)
+- [Fixing gh CLI in Claude Code's Sandbox](https://zencoder.ai/blog/fixing-gh-cli-in-claude-codes-sandbox)
+- [Making Claude Code Actually Work Autonomously with Sandbox](https://www.linkedin.com/pulse/making-claude-code-actually-work-autonomously-sandbox-daniel-dimitrov-2khnf)
+- [Railguard — per-command policy engine for Claude Code](https://github.com/railyard-dev/railguard)
+- [Docker Claude Code Sandbox](https://docs.docker.com/ai/sandboxes/agents/claude-code/)
+- [NVIDIA AI Workbench — Claude Code Quickstart](https://docs.nvidia.com/ai-workbench/user-guide/latest/quickstart/quickstart-claude-sandbox.html)
