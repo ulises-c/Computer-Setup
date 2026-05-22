@@ -82,9 +82,9 @@
     "enabled": false,
     "allowUnsandboxedCommands": false,
     "filesystem": {
-      "denyRead": [
-        "~/.ssh",
-        "~/.aws"
+      "allowWrite": [
+        "~/.gnupg",
+        "~/.config/gh"
       ],
       "denyWrite": [
         "/etc",
@@ -93,9 +93,9 @@
         "/sys",
         "/proc"
       ],
-      "allowWrite": [
-        "~/.gnupg",
-        "~/.config/gh"
+      "denyRead": [
+        "~/.ssh",
+        "~/.aws"
       ]
     }
   },
