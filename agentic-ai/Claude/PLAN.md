@@ -40,16 +40,69 @@ The bwrap sandbox adds meaningful defense-in-depth: kernel-level filesystem isol
 
 Both approaches trade credential access for stronger isolation — appropriate for CI/CD or multi-tenant setups, not personal dev machines requiring GPG signing over SSH remotes.
 
-### 2. Railguard evaluation
+### 2. Railguard evaluation — COMPLETE (paper evaluation, 2026-05-22)
 
-[Railguard](https://github.com/railyard-dev/railguard) is a per-command policy engine that sits between Claude and tool execution (~2ms decision latency). Uses bwrap on Linux. Key capabilities beyond what we have:
+[Railguard](https://github.com/railyard-dev/railguard) is a per-command policy engine that intercepts every Claude tool call. Source reviewed at v0.4.0. No live install performed — see integration conflicts below.
 
-- Pipe analysis + evasion detection (catches obfuscated commands our regex misses)
-- Write/Edit content inspection for secrets in the payload itself
-- Memory write classification: detects behavioral injection, tampering between sessions via content hashing
-- Per-edit rollback, session replay
+#### What railguard adds over our current hooks
 
-**Evaluation path:** `railguard install`, run a session, review its audit log, compare its catch rate against `validate-bash.sh` on a test command corpus. If it catches more than our hooks without adding friction, adopt and simplify the hook layer.
+| Capability | Our hooks | Railguard |
+|---|---|---|
+| Block destructive bash patterns | `validate-bash.sh` regex | Policy engine: allow/block/approve per named rule |
+| Block writes to sensitive paths | `validate-write.sh` | Path fence: extracts paths from commands (handles pipes, subshells) |
+| Encoding/obfuscation detection | Not covered | Tier 1: catches `base64 -d \| sh`, `eval`, `chr()`, inline exec patterns |
+| Behavioral evasion detection | Not covered | Tier 3: detects re-attempt of previously blocked command with different syntax |
+| Memory write classification | Not covered | Memory guard: blocks API keys in memory, requires approval for behavioral instruction injection |
+| Per-edit rollback | Not covered | Snapshot every Write/Edit; `railguard rollback --steps N` |
+| Audit trail | Not covered | `.railguard/traces/` structured log per session |
+| Session termination | Not covered | Terminates session on repeated high-threat patterns; requires human approval to resume |
+| Self-protection | Not covered | Blocks writes to `~/.claude/settings.json` and railguard binary |
+| OS-level sandbox | Disabled (see #44180) | railguard-shell (see Linux conflict below) |
+
+Railguard is strictly better at the hook layer. `validate-bash.sh` + `validate-write.sh` would be replaceable.
+
+#### Linux OS sandbox conflict (same outcome as #44180)
+
+railguard-shell is a separate binary Claude Code runs as its shell via `CLAUDE_CODE_SHELL`. On Linux ≥ 5.13 (this machine: kernel 6.17), `detect_sandbox()` returns `LinuxLandlock` and `exec_linux_sandbox` wraps every Bash command in bwrap with:
+
+```
+--tmpfs /tmp          # wipes SSH agent sockets (/tmp/ssh-*/agent.*)
+--tmpfs ~/.gnupg      # wipes GPG keyring
+# /run not mounted    # GPG agent socket (/run/user/$UID/gnupg/) unreachable
+```
+
+This breaks GPG commit signing and SSH push — same workflow impact as the disabled built-in sandbox (#44180), via filesystem namespacing instead of seccomp BPF. **railguard-shell is a non-starter on this machine** until the credential access problem is solved (GPG and SSH agent sockets need to be accessible inside the sandbox).
+
+The hook-based detection layer (threat classifier, memory guard, policy engine) is independent of railguard-shell and works without it.
+
+#### Installation conflicts with this repo's structure
+
+`railguard install` writes directly to `~/.claude/settings.json`, which in this setup is a **symlink to the repo**. Three problems:
+
+1. **Hook overwrite**: installs only railguard's three hooks (PreToolUse, PostToolUse, SessionStart), replacing `post-edit-shellcheck` and `driftcheck`. Those would need re-adding.
+2. **`CLAUDE_CODE_SHELL` env**: writes the railguard-shell path into `settings.json` — activates the broken Linux sandbox automatically.
+3. **CLAUDE.md injection**: appends `<!-- railguard:start --> ... <!-- railguard:end -->` to `~/.claude/CLAUDE.md`, which is also a symlink to the repo.
+
+All three write through symlinks into tracked repo files. An install would need to be followed by selective reverting.
+
+#### No pre-built binary for Linux
+
+v0.4.0 release has no Linux asset. Installation requires `cargo install railguard`. Rust toolchain not currently present.
+
+#### Recommendation
+
+**Adopt the hook layer, skip railguard-shell.**
+
+When ready to integrate:
+
+1. `cargo install railguard` (or `rustup` + `cargo`)
+2. Run `railguard install` in a throw-away config dir first: `CLAUDE_CONFIG_DIR=/tmp/rg-test railguard install`, inspect the output settings.json
+3. Manually merge railguard's three hooks into `settings.json` alongside `post-edit-shellcheck` and `driftcheck` — do not let railguard overwrite them
+4. Set `fence.enabled: false` in `railguard.yaml` to disable railguard-shell (prevents `CLAUDE_CODE_SHELL` from activating bwrap)
+5. Update `railguard.yaml`'s `denied_paths` to remove `~/.gnupg` and `~/.config/gh` (we manage those at the hook layer)
+6. Add `.railguard/` to `.gitignore` (traces and snapshots are per-session, not repo state)
+
+Revisit railguard-shell when either: (a) upstream #44180 ships and AF_UNIX is unblocked, or (b) railguard adds a `--share-path /run/user/$UID` option to its bwrap invocation.
 
 ### 3. `enableWeakerNetworkIsolation` — explicit decision needed
 

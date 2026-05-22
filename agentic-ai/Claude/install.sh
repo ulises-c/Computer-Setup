@@ -26,6 +26,8 @@ ln -sf "$REPO_DIR/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md"
 printf 'Linked: CLAUDE.md\n'
 
 # Symlink rules directory (used by @imports in CLAUDE.md)
+# rm -f first: ln -sf on an existing dir-symlink creates a nested link inside it
+rm -f "$CLAUDE_DIR/rules"
 ln -sf "$REPO_DIR/rules" "$CLAUDE_DIR/rules"
 printf 'Linked: rules/\n'
 
