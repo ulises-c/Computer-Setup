@@ -31,6 +31,10 @@ rm -f "$CLAUDE_DIR/rules"
 ln -sf "$REPO_DIR/rules" "$CLAUDE_DIR/rules"
 printf 'Linked: rules/\n'
 
+# Symlink railguard policy (global: find_policy_file walks up from cwd)
+ln -sf "$REPO_DIR/railguard.yaml" "$HOME/.railguard.yaml"
+printf 'Linked: railguard.yaml → ~/.railguard.yaml\n'
+
 # Create hooks dir if it doesn't exist
 mkdir -p "$HOOKS_DIR"
 

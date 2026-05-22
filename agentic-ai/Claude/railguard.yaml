@@ -1,0 +1,51 @@
+# Railguard Policy — Computer-Setup / global
+# https://github.com/railyard-dev/railguard
+#
+# Defaults are prepended at runtime (merge_with_defaults); only overrides here.
+# Rules evaluated: allowlist → blocklist → approve → default allow.
+
+version: 1
+
+# ── Custom blocklist additions ────────────────────────────────────────
+# Fills gaps not covered by railguard's built-in defaults.
+
+blocklist:
+  - name: sudo-escalation
+    tool: Bash
+    pattern: "(^|[^a-zA-Z0-9_])sudo\\s"
+    action: block
+    message: "Blocked: sudo escalation must be explicit — run the command yourself"
+
+  - name: git-add-bulk
+    tool: Bash
+    pattern: "git\\s+add\\s+(-A\\b|--all\\b|\\.[[:space:]]|\\.$)"
+    action: block
+    message: "Blocked: git add -A/--all/. — stage specific files instead"
+
+approve: []
+allowlist: []
+
+# ── Path fence ────────────────────────────────────────────────────────
+# Project directory (CWD) is always implicitly allowed.
+# ~/.gnupg and ~/.config/gh are intentionally absent — required for GPG
+# commit signing and gh CLI; managed at the validate-write.sh hook layer.
+
+fence:
+  enabled: true
+  allowed_paths:
+    - "~/.claude"
+    - "/tmp"
+  denied_paths:
+    - "~/.ssh"
+    - "~/.aws"
+    - "~/.config/gcloud"
+    - "/etc"
+
+trace:
+  enabled: true
+  directory: .railguard/traces
+
+snapshot:
+  enabled: true
+  tools: [Write, Edit]
+  directory: .railguard/snapshots

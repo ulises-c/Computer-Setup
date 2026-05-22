@@ -20,6 +20,7 @@ Tracks future improvements to `agentic-ai/Claude/`. Current state: `bypassPermis
 - **Per-device SSH/GPG keys**: keys are generated per machine, not stored in a password manager. Passphrases (if any) may be stored in a vault, but key material stays on-device.
 - **`denyWrite` entries added**: `/etc`, `/usr`, `/boot`, `/sys`, `/proc` in sandbox `filesystem.denyWrite`. Staged for when #44180 ships; has no effect while `sandbox.enabled: false`.
 - **GH_TOKEN in `install.sh`**: `install.sh` now prompts for a GitHub PAT. When provided, `~/.claude/settings.json` is written as a generated file (not a symlink) with `env.GH_TOKEN` merged in, keeping the token out of the repo. When sandbox is re-enabled, also move `~/.config/gh` back into `denyRead`.
+- **Railguard v0.5.1 integrated** (2026-05-22): hook layer adopted, railguard-shell skipped. Custom blocks for `sudo` escalation and `git add -A/--all/.`; `~/.gnupg` and `~/.config/gh` excluded from `denied_paths`. `CLAUDE_CODE_SHELL` intentionally unset to avoid bwrap conflict (#44180). See item 2 below for full evaluation and integration notes.
 
 ---
 
@@ -89,18 +90,17 @@ All three write through symlinks into tracked repo files. An install would need 
 
 v0.4.0 release has no Linux asset. Installation requires `cargo install railguard`. Rust toolchain not currently present.
 
-#### Recommendation
+#### Status: INTEGRATED (2026-05-22)
 
-**Adopt the hook layer, skip railguard-shell.**
+Hook layer integrated, railguard-shell skipped.
 
-When ready to integrate:
-
-1. `cargo install railguard` (or `rustup` + `cargo`)
-2. Run `railguard install` in a throw-away config dir first: `CLAUDE_CONFIG_DIR=/tmp/rg-test railguard install`, inspect the output settings.json
-3. Manually merge railguard's three hooks into `settings.json` alongside `post-edit-shellcheck` and `driftcheck` — do not let railguard overwrite them
-4. Set `fence.enabled: false` in `railguard.yaml` to disable railguard-shell (prevents `CLAUDE_CODE_SHELL` from activating bwrap)
-5. Update `railguard.yaml`'s `denied_paths` to remove `~/.gnupg` and `~/.config/gh` (we manage those at the hook layer)
-6. Add `.railguard/` to `.gitignore` (traces and snapshots are per-session, not repo state)
+What was done:
+1. `rustup` installed non-interactively; `cargo install railguard` pulled v0.5.1
+2. `railguard.yaml` created at repo root with custom `sudo-escalation` and `git-add-bulk` blocks; `~/.gnupg` and `~/.config/gh` removed from `denied_paths` (required for GPG signing and gh CLI)
+3. Railguard's three hooks (`PreToolUse`, `PostToolUse`, `SessionStart`) merged into `settings.json` alongside existing `validate-bash.sh`, `validate-write.sh`, `post-edit-shellcheck.sh`, and `driftcheck.sh` — railguard did NOT overwrite them
+4. `CLAUDE_CODE_SHELL` env var intentionally NOT set — railguard-shell (bwrap) is only activated by that var; omitting it leaves the hooks active without triggering the Linux sandbox conflict
+5. `install.sh` updated to symlink `railguard.yaml → ~/.railguard.yaml` (global policy for all `~/` projects via `find_policy_file` walk-up)
+6. `.railguard/` added to `.gitignore` (per-session traces and snapshots)
 
 Revisit railguard-shell when either: (a) upstream #44180 ships and AF_UNIX is unblocked, or (b) railguard adds a `--share-path /run/user/$UID` option to its bwrap invocation.
 
