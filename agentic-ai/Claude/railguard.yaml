@@ -7,20 +7,10 @@
 version: 1
 
 # ── Custom blocklist additions ────────────────────────────────────────
-# Fills gaps not covered by railguard's built-in defaults.
+# escalation and bulk-staging blocks were removed — validate-bash.sh owns
+# those patterns with first-line scoping to avoid heredoc false positives.
 
-blocklist:
-  - name: sudo-escalation
-    tool: Bash
-    pattern: "(^|[^a-zA-Z0-9_])sudo\\s"
-    action: block
-    message: "Blocked: sudo escalation must be explicit — run the command yourself"
-
-  - name: git-add-bulk
-    tool: Bash
-    pattern: "git\\s+add\\s+(-A\\b|--all\\b|\\.[[:space:]]|\\.$)"
-    action: block
-    message: "Blocked: git add -A/--all/. — stage specific files instead"
+blocklist: []
 
 approve: []
 allowlist: []

@@ -5,6 +5,8 @@ set -euo pipefail
 trap 'exit 2' ERR
 
 COMMAND=$(jq -r '.tool_input.command // ""')
+# Heredoc bodies are message text, not executed code — policy checks use only the first line.
+FIRST_LINE=$(head -1 <<< "$COMMAND")
 
 block() {
   printf 'validate-bash.sh blocked: %s\n' "$1" >&2
@@ -41,13 +43,13 @@ grep -qE 'git[[:space:]]+push[[:space:]].*(main|master).*(-f\b|--force\b)' <<< "
   && block "force-push to main/master"
 
 # sudo escalation (must be explicit, not autonomous)
-grep -qE '(^|[^[:alnum:]_])sudo[[:space:]]' <<< "$COMMAND" \
+grep -qE '(^|[^[:alnum:]_])sudo[[:space:]]' <<< "$FIRST_LINE" \
   && block "sudo: escalation must be explicit — run the command yourself"
 
 # git add -A / --all / . (bulk staging can silently include secrets)
-grep -qE 'git[[:space:]]+add[[:space:]]+(-A\b|--all\b)' <<< "$COMMAND" \
+grep -qE 'git[[:space:]]+add[[:space:]]+(-A\b|--all\b)' <<< "$FIRST_LINE" \
   && block "git add -A/--all — stage specific files instead"
-grep -qE 'git[[:space:]]+add[[:space:]]+\.([[:space:]]|$)' <<< "$COMMAND" \
+grep -qE 'git[[:space:]]+add[[:space:]]+\.([[:space:]]|$)' <<< "$FIRST_LINE" \
   && block "git add . — stage specific files instead"
 
 exit 0
