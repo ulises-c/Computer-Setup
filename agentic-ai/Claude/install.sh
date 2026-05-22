@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 # Idempotent setup: symlinks this repo's Claude config into ~/.claude/
 # Safe to re-run. Backs up any existing settings.json before replacing it.
-#
-# GH_TOKEN: if provided (via env or prompt), settings.json is written as a
-# generated file (not a symlink) with the token merged in. Re-run install.sh
-# after repo changes to settings.json to pick them up.
 
 set -euo pipefail
 
@@ -22,22 +18,8 @@ if [[ -e "$SETTINGS" && ! -L "$SETTINGS" ]]; then
   mv "$SETTINGS" "$BACKUP"
 fi
 
-# Prompt for GH_TOKEN if not already in env (empty answer = skip)
-if [[ -z "${GH_TOKEN:-}" ]]; then
-  read -r -s -p "GH_TOKEN for gh CLI (leave blank to skip): " GH_TOKEN
-  printf '\n'
-fi
-
-if [[ -n "${GH_TOKEN:-}" ]]; then
-  # Generate settings.json with token merged in — NOT a symlink.
-  # Pass the token via env so it never appears in jq's argv / /proc/*/cmdline.
-  rm -f "$SETTINGS"
-  GH_TOKEN="$GH_TOKEN" jq '.env.GH_TOKEN = env.GH_TOKEN' "$REPO_DIR/settings.json" > "$SETTINGS"
-  printf 'Generated: settings.json (with GH_TOKEN — not a symlink; re-run install.sh after repo changes)\n'
-else
-  ln -sf "$REPO_DIR/settings.json" "$SETTINGS"
-  printf 'Linked: settings.json\n'
-fi
+ln -sf "$REPO_DIR/settings.json" "$SETTINGS"
+printf 'Linked: settings.json\n'
 
 # Symlink CLAUDE.md
 ln -sf "$REPO_DIR/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md"
