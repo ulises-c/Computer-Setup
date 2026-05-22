@@ -35,6 +35,8 @@ grep -qE '>{1,2}[[:space:]]*((~|\$HOME)/\.(ssh|aws|gnupg|config/gh)|/(etc|usr|bo
 # piped shell execution (curl/wget | sh)
 grep -qE '(curl|wget)[[:space:]].*\|[[:space:]]*(sudo[[:space:]]+)?(ba)?sh\b' <<< "$COMMAND" \
   && block "piped shell execution (curl/wget | sh)"
+grep -qE '(curl|wget)[[:space:]].*\|[[:space:]]*(python3?|ruby|node|perl)\b' <<< "$COMMAND" \
+  && block "piped interpreter execution (curl/wget | interpreter)"
 
 # force-push to main/master
 grep -qE 'git[[:space:]]+push[[:space:]].*(-f\b|--force\b).*(main|master)' <<< "$COMMAND" \
@@ -51,5 +53,20 @@ grep -qE 'git[[:space:]]+add[[:space:]]+(-A\b|--all\b)' <<< "$FIRST_LINE" \
   && block "git add -A/--all — stage specific files instead"
 grep -qE 'git[[:space:]]+add[[:space:]]+\.([[:space:]]|$)' <<< "$FIRST_LINE" \
   && block "git add . — stage specific files instead"
+
+# python -c with subprocess/os.system (scoped to FIRST_LINE — same heredoc reason as sudo/git-add)
+grep -qE 'python3?[[:space:]]+-c' <<< "$FIRST_LINE" \
+  && grep -qE 'os\.(system|exec[vl]|popen)|subprocess\.(Popen|check_output|call|run)' <<< "$FIRST_LINE" \
+  && block "python -c: inline subprocess/shell execution"
+
+# node -e with child_process
+grep -qE 'node[[:space:]]+-e' <<< "$FIRST_LINE" \
+  && grep -qE "require\(['\"]child_process|execSync[[:space:]]*\(|spawnSync[[:space:]]*\(" <<< "$FIRST_LINE" \
+  && block "node -e: child_process execution"
+
+# perl -e with shell execution
+grep -qE 'perl[[:space:]]+-e' <<< "$FIRST_LINE" \
+  && grep -qE '(^|[^[:alnum:]_])(system|exec)[[:space:]]*\(' <<< "$FIRST_LINE" \
+  && block "perl -e: inline shell execution"
 
 exit 0
