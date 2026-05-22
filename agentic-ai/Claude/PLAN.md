@@ -136,6 +136,8 @@ Current patterns are line-oriented and can be bypassed with multi-statement comm
 - Flag `base64 -d | sh` and similar encoding-based execution patterns
 - Flag `python -c`, `node -e`, `perl -e` with inline exec patterns
 
+**Known false positive (surfaced 2026-05-22):** The hook receives the full raw command string passed to the Bash tool, including heredoc bodies. Commit messages written via `git commit -m "$(cat <<'EOF' ... EOF)"` that contain a blocked phrase (e.g. `sudo `, `git add -A`) trigger the hook even though those strings are message text, not executed code. Workaround: rephrase commit messages to avoid literal blocked tokens. Fix: scope the pattern match to only the first line of the command, or strip heredoc content before matching.
+
 At some point this becomes a reimplementation of Railguard — see item 2 above.
 
 ### 8. PostToolUse: test runner hook
