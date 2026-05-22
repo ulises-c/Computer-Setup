@@ -130,21 +130,28 @@ Currently, the sandbox prompts for any new outbound domain. A future improvement
 
 Some projects need broader write access (e.g., a Docker-based project writing to `/var/lib/...` via `docker`). Mechanism: project-level `.claude/settings.json` with additive `allowWrite` entries that merge with the user-level config.
 
-### 7. `validate-bash.sh` regex hardening
+### 7. `validate-bash.sh` regex hardening — COMPLETE (2026-05-22)
 
-Current patterns are line-oriented and can be bypassed with multi-statement commands. Potential improvements:
+- `base64 -d | sh` and encoding patterns: covered by Railguard Tier 1 (already handled)
+- Compound command scoping: all new patterns use `FIRST_LINE` — same heredoc-safety approach as `sudo`/`git add`
+- Piped interpreter execution: `curl/wget | python/ruby/node/perl` blocked alongside existing `| sh` check
+- Inline interpreter exec (two-grep AND — only fires when both interpreter flag AND dangerous exec pattern are present):
+  - `python3? -c` + `os.system`, `os.exec*`, `os.popen`, `subprocess.*`
+  - `node -e` + `require('child_process')`, `execSync`, `spawnSync`
+  - `perl -e` + `system(`, `exec(`
 
-- Parse compound commands (`;`, `&&`, `||`, `$()` subshells) rather than matching the raw string
-- Flag `base64 -d | sh` and similar encoding-based execution patterns
-- Flag `python -c`, `node -e`, `perl -e` with inline exec patterns
+**FIRST_LINE scoping rule:** any check whose blocked keyword can appear in a commit message (which describes what you're blocking) must use `$FIRST_LINE`, not `$COMMAND`. Learned from two successive false positives.
 
-**False positive fixed (2026-05-22):** The hook received the full raw command string including heredoc bodies, so commit messages containing a blocked phrase (e.g. `sudo `, `git add -A`) triggered the hook on message text, not executed code. Fixed by scoping `sudo` and `git add` checks to `FIRST_LINE` — heredoc bodies always start on line 2+.
+### 8. PostToolUse: test runner hook — COMPLETE (2026-05-22)
 
-At some point this becomes a reimplementation of Railguard — see item 2 above.
+`post-test-runner.sh` — runs after every Write/Edit/MultiEdit on source files.
 
-### 8. PostToolUse: test runner hook
-
-After edits to test-eligible files, run the relevant test suite. `{"decision": "block"}` on failure forces Claude to fix before continuing. Needs per-project configuration (test command varies by project type). Could use a `CLAUDE_TEST_CMD` env var or a `.claude/test-cmd` file per project.
+- Skips non-source extensions: `md, txt, json, yaml, yml, toml, lock, rst, svg, png, jpg, gif, pdf, ico`
+- Resolves project root via `git rev-parse --show-toplevel`; exits silently if not in a repo
+- Discovery order: `.claude/test-cmd` override → auto-detect (`Cargo.toml` → `cargo test`, `go.mod` → `go test ./...`, `pyproject.toml`/`pytest.ini`/`setup.py` → `pytest`, `package.json` with non-boilerplate test script → `npm test`, `Makefile` with `test:` target → `make test`) → skip
+- 60s timeout; always prints timing (pass or fail) so you can tune the timeout
+- Warns (exit 2, non-imperative message) on failure or timeout; exits 0 silently on pass
+- Per-project override: create `.claude/test-cmd` in the project root with the test command on one line
 
 ---
 

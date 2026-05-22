@@ -40,6 +40,11 @@
           {
             "type": "command",
             "command": "bash ~/.claude/hooks/post-edit-shellcheck.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/post-test-runner.sh",
+            "timeout": 75000
           }
         ]
       },
