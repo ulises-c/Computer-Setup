@@ -19,10 +19,12 @@ Tracks future improvements to `agentic-ai/Claude/`. Current state: `bypassPermis
 - **Disabled bwrap sandbox** (`sandbox.enabled: false`): seccomp BPF unconditionally blocks all `AF_UNIX` socket calls on Linux (upstream issue [#44180](https://github.com/anthropics/claude-code/issues/44180), no fix timeline). This breaks GPG commit signing and SSH agent — both required for multi-VCS workflows with signed commits. Hooks remain the primary safety layer; `denyRead`/`allowWrite` config is preserved for re-enablement when #44180 is resolved.
 - **Per-device SSH/GPG keys**: keys are generated per machine, not stored in a password manager. Passphrases (if any) may be stored in a vault, but key material stays on-device.
 - **`denyWrite` entries added**: `/etc`, `/usr`, `/boot`, `/sys`, `/proc` in sandbox `filesystem.denyWrite`. Staged for when #44180 ships; has no effect while `sandbox.enabled: false`.
-- **GH_TOKEN in `install.sh`**: `install.sh` now prompts for a GitHub PAT. When provided, `~/.claude/settings.json` is written as a generated file (not a symlink) with `env.GH_TOKEN` merged in, keeping the token out of the repo. When sandbox is re-enabled, also move `~/.config/gh` back into `denyRead`.
+- **GH_TOKEN dropped**: provider-agnostic workflow (GitHub, Bitbucket, Forgejo) requires GPG signing and SSH agent for all remotes. A GitHub-only PAT is not a viable path. `~/.config/gh` remains in `allowWrite`; auth is handled via SSH keys per provider.
 - **Railguard v0.5.1 integrated** (2026-05-22): hook layer adopted, railguard-shell skipped. Custom blocks for `sudo` escalation and `git add -A/--all/.`; `~/.gnupg` and `~/.config/gh` excluded from `denied_paths`. `CLAUDE_CODE_SHELL` intentionally unset to avoid bwrap conflict (#44180). See item 2 below for full evaluation and integration notes.
 - **Heredoc false-positive fixed** (2026-05-22): `validate-bash.sh` was matching `sudo` and `git add` patterns against the full command string, including heredoc bodies (e.g. commit message text). Fixed by scoping those two policy checks to `FIRST_LINE`; destructive-pattern checks keep full-string matching. Duplicate custom blocks removed from `railguard.yaml` — those patterns used the same full-string regex and would have re-introduced the false positive. `validate-bash.sh` now owns the escalation/bulk-staging rules with correct scoping; railguard retains its built-in detection layer (encoding, path fence, memory guard, audit trail).
 - **Railguard observed behaviors** (2026-05-22): Two self-protection behaviors surfaced in practice: (1) editing `railguard.yaml` triggers rule `railguard-config-edit-2` and requires human approval — intentional, prevents Claude from weakening its own guardrails; (2) Tier 3 behavioral evasion detection correlated all subsequent `git` commands with an earlier blocked `git commit`, requiring repeated human approval. Known false-positive; no fix available from within a session.
+- **`validate-bash.sh` regex hardening** (2026-05-22): piped interpreter execution (`curl/wget | python/ruby/node/perl`), inline interpreter exec (two-grep AND checks for `python3? -c`+`os.system/subprocess`, `node -e`+`child_process/execSync`, `perl -e`+`system(/exec(`), all scoped to `FIRST_LINE` (same heredoc-safety rule as `sudo`/`git add`).
+- **PostToolUse test runner hook** (2026-05-22): `post-test-runner.sh` — runs after every Write/Edit on source files; skips non-source extensions; discovers test command via `.claude/test-cmd` override or auto-detect (`cargo test`, `go test ./...`, `pytest`, `npm test`, `make test`); 60s timeout; warns on failure, silent on pass.
 
 ---
 
@@ -32,7 +34,7 @@ Tracks future improvements to `agentic-ai/Claude/`. Current state: `bypassPermis
 
 The bwrap sandbox adds meaningful defense-in-depth: kernel-level filesystem isolation that hooks cannot replicate. Worth re-enabling when feasible.
 
-**Blocker:** [#44180](https://github.com/anthropics/claude-code/issues/44180) — seccomp BPF unconditionally blocks AF_UNIX sockets on Linux. No config workaround. Blocks both `gpg-agent` (commit signing) and `ssh-agent` (SSH push), which are hard requirements.
+**Blocker:** [#44180](https://github.com/anthropics/claude-code/issues/44180) — seccomp BPF unconditionally blocks AF_UNIX sockets on Linux. No config workaround. Blocks `gpg-agent` (commit signing) and `ssh-agent` (SSH push) — both required for a provider-agnostic workflow across GitHub, Bitbucket, and Forgejo. A GitHub-only PAT is not a viable substitute.
 
 **When #44180 ships:** flip `sandbox.enabled` to `true`. The `denyRead`/`allowWrite` filesystem config is already in place. Run `git commit --allow-empty -S` and `git push` to verify GPG signing and SSH agent both work before closing.
 
@@ -106,7 +108,7 @@ What was done:
 
 Revisit railguard-shell when either: (a) upstream #44180 ships and AF_UNIX is unblocked, or (b) railguard adds a `--share-path /run/user/$UID` option to its bwrap invocation.
 
-### 3. `enableWeakerNetworkIsolation` — explicit decision needed
+### 3. `enableWeakerNetworkIsolation` — no action (Linux no-op)
 
 Claude Code offers this flag to allow Go-based CLI tools (`gh`, etc.) to verify TLS certificates via `com.apple.trustd.agent` on macOS. On Linux, Go uses system CAs directly so this is a no-op for us. Leave unset.
 
@@ -129,29 +131,6 @@ Currently, the sandbox prompts for any new outbound domain. A future improvement
 ### 6. Per-project sandbox overrides
 
 Some projects need broader write access (e.g., a Docker-based project writing to `/var/lib/...` via `docker`). Mechanism: project-level `.claude/settings.json` with additive `allowWrite` entries that merge with the user-level config.
-
-### 7. `validate-bash.sh` regex hardening — COMPLETE (2026-05-22)
-
-- `base64 -d | sh` and encoding patterns: covered by Railguard Tier 1 (already handled)
-- Compound command scoping: all new patterns use `FIRST_LINE` — same heredoc-safety approach as `sudo`/`git add`
-- Piped interpreter execution: `curl/wget | python/ruby/node/perl` blocked alongside existing `| sh` check
-- Inline interpreter exec (two-grep AND — only fires when both interpreter flag AND dangerous exec pattern are present):
-  - `python3? -c` + `os.system`, `os.exec*`, `os.popen`, `subprocess.*`
-  - `node -e` + `require('child_process')`, `execSync`, `spawnSync`
-  - `perl -e` + `system(`, `exec(`
-
-**FIRST_LINE scoping rule:** any check whose blocked keyword can appear in a commit message (which describes what you're blocking) must use `$FIRST_LINE`, not `$COMMAND`. Learned from two successive false positives.
-
-### 8. PostToolUse: test runner hook — COMPLETE (2026-05-22)
-
-`post-test-runner.sh` — runs after every Write/Edit/MultiEdit on source files.
-
-- Skips non-source extensions: `md, txt, json, yaml, yml, toml, lock, rst, svg, png, jpg, gif, pdf, ico`
-- Resolves project root via `git rev-parse --show-toplevel`; exits silently if not in a repo
-- Discovery order: `.claude/test-cmd` override → auto-detect (`Cargo.toml` → `cargo test`, `go.mod` → `go test ./...`, `pyproject.toml`/`pytest.ini`/`setup.py` → `pytest`, `package.json` with non-boilerplate test script → `npm test`, `Makefile` with `test:` target → `make test`) → skip
-- 60s timeout; always prints timing (pass or fail) so you can tune the timeout
-- Warns (exit 2, non-imperative message) on failure or timeout; exits 0 silently on pass
-- Per-project override: create `.claude/test-cmd` in the project root with the test command on one line
 
 ---
 
