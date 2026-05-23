@@ -2,6 +2,9 @@
   "permissions": {
     "defaultMode": "bypassPermissions"
   },
+  "env": {
+    "CLAUDE_CODE_SHELL": "~/.cargo/bin/railguard-shell"
+  },
   "hooks": {
     "PreToolUse": [
       {
