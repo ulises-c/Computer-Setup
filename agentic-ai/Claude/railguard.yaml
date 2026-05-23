@@ -1,0 +1,41 @@
+# Railguard Policy — Computer-Setup / global
+# https://github.com/railyard-dev/railguard
+#
+# Defaults are prepended at runtime (merge_with_defaults); only overrides here.
+# Rules evaluated: allowlist → blocklist → approve → default allow.
+
+version: 1
+
+# ── Custom blocklist additions ────────────────────────────────────────
+# escalation and bulk-staging blocks were removed — validate-bash.sh owns
+# those patterns with first-line scoping to avoid heredoc false positives.
+
+blocklist: []
+
+approve: []
+allowlist: []
+
+# ── Path fence ────────────────────────────────────────────────────────
+# Project directory (CWD) is always implicitly allowed.
+# ~/.gnupg and ~/.config/gh are intentionally absent — required for GPG
+# commit signing and gh CLI; managed at the validate-write.sh hook layer.
+
+fence:
+  enabled: true
+  allowed_paths:
+    - "~/.claude"
+    - "/tmp"
+  denied_paths:
+    - "~/.ssh"
+    - "~/.aws"
+    - "~/.config/gcloud"
+    - "/etc"
+
+trace:
+  enabled: true
+  directory: .railguard/traces
+
+snapshot:
+  enabled: true
+  tools: [Write, Edit]
+  directory: .railguard/snapshots
