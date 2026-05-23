@@ -15,6 +15,8 @@ This will:
 - Symlink `~/.claude/CLAUDE.md` → this `CLAUDE.md`
 - Symlink `~/.claude/rules/` → this `rules/`
 - Symlink each `hooks/*.sh` script into `~/.claude/hooks/`
+- Install `railguard` via `cargo install railguard` (requires Rust/cargo; skipped if already installed)
+- Run `railguard install` to register it as a global PreToolUse hook
 
 Restart Claude Code after running.
 
@@ -29,6 +31,15 @@ Claude auto-approves all tool calls without prompting. The hooks below act as th
 `sandbox.enabled` is currently **disabled**. Claude Code's Linux sandbox uses seccomp BPF to block all `AF_UNIX` socket calls — this breaks `gpg-agent` (required for commit signing) and `ssh-agent` (required for SSH push to GitHub, Bitbucket, Forgejo, etc.). Upstream issue [#44180](https://github.com/anthropics/claude-code/issues/44180) tracks the fix. The `denyRead`/`allowWrite` filesystem config is preserved in `settings.json` for re-enablement once the issue is resolved.
 
 The hooks below are the primary safety layer.
+
+### PreToolUse: `railguard` (all tools)
+
+Runtime policy enforcer installed globally via `cargo install railguard`. Policy lives in `railguard.yaml`; custom blocklist/allowlist are left empty since `validate-bash.sh` owns those patterns.
+
+- **Path fence**: denies access to `~/.ssh`, `~/.aws`, `~/.config/gcloud`, `/etc`; explicitly allows `~/.claude` and `/tmp`
+- **Traces**: every tool call logged to `.railguard/traces/`
+- **Snapshots**: pre-edit state captured for Write/Edit to `.railguard/snapshots/`
+- **Memory integrity**: session-start warns on untracked memory files (`railguard memory verify`)
 
 ### PreToolUse: `validate-bash.sh` (Bash)
 Blocks dangerous or escalation-prone shell commands:
@@ -50,6 +61,12 @@ Blocks writes to sensitive file paths:
 After any shell script edit, runs `shellcheck --severity=error`. Exits 2 if errors are found, forcing Claude to fix them before continuing.
 
 Skips gracefully if `shellcheck` is not installed.
+
+### PostToolUse: `post-test-runner.sh` (Write / Edit / MultiEdit)
+
+After any source file edit, auto-detects and runs the project test suite. Detection order: `.claude/test-cmd` override → `Cargo.toml` → `go.mod` → `pyproject.toml`/`pytest.ini` → `package.json` → `Makefile`. Skips non-source extensions (md, json, yaml, etc.) and projects with no recognized test suite.
+
+Exits 2 on test failure (Claude sees the output) or timeout (60 s). Exits 0 silently on pass, printing timing to stderr.
 
 ### Stop: `driftcheck.sh`
 At session end, validates project conventions for all git-tracked `.sh` files:
