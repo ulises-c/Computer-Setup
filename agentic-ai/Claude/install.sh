@@ -45,11 +45,9 @@ for hook in "$REPO_DIR/hooks/"*.sh; do
   printf 'Linked: hooks/%s\n' "$(basename "$hook")"
 done
 
-# Install railguard if not already present
+# Install railguard binary if not already present
 RAILGUARD_BIN="${CARGO_HOME:-$HOME/.cargo}/bin/railguard"
-if [[ -x "$RAILGUARD_BIN" ]]; then
-  printf 'railguard already installed: %s\n' "$RAILGUARD_BIN"
-else
+if ! [[ -x "$RAILGUARD_BIN" ]]; then
   if ! command -v cargo &>/dev/null && ! [[ -x "${CARGO_HOME:-$HOME/.cargo}/bin/cargo" ]]; then
     printf '\nerror: railguard is not installed and cargo was not found.\n' >&2
     printf '  Install Rust via rustup, then re-run this script:\n' >&2
@@ -58,10 +56,16 @@ else
   fi
   CARGO_BIN="${CARGO_HOME:-$HOME/.cargo}/bin/cargo"
   printf 'Installing railguard via cargo...\n'
-  "$CARGO_BIN" install railguard
-  "$RAILGUARD_BIN" install
+  if ! "$CARGO_BIN" install railguard; then
+    printf '\nerror: cargo install railguard failed — see output above.\n' >&2
+    exit 1
+  fi
   printf 'Installed: railguard\n'
 fi
+
+# Always configure railguard (idempotent; picks up policy changes on re-run)
+printf 'Configuring railguard...\n'
+"$RAILGUARD_BIN" install
 
 # Warn on Ubuntu 24.04+ if the bwrap AppArmor profile isn't set up
 if grep -qi 'ubuntu' /etc/os-release 2>/dev/null && ! [[ -f /etc/apparmor.d/bwrap ]]; then

@@ -1,11 +1,11 @@
-#!/bin/zsh
+#!/usr/bin/env bash
 # macOS initial setup script
-# Usage: zsh macOS/setup.sh [--optional] [--work] [--dry-run]
+# Usage: bash macOS/setup.sh [--optional] [--work] [--dry-run]
 #   --optional  also install low-priority optional packages
 #   --work      also install work packages (Slack, Zoom, Outlook)
 #   --dry-run   print all commands without executing anything
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PACKAGES_JSON="$SCRIPT_DIR/macOS_packages.json"
@@ -63,7 +63,7 @@ brew_install() {
         (.install_command == null or .install_command == "") and
         (if $opt then true else .optional == false end)
       ) | .name] | join(" ")' "$PACKAGES_JSON")
-  [[ -n "$names" ]] && run brew install ${=names}
+  [[ -n "$names" ]] && run brew install $names
 }
 
 brew_cask_install() {
@@ -76,7 +76,7 @@ brew_cask_install() {
         (.work != true) and
         (if $opt then true else .optional == false end)
       ) | .name] | join(" ")' "$PACKAGES_JSON")
-  [[ -n "$names" ]] && run brew install --cask ${=names}
+  [[ -n "$names" ]] && run brew install --cask $names
 }
 
 pipx_install() {
@@ -102,7 +102,7 @@ npm_install() {
         (.work != true) and
         (if $opt then true else .optional == false end)
       ) | .name] | join(" ")' "$PACKAGES_JSON")
-  [[ -n "$names" ]] && run npm install -g ${=names}
+  [[ -n "$names" ]] && run npm install -g $names
 }
 
 brew_custom_install() {
@@ -191,7 +191,7 @@ fi
 
 if [[ "$DRY_RUN" == false ]]; then
   export NVM_DIR="$HOME/.nvm"
-  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+  [[ -s "$NVM_DIR/nvm.sh" ]] && \. "$NVM_DIR/nvm.sh"
   nvm install 'lts/*'
   nvm alias default 'lts/*'
   nvm use default
@@ -263,9 +263,9 @@ fi
 if [[ "$INCLUDE_WORK" == true ]]; then
   echo "==> Installing work packages..."
   names=$(jq -r '[.[] | select(.work == true and .package_manager == "brew-cask") | .name] | join(" ")' "$PACKAGES_JSON")
-  [[ -n "$names" ]] && run brew install --cask ${=names}
+  [[ -n "$names" ]] && run brew install --cask $names
   names=$(jq -r '[.[] | select(.work == true and .package_manager == "brew") | .name] | join(" ")' "$PACKAGES_JSON")
-  [[ -n "$names" ]] && run brew install ${=names}
+  [[ -n "$names" ]] && run brew install $names
   work_app_store=$(jq -r '.[] | select(.work == true and .package_manager == "app-store") | "  - \(.name): \(.description)"' "$PACKAGES_JSON")
   if [[ -n "$work_app_store" ]]; then
     echo "Install these work apps from the App Store:"
