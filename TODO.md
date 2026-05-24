@@ -1,5 +1,16 @@
 # TODO
 
+## Ghostty config standardization
+
+The ghostty config lives in two places (`macOS/ghostty.config`, `linux-desktop/ghostty.config`)
+with identical content. Consider extracting a universal `cross-platform/ghostty.config` for shared
+settings (`term = xterm-256color`, `theme`, `shell-integration`) and keeping OS-specific
+configs additive-only (e.g., macOS font settings, Linux-specific tweaks).
+
+- [ ] Create `cross-platform/ghostty.config` (universal base)
+- [ ] Refactor OS configs to extend/override the universal base
+- [ ] Update both `setup.sh` scripts to deploy the new layout (universal + OS overlay)
+
 ## macOS zshrc modernization
 
 Port the linux-desktop zsh enhancements to the macOS config. See
