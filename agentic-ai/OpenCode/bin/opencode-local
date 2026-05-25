@@ -126,6 +126,8 @@ mlx_lm.server \
   --model "$MODEL_PATH" \
   --host "$SERVER_HOST" \
   --port "$SERVER_PORT" \
+  --max-tokens 4096 \
+  --prompt-cache-bytes 4294967296 \
   --log-level ERROR \
   2>>"$LOG_FILE" &
 
