@@ -204,8 +204,8 @@
     "description": "Simple menubar toggle to keep Mac awake"
   },
   {
-    "name": "readdle-spark",
-    "package_manager": "brew-cask",
+    "name": "Spark Mail – AI Email Inbox",
+    "package_manager": "app-store",
     "priority": "medium",
     "optional": false,
     "description": "Smart email client with AI features"
