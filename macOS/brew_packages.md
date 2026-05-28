@@ -85,7 +85,7 @@ Install via `brew install --cask <name>`.
    1. Open source web browser
 8. visual-studio-code | [brew](https://formulae.brew.sh/cask/visual-studio-code) | [Homepage](https://code.visualstudio.com/)
    1. Code editor with extensions
-9. readdle-spark | [brew](https://formulae.brew.sh/cask/readdle-spark) | [Homepage](https://sparkmailapp.com/)
+9. Spark Mail | [Mac App Store](https://apps.apple.com/us/app/spark-mail-ai-email-inbox/id6445813049)
    1. Smart email client by Readdle with AI features and clean cross-device sync
 10. notion | [brew](https://formulae.brew.sh/cask/notion) | [Homepage](https://www.notion.com/)
     1. Notes and project management
