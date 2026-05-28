@@ -229,6 +229,10 @@ else
   fi
 fi
 
+# ── Git: GPG signing ─────────────────────────────────────────────────────────
+run git config --global gpg.program /opt/homebrew/bin/gpg
+add_to_zshrc 'export GPG_TTY=$(tty)'
+
 # ── Medium-priority pipx packages ─────────────────────────────────────────────
 echo "==> Installing pipx packages..."
 if [[ "$DRY_RUN" == false ]]; then

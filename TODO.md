@@ -1,5 +1,30 @@
 # TODO
 
+## Ghostty config standardization
+
+The ghostty config lives in two places (`macOS/ghostty.config`, `linux-desktop/ghostty.config`)
+with identical content. Consider extracting a universal `cross-platform/ghostty.config` for shared
+settings (`term = xterm-256color`, `theme`, `shell-integration`) and keeping OS-specific
+configs additive-only (e.g., macOS font settings, Linux-specific tweaks).
+
+- [ ] Create `cross-platform/ghostty.config` (universal base)
+- [ ] Refactor OS configs to extend/override the universal base
+- [ ] Update both `setup.sh` scripts to deploy the new layout (universal + OS overlay)
+
+## OpenCode local models
+
+Config uses `mlx_lm.server` with Qwen 3.5 9B (4bit, MLX) on the Mac Mini M4.
+`opencode-local` script auto-discovers models in `~/.models/`, starts the
+server, and launches OpenCode.
+
+Still to explore:
+
+- [ ] Test tool-calling quality with Qwen 3.5 9B (does it work well for agentic coding?)
+- [ ] Set up on CachyOS/AMD R9700 with Gemma 4 and Qwen 3.6 (via llama.cpp or lemonade)
+- [ ] Add CachyOS provider config once the model/runtime is chosen
+- [ ] Consider `small_model` for lightweight tasks (title gen, etc.)
+- [ ] Install `opencode-local` via install.sh and verify PATH
+
 ## macOS zshrc modernization
 
 Port the linux-desktop zsh enhancements to the macOS config. See
