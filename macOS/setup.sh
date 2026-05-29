@@ -91,7 +91,7 @@ configure_pnpm() {
   corepack enable
   corepack prepare pnpm@latest --activate
   export PNPM_HOME="$HOME/.local/share/pnpm"
-  export PATH="$PNPM_HOME:$PATH"
+  export PATH="$PNPM_HOME/bin:$PATH"
   if command -v pnpm &>/dev/null; then
     pnpm config set minimumReleaseAge "$age_minutes" --location=user
     printf '  ✓ pnpm enabled, minimumReleaseAge=%s min (%s-day cooldown)\n' "$age_minutes" "$NPM_MIN_RELEASE_AGE"
@@ -284,7 +284,7 @@ add_to_zshrc '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"'
 add_to_zshrc 'nvm use --delete-prefix default --silent 2>/dev/null'
 # pnpm global bin dir (corepack provides the pnpm shim; PNPM_HOME holds global CLIs)
 add_to_zshrc 'export PNPM_HOME="$HOME/.local/share/pnpm"'
-add_to_zshrc '[ -d "$PNPM_HOME" ] && export PATH="$PNPM_HOME:$PATH"'
+add_to_zshrc '[ -d "$PNPM_HOME/bin" ] && export PATH="$PNPM_HOME/bin:$PATH"'
 
 # ── Medium-priority brew casks ────────────────────────────────────────────────
 printf '==> Installing brew casks...\n'
@@ -329,7 +329,7 @@ pipx_install "medium" false
 # ── Medium-priority pnpm packages ─────────────────────────────────────────────
 printf '==> Installing pnpm packages...\n'
 export PNPM_HOME="$HOME/.local/share/pnpm"
-export PATH="$PNPM_HOME:$PATH"
+export PATH="$PNPM_HOME/bin:$PATH"
 if [[ "$DRY_RUN" == true ]] || command -v pnpm &>/dev/null; then
   pnpm_install "medium" false
 

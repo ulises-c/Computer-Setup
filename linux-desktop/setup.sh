@@ -140,7 +140,7 @@ configure_pnpm() {
   corepack enable
   corepack prepare pnpm@latest --activate
   export PNPM_HOME="$HOME/.local/share/pnpm"
-  export PATH="$PNPM_HOME:$PATH"
+  export PATH="$PNPM_HOME/bin:$PATH"
   if command -v pnpm &>/dev/null; then
     pnpm config set minimumReleaseAge "$age_minutes" --location=user
     echo "  ✓ pnpm enabled, minimumReleaseAge=$age_minutes min (${NPM_MIN_RELEASE_AGE}-day cooldown)"
@@ -571,7 +571,7 @@ echo "==> Installing pnpm packages..."
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 export PNPM_HOME="$HOME/.local/share/pnpm"
-export PATH="$PNPM_HOME:$PATH"
+export PATH="$PNPM_HOME/bin:$PATH"
 if command -v pnpm &>/dev/null; then
   pnpm_install "medium"
 else

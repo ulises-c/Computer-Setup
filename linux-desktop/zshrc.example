@@ -26,9 +26,9 @@ export NVM_DIR="$HOME/.nvm"
 [[ -s $NVM_DIR/bash_completion ]] && source "$NVM_DIR/bash_completion"
 
 # pnpm — enabled by setup.sh via corepack (the pnpm binary itself is a corepack
-# shim on PATH via nvm). PNPM_HOME holds globally-installed CLI binaries.
+# shim on PATH via nvm). Global CLI binaries land in $PNPM_HOME/bin.
 export PNPM_HOME="$HOME/.local/share/pnpm"
-[[ -d $PNPM_HOME ]] && export PATH="$PNPM_HOME:$PATH"
+[[ -d $PNPM_HOME/bin ]] && export PATH="$PNPM_HOME/bin:$PATH"
 
 
 # ═══════════════════════════════════════════════════════════════

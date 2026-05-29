@@ -151,7 +151,7 @@ verify_extras() {
 
   # pnpm (daily-driver package manager) + its supply-chain cooldown (issue #23)
   export PNPM_HOME="$HOME/.local/share/pnpm"
-  [[ -d "$PNPM_HOME" ]] && export PATH="$PNPM_HOME:$PATH"
+  [[ -d "$PNPM_HOME/bin" ]] && export PATH="$PNPM_HOME/bin:$PATH"
   if command -v pnpm &>/dev/null; then
     check "pnpm ($(pnpm --version 2>/dev/null))" true
     local pmra
