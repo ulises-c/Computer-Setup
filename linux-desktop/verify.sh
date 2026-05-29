@@ -231,6 +231,7 @@ verify_extras() {
   # Shell config files
   [[ -f "$HOME/.zshrc" ]]            && check "zshrc present (~/.zshrc)" true                  || check "zshrc present (~/.zshrc)" false
   [[ -f "$HOME/.zsh_plugins.txt" ]] && check "antidote plugin list present (~/.zsh_plugins.txt)" true || check "antidote plugin list present (~/.zsh_plugins.txt)" false
+  [[ -f "$HOME/.tmux.conf" ]]       && check "tmux config present (~/.tmux.conf)" true            || check "tmux config present (~/.tmux.conf)" false
 
   # antidote (Arch AUR package puts it under /usr/share/zsh-antidote)
   if [[ -f /usr/share/zsh-antidote/antidote.zsh ]] || command -v antidote &>/dev/null; then
