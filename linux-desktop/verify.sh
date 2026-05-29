@@ -212,6 +212,22 @@ verify_extras() {
     check "npm min-release-age set (run setup.sh)" false
   fi
 
+  # pnpm (daily-driver package manager) + its supply-chain cooldown (issue #23)
+  export PNPM_HOME="$HOME/.local/share/pnpm"
+  [[ -d "$PNPM_HOME" ]] && export PATH="$PNPM_HOME:$PATH"
+  if command -v pnpm &>/dev/null; then
+    check "pnpm ($(pnpm --version 2>/dev/null))" true
+    local pmra
+    pmra=$(pnpm config get minimumReleaseAge 2>/dev/null)
+    if [[ -n "$pmra" && "$pmra" != "undefined" && "$pmra" -gt 0 ]] 2>/dev/null; then
+      check "pnpm minimumReleaseAge set (${pmra} min)" true
+    else
+      check "pnpm minimumReleaseAge set (run setup.sh)" false
+    fi
+  else
+    check "pnpm (run setup.sh — corepack enable)" false
+  fi
+
   # Shell config files
   [[ -f "$HOME/.zshrc" ]]            && check "zshrc present (~/.zshrc)" true                  || check "zshrc present (~/.zshrc)" false
   [[ -f "$HOME/.zsh_plugins.txt" ]] && check "antidote plugin list present (~/.zsh_plugins.txt)" true || check "antidote plugin list present (~/.zsh_plugins.txt)" false

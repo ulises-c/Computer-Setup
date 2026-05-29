@@ -121,6 +121,34 @@ configure_npm_cooldown() {
   echo "  ✓ npm $key=$NPM_MIN_RELEASE_AGE (${NPM_MIN_RELEASE_AGE}-day supply-chain cooldown)"
 }
 
+# Enable pnpm (our daily-driver package manager) via corepack — corepack ships
+# with Node, so no extra download is gated by the npm cooldown above — and apply
+# the same supply-chain cooldown. pnpm measures minimumReleaseAge in MINUTES; it
+# also enforces the value strictly only when set explicitly (the built-in 1-day
+# default is non-strict), so we set it on purpose. See issue #23.
+configure_pnpm() {
+  local age_minutes=$((NPM_MIN_RELEASE_AGE * 24 * 60))
+  if [[ "$DRY_RUN" == true ]]; then
+    echo "  [dry-run] corepack enable && corepack prepare pnpm@latest --activate"
+    echo "  [dry-run] pnpm config set minimumReleaseAge $age_minutes --location=user"
+    return 0
+  fi
+  if ! command -v corepack &>/dev/null; then
+    echo "  ⚠ corepack not found (needs Node ≥16) — skipping pnpm setup"
+    return 0
+  fi
+  corepack enable
+  corepack prepare pnpm@latest --activate
+  export PNPM_HOME="$HOME/.local/share/pnpm"
+  export PATH="$PNPM_HOME:$PATH"
+  if command -v pnpm &>/dev/null; then
+    pnpm config set minimumReleaseAge "$age_minutes" --location=user
+    echo "  ✓ pnpm enabled, minimumReleaseAge=$age_minutes min (${NPM_MIN_RELEASE_AGE}-day cooldown)"
+  else
+    echo "  ⚠ pnpm not on PATH after corepack — skipped cooldown config"
+  fi
+}
+
 # Echo the other repo setup scripts (those present on disk) for discoverability.
 print_related_scripts() {
   local repo_root entry rel desc shown=false
@@ -279,19 +307,19 @@ pipx_install() {
   done
 }
 
-npm_install() {
+pnpm_install() {
   local priority="$1"
   local ef names
   ef=$(env_filter)
   names=$(jq -r --arg p "$priority" --arg d "$DISTRO" \
     "[.[] | select(
-        .package_manager[\$d] == \"npm\" and
+        .package_manager[\$d] == \"pnpm\" and
         .priority == \$p and
         $ef
       ) | .name] | join(\" \")" \
     "$PACKAGES_JSON")
   # shellcheck disable=SC2086
-  [[ -n "$names" ]] && run npm install -g $names
+  [[ -n "$names" ]] && run pnpm add -g $names
 }
 
 # Bootstrap the AUR helper on Arch (yay lives in the CachyOS/Arch repos, so pacman
@@ -437,6 +465,7 @@ if [[ "$DRY_RUN" == true ]]; then
   echo "  [dry-run] install nvm via curl"
   echo "  [dry-run] nvm install lts/* && nvm alias default lts/*"
   configure_npm_cooldown
+  configure_pnpm
 else
   if [ ! -d "$HOME/.nvm" ]; then
     echo "==> Installing nvm..."
@@ -456,8 +485,9 @@ else
     nvm use default
   fi
 
-  # Apply the supply-chain cooldown before any `npm install -g` runs below.
+  # Apply the supply-chain cooldown before any package install runs below.
   configure_npm_cooldown
+  configure_pnpm
 fi
 
 # ── Medium-priority packages ─────────────────────────────────────────────────
@@ -537,13 +567,15 @@ fi
 
 # ── npm packages ─────────────────────────────────────────────────────────────
 echo ""
-echo "==> Installing npm packages..."
+echo "==> Installing pnpm packages..."
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-if command -v npm &>/dev/null; then
-  npm_install "medium"
+export PNPM_HOME="$HOME/.local/share/pnpm"
+export PATH="$PNPM_HOME:$PATH"
+if command -v pnpm &>/dev/null; then
+  pnpm_install "medium"
 else
-  echo "  npm not found — skipping"
+  echo "  pnpm not found — skipping"
 fi
 
 # ── zsh as default shell ─────────────────────────────────────────────────────
@@ -621,7 +653,7 @@ if [[ "$INCLUDE_OPTIONAL" == true ]]; then
     yay_install "low"
   fi
   pipx_install "low"
-  npm_install "low"
+  pnpm_install "low"
 
   # Docker (optional)
   if [[ "$DISTRO" == "ubuntu" ]]; then

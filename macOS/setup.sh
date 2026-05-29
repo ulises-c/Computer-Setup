@@ -73,6 +73,33 @@ configure_npm_cooldown() {
   printf '  ✓ npm %s=%s (%s-day supply-chain cooldown)\n' "$key" "$NPM_MIN_RELEASE_AGE" "$NPM_MIN_RELEASE_AGE"
 }
 
+# Enable pnpm (our daily-driver package manager) via corepack — corepack ships
+# with Node — and apply the same supply-chain cooldown. pnpm measures
+# minimumReleaseAge in MINUTES and enforces it strictly only when set explicitly
+# (the built-in 1-day default is non-strict), so we set it on purpose. Issue #23.
+configure_pnpm() {
+  local age_minutes=$((NPM_MIN_RELEASE_AGE * 24 * 60))
+  if [[ "$DRY_RUN" == true ]]; then
+    printf '  [dry-run] corepack enable && corepack prepare pnpm@latest --activate\n'
+    printf '  [dry-run] pnpm config set minimumReleaseAge %s --location=user\n' "$age_minutes"
+    return 0
+  fi
+  if ! command -v corepack &>/dev/null; then
+    printf '  ⚠ corepack not found (needs Node ≥16) — skipping pnpm setup\n'
+    return 0
+  fi
+  corepack enable
+  corepack prepare pnpm@latest --activate
+  export PNPM_HOME="$HOME/.local/share/pnpm"
+  export PATH="$PNPM_HOME:$PATH"
+  if command -v pnpm &>/dev/null; then
+    pnpm config set minimumReleaseAge "$age_minutes" --location=user
+    printf '  ✓ pnpm enabled, minimumReleaseAge=%s min (%s-day cooldown)\n' "$age_minutes" "$NPM_MIN_RELEASE_AGE"
+  else
+    printf '  ⚠ pnpm not on PATH after corepack — skipped cooldown config\n'
+  fi
+}
+
 add_to_zshrc() {
   local line="$1"
   if [[ "$DRY_RUN" == true ]]; then
@@ -126,18 +153,18 @@ pipx_install() {
   done
 }
 
-npm_install() {
+pnpm_install() {
   local priority="$1" optional_filter="$2"
   local names
   names=$(jq -r --arg p "$priority" --argjson opt "$optional_filter" \
     '[.[] | select(
-        .package_manager == "npm" and
+        .package_manager == "pnpm" and
         .priority == $p and
         (.work != true) and
         (if $opt then true else .optional == false end)
       ) | .name] | join(" ")' "$PACKAGES_JSON")
   # shellcheck disable=SC2086
-  [[ -n "$names" ]] && run npm install -g $names
+  [[ -n "$names" ]] && run pnpm add -g $names
 }
 
 brew_custom_install() {
@@ -248,12 +275,16 @@ if [[ "$DRY_RUN" == false ]]; then
   nvm use default
 fi
 
-# Apply the supply-chain cooldown before any `npm install -g` runs below.
+# Apply the supply-chain cooldown before any package install runs below.
 configure_npm_cooldown
+configure_pnpm
 
 add_to_zshrc 'export NVM_DIR="$HOME/.nvm"'
 add_to_zshrc '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"'
 add_to_zshrc 'nvm use --delete-prefix default --silent 2>/dev/null'
+# pnpm global bin dir (corepack provides the pnpm shim; PNPM_HOME holds global CLIs)
+add_to_zshrc 'export PNPM_HOME="$HOME/.local/share/pnpm"'
+add_to_zshrc '[ -d "$PNPM_HOME" ] && export PATH="$PNPM_HOME:$PATH"'
 
 # ── Medium-priority brew casks ────────────────────────────────────────────────
 printf '==> Installing brew casks...\n'
@@ -295,12 +326,18 @@ if [[ "$DRY_RUN" == false ]]; then
 fi
 pipx_install "medium" false
 
-# ── Medium-priority npm packages ──────────────────────────────────────────────
-printf '==> Installing npm packages...\n'
-npm_install "medium" false
+# ── Medium-priority pnpm packages ─────────────────────────────────────────────
+printf '==> Installing pnpm packages...\n'
+export PNPM_HOME="$HOME/.local/share/pnpm"
+export PATH="$PNPM_HOME:$PATH"
+if [[ "$DRY_RUN" == true ]] || command -v pnpm &>/dev/null; then
+  pnpm_install "medium" false
 
-# Post-install: codeburn menubar (macOS native Swift app)
-run codeburn menubar
+  # Post-install: codeburn menubar (macOS native Swift app)
+  run codeburn menubar
+else
+  printf '  pnpm not found — skipping (run corepack enable)\n'
+fi
 
 # ── Medium-priority brew formulae ─────────────────────────────────────────────
 printf '==> Installing brew formulae...\n'
@@ -314,7 +351,7 @@ if [[ "$INCLUDE_OPTIONAL" == true ]]; then
   brew_custom_install "low" true
   brew_cask_install "low" true
   pipx_install "low" true
-  npm_install "low" true
+  command -v pnpm &>/dev/null && pnpm_install "low" true
 fi
 
 # ── Work packages (--work flag) ───────────────────────────────────────────────

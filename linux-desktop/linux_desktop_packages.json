@@ -341,7 +341,7 @@
   },
   {
     "name": "codeburn",
-    "package_manager": { "ubuntu": "npm", "arch": "npm" },
+    "package_manager": { "ubuntu": "pnpm", "arch": "pnpm" },
     "priority": "medium",
     "optional": false,
     "description": "Track AI coding token usage by task, tool, model, and project"
