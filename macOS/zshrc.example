@@ -6,9 +6,9 @@
 
 # Requires fastfetch via brew
 
-# ── Instant prompt (keep at very top if using Powerlevel10k) ──
-# [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]] && \
-#   source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
+# ── Instant prompt (Powerlevel10k — keep at very top) ──────────
+[[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]] && \
+  source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -49,18 +49,23 @@ setopt NO_BEEP
 
 
 # ═══════════════════════════════════════════════════════════════
-#  PROMPT
+#  PROMPT  (Powerlevel10k if available, vcs_info fallback)
 # ═══════════════════════════════════════════════════════════════
-autoload -Uz vcs_info
-precmd() { vcs_info }
-zstyle ':vcs_info:*'      enable            git
-zstyle ':vcs_info:*'      check-for-changes true
-zstyle ':vcs_info:git:*'  stagedstr         '%F{green}+%f'
-zstyle ':vcs_info:git:*'  unstagedstr       '%F{red}*%f'
-zstyle ':vcs_info:git:*'  formats           ' (%F{magenta}%b%f%u%c)'
-zstyle ':vcs_info:git:*'  actionformats     ' (%F{magenta}%b%f|%F{yellow}%a%f%u%c)'
-setopt PROMPT_SUBST
-PROMPT='%F{blue}%n%f%F{white}@%f%F{cyan}%m%f %F{yellow}%~%f${vcs_info_msg_0_} %# '
+# macOS: brew install powerlevel10k  |  run: p10k configure
+if [[ -f /opt/homebrew/share/powerlevel10k/powerlevel10k.zsh-theme ]]; then
+  source /opt/homebrew/share/powerlevel10k/powerlevel10k.zsh-theme
+else
+  autoload -Uz vcs_info
+  precmd() { vcs_info }
+  zstyle ':vcs_info:*'      enable            git
+  zstyle ':vcs_info:*'      check-for-changes true
+  zstyle ':vcs_info:git:*'  stagedstr         '%F{green}+%f'
+  zstyle ':vcs_info:git:*'  unstagedstr       '%F{red}*%f'
+  zstyle ':vcs_info:git:*'  formats           ' (%F{magenta}%b%f%u%c)'
+  zstyle ':vcs_info:git:*'  actionformats     ' (%F{magenta}%b%f|%F{yellow}%a%f%u%c)'
+  setopt PROMPT_SUBST
+  PROMPT='%F{blue}%n%f%F{white}@%f%F{cyan}%m%f %F{yellow}%~%f${vcs_info_msg_0_} %# '
+fi
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -122,3 +127,5 @@ export PATH="$PATH:/Users/ulises/.local/bin"
 # zsh auto suggestions & syntax highlighting (installed via Homebrew)
 source $(brew --prefix)/share/zsh-autosuggestions/zsh-autosuggestions.zsh
 source $(brew --prefix)/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+
+[[ -f ~/.p10k.zsh ]] && source ~/.p10k.zsh
