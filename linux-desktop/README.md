@@ -21,6 +21,16 @@ copied into place. Use `--dry-run` to preview every command without changing any
 Package definitions and per-distro names live in
 [`linux_desktop_packages.json`](linux_desktop_packages.json).
 
+After running, verify the result (read-only — installs nothing):
+
+```bash
+bash linux-desktop/verify.sh [--work] [--personal] [--optional] [--all]
+```
+
+`verify.sh` mirrors `setup.sh`'s selection logic, so passing the same flags checks
+exactly what that install should have produced, plus runtime checks (login shell is
+zsh, pyenv Python, nvm Node, antidote, configs, tailscaled).
+
 ## Gaming
 
 1. Bolt | [Codeberg](https://codeberg.org/Adamcake/Bolt)

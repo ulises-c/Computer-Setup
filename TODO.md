@@ -35,7 +35,11 @@ Test and validate the linux-desktop setup on the personal CachyOS desktop
       existing `~/.zshrc` is backed up before replacement
 - [x] Add personal-only packages: discord, spotify, steam, bolt-launcher, notion
       — present in `linux_desktop_packages.json` with `environment: ["personal"]`
-- [ ] Test antidote, zsh-notify, eza icons, and zoxide on CachyOS (after first run)
+- [x] Test antidote, zsh-notify, eza icons, and zoxide on CachyOS (after first run)
+      — verified via `verify.sh --work` (52/52); antidote clones plugins on first
+      zsh launch; zoxide/eza installed. zsh-notify reports "unsupported environment"
+      over SSH (no graphical session) — expected, works locally.
+- [x] Add a `verify.sh` for linux-desktop (mirrors setup.sh selection + runtime checks)
 - [ ] Test `--personal` flag end-to-end
 - [ ] Create PR for CachyOS support
 
