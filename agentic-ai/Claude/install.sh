@@ -45,6 +45,34 @@ for hook in "$REPO_DIR/hooks/"*.sh; do
   printf 'Linked: hooks/%s\n' "$(basename "$hook")"
 done
 
+# Install railguard binary if not already present
+RAILGUARD_BIN="${CARGO_HOME:-$HOME/.cargo}/bin/railguard"
+if ! [[ -x "$RAILGUARD_BIN" ]]; then
+  CARGO_BIN="$(command -v cargo 2>/dev/null || echo "${CARGO_HOME:-$HOME/.cargo}/bin/cargo")"
+  if ! [[ -x "$CARGO_BIN" ]]; then
+    printf '\nerror: railguard is not installed and cargo was not found.\n' >&2
+    printf '  Install Rust via rustup, then re-run this script:\n' >&2
+    printf '    curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh\n' >&2
+    exit 1
+  fi
+  printf 'Installing railguard via cargo...\n'
+  if ! "$CARGO_BIN" install railguard; then
+    printf '\nerror: cargo install railguard failed — see output above.\n' >&2
+    exit 1
+  fi
+  printf 'Installed: railguard\n'
+fi
+
+# Always configure railguard (idempotent; picks up policy changes on re-run)
+# railguard install rewrites settings.json with machine-specific absolute paths;
+# save and restore it so the repo version (portable ~ paths) wins.
+SETTINGS_TMP=$(mktemp)
+cp "$REPO_DIR/settings.json" "$SETTINGS_TMP"
+printf 'Configuring railguard...\n'
+"$RAILGUARD_BIN" install
+cp "$SETTINGS_TMP" "$REPO_DIR/settings.json"
+rm -f "$SETTINGS_TMP"
+
 # Warn on Ubuntu 24.04+ if the bwrap AppArmor profile isn't set up
 if grep -qi 'ubuntu' /etc/os-release 2>/dev/null && ! [[ -f /etc/apparmor.d/bwrap ]]; then
   printf '\n'

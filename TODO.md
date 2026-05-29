@@ -1,5 +1,25 @@
 # TODO
 
+## Setup-script unification (separate PR)
+
+Collapse the three diverged setup stacks (`macOS/`, `linux-desktop/`, `linux-server/`)
+into one root `setup.sh` + one `packages.json`, with platform quirks in `platforms/`
+and a shared `lib/core.sh`. Full spec, schema, and phased breakdown in
+[UNIFICATION.md](UNIFICATION.md). Decisions locked: single `packages.json` (managers
+keyed by `{macos,ubuntu,arch,server}`), root dispatcher + platform modules, incremental
+migration gated on dry-run parity.
+
+- [ ] Phase 1 — Author unified root `packages.json`; build `scripts/parity-check.sh`
+      proving per-platform install lists match the current per-folder scripts
+- [ ] Phase 2 — Extract `lib/core.sh` + `platforms/{macos,arch,ubuntu,server}.sh`; add
+      root `setup.sh` dispatcher; gate on `--dry-run` parity vs old scripts
+- [ ] Phase 3 — Unify `verify.sh` the same way (shared core + platform checks)
+- [ ] Phase 4 — Convert per-folder `setup.sh`/`verify.sh` into thin shims; update
+      `README.md` / `CLAUDE.md` for the root entrypoint
+- [ ] Phase 5 — Delete the three old per-folder package JSONs once parity is proven
+- [ ] Resolve open questions: server-as-platform vs profile; `install_command`
+      string vs object; keep `priority: "none"` tier? (see UNIFICATION.md)
+
 ## Ghostty config standardization
 
 The ghostty config lives in two places (`macOS/ghostty.config`, `linux-desktop/ghostty.config`)
@@ -47,13 +67,24 @@ Port the linux-desktop zsh enhancements to the macOS config. See
 
 Test and validate the linux-desktop setup on the personal CachyOS desktop
 (Arch-based, yay as AUR helper). The package JSON already has Arch support
-(`package_manager.arch`, `arch_name` overrides) but nothing has been tested.
+(`package_manager.arch`, `arch_name` overrides).
 
-- [ ] Create an Arch-aware setup script (or extend `setup.sh` with distro detection)
-- [ ] Verify all `arch_name` overrides resolve to real AUR/pacman packages
-- [ ] Test antidote, zsh-notify, eza icons, and zoxide on CachyOS
-- [ ] Handle CachyOS defaults that may conflict (e.g., existing fish config)
-- [ ] Add personal-only packages: discord, spotify, steam, bolt-launcher, notion
+- [x] Create an Arch-aware setup script (or extend `setup.sh` with distro detection)
+      — `setup.sh` auto-detects ubuntu/arch from `/etc/os-release`, bootstraps `yay`
+      via pacman, and drives repo+AUR installs through `yay`
+- [x] Verify all `arch_name` overrides resolve to real AUR/pacman packages
+      — all resolve; fixed `huggingface-hub` → `python-huggingface-hub`; pyenv/nvm
+      switched to the curl installers (unified `~/.pyenv` / `~/.nvm` across all OSes)
+- [x] Handle CachyOS defaults that may conflict (e.g., existing fish config)
+      — login shell switch reads the real shell via `getent` and switches fish → zsh;
+      existing `~/.zshrc` is backed up before replacement
+- [x] Add personal-only packages: discord, spotify, steam, bolt-launcher, notion
+      — present in `linux_desktop_packages.json` with `environment: ["personal"]`
+- [x] Test antidote, zsh-notify, eza icons, and zoxide on CachyOS (after first run)
+      — verified via `verify.sh --work` (52/52); antidote clones plugins on first
+      zsh launch; zoxide/eza installed. zsh-notify reports "unsupported environment"
+      over SSH (no graphical session) — expected, works locally.
+- [x] Add a `verify.sh` for linux-desktop (mirrors setup.sh selection + runtime checks)
 - [ ] Test `--personal` flag end-to-end
 - [ ] Create PR for CachyOS support
 

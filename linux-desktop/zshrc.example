@@ -13,6 +13,25 @@ export PATH="$HOME/.local/bin:$PATH"
 
 
 # ═══════════════════════════════════════════════════════════════
+#  VERSION MANAGERS  (pyenv / nvm — installed by setup.sh via curl)
+# ═══════════════════════════════════════════════════════════════
+# Same ~/.pyenv and ~/.nvm layout on macOS, Ubuntu, and Arch.
+# Guarded so the shell still starts cleanly if neither is installed.
+export PYENV_ROOT="$HOME/.pyenv"
+[[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"
+command -v pyenv &>/dev/null && eval "$(pyenv init -)"
+
+export NVM_DIR="$HOME/.nvm"
+[[ -s $NVM_DIR/nvm.sh ]] && source "$NVM_DIR/nvm.sh"
+[[ -s $NVM_DIR/bash_completion ]] && source "$NVM_DIR/bash_completion"
+
+# pnpm — enabled by setup.sh via corepack (the pnpm binary itself is a corepack
+# shim on PATH via nvm). Global CLI binaries land in $PNPM_HOME/bin.
+export PNPM_HOME="$HOME/.local/share/pnpm"
+[[ -d $PNPM_HOME/bin ]] && export PATH="$PNPM_HOME/bin:$PATH"
+
+
+# ═══════════════════════════════════════════════════════════════
 #  HISTORY
 # ═══════════════════════════════════════════════════════════════
 HISTFILE="$HOME/.zsh_history"

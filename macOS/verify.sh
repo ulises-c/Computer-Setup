@@ -140,6 +140,31 @@ verify_extras() {
     check "node via nvm (run: nvm install 'lts/*')" false
   fi
 
+  # npm supply-chain cooldown (issue #23)
+  if grep -q '^min-release-age=' "$HOME/.npmrc" 2>/dev/null; then
+    local mra
+    mra=$(grep '^min-release-age=' "$HOME/.npmrc" | tail -1 | cut -d= -f2)
+    check "npm min-release-age set (${mra}-day cooldown)" true
+  else
+    check "npm min-release-age set (run setup.sh)" false
+  fi
+
+  # pnpm (daily-driver package manager) + its supply-chain cooldown (issue #23)
+  export PNPM_HOME="$HOME/.local/share/pnpm"
+  [[ -d "$PNPM_HOME/bin" ]] && export PATH="$PNPM_HOME/bin:$PATH"
+  if command -v pnpm &>/dev/null; then
+    check "pnpm ($(pnpm --version 2>/dev/null))" true
+    local pmra
+    pmra=$(pnpm config get minimumReleaseAge 2>/dev/null)
+    if [[ -n "$pmra" && "$pmra" != "undefined" && "$pmra" -gt 0 ]] 2>/dev/null; then
+      check "pnpm minimumReleaseAge set (${pmra} min)" true
+    else
+      check "pnpm minimumReleaseAge set (run setup.sh)" false
+    fi
+  else
+    check "pnpm (run setup.sh — corepack enable)" false
+  fi
+
   # Ghostty XDG config
   local ghostty_cfg="${XDG_CONFIG_HOME:-$HOME/.config}/ghostty/config.ghostty"
   [[ -f "$ghostty_cfg" ]] && check "ghostty config at XDG path" true || check "ghostty config at XDG path" false

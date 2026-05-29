@@ -9,6 +9,17 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PACKAGES_JSON="$SCRIPT_DIR/macOS_packages.json"
+
+# Other repo setup scripts to advertise at the end of a run. Each entry is
+# "<path relative to repo root>|<one-line description>". To advertise a new
+# script, just add a line here — only scripts that exist on disk are shown.
+RELATED_SCRIPTS=(
+  "agentic-ai/Claude/install.sh|Claude Code config — symlink settings, hooks, and CLAUDE.md into ~/.claude"
+  "SSH_and_GPG/create_ssh_key.sh|Generate an SSH key (and add it to GitHub)"
+  "SSH_and_GPG/create_gpg_key.sh|Generate a GPG key for signed commits"
+  "macOS/verify.sh|Verify this install (read-only health check)"
+)
+
 INCLUDE_OPTIONAL=false
 INCLUDE_WORK=false
 DRY_RUN=false
@@ -38,6 +49,54 @@ run_eval() {
     printf '  [dry-run] eval: %s\n' "$1"
   else
     eval "$1"
+  fi
+}
+
+# npm supply-chain cooldown: refuse to install package versions younger than
+# NPM_MIN_RELEASE_AGE days. Compromised releases of popular packages (e.g. the
+# axios RAT, Mar 2026) are typically caught and yanked within hours, so a short
+# cooldown blocks them while barely delaying legit updates. See issue #23.
+NPM_MIN_RELEASE_AGE=7
+
+configure_npm_cooldown() {
+  local npmrc="$HOME/.npmrc" key="min-release-age" tmp
+  if [[ "$DRY_RUN" == true ]]; then
+    printf '  [dry-run] set %s=%s in %s\n' "$key" "$NPM_MIN_RELEASE_AGE" "$npmrc"
+    return 0
+  fi
+  touch "$npmrc"
+  # Drop any existing entry, then append the desired value (idempotent, portable).
+  tmp="$(mktemp)"
+  grep -v "^${key}=" "$npmrc" > "$tmp" 2>/dev/null || true
+  printf '%s=%s\n' "$key" "$NPM_MIN_RELEASE_AGE" >> "$tmp"
+  mv "$tmp" "$npmrc"
+  printf '  ✓ npm %s=%s (%s-day supply-chain cooldown)\n' "$key" "$NPM_MIN_RELEASE_AGE" "$NPM_MIN_RELEASE_AGE"
+}
+
+# Enable pnpm (our daily-driver package manager) via corepack — corepack ships
+# with Node — and apply the same supply-chain cooldown. pnpm measures
+# minimumReleaseAge in MINUTES and enforces it strictly only when set explicitly
+# (the built-in 1-day default is non-strict), so we set it on purpose. Issue #23.
+configure_pnpm() {
+  local age_minutes=$((NPM_MIN_RELEASE_AGE * 24 * 60))
+  if [[ "$DRY_RUN" == true ]]; then
+    printf '  [dry-run] corepack enable && corepack prepare pnpm@latest --activate\n'
+    printf '  [dry-run] pnpm config set minimumReleaseAge %s --location=user\n' "$age_minutes"
+    return 0
+  fi
+  if ! command -v corepack &>/dev/null; then
+    printf '  ⚠ corepack not found (needs Node ≥16) — skipping pnpm setup\n'
+    return 0
+  fi
+  corepack enable
+  corepack prepare pnpm@latest --activate
+  export PNPM_HOME="$HOME/.local/share/pnpm"
+  export PATH="$PNPM_HOME/bin:$PATH"
+  if command -v pnpm &>/dev/null; then
+    pnpm config set minimumReleaseAge "$age_minutes" --location=user
+    printf '  ✓ pnpm enabled, minimumReleaseAge=%s min (%s-day cooldown)\n' "$age_minutes" "$NPM_MIN_RELEASE_AGE"
+  else
+    printf '  ⚠ pnpm not on PATH after corepack — skipped cooldown config\n'
   fi
 }
 
@@ -94,18 +153,18 @@ pipx_install() {
   done
 }
 
-npm_install() {
+pnpm_install() {
   local priority="$1" optional_filter="$2"
   local names
   names=$(jq -r --arg p "$priority" --argjson opt "$optional_filter" \
     '[.[] | select(
-        .package_manager == "npm" and
+        .package_manager == "pnpm" and
         .priority == $p and
         (.work != true) and
         (if $opt then true else .optional == false end)
       ) | .name] | join(" ")' "$PACKAGES_JSON")
   # shellcheck disable=SC2086
-  [[ -n "$names" ]] && run npm install -g $names
+  [[ -n "$names" ]] && run pnpm add -g $names
 }
 
 brew_custom_install() {
@@ -133,6 +192,22 @@ print_app_store_reminders() {
         (if $opt then true else .optional == false end)
       ) | "  - \(.name): \(.description)"' "$PACKAGES_JSON")
   [[ -n "$apps" ]] && printf '%s\n' "$apps"
+}
+
+# Echo the other repo setup scripts (those present on disk) for discoverability.
+print_related_scripts() {
+  local repo_root entry rel desc shown=false
+  repo_root="$(cd "$SCRIPT_DIR/.." && pwd)"
+  for entry in "${RELATED_SCRIPTS[@]}"; do
+    rel="${entry%%|*}"; desc="${entry#*|}"
+    [[ -f "$repo_root/$rel" ]] || continue
+    if [[ "$shown" == false ]]; then
+      printf '  Other setup scripts in this repo:\n'
+      shown=true
+    fi
+    printf '    • %s\n' "$desc"
+    printf '        bash %s\n' "$rel"
+  done
 }
 
 # ── Homebrew ──────────────────────────────────────────────────────────────────
@@ -200,9 +275,16 @@ if [[ "$DRY_RUN" == false ]]; then
   nvm use default
 fi
 
+# Apply the supply-chain cooldown before any package install runs below.
+configure_npm_cooldown
+configure_pnpm
+
 add_to_zshrc 'export NVM_DIR="$HOME/.nvm"'
 add_to_zshrc '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"'
 add_to_zshrc 'nvm use --delete-prefix default --silent 2>/dev/null'
+# pnpm global bin dir (corepack provides the pnpm shim; PNPM_HOME holds global CLIs)
+add_to_zshrc 'export PNPM_HOME="$HOME/.local/share/pnpm"'
+add_to_zshrc '[ -d "$PNPM_HOME/bin" ] && export PATH="$PNPM_HOME/bin:$PATH"'
 
 # ── Medium-priority brew casks ────────────────────────────────────────────────
 printf '==> Installing brew casks...\n'
@@ -244,12 +326,18 @@ if [[ "$DRY_RUN" == false ]]; then
 fi
 pipx_install "medium" false
 
-# ── Medium-priority npm packages ──────────────────────────────────────────────
-printf '==> Installing npm packages...\n'
-npm_install "medium" false
+# ── Medium-priority pnpm packages ─────────────────────────────────────────────
+printf '==> Installing pnpm packages...\n'
+export PNPM_HOME="$HOME/.local/share/pnpm"
+export PATH="$PNPM_HOME/bin:$PATH"
+if [[ "$DRY_RUN" == true ]] || command -v pnpm &>/dev/null; then
+  pnpm_install "medium" false
 
-# Post-install: codeburn menubar (macOS native Swift app)
-run codeburn menubar
+  # Post-install: codeburn menubar (macOS native Swift app)
+  run codeburn menubar
+else
+  printf '  pnpm not found — skipping (run corepack enable)\n'
+fi
 
 # ── Medium-priority brew formulae ─────────────────────────────────────────────
 printf '==> Installing brew formulae...\n'
@@ -263,7 +351,7 @@ if [[ "$INCLUDE_OPTIONAL" == true ]]; then
   brew_custom_install "low" true
   brew_cask_install "low" true
   pipx_install "low" true
-  npm_install "low" true
+  command -v pnpm &>/dev/null && pnpm_install "low" true
 fi
 
 # ── Work packages (--work flag) ───────────────────────────────────────────────
@@ -287,6 +375,10 @@ printf '\n'
 printf 'Install these manually from the App Store:\n'
 print_app_store_reminders "medium" false
 [[ "$INCLUDE_OPTIONAL" == true ]] && print_app_store_reminders "low" true
+
+printf '\n'
+printf 'Optional — run these from the repo root as needed:\n'
+print_related_scripts
 
 printf '\n'
 [[ "$DRY_RUN" == true ]] && printf 'Dry run complete — nothing was installed.\n' || printf 'Done! Restart your terminal or open a new tab.\n'
