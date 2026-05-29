@@ -155,13 +155,22 @@ apt_install() {
   [[ -n "$names" ]] && run sudo apt install -y $names
 }
 
-# Install repo + AUR packages on Arch via yay (handles both uniformly)
+# Install repo + AUR packages on Arch via yay (handles both uniformly).
+# If the batch fails (e.g. a single AUR build breaks), retry one package at a
+# time so one failure can't abort the whole run (and skip shell/config steps).
 yay_install() {
   local priority="$1"
   local names
   names=$(pkg_names "yay" "$priority")
+  [[ -z "$names" ]] && return 0
   # shellcheck disable=SC2086
-  [[ -n "$names" ]] && run yay -S --needed --noconfirm $names
+  if ! run yay -S --needed --noconfirm $names; then
+    echo "  batch install errored — retrying packages individually..."
+    local pkg
+    for pkg in $names; do
+      run yay -S --needed --noconfirm "$pkg" || echo "  ✗ failed: $pkg"
+    done
+  fi
 }
 
 snap_install() {
@@ -341,7 +350,9 @@ else
   export PYENV_ROOT="$HOME/.pyenv"
   export PATH="$PYENV_ROOT/bin:$PATH"
   if command -v pyenv &>/dev/null; then
-    eval "$(pyenv init -)"
+    # Force bash output — pyenv otherwise detects the shell from $SHELL and may
+    # emit fish/zsh syntax that this bash script's eval rejects (aborts under set -e).
+    eval "$(pyenv init - bash)"
     if ! pyenv versions 2>/dev/null | grep -q "$PYTHON_VERSION"; then
       echo "==> Installing pyenv build dependencies..."
       if [[ "$DISTRO" == "ubuntu" ]]; then
