@@ -20,8 +20,8 @@
 #                             inference (token gen is memory-bandwidth bound, not
 #                             compute bound). Reduces fan noise significantly.
 #   fan curve (junction)    — junction = hotspot temp, more conservative than
-#                             edge. Max 40% fan at 90°C keeps the card quiet
-#                             while still protecting it.
+#                             edge. Ramps to 50% by 75°C to target sustained
+#                             junction under ~80°C at inference load.
 #
 # For gaming / max perf: raise power_cap to stock (~260.0), voltage_offset to
 # -100 to -150mV (test stability), remove max_core_clock limit.
@@ -43,10 +43,10 @@ gpus:
       # Keys = junction temp (°C), values = fan speed (0.0–1.0).
       curve:
         35: 0.25
-        50: 0.25
-        65: 0.30
-        75: 0.30
-        90: 0.40
+        50: 0.30
+        65: 0.45
+        75: 0.60
+        90: 0.80
       spindown_delay_ms: 0
       change_threshold: 2
     clocks_configuration:

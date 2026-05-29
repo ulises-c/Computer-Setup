@@ -66,7 +66,7 @@ watch -n1 lact-cli info
 | `voltage_offset` | **-80 mV** | Proven safe on R9700 Linux; reduces heat without capping clocks. Can go to -100 or -120 mV after stability testing. |
 | `power_cap` | **210 W** | Stock TDP ~260 W. Token generation is memory-bandwidth bound so this barely affects t/s while cutting thermals and fan noise significantly. ~15% slower prefill (TTFT) is the trade-off. |
 | `performance_level` | **manual** | Required for power cap and clock controls to be honored by the driver. |
-| Fan curve | **junction temp** | Hotspot (junction) is more conservative than edge. Max 40% fan at 90 °C keeps the card quiet. Requires exactly 5 entries on RDNA 3+. |
+| Fan curve | **junction temp** | Hotspot (junction) is more conservative than edge. Ramps to 60% by 75 °C to keep junction under ~80 °C at inference load. Requires exactly 5 entries on RDNA 3+. |
 
 ## Tuning further
 
