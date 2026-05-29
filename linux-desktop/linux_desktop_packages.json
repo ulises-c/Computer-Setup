@@ -53,6 +53,14 @@
     "description": "Compiler toolchain — gcc, make, etc.; required for pyenv, native Node modules, and AUR builds"
   },
   {
+    "name": "rust",
+    "package_manager": { "ubuntu": "apt", "arch": "yay" },
+    "ubuntu_name": "rustup",
+    "priority": "medium",
+    "optional": false,
+    "description": "Rust toolchain — rustc and cargo"
+  },
+  {
     "name": "git",
     "package_manager": { "ubuntu": "apt", "arch": "yay" },
     "priority": "high",
