@@ -2,24 +2,36 @@
 
 LACT (Linux AMD Configuration Tool) is a GUI + daemon that persists GPU tuning across reboots via a background service. The R9700 runs RDNA 4 (`navi48`/gfx1201), which uses a **voltage offset** model — you shift the entire voltage curve down by N mV rather than editing individual VF points (that was RDNA 1/Vega).
 
-## Known issue: fan control broken on some R9700 units
+## Known issue: fan control AND voltage offset broken on some R9700 units
 
-Before doing anything else, verify fan control actually works on your board. Some R9700 units (confirmed: ASUS Turbo, vBIOS `115-G287BP00-100`) have a firmware mismatch that makes fan control completely non-functional on Linux. LACT's fan curve UI is grayed out, `pwm1` is read-only, and the config's fan curve is silently ignored — the GPU can reach 109 °C with fans physically stationary.
+Before doing anything else, verify the GPU control interfaces actually exist on your board. Some R9700 units (confirmed: ASUS Turbo, vBIOS `115-G287BP00-100`) have a firmware mismatch that blocks both fan control and voltage offset on Linux. LACT's fan and OC controls are grayed out, `pwm1` is read-only, `pp_od_clk_voltage` doesn't exist, and the GPU can reach 109 °C with fans physically stationary.
 
 **Root cause:** the card's SMU firmware reports interface version 50 (`0x32`), but the amdgpu driver only supports up to version 46 (`0x2e`). This affects all kernel versions tested through 7.0 as of May 2026.
 
+The card number varies by system (card0, card1, etc.). Find yours first:
 ```bash
-# Check 1: does the fan control sysfs path exist?
-ls /sys/class/drm/card0/device/gpu_od/fan_ctrl/
-# Good: lists fan_curve  acoustic_limit_rpm_threshold  fan_minimum_pwm  ...
-# Bad:  "No such file or directory" → fan control is broken on your unit
+# Find your AMD GPU card path
+CARD=$(grep -rl "0x1002" /sys/class/drm/card*/device/vendor 2>/dev/null | head -1 | sed 's|/device/vendor||')
+# e.g. → /sys/class/drm/card1
+```
 
-# Check 2: confirm the SMU mismatch in dmesg
+```bash
+# Check 1: does the gpu_od fan+voltage interface exist?
+ls $CARD/device/gpu_od/fan_ctrl/
+# Good: lists fan_curve  acoustic_limit_rpm_threshold  ...
+# Bad:  "No such file or directory" → fan + voltage offset blocked on your unit
+
+# Check 2: does the voltage offset sysfs path exist?
+ls $CARD/device/pp_od_clk_voltage
+# Good: file exists → voltage offset works
+# Bad:  "No such file or directory" → voltage control also blocked
+
+# Check 3: confirm the SMU mismatch
 sudo dmesg | grep -i "smu.*version"
 # Bad:  "SMU driver if version not matched" → confirms the bug
 ```
 
-If you're affected: AMD has a fix in progress (targeting TheRock 7.13 / ROCm 7.13). Until then, the voltage offset and power cap sections below still work — only fan control is broken. See [ROCm issue #6101](https://github.com/ROCm/ROCm/issues/6101) for status.
+If you're affected: **only power cap works** until AMD ships the driver fix (targeting TheRock 7.13 / ROCm 7.13). See [ROCm issue #6101](https://github.com/ROCm/ROCm/issues/6101) for status.
 
 ---
 
@@ -99,35 +111,40 @@ For scripting or deeper integration, use the LACT Unix socket API directly.
 
 | Setting | Value | Why |
 |---|---|---|
-| `voltage_offset` | **-80 mV** | Conservative, proven on R9700 Linux. Reduces heat without capping clocks. Go to -100 or -120 mV after stability testing. |
-| `power_cap` | **210 W** | Stock TDP ~260 W. Token generation is memory-bandwidth bound so this barely affects t/s while cutting thermals and fan noise. ~15% slower prefill (TTFT) is the tradeoff. |
+| `voltage_offset` | **-80 mV** | Conservative, proven on R9700 Linux. Reduces heat without capping clocks. Go to -100 or -120 mV after stability testing. No-op on SMU bug units until driver fix ships. |
+| `power_cap` | **210 W** | Stock is 300 W (confirmed); range is 210–300 W. Token generation is memory-bandwidth bound so lowering this barely affects t/s while cutting thermals and fan noise. ~15% slower prefill (TTFT) is the tradeoff. |
 | `performance_level` | **manual** | Required for power cap and voltage controls to be honored by the driver. |
-| Fan curve | **junction temp, 5 entries** | Quiet below 70 °C, 5 °C-step ramp to 60% at 90 °C. No-op if SMU mismatch bug is present. |
+| Fan curve | **junction temp, 5 entries** | Quiet below 70 °C, 5 °C-step ramp to 60% at 90 °C. No-op on SMU bug units (pwm1 is read-only). |
 
 ---
 
-## Sysfs fallback (when LACT can't reach fan/clock registers)
+## Sysfs fallback (power cap only on SMU bug units)
 
-If `gpu_od` is missing or LACT's controls are grayed out, you can still apply voltage offset and power cap directly via sysfs. Fan control is unavailable but undervolting still works.
+If `gpu_od` is missing, `pp_od_clk_voltage` doesn't exist, and LACT's OC controls are grayed out, **only power cap is accessible** via hwmon. Fan and voltage controls remain blocked until the driver fix ships.
 
+Find your card first (number varies by system):
 ```bash
-# Set manual performance level
-echo "manual" | sudo tee /sys/class/drm/card0/device/power_dpm_force_performance_level
+CARD=$(grep -rl "0x1002" /sys/class/drm/card*/device/vendor 2>/dev/null | head -1 | sed 's|/device/vendor||')
 
-# Apply voltage offset (-75mV — conservative starting point)
-echo "vo -75" | sudo tee /sys/class/drm/card0/device/pp_od_clk_voltage
-echo "c"      | sudo tee /sys/class/drm/card0/device/pp_od_clk_voltage
-
-# Verify
-cat /sys/class/drm/card0/device/pp_od_clk_voltage
-# Should show: OD_VDDGFX_OFFSET: -75mV
-
-# Set power cap (in microwatts)
-echo "210000000" | sudo tee /sys/class/drm/card0/device/hwmon/hwmon*/power1_cap  # quiet
-echo "315000000" | sudo tee /sys/class/drm/card0/device/hwmon/hwmon*/power1_cap  # performance
+# Check what's actually accessible
+ls $CARD/device/pp_od_clk_voltage 2>/dev/null || echo "voltage offset: blocked"
+cat $CARD/device/hwmon/hwmon*/power1_cap_min   # e.g. 210000000 → 210W
+cat $CARD/device/hwmon/hwmon*/power1_cap_max   # e.g. 300000000 → 300W
 ```
 
-These settings reset on reboot. Persist them via a systemd service or by letting LACT handle it once the SMU bug is fixed.
+```bash
+# Power cap only (range 210–300W on R9700 AI Pro)
+echo "210000000" | sudo tee $CARD/device/hwmon/hwmon*/power1_cap  # quiet
+echo "300000000" | sudo tee $CARD/device/hwmon/hwmon*/power1_cap  # stock
+
+# If voltage offset IS available (no SMU bug):
+echo "manual" | sudo tee $CARD/device/power_dpm_force_performance_level
+echo "vo -75" | sudo tee $CARD/device/pp_od_clk_voltage
+echo "c"      | sudo tee $CARD/device/pp_od_clk_voltage
+cat $CARD/device/pp_od_clk_voltage  # verify: OD_VDDGFX_OFFSET: -75mV
+```
+
+These reset on reboot. LACT handles persistence once the SMU bug is fixed.
 
 ---
 
@@ -140,7 +157,7 @@ From the [amd-r9700-vllm-toolboxes](https://github.com/kyuz0/amd-r9700-vllm-tool
 ```yaml
 clocks_configuration:
   voltage_offset: -75
-power_cap: 315.0
+power_cap: 300.0   # 300W is the confirmed max on R9700 AI Pro
 ```
 
 vs the config's conservative 210 W / -80 mV. Tradeoff: more power and heat, faster TTFT.
@@ -155,7 +172,7 @@ RDNA 4 has exceptional undervolt headroom. Community data on 9070/9070 XT (same 
 | Alva Jonathan (9070) | -125 mV | +10% FPS, 2.6 → 3.0 GHz |
 | Conservative start | -75 mV | safe baseline |
 
-For gaming: raise `power_cap` toward stock (~260 W), drop `voltage_offset` to -100 to -150 mV, test stability.
+For gaming: raise `power_cap` toward stock (300 W max), drop `voltage_offset` to -100 to -150 mV, test stability.
 
 ### Capping max clock for pure inference
 

@@ -38,10 +38,11 @@
 #   voltage_offset: -80mV  — conservative, proven on R9700 Linux; reduces heat
 #                             without touching max clock. Go lower (-100 to
 #                             -120mV) only after stability testing.
-#   power_cap: 210W         — stock TDP ~260W; 210W is enough for sustained
+#   power_cap: 210W         — stock is 300W (confirmed max on R9700 AI Pro);
+#                             range is 210–300W. 210W is enough for sustained
 #                             inference (token gen is memory-bandwidth bound).
 #                             Reduces fan noise. ~15% slower prefill (TTFT).
-#                             For max performance: 315W + -75mV (see tuning doc)
+#                             For max performance: 300W + -75mV (see tuning doc)
 #   fan curve (junction)    — 5 entries required on RDNA3+. Quiet below 70°C,
 #                             gradual 5°C-step ramp to 60% at 90°C junction.
 #                             Silently ignored if SMU mismatch bug is present.
