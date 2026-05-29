@@ -43,9 +43,9 @@ gpus:
       # Keys = junction temp (°C), values = fan speed (0.0–1.0).
       curve:
         35: 0.25
-        50: 0.30
-        65: 0.45
-        75: 0.60
+        70: 0.45
+        75: 0.52
+        80: 0.60
         90: 0.80
       spindown_delay_ms: 0
       change_threshold: 2
