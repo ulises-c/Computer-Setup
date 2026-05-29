@@ -9,6 +9,17 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PACKAGES_JSON="$SCRIPT_DIR/macOS_packages.json"
+
+# Other repo setup scripts to advertise at the end of a run. Each entry is
+# "<path relative to repo root>|<one-line description>". To advertise a new
+# script, just add a line here — only scripts that exist on disk are shown.
+RELATED_SCRIPTS=(
+  "agentic-ai/Claude/install.sh|Claude Code config — symlink settings, hooks, and CLAUDE.md into ~/.claude"
+  "SSH_and_GPG/create_ssh_key.sh|Generate an SSH key (and add it to GitHub)"
+  "SSH_and_GPG/create_gpg_key.sh|Generate a GPG key for signed commits"
+  "macOS/verify.sh|Verify this install (read-only health check)"
+)
+
 INCLUDE_OPTIONAL=false
 INCLUDE_WORK=false
 DRY_RUN=false
@@ -133,6 +144,22 @@ print_app_store_reminders() {
         (if $opt then true else .optional == false end)
       ) | "  - \(.name): \(.description)"' "$PACKAGES_JSON")
   [[ -n "$apps" ]] && printf '%s\n' "$apps"
+}
+
+# Echo the other repo setup scripts (those present on disk) for discoverability.
+print_related_scripts() {
+  local repo_root entry rel desc shown=false
+  repo_root="$(cd "$SCRIPT_DIR/.." && pwd)"
+  for entry in "${RELATED_SCRIPTS[@]}"; do
+    rel="${entry%%|*}"; desc="${entry#*|}"
+    [[ -f "$repo_root/$rel" ]] || continue
+    if [[ "$shown" == false ]]; then
+      printf '  Other setup scripts in this repo:\n'
+      shown=true
+    fi
+    printf '    • %s\n' "$desc"
+    printf '        bash %s\n' "$rel"
+  done
 }
 
 # ── Homebrew ──────────────────────────────────────────────────────────────────
@@ -287,6 +314,10 @@ printf '\n'
 printf 'Install these manually from the App Store:\n'
 print_app_store_reminders "medium" false
 [[ "$INCLUDE_OPTIONAL" == true ]] && print_app_store_reminders "low" true
+
+printf '\n'
+printf 'Optional — run these from the repo root as needed:\n'
+print_related_scripts
 
 printf '\n'
 [[ "$DRY_RUN" == true ]] && printf 'Dry run complete — nothing was installed.\n' || printf 'Done! Restart your terminal or open a new tab.\n'
