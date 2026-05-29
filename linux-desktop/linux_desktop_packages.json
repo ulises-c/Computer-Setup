@@ -22,16 +22,16 @@
   },
   {
     "name": "pyenv",
-    "package_manager": { "ubuntu": "curl", "arch": "yay" },
-    "install_command": { "ubuntu": "curl https://pyenv.run | bash" },
+    "package_manager": { "ubuntu": "curl", "arch": "curl" },
+    "install_command": { "ubuntu": "curl https://pyenv.run | bash", "arch": "curl https://pyenv.run | bash" },
     "priority": "high",
     "optional": false,
     "description": "Python version manager — compiles from source to avoid distro-packaged Python quirks"
   },
   {
     "name": "nvm",
-    "package_manager": { "ubuntu": "curl", "arch": "yay" },
-    "install_command": { "ubuntu": "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash" },
+    "package_manager": { "ubuntu": "curl", "arch": "curl" },
+    "install_command": { "ubuntu": "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash", "arch": "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash" },
     "priority": "high",
     "optional": false,
     "description": "Node version manager — installed via curl on Ubuntu per nvm recommendation"
@@ -88,6 +88,20 @@
     "priority": "medium",
     "optional": false,
     "description": "Git extension for versioning large binary files"
+  },
+  {
+    "name": "pre-commit",
+    "package_manager": { "ubuntu": "pipx", "arch": "yay" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Git pre-commit hook framework — runs this repo's shellcheck, JSON, and zsh syntax checks before each commit"
+  },
+  {
+    "name": "shellcheck",
+    "package_manager": { "ubuntu": "apt", "arch": "yay" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Static analysis linter for shell scripts — used by the pre-commit config and CI"
   },
   {
     "name": "gnupg",
@@ -335,7 +349,7 @@
   {
     "name": "hf",
     "package_manager": { "ubuntu": "pipx", "arch": "yay" },
-    "arch_name": "huggingface-hub",
+    "arch_name": "python-huggingface-hub",
     "install_command": { "ubuntu": "pipx install huggingface-hub[cli]" },
     "priority": "medium",
     "optional": false,
