@@ -1,5 +1,25 @@
 # TODO
 
+## Setup-script unification (separate PR)
+
+Collapse the three diverged setup stacks (`macOS/`, `linux-desktop/`, `linux-server/`)
+into one root `setup.sh` + one `packages.json`, with platform quirks in `platforms/`
+and a shared `lib/core.sh`. Full spec, schema, and phased breakdown in
+[UNIFICATION.md](UNIFICATION.md). Decisions locked: single `packages.json` (managers
+keyed by `{macos,ubuntu,arch,server}`), root dispatcher + platform modules, incremental
+migration gated on dry-run parity.
+
+- [ ] Phase 1 — Author unified root `packages.json`; build `scripts/parity-check.sh`
+      proving per-platform install lists match the current per-folder scripts
+- [ ] Phase 2 — Extract `lib/core.sh` + `platforms/{macos,arch,ubuntu,server}.sh`; add
+      root `setup.sh` dispatcher; gate on `--dry-run` parity vs old scripts
+- [ ] Phase 3 — Unify `verify.sh` the same way (shared core + platform checks)
+- [ ] Phase 4 — Convert per-folder `setup.sh`/`verify.sh` into thin shims; update
+      `README.md` / `CLAUDE.md` for the root entrypoint
+- [ ] Phase 5 — Delete the three old per-folder package JSONs once parity is proven
+- [ ] Resolve open questions: server-as-platform vs profile; `install_command`
+      string vs object; keep `priority: "none"` tier? (see UNIFICATION.md)
+
 ## Ghostty config standardization
 
 The ghostty config lives in two places (`macOS/ghostty.config`, `linux-desktop/ghostty.config`)
