@@ -21,6 +21,17 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PACKAGES_JSON="$SCRIPT_DIR/linux_desktop_packages.json"
+
+# Other repo setup scripts surfaced at the end of the run. Each entry is
+# "<path relative to repo root>|<one-line description>". To advertise a new
+# script, just add a line here — only scripts that exist on disk are shown.
+RELATED_SCRIPTS=(
+  "agentic-ai/Claude/install.sh|Claude Code config — symlink settings, hooks, and CLAUDE.md into ~/.claude"
+  "SSH_and_GPG/create_ssh_key.sh|Generate an SSH key (and add it to GitHub)"
+  "SSH_and_GPG/create_gpg_key.sh|Generate a GPG key for signed commits"
+  "linux-desktop/verify.sh|Verify this install (read-only health check)"
+)
+
 DISTRO=""
 INCLUDE_OPTIONAL=false
 INCLUDE_WORK=false
@@ -87,6 +98,22 @@ run_eval() {
   else
     eval "$1"
   fi
+}
+
+# Echo the other repo setup scripts (those present on disk) for discoverability.
+print_related_scripts() {
+  local repo_root entry rel desc shown=false
+  repo_root="$(cd "$SCRIPT_DIR/.." && pwd)"
+  for entry in "${RELATED_SCRIPTS[@]}"; do
+    rel="${entry%%|*}"; desc="${entry#*|}"
+    [[ -f "$repo_root/$rel" ]] || continue
+    if [[ "$shown" == false ]]; then
+      echo "  Other setup scripts in this repo:"
+      shown=true
+    fi
+    echo "    • $desc"
+    echo "        bash $rel"
+  done
 }
 
 # Build a jq filter for environment tags.
@@ -609,9 +636,9 @@ else
   echo "  3. Authenticate Tailscale:"
   echo "       sudo tailscale up"
   echo ""
-  echo "  4. SSH / GPG keys:"
-  echo "       bash SSH_and_GPG/create_ssh_key.sh"
-  echo "       bash SSH_and_GPG/create_gpg_key.sh"
+  echo "  4. Optional — run these from the repo root as needed:"
+  echo ""
+  print_related_scripts
   echo ""
   echo "================================================================"
 fi
