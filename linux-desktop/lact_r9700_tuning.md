@@ -1,6 +1,27 @@
 # LACT Tuning Guide — AMD Radeon AI PRO R9700
 
-LACT (Linux AMD Configuration Tool) is a GUI + daemon that persists GPU tuning across reboots via a background service. The R9700 runs RDNA 4 (`navi48`), which uses a **voltage offset** model — you shift the entire voltage curve down by N mV rather than editing individual VF points (that was RDNA 1/Vega).
+LACT (Linux AMD Configuration Tool) is a GUI + daemon that persists GPU tuning across reboots via a background service. The R9700 runs RDNA 4 (`navi48`/gfx1201), which uses a **voltage offset** model — you shift the entire voltage curve down by N mV rather than editing individual VF points (that was RDNA 1/Vega).
+
+## Known issue: fan control broken on some R9700 units
+
+Before doing anything else, verify fan control actually works on your board. Some R9700 units (confirmed: ASUS Turbo, vBIOS `115-G287BP00-100`) have a firmware mismatch that makes fan control completely non-functional on Linux. LACT's fan curve UI is grayed out, `pwm1` is read-only, and the config's fan curve is silently ignored — the GPU can reach 109 °C with fans physically stationary.
+
+**Root cause:** the card's SMU firmware reports interface version 50 (`0x32`), but the amdgpu driver only supports up to version 46 (`0x2e`). This affects all kernel versions tested through 7.0 as of May 2026.
+
+```bash
+# Check 1: does the fan control sysfs path exist?
+ls /sys/class/drm/card0/device/gpu_od/fan_ctrl/
+# Good: lists fan_curve  acoustic_limit_rpm_threshold  fan_minimum_pwm  ...
+# Bad:  "No such file or directory" → fan control is broken on your unit
+
+# Check 2: confirm the SMU mismatch in dmesg
+sudo dmesg | grep -i "smu.*version"
+# Bad:  "SMU driver if version not matched" → confirms the bug
+```
+
+If you're affected: AMD has a fix in progress (targeting TheRock 7.13 / ROCm 7.13). Until then, the voltage offset and power cap sections below still work — only fan control is broken. See [ROCm issue #6101](https://github.com/ROCm/ROCm/issues/6101) for status.
+
+---
 
 ## Prerequisites
 
@@ -16,29 +37,30 @@ sudo systemctl enable --now lactd
 
 Ubuntu: download the matching `.deb` from [LACT releases](https://github.com/ilya-zlobintsev/LACT/releases).
 
-### 2. Enable AMD overdrive (required for voltage/clock control)
+### 2. Enable AMD overdrive — kernel cmdline only
 
-Add the kernel parameter `amdgpu.ppfeaturemask=0xffffffff` to your boot entry.
+Add `amdgpu.ppfeaturemask=0xfff7ffff` as a **kernel boot parameter**. Do not use `/etc/modprobe.d/` — the driver silently strips the OD feature bit (0x4000) when loaded from modprobe, resulting in `0xfff7bfff` instead of `0xfff7ffff` with no log warning.
 
-**CachyOS / Arch (GRUB):**
-```
-# /etc/default/grub
-GRUB_CMDLINE_LINUX_DEFAULT="... amdgpu.ppfeaturemask=0xffffffff"
-```
+**CachyOS / systemd-boot:** add to the `options` line in `/boot/loader/entries/*.conf`, then reboot.
+
+**GRUB:**
 ```bash
+# /etc/default/grub
+GRUB_CMDLINE_LINUX_DEFAULT="... amdgpu.ppfeaturemask=0xfff7ffff"
+
 sudo grub-mkconfig -o /boot/grub/grub.cfg
 sudo reboot
 ```
 
-**systemd-boot:** add to your `/boot/loader/entries/*.conf` options line, then reboot.
-
-Verify it took:
+Verify after reboot:
 ```bash
 cat /sys/module/amdgpu/parameters/ppfeaturemask
-# should print 0xffffffff (or -1 in decimal)
+# Must print 0xfff7ffff — if you see 0xfff7bfff you used modprobe, fix it
 ```
 
-## Applying the config
+---
+
+## Applying the LACT config
 
 Find your GPU's PCI ID:
 ```bash
@@ -55,48 +77,97 @@ sudo systemctl restart lactd
 
 Verify settings are live:
 ```bash
-lact-cli info          # shows current clocks, power, temps
+lact-cli info
 watch -n1 lact-cli info
 ```
+
+### lact-cli reference
+
+The CLI is intentionally minimal — all tuning is done via config file, not CLI flags.
+
+```bash
+lact-cli list-gpus          # list GPU PCI IDs
+lact-cli info               # current clocks, temps, power, fan speed
+lact-cli info --gpu <id>    # target a specific GPU
+```
+
+For scripting or deeper integration, use the LACT Unix socket API directly.
+
+---
 
 ## What the config does
 
 | Setting | Value | Why |
 |---|---|---|
-| `voltage_offset` | **-80 mV** | Proven safe on R9700 Linux; reduces heat without capping clocks. Can go to -100 or -120 mV after stability testing. |
-| `power_cap` | **210 W** | Stock TDP ~260 W. Token generation is memory-bandwidth bound so this barely affects t/s while cutting thermals and fan noise significantly. ~15% slower prefill (TTFT) is the trade-off. |
-| `performance_level` | **manual** | Required for power cap and clock controls to be honored by the driver. |
-| Fan curve | **junction temp** | Hotspot (junction) is more conservative than edge. Stays at 25% until 70 °C, then ramps in 5 °C steps to 60% at 90 °C. Exactly 5 entries required on RDNA 3+. |
+| `voltage_offset` | **-80 mV** | Conservative, proven on R9700 Linux. Reduces heat without capping clocks. Go to -100 or -120 mV after stability testing. |
+| `power_cap` | **210 W** | Stock TDP ~260 W. Token generation is memory-bandwidth bound so this barely affects t/s while cutting thermals and fan noise. ~15% slower prefill (TTFT) is the tradeoff. |
+| `performance_level` | **manual** | Required for power cap and voltage controls to be honored by the driver. |
+| Fan curve | **junction temp, 5 entries** | Quiet below 70 °C, 5 °C-step ramp to 60% at 90 °C. No-op if SMU mismatch bug is present. |
+
+---
+
+## Sysfs fallback (when LACT can't reach fan/clock registers)
+
+If `gpu_od` is missing or LACT's controls are grayed out, you can still apply voltage offset and power cap directly via sysfs. Fan control is unavailable but undervolting still works.
+
+```bash
+# Set manual performance level
+echo "manual" | sudo tee /sys/class/drm/card0/device/power_dpm_force_performance_level
+
+# Apply voltage offset (-75mV — conservative starting point)
+echo "vo -75" | sudo tee /sys/class/drm/card0/device/pp_od_clk_voltage
+echo "c"      | sudo tee /sys/class/drm/card0/device/pp_od_clk_voltage
+
+# Verify
+cat /sys/class/drm/card0/device/pp_od_clk_voltage
+# Should show: OD_VDDGFX_OFFSET: -75mV
+
+# Set power cap (in microwatts)
+echo "210000000" | sudo tee /sys/class/drm/card0/device/hwmon/hwmon*/power1_cap  # quiet
+echo "315000000" | sudo tee /sys/class/drm/card0/device/hwmon/hwmon*/power1_cap  # performance
+```
+
+These settings reset on reboot. Persist them via a systemd service or by letting LACT handle it once the SMU bug is fixed.
+
+---
 
 ## Tuning further
 
-### More aggressive undervolt (gaming / max performance)
+### Performance profile (max inference throughput)
 
-RDNA 4 has exceptional undervolt headroom. Community data on the 9070 XT (same arch):
+From the [amd-r9700-vllm-toolboxes](https://github.com/kyuz0/amd-r9700-vllm-toolboxes) project — higher power budget + lower voltage = more clock headroom for prefill:
+
+```yaml
+clocks_configuration:
+  voltage_offset: -75
+power_cap: 315.0
+```
+
+vs the config's conservative 210 W / -80 mV. Tradeoff: more power and heat, faster TTFT.
+
+### More aggressive undervolt (gaming / max perf)
+
+RDNA 4 has exceptional undervolt headroom. Community data on 9070/9070 XT (same arch):
 
 | Tester | Offset | Result |
 |---|---|---|
 | Der8auer (9070 XT) | -170 mV | +10% FPS, 2.9 → 3.36 GHz |
 | Alva Jonathan (9070) | -125 mV | +10% FPS, 2.6 → 3.0 GHz |
-| Conservative start | -75 mV | safe; larger cards may tolerate more |
+| Conservative start | -75 mV | safe baseline |
 
-For gaming, also raise `power_cap` back toward stock (~260.0) and optionally bump it to 110% of TDP (+10%) to give the extra clocks room to sustain.
+For gaming: raise `power_cap` toward stock (~260 W), drop `voltage_offset` to -100 to -150 mV, test stability.
 
-### Capping max clock for AI inference only
+### Capping max clock for pure inference
 
-If you want to aggressively limit power for pure inference (token gen), add `max_core_clock` to `clocks_configuration`:
+Token generation is memory-bandwidth bound — capping the GPU clock saves power with no t/s impact:
 
 ```yaml
 clocks_configuration:
   voltage_offset: -80
-  max_core_clock: 2000   # MHz — adjust to taste; token gen is unaffected
+  max_core_clock: 2000   # MHz — adjust to taste
 ```
 
-This trades prefill speed for lower sustained power draw.
-
-### Profiles (automatic switching)
-
-LACT supports named profiles that auto-activate based on running processes:
+### Automatic profiles (inference vs gaming)
 
 ```yaml
 profiles:
@@ -123,21 +194,27 @@ profiles:
 auto_switch_profiles: true
 ```
 
+---
+
 ## Stability testing
 
-After changing `voltage_offset`, stress-test before trusting the settings:
+After changing `voltage_offset`, stress the GPU before trusting the settings:
 
 ```bash
-# GPU compute stress (ROCm)
-rocm-smi --showuse
-# run a large LLM for 10–15 min and watch junction temp + clocks
+# Watch temps, clocks, power live
 watch -n1 'rocm-smi --showtemp --showclocks --showpower'
+
+# Run a large LLM for 10–15 min under inference load
+# If you see crashes, GPU resets, or display corruption → back off by 10–15 mV
 ```
 
-If you see crashes, GPU resets, or display corruption, back off the voltage offset by 10–15 mV.
+---
 
 ## References
 
+- [ROCm issue #6101 — R9700 fan not spinning (54 comments, open)](https://github.com/ROCm/ROCm/issues/6101)
+- [ROCm issue #6078 — SMU interface version mismatch (closed, superseded)](https://github.com/ROCm/ROCm/issues/6078)
+- [amd-r9700-vllm-toolboxes TUNING.md](https://github.com/kyuz0/amd-r9700-vllm-toolboxes)
 - [Undervolting the R9700 — Level1Techs Forums](https://forum.level1techs.com/t/undervolting-the-r9700/249946)
 - [Undervolted RX 9070 XT beats RTX 5080 — Tom's Hardware](https://www.tomshardware.com/pc-components/gpus/undervolted-rx-9070-xt-beats-rtx-5080-rx-9070-and-9070-xt-models-with-heavy-coolers-have-massive-oc-headroom)
 - [LACT GitHub](https://github.com/ilya-zlobintsev/LACT)
