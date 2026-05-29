@@ -359,7 +359,19 @@ else
         sudo apt install -y libssl-dev libffi-dev libncurses-dev libreadline-dev \
           libbz2-dev libsqlite3-dev liblzma-dev zlib1g-dev tk-dev
       else
-        sudo pacman -S --needed --noconfirm base-devel openssl zlib xz tk
+        # Only install deps not already satisfied. CachyOS ships zlib-ng-compat
+        # (which provides zlib), so explicitly requesting the zlib package would
+        # conflict; pacman -T treats it as already satisfied and skips it.
+        _pyenv_deps=(base-devel openssl zlib xz tk)
+        _pyenv_need=()
+        for _dep in "${_pyenv_deps[@]}"; do
+          pacman -T "$_dep" >/dev/null 2>&1 || _pyenv_need+=("$_dep")
+        done
+        if [[ ${#_pyenv_need[@]} -gt 0 ]]; then
+          sudo pacman -S --needed --noconfirm "${_pyenv_need[@]}"
+        else
+          echo "  build deps already satisfied"
+        fi
       fi
       echo "==> Installing Python $PYTHON_VERSION via pyenv..."
       pyenv install "$PYTHON_VERSION"
