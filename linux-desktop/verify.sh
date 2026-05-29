@@ -203,6 +203,15 @@ verify_extras() {
     check "nvm loadable" false
   fi
 
+  # npm supply-chain cooldown (issue #23)
+  if grep -q '^min-release-age=' "$HOME/.npmrc" 2>/dev/null; then
+    local mra
+    mra=$(grep '^min-release-age=' "$HOME/.npmrc" | tail -1 | cut -d= -f2)
+    check "npm min-release-age set (${mra}-day cooldown)" true
+  else
+    check "npm min-release-age set (run setup.sh)" false
+  fi
+
   # Shell config files
   [[ -f "$HOME/.zshrc" ]]            && check "zshrc present (~/.zshrc)" true                  || check "zshrc present (~/.zshrc)" false
   [[ -f "$HOME/.zsh_plugins.txt" ]] && check "antidote plugin list present (~/.zsh_plugins.txt)" true || check "antidote plugin list present (~/.zsh_plugins.txt)" false

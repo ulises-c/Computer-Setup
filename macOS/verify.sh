@@ -140,6 +140,15 @@ verify_extras() {
     check "node via nvm (run: nvm install 'lts/*')" false
   fi
 
+  # npm supply-chain cooldown (issue #23)
+  if grep -q '^min-release-age=' "$HOME/.npmrc" 2>/dev/null; then
+    local mra
+    mra=$(grep '^min-release-age=' "$HOME/.npmrc" | tail -1 | cut -d= -f2)
+    check "npm min-release-age set (${mra}-day cooldown)" true
+  else
+    check "npm min-release-age set (run setup.sh)" false
+  fi
+
   # Ghostty XDG config
   local ghostty_cfg="${XDG_CONFIG_HOME:-$HOME/.config}/ghostty/config.ghostty"
   [[ -f "$ghostty_cfg" ]] && check "ghostty config at XDG path" true || check "ghostty config at XDG path" false

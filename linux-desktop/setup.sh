@@ -100,6 +100,27 @@ run_eval() {
   fi
 }
 
+# npm supply-chain cooldown: refuse to install package versions younger than
+# NPM_MIN_RELEASE_AGE days. Compromised releases of popular packages (e.g. the
+# axios RAT, Mar 2026) are typically caught and yanked within hours, so a short
+# cooldown blocks them while barely delaying legit updates. See issue #23.
+NPM_MIN_RELEASE_AGE=7
+
+configure_npm_cooldown() {
+  local npmrc="$HOME/.npmrc" key="min-release-age" tmp
+  if [[ "$DRY_RUN" == true ]]; then
+    echo "  [dry-run] set $key=$NPM_MIN_RELEASE_AGE in $npmrc"
+    return 0
+  fi
+  touch "$npmrc"
+  # Drop any existing entry, then append the desired value (idempotent, portable).
+  tmp="$(mktemp)"
+  grep -v "^${key}=" "$npmrc" > "$tmp" 2>/dev/null || true
+  printf '%s=%s\n' "$key" "$NPM_MIN_RELEASE_AGE" >> "$tmp"
+  mv "$tmp" "$npmrc"
+  echo "  ✓ npm $key=$NPM_MIN_RELEASE_AGE (${NPM_MIN_RELEASE_AGE}-day supply-chain cooldown)"
+}
+
 # Echo the other repo setup scripts (those present on disk) for discoverability.
 print_related_scripts() {
   local repo_root entry rel desc shown=false
@@ -415,6 +436,7 @@ if [[ "$DRY_RUN" == true ]]; then
   echo "==> nvm..."
   echo "  [dry-run] install nvm via curl"
   echo "  [dry-run] nvm install lts/* && nvm alias default lts/*"
+  configure_npm_cooldown
 else
   if [ ! -d "$HOME/.nvm" ]; then
     echo "==> Installing nvm..."
@@ -433,6 +455,9 @@ else
     nvm alias default 'lts/*'
     nvm use default
   fi
+
+  # Apply the supply-chain cooldown before any `npm install -g` runs below.
+  configure_npm_cooldown
 fi
 
 # ── Medium-priority packages ─────────────────────────────────────────────────

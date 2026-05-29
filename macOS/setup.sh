@@ -52,6 +52,27 @@ run_eval() {
   fi
 }
 
+# npm supply-chain cooldown: refuse to install package versions younger than
+# NPM_MIN_RELEASE_AGE days. Compromised releases of popular packages (e.g. the
+# axios RAT, Mar 2026) are typically caught and yanked within hours, so a short
+# cooldown blocks them while barely delaying legit updates. See issue #23.
+NPM_MIN_RELEASE_AGE=7
+
+configure_npm_cooldown() {
+  local npmrc="$HOME/.npmrc" key="min-release-age" tmp
+  if [[ "$DRY_RUN" == true ]]; then
+    printf '  [dry-run] set %s=%s in %s\n' "$key" "$NPM_MIN_RELEASE_AGE" "$npmrc"
+    return 0
+  fi
+  touch "$npmrc"
+  # Drop any existing entry, then append the desired value (idempotent, portable).
+  tmp="$(mktemp)"
+  grep -v "^${key}=" "$npmrc" > "$tmp" 2>/dev/null || true
+  printf '%s=%s\n' "$key" "$NPM_MIN_RELEASE_AGE" >> "$tmp"
+  mv "$tmp" "$npmrc"
+  printf '  ✓ npm %s=%s (%s-day supply-chain cooldown)\n' "$key" "$NPM_MIN_RELEASE_AGE" "$NPM_MIN_RELEASE_AGE"
+}
+
 add_to_zshrc() {
   local line="$1"
   if [[ "$DRY_RUN" == true ]]; then
@@ -226,6 +247,9 @@ if [[ "$DRY_RUN" == false ]]; then
   nvm alias default 'lts/*'
   nvm use default
 fi
+
+# Apply the supply-chain cooldown before any `npm install -g` runs below.
+configure_npm_cooldown
 
 add_to_zshrc 'export NVM_DIR="$HOME/.nvm"'
 add_to_zshrc '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"'
