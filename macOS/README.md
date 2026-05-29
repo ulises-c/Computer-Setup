@@ -58,9 +58,8 @@
    2. Install: `brew install --cask notion`
 2. Goodnotes | [Mac App Store](https://apps.apple.com/us/app/goodnotes-6/id1444383602)
    1. Handwriting and note-taking app with Apple Pencil support; syncs across Mac and iPad
-3. Spark | [Download](https://sparkmailapp.com/) | [brew](https://formulae.brew.sh/cask/readdle-spark)
+3. Spark Mail | [Mac App Store](https://apps.apple.com/us/app/spark-mail-ai-email-inbox/id6445813049)
    1. Smart email client with AI features and clean cross-device sync
-   2. Install: `brew install --cask readdle-spark`
 
 ## Browsers
 

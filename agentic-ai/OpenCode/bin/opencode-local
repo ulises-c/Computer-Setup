@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+# Launch OpenCode with a local MLX model.
+# Scans ~/.models/ for MLX model dirs, lets you pick one, starts the server,
+# waits for it to be ready, then launches OpenCode. Cleans up on exit.
+#
+# Usage:  opencode-local [opencode-args...]
+#         opencode-local --log          # tail the server log
+
+set -euo pipefail
+
+MODELS_DIR="${MLX_MODELS_DIR:-$HOME/.models}"
+SERVER_HOST="${MLX_HOST:-127.0.0.1}"
+SERVER_PORT="${MLX_PORT:-8080}"
+SERVER_URL="http://${SERVER_HOST}:${SERVER_PORT}"
+LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/share}/opencode-local"
+LOG_FILE="$LOG_DIR/server.log"
+
+mkdir -p "$LOG_DIR"
+
+# Log a timestamped message to the log file
+log() {
+  printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG_FILE"
+}
+
+# ── discover models ──────────────────────────────────────────────────────
+
+discover_models() {
+  local entries=()
+  for dir in "$MODELS_DIR"/mlx-community--*; do
+    [[ -d "$dir" ]] || continue
+    local name="${dir##*/}"            # mlx-community--Qwen3.5-9B-4bit
+    local display="${name#mlx-community--}"  # Qwen3.5-9B-4bit
+    # Pretty-print: replace dashes with spaces, wrap trailing bit in parens
+    display="${display//-/ }"
+    # Extract trailing "Nbit" and wrap in parens (bash 3.2 compat)
+    local bits="${display##* }"
+    display="${display% $bits}"
+    display="$display ($bits)"
+    entries+=("$dir|$display")
+  done
+  printf '%s\n' "${entries[@]}"
+}
+
+# ── model picker ──────────────────────────────────────────────────────────
+
+pick_model() {
+  local -a models=()
+  while IFS= read -r line; do
+    models+=("$line")
+  done < <(discover_models | sort -t'|' -k2)
+
+  if [[ ${#models[@]} -eq 0 ]]; then
+    printf 'No MLX models found in %s\n' "$MODELS_DIR" >&2
+    printf 'Pull one first:\n' >&2
+    printf '  huggingface-cli download mlx-community/Qwen3.5-9B-4bit --local-dir ~/.models/mlx-community--Qwen3.5-9B-4bit\n' >&2
+    exit 1
+  fi
+
+  if [[ ${#models[@]} -eq 1 ]]; then
+    # Only one model — use it without prompting
+    IFS='|' read -r selected_path selected_name <<< "${models[0]}"
+    printf 'Using model: %s\n' "$selected_name" >&2
+    printf '%s\n' "$selected_path"
+    return
+  fi
+
+  printf '\nAvailable models:\n' >&2
+  for i in "${!models[@]}"; do
+    IFS='|' read -r _ name <<< "${models[$i]}"
+    printf '  [%d] %s\n' $((i + 1)) "$name" >&2
+  done
+  printf '\nSelect model [1-%d]: ' "${#models[@]}" >&2
+
+  local choice
+  read -r choice
+  if [[ ! "$choice" =~ ^[0-9][0-9]*$ ]] || (( choice < 1 || choice > ${#models[@]} )); then
+    printf 'Invalid selection\n' >&2
+    exit 1
+  fi
+
+  IFS='|' read -r selected_path selected_name <<< "${models[$((choice - 1))]}"
+  printf 'Using model: %s\n' "$selected_name" >&2
+  printf '%s\n' "$selected_path"
+}
+
+# ── wait for server ───────────────────────────────────────────────────────
+
+wait_for_server() {
+  local max_attempts=60  # 30 seconds
+  local attempt=0
+  while ! curl -sf "$SERVER_URL/v1/models" >/dev/null 2>&1; do
+    attempt=$((attempt + 1))
+    if (( attempt > max_attempts )); then
+      log "Server failed to start within $((max_attempts / 2)) seconds"
+      printf '\nServer failed to start within %d seconds\n' "$((max_attempts / 2))" >&2
+      printf 'Check the log for details: %s\n' "$LOG_FILE" >&2
+      exit 1
+    fi
+    printf '\rWaiting for model server to be ready... (%ds)' "$((attempt / 2))"
+    sleep 0.5
+  done
+  printf '\rModel server ready%s\n' '                         '
+}
+
+# ── main ──────────────────────────────────────────────────────────────────
+
+# --log flag: just tail the log file
+if [[ "${1:-}" == "--log" ]]; then
+  if [[ -f "$LOG_FILE" ]]; then
+    tail -f "$LOG_FILE"
+  else
+    printf 'No log file yet at: %s\n' "$LOG_FILE" >&2
+    exit 1
+  fi
+  exit 0
+fi
+
+MODEL_PATH="$(pick_model)"
+log "Selected model: $MODEL_PATH"
+log "Starting MLX server (host=$SERVER_HOST port=$SERVER_PORT)"
+
+printf 'Starting MLX server with: %s\n' "$MODEL_PATH"
+
+# Start the server in the background, tee stderr to log
+mlx_lm.server \
+  --model "$MODEL_PATH" \
+  --host "$SERVER_HOST" \
+  --port "$SERVER_PORT" \
+  --max-tokens 4096 \
+  --prompt-cache-bytes 4294967296 \
+  --log-level ERROR \
+  2>>"$LOG_FILE" &
+
+SERVER_PID=$!
+log "Server PID: $SERVER_PID"
+
+# Cleanup on exit
+cleanup() {
+  local exit_code=$?
+  if [[ $exit_code -ne 0 ]]; then
+    log "Exited with code $exit_code — see log: $LOG_FILE"
+  fi
+  log "Shutting down server (PID $SERVER_PID)"
+  printf '\nShutting down model server...\n'
+  kill "$SERVER_PID" 2>/dev/null || true
+  wait "$SERVER_PID" 2>/dev/null || true
+  log "Server stopped"
+}
+trap cleanup EXIT INT TERM
+
+wait_for_server
+log "Server ready"
+
+# Launch OpenCode — pass through any extra args
+opencode "$@"
