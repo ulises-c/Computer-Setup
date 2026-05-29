@@ -140,6 +140,13 @@
     "description": "GPU process monitor — complements htop with GPU visibility"
   },
   {
+    "name": "lact",
+    "package_manager": { "arch": "yay" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Linux AMD GPU control panel — fan curves, voltage offset, power cap, clock limits via GUI + background daemon; see linux-desktop/lact_r9700_tuning.md for R9700 config"
+  },
+  {
     "name": "tmux",
     "package_manager": { "ubuntu": "apt", "arch": "yay" },
     "priority": "medium",
