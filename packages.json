@@ -227,15 +227,15 @@
   },
   {
     "name": "micro",
-    "package_manager": { "macos": "brew", "ubuntu": "snap", "arch": "yay", "server": "apt" },
+    "package_manager": { "macos": "brew", "ubuntu": "snap", "arch": "yay", "server": "snap" },
     "priority": "medium",
     "optional": false,
     "install_command": "sudo snap install micro --classic",
-    "description": "Modern terminal text editor — snap on Ubuntu (noble apt is stuck at 2.0.13; upstream guarantees latest via snap)"
+    "description": "Modern terminal text editor — snap on noble platforms (apt is stuck at 2.0.13; upstream guarantees latest via snap)"
   },
   {
     "name": "nvtop",
-    "package_manager": { "macos": "brew", "ubuntu": "snap", "arch": "yay", "server": "apt" },
+    "package_manager": { "macos": "brew", "ubuntu": "snap", "arch": "yay", "server": "snap" },
     "priority": "medium",
     "optional": false,
     "description": "GPU process monitor — complements htop with GPU visibility"

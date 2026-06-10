@@ -1,8 +1,9 @@
 # Computer-Setup
 
 Personal machine-provisioning repo: one unified installer for macOS, Linux
-desktop (Ubuntu/Arch), and a Debian-based home server, plus per-platform
-configs and docs.
+desktop (Ubuntu/Arch), and an Ubuntu Server LTS home server, plus per-platform
+configs and docs. (A Raspberry Pi — Debian proper — is a future target,
+tracked in TODO.md.)
 
 ## Entrypoints
 

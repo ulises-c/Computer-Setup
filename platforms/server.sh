@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Headless server (Raspberry Pi / Debian) profile: apt only, no GUI packages,
+# Headless server (Ubuntu Server LTS) profile: apt + snap, no GUI packages,
 # SSH/Tailscale/Docker services, homepage dashboard stack.
+# (The Raspberry Pi — Debian proper, no snapd — is a future target; TODO.md.)
 
 CONFIG_SRC_DIR="$SETUP_ROOT/linux-server"
 
@@ -20,6 +21,9 @@ platform_main() {
 
   printf '\n==> Installing medium-priority packages...\n'
   server_apt_install_tier medium
+
+  printf '\n==> Installing snap packages...\n'
+  snap_install_tier medium
 
   if [[ "$INCLUDE_OPTIONAL" == true ]]; then
     printf '\n==> Installing optional (low) packages...\n'

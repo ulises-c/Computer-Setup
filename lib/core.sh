@@ -356,6 +356,39 @@ apt_bootstrap() {
   return 0
 }
 
+# Shared by the Ubuntu desktop and the Ubuntu Server profile (both ship snapd).
+snap_install_tier() {
+  local priority="$1" regular_snaps custom_snaps snap_name name cmd
+  # shellcheck disable=SC2016
+  regular_snaps=$(jq -r --arg plat "$PLATFORM" --arg pr "$priority" \
+     --arg w "$INCLUDE_WORK" --arg p "$INCLUDE_PERSONAL" \
+    "$CORE_JQ_DEFS"'[.[] | select(
+        .package_manager[$plat] == "snap" and .priority == $pr and
+        envok($w; $p) and (icfor($plat) == null)
+      ) | pname($plat)] | join(" ")' "$PACKAGES_JSON")
+  # Snaps needing flags (e.g. --classic) carry their full install_command.
+  # shellcheck disable=SC2016
+  custom_snaps=$(jq -r --arg plat "$PLATFORM" --arg pr "$priority" \
+     --arg w "$INCLUDE_WORK" --arg p "$INCLUDE_PERSONAL" \
+    "$CORE_JQ_DEFS"'.[] | select(
+        .package_manager[$plat] == "snap" and .priority == $pr and
+        envok($w; $p) and (icfor($plat) != null)
+      ) | "\(.name)|\(icfor($plat))"' "$PACKAGES_JSON")
+
+  if [[ -n "$regular_snaps" ]]; then
+    for snap_name in $regular_snaps; do
+      run sudo snap install "$snap_name"
+    done
+  fi
+
+  if [[ -n "$custom_snaps" ]]; then
+    while IFS='|' read -r name cmd; do
+      printf '  %s (custom snap)...\n' "$name"
+      run_eval "$cmd"
+    done <<< "$custom_snaps"
+  fi
+}
+
 # Echo the other repo setup scripts (those present on disk) for discoverability.
 print_related_scripts() {
   local entry rel desc shown=false
