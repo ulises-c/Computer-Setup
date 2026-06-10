@@ -1,7 +1,7 @@
 # ═══════════════════════════════════════════════════════════════
 #  ~/.zshrc  —  Linux server zsh config (Ubuntu Server)
 # ═══════════════════════════════════════════════════════════════
-# Requires: zsh, antidote (~/.antidote), fastfetch, fzf,
+# Requires: zsh, zsh-antidote, fastfetch, fzf,
 #           bat (batcat), fd-find (fdfind), eza
 # Plugins managed by antidote — see ~/.zsh_plugins.txt
 # Install:  bash linux-server/setup.sh
@@ -107,10 +107,10 @@ export LC_ALL='en_US.UTF-8'
 
 
 # ═══════════════════════════════════════════════════════════════
-#  ANTIDOTE  (plugin manager — git clone, noble has no apt package)
+#  ANTIDOTE  (apt install zsh-antidote)
 # ═══════════════════════════════════════════════════════════════
 # antidote sources all plugins listed in ~/.zsh_plugins.txt
-if [[ -f "$HOME/.antidote/antidote.zsh" && -f "$HOME/.zsh_plugins.txt" ]]; then
-  source "$HOME/.antidote/antidote.zsh"
+if [[ -f /usr/share/zsh-antidote/antidote.zsh && -f "$HOME/.zsh_plugins.txt" ]]; then
+  source /usr/share/zsh-antidote/antidote.zsh
   antidote load
 fi

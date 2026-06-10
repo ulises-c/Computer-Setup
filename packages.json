@@ -8,13 +8,11 @@
   },
   {
     "name": "zsh-antidote",
-    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "custom" },
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "macos_name": "antidote",
     "priority": "high",
     "optional": false,
-    "handled_by_setup": true,
-    "install_command": { "server": "git clone --depth=1 https://github.com/mattmc3/antidote.git \"$HOME/.antidote\"" },
-    "description": "Lightweight zsh plugin manager — handles autosuggestions, syntax highlighting, completions, substring search, and abbreviations via a plugins file; noble has no zsh-antidote apt package, so the server clones it to ~/.antidote"
+    "description": "Lightweight zsh plugin manager — handles autosuggestions, syntax highlighting, completions, substring search, and abbreviations via a plugins file"
   },
   {
     "name": "zsh-theme-powerlevel10k",
