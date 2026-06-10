@@ -1,0 +1,728 @@
+[
+  {
+    "name": "zsh",
+    "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "priority": "high",
+    "optional": false,
+    "description": "Z shell — common shell across all devices; install first so plugins are available"
+  },
+  {
+    "name": "zsh-antidote",
+    "package_manager": { "ubuntu": "apt", "arch": "yay" },
+    "priority": "high",
+    "optional": false,
+    "description": "Lightweight zsh plugin manager — handles autosuggestions, syntax highlighting, completions, substring search, and abbreviations via a plugins file"
+  },
+  {
+    "name": "zsh-autosuggestions",
+    "package_manager": { "macos": "brew" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Fish-style history-based suggestions for zsh — macOS sources the brew plugin directly (antidote migration tracked in TODO)"
+  },
+  {
+    "name": "zsh-autosuggestions",
+    "package_manager": { "server": "apt" },
+    "priority": "high",
+    "optional": false,
+    "description": "Fish-style history-based suggestions for zsh"
+  },
+  {
+    "name": "zsh-syntax-highlighting",
+    "package_manager": { "macos": "brew" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Real-time syntax highlighting in zsh — macOS sources the brew plugin directly (antidote migration tracked in TODO)"
+  },
+  {
+    "name": "zsh-syntax-highlighting",
+    "package_manager": { "server": "apt" },
+    "priority": "high",
+    "optional": false,
+    "description": "Real-time syntax highlighting in zsh"
+  },
+  {
+    "name": "zoxide",
+    "package_manager": { "ubuntu": "apt", "arch": "yay" },
+    "priority": "high",
+    "optional": false,
+    "description": "Smarter cd — learns your frequent directories, use z to jump instantly"
+  },
+  {
+    "name": "expat",
+    "package_manager": { "macos": "brew" },
+    "priority": "high",
+    "optional": false,
+    "description": "XML parsing library — required for pyenv to compile Python correctly on macOS Tahoe"
+  },
+  {
+    "name": "pyenv",
+    "package_manager": { "macos": "brew", "ubuntu": "custom", "arch": "custom" },
+    "priority": "high",
+    "optional": false,
+    "install_command": "curl https://pyenv.run | bash",
+    "description": "Python version manager — compiles from source to avoid distro-packaged Python quirks and broken Homebrew bottles on macOS Tahoe"
+  },
+  {
+    "name": "nvm",
+    "package_manager": { "macos": "custom", "ubuntu": "custom", "arch": "custom" },
+    "priority": "high",
+    "optional": false,
+    "install_command": "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash",
+    "description": "Node version manager — installed via curl per nvm recommendation; brew install causes PATH issues"
+  },
+  {
+    "name": "pipx",
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay" },
+    "arch_name": "python-pipx",
+    "priority": "high",
+    "optional": false,
+    "description": "Installs Python CLI tools in isolated virtual environments"
+  },
+  {
+    "name": "build-essential",
+    "package_manager": { "ubuntu": "apt", "arch": "yay" },
+    "arch_name": "base-devel",
+    "priority": "high",
+    "optional": false,
+    "description": "Compiler toolchain — gcc, make, etc.; required for pyenv, native Node modules, and AUR builds"
+  },
+  {
+    "name": "git",
+    "package_manager": { "ubuntu": "apt", "arch": "yay" },
+    "priority": "high",
+    "optional": false,
+    "description": "Version control — usually pre-installed but listed to ensure it's present"
+  },
+  {
+    "name": "git",
+    "package_manager": { "server": "apt" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Version control — usually pre-installed on Ubuntu Server"
+  },
+  {
+    "name": "rust",
+    "package_manager": { "ubuntu": "apt", "arch": "yay" },
+    "ubuntu_name": "rustup",
+    "priority": "medium",
+    "optional": false,
+    "description": "Rust toolchain — rustc and cargo"
+  },
+  {
+    "name": "ghostty",
+    "package_manager": { "macos": "brew-cask", "ubuntu": "snap", "arch": "yay" },
+    "priority": "medium",
+    "optional": false,
+    "install_command": "sudo snap install ghostty --classic",
+    "description": "GPU-accelerated terminal emulator — requires --classic on snap for full system access"
+  },
+  {
+    "name": "fastfetch",
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Fast system info display — shown on terminal startup; Ubuntu needs the fastfetch PPA (setup adds it)"
+  },
+  {
+    "name": "gh",
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "arch_name": "github-cli",
+    "priority": "medium",
+    "optional": false,
+    "description": "GitHub CLI — PRs, issues, Actions from the terminal; apt platforms use the GitHub CLI apt repo (setup adds it)"
+  },
+  {
+    "name": "git-lfs",
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Git extension for versioning large binary files"
+  },
+  {
+    "name": "git-xet",
+    "package_manager": { "macos": "brew" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Git LFS plugin using the Xet protocol for Hugging Face Hub"
+  },
+  {
+    "name": "git-xet",
+    "package_manager": { "ubuntu": "custom", "arch": "yay" },
+    "arch_name": "git-xet-bin",
+    "priority": "medium",
+    "optional": false,
+    "environment": ["personal"],
+    "install_command": "curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/huggingface/xet-core/refs/heads/main/git_xet/install.sh | sh",
+    "description": "Git LFS plugin using the Xet protocol for Hugging Face Hub"
+  },
+  {
+    "name": "pre-commit",
+    "package_manager": { "ubuntu": "pipx", "arch": "yay" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Git pre-commit hook framework — runs this repo's shellcheck, JSON, and zsh syntax checks before each commit"
+  },
+  {
+    "name": "shellcheck",
+    "package_manager": { "ubuntu": "apt", "arch": "yay" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Static analysis linter for shell scripts — used by the pre-commit config and CI"
+  },
+  {
+    "name": "gnupg",
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "priority": "medium",
+    "optional": false,
+    "description": "GPG — required for commit signing"
+  },
+  {
+    "name": "hf",
+    "package_manager": { "macos": "brew" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Hugging Face Hub CLI — download, upload, and manage ML models"
+  },
+  {
+    "name": "hf",
+    "package_manager": { "ubuntu": "pipx", "arch": "yay" },
+    "arch_name": "python-huggingface-hub",
+    "priority": "medium",
+    "optional": false,
+    "environment": ["personal"],
+    "install_command": "pipx install huggingface-hub[cli]",
+    "description": "Hugging Face Hub CLI — download, upload, and manage ML models"
+  },
+  {
+    "name": "htop",
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Interactive process viewer — colorized alternative to top"
+  },
+  {
+    "name": "llama.cpp",
+    "package_manager": { "macos": "brew" },
+    "priority": "medium",
+    "optional": false,
+    "description": "LLM inference engine — run local models on CPU and Apple Silicon GPU"
+  },
+  {
+    "name": "llama.cpp",
+    "package_manager": { "ubuntu": "custom", "arch": "yay" },
+    "priority": "none",
+    "optional": true,
+    "install_command": "See https://github.com/ggml-org/llama.cpp#build",
+    "description": "LLM inference engine — run local models on CPU/GPU"
+  },
+  {
+    "name": "mactop",
+    "package_manager": { "macos": "brew" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Apple Silicon system monitor — CPU, GPU, ANE, memory, power in real-time TUI"
+  },
+  {
+    "name": "micro",
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Modern terminal text editor with mouse support and familiar keybindings"
+  },
+  {
+    "name": "nvtop",
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "priority": "medium",
+    "optional": false,
+    "description": "GPU process monitor — complements htop with GPU visibility"
+  },
+  {
+    "name": "sshpass",
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Non-interactive SSH password authentication — used by SSH_and_GPG/add_remote_host.sh"
+  },
+  {
+    "name": "tmux",
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Terminal multiplexer — split panes, persist sessions across disconnects"
+  },
+  {
+    "name": "eza",
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Modern ls replacement — colors, icons, git status, tree view; Ubuntu needs the eza community apt repo (setup adds it)"
+  },
+  {
+    "name": "fzf",
+    "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Fuzzy finder — Ctrl+R history search, Ctrl+T file search"
+  },
+  {
+    "name": "ripgrep",
+    "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Fast recursive grep replacement — command: rg"
+  },
+  {
+    "name": "bat",
+    "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "priority": "medium",
+    "optional": false,
+    "description": "cat with syntax highlighting and git integration — Ubuntu installs binary as batcat (setup symlinks bat)"
+  },
+  {
+    "name": "fd",
+    "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "ubuntu_name": "fd-find",
+    "server_name": "fd-find",
+    "priority": "medium",
+    "optional": false,
+    "description": "Fast find alternative — Ubuntu installs binary as fdfind (setup symlinks fd)"
+  },
+  {
+    "name": "jq",
+    "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "priority": "medium",
+    "optional": false,
+    "description": "JSON processor — required by setup.sh to parse this file"
+  },
+  {
+    "name": "jq",
+    "package_manager": { "macos": "brew" },
+    "priority": "low",
+    "optional": true,
+    "description": "JSON processor — system-provided on macOS; brew version only needed if the system one is missing or outdated"
+  },
+  {
+    "name": "curl",
+    "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "priority": "medium",
+    "optional": false,
+    "description": "HTTP client — usually pre-installed; required by various install scripts"
+  },
+  {
+    "name": "wget",
+    "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "priority": "medium",
+    "optional": false,
+    "description": "HTTP file downloader — used by setup scripts for key imports"
+  },
+  {
+    "name": "libnotify-bin",
+    "package_manager": { "ubuntu": "apt", "arch": "yay" },
+    "arch_name": "libnotify",
+    "priority": "medium",
+    "optional": false,
+    "description": "Desktop notifications CLI (notify-send) — used by zsh-notify plugin"
+  },
+  {
+    "name": "xdotool",
+    "package_manager": { "ubuntu": "apt", "arch": "yay" },
+    "priority": "medium",
+    "optional": false,
+    "description": "X11 window automation — used by zsh-notify for terminal focus detection"
+  },
+  {
+    "name": "ncdu",
+    "package_manager": { "server": "apt" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Interactive disk usage analyzer — essential for managing storage on a file server"
+  },
+  {
+    "name": "cockpit",
+    "package_manager": { "server": "apt" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Web-based server admin UI — system metrics, journal logs, network config, storage, and service management; access at https://<server-ip>:9090"
+  },
+  {
+    "name": "tailscale",
+    "package_manager": { "macos": "app-store", "ubuntu": "custom", "arch": "yay", "server": "custom" },
+    "macos_name": "Tailscale",
+    "priority": "medium",
+    "optional": false,
+    "install_command": "curl -fsSL https://tailscale.com/install.sh | sudo sh",
+    "handled_by_setup": true,
+    "description": "Zero-config VPN — access all devices on a private network; App Store version required on macOS for network extension entitlements"
+  },
+  {
+    "name": "docker",
+    "package_manager": { "macos": "brew-cask", "ubuntu": "custom", "arch": "yay" },
+    "priority": "low",
+    "optional": true,
+    "install_command": "curl -fsSL https://get.docker.com | sudo sh",
+    "description": "Container platform — Docker Desktop on macOS, official Docker Engine on Linux"
+  },
+  {
+    "name": "docker-ce",
+    "package_manager": { "server": "custom" },
+    "priority": "medium",
+    "optional": false,
+    "handled_by_setup": true,
+    "install_command": "curl -fsSL https://get.docker.com | sudo sh",
+    "description": "Container platform — official Docker Engine for Linux; convenience script installs CE, CLI, compose plugin, and containerd"
+  },
+  {
+    "name": "claude-code",
+    "package_manager": { "macos": "brew-cask", "ubuntu": "custom", "arch": "custom" },
+    "priority": "medium",
+    "optional": false,
+    "install_command": "curl -fsSL https://claude.ai/install.sh | bash",
+    "description": "Claude Code — terminal-based AI coding assistant"
+  },
+  {
+    "name": "claude-desktop",
+    "package_manager": { "macos": "brew-cask", "ubuntu": "custom", "arch": "yay" },
+    "macos_name": "claude",
+    "arch_name": "claude-desktop-bin",
+    "priority": "medium",
+    "optional": false,
+    "install_command": "curl -fsSL https://pkg.claude-desktop-debian.dev/KEY.gpg | sudo gpg --dearmor -o /usr/share/keyrings/claude-desktop.gpg && echo 'deb [signed-by=/usr/share/keyrings/claude-desktop.gpg arch=amd64,arm64] https://pkg.claude-desktop-debian.dev stable main' | sudo tee /etc/apt/sources.list.d/claude-desktop.list && sudo apt update && sudo apt install -y claude-desktop",
+    "description": "Anthropic Claude desktop app — Ubuntu uses aaddrick/claude-desktop-debian apt repo"
+  },
+  {
+    "name": "visual-studio-code",
+    "package_manager": { "macos": "brew-cask", "ubuntu": "snap", "arch": "yay" },
+    "ubuntu_name": "code",
+    "arch_name": "visual-studio-code-bin",
+    "priority": "medium",
+    "optional": false,
+    "install_command": "sudo snap install code --classic",
+    "description": "Code editor with extensions — requires --classic on snap"
+  },
+  {
+    "name": "firefox",
+    "package_manager": { "macos": "brew-cask", "ubuntu": "snap", "arch": "yay" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Open source web browser"
+  },
+  {
+    "name": "chromium",
+    "package_manager": { "ubuntu": "snap", "arch": "yay" },
+    "priority": "medium",
+    "optional": false,
+    "environment": ["work"],
+    "description": "Open source Chromium browser — used for work alongside Firefox"
+  },
+  {
+    "name": "obs-studio",
+    "package_manager": { "macos": "brew-cask", "ubuntu": "apt", "arch": "yay" },
+    "macos_name": "obs",
+    "priority": "medium",
+    "optional": false,
+    "description": "Open source broadcasting and screen recording"
+  },
+  {
+    "name": "vlc",
+    "package_manager": { "macos": "brew-cask", "ubuntu": "apt", "arch": "yay" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Open source media player for nearly every format"
+  },
+  {
+    "name": "discord",
+    "package_manager": { "macos": "brew-cask" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Voice, video, and text chat platform"
+  },
+  {
+    "name": "discord",
+    "package_manager": { "ubuntu": "snap", "arch": "yay" },
+    "priority": "medium",
+    "optional": false,
+    "environment": ["personal"],
+    "description": "Voice, video, and text chat platform"
+  },
+  {
+    "name": "bitwarden",
+    "package_manager": { "macos": "app-store", "ubuntu": "snap", "arch": "yay" },
+    "macos_name": "Bitwarden",
+    "priority": "medium",
+    "optional": false,
+    "description": "Open source password manager — App Store version required on macOS for browser integration"
+  },
+  {
+    "name": "slack",
+    "package_manager": { "macos": "brew-cask", "ubuntu": "snap", "arch": "yay" },
+    "arch_name": "slack-desktop",
+    "priority": "medium",
+    "optional": false,
+    "environment": ["work"],
+    "description": "Team messaging and collaboration"
+  },
+  {
+    "name": "zoom",
+    "package_manager": { "macos": "brew-cask", "ubuntu": "snap", "arch": "yay" },
+    "ubuntu_name": "zoom-client",
+    "priority": "medium",
+    "optional": false,
+    "environment": ["work"],
+    "description": "Video conferencing"
+  },
+  {
+    "name": "microsoft-outlook",
+    "package_manager": { "macos": "brew-cask" },
+    "priority": "medium",
+    "optional": false,
+    "environment": ["work"],
+    "description": "Email client for Microsoft 365"
+  },
+  {
+    "name": "teams-for-linux",
+    "package_manager": { "ubuntu": "snap", "arch": "yay" },
+    "priority": "medium",
+    "optional": false,
+    "environment": ["work"],
+    "description": "Unofficial Microsoft Teams client for Linux"
+  },
+  {
+    "name": "poetry",
+    "package_manager": { "macos": "pipx", "ubuntu": "pipx", "arch": "yay" },
+    "arch_name": "python-poetry",
+    "priority": "medium",
+    "optional": false,
+    "description": "Python project and dependency manager"
+  },
+  {
+    "name": "codeburn",
+    "package_manager": { "macos": "pnpm", "ubuntu": "pnpm", "arch": "pnpm" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Track AI coding token usage by task, tool, model, and project"
+  },
+  {
+    "name": "mac-mouse-fix",
+    "package_manager": { "macos": "brew-cask" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Decouples mouse scroll speed from trackpad settings"
+  },
+  {
+    "name": "rectangle",
+    "package_manager": { "macos": "brew-cask" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Open source window management"
+  },
+  {
+    "name": "caffeine",
+    "package_manager": { "macos": "brew-cask" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Simple menubar toggle to keep Mac awake"
+  },
+  {
+    "name": "google-drive",
+    "package_manager": { "macos": "brew-cask" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Google Drive desktop client"
+  },
+  {
+    "name": "amazon-photos",
+    "package_manager": { "macos": "brew-cask" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Unlimited full-resolution photo backup for Amazon Prime members"
+  },
+  {
+    "name": "notion",
+    "package_manager": { "macos": "brew-cask" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Notes and project management"
+  },
+  {
+    "name": "notion",
+    "package_manager": { "ubuntu": "snap", "arch": "yay" },
+    "ubuntu_name": "notion-snap-reborn",
+    "arch_name": "notion-app-electron",
+    "priority": "low",
+    "optional": true,
+    "environment": ["personal"],
+    "description": "Notes and project management — unofficial snap/AUR packages on Linux"
+  },
+  {
+    "name": "Spark Mail – AI Email Inbox",
+    "package_manager": { "macos": "app-store" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Smart email client with AI features"
+  },
+  {
+    "name": "Photomator",
+    "package_manager": { "macos": "app-store" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Photo editor — free version with pay-once upgrade"
+  },
+  {
+    "name": "net-tools",
+    "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "priority": "low",
+    "optional": true,
+    "description": "Legacy network utilities — ifconfig, netstat, route"
+  },
+  {
+    "name": "poppler",
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay" },
+    "ubuntu_name": "poppler-utils",
+    "priority": "low",
+    "optional": true,
+    "description": "PDF CLI tools — pdftotext, pdfimages, pdfinfo, pdftoppm"
+  },
+  {
+    "name": "ffmpeg",
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "priority": "low",
+    "optional": true,
+    "description": "Audio/video processing toolkit"
+  },
+  {
+    "name": "exiftool",
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "ubuntu_name": "libimage-exiftool-perl",
+    "arch_name": "perl-image-exiftool",
+    "server_name": "libimage-exiftool-perl",
+    "priority": "low",
+    "optional": true,
+    "description": "Read and write metadata in photos, videos, and other files"
+  },
+  {
+    "name": "tesseract",
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay" },
+    "ubuntu_name": "tesseract-ocr",
+    "priority": "low",
+    "optional": true,
+    "description": "OCR engine — extract text from images and scanned documents"
+  },
+  {
+    "name": "smartmontools",
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "priority": "low",
+    "optional": true,
+    "description": "Monitor SSD/HDD health via S.M.A.R.T. data — use: smartctl -a /dev/sdX"
+  },
+  {
+    "name": "nmap",
+    "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "priority": "low",
+    "optional": true,
+    "description": "Network scanner — discover hosts and open ports on the local network"
+  },
+  {
+    "name": "samba",
+    "package_manager": { "server": "apt" },
+    "priority": "low",
+    "optional": true,
+    "description": "SMB/CIFS file sharing — exposes network shares to macOS and Windows; requires manual smb.conf configuration after install"
+  },
+  {
+    "name": "gogcli",
+    "package_manager": { "macos": "brew" },
+    "priority": "low",
+    "optional": true,
+    "description": "Google Workspace CLI — Gmail, Calendar, Drive, Docs, and more in the terminal"
+  },
+  {
+    "name": "fluidtop",
+    "package_manager": { "macos": "pipx" },
+    "priority": "low",
+    "optional": true,
+    "description": "Apple Silicon performance monitor with AI workload focus — alternative to mactop"
+  },
+  {
+    "name": "exifread",
+    "package_manager": { "macos": "pipx" },
+    "priority": "low",
+    "optional": true,
+    "description": "Python CLI for reading EXIF metadata from JPEG and TIFF photos"
+  },
+  {
+    "name": "Goodnotes",
+    "package_manager": { "macos": "app-store" },
+    "priority": "low",
+    "optional": true,
+    "description": "Handwriting and note-taking app with Apple Pencil support"
+  },
+  {
+    "name": "spotify",
+    "package_manager": { "ubuntu": "snap", "arch": "yay" },
+    "priority": "low",
+    "optional": true,
+    "environment": ["personal"],
+    "description": "Music streaming"
+  },
+  {
+    "name": "steam",
+    "package_manager": { "ubuntu": "apt", "arch": "yay" },
+    "priority": "low",
+    "optional": true,
+    "environment": ["personal"],
+    "description": "Game library and storefront"
+  },
+  {
+    "name": "bolt-launcher",
+    "package_manager": { "arch": "yay" },
+    "priority": "low",
+    "optional": true,
+    "environment": ["personal"],
+    "description": "Open-source RuneScape/OSRS launcher for Linux — replaces Jagex Launcher"
+  },
+  {
+    "name": "octave",
+    "package_manager": { "macos": "brew" },
+    "priority": "none",
+    "optional": true,
+    "description": "MATLAB-compatible numerical computing environment"
+  },
+  {
+    "name": "octave",
+    "package_manager": { "ubuntu": "apt", "arch": "yay" },
+    "priority": "none",
+    "optional": true,
+    "environment": ["work"],
+    "description": "MATLAB-compatible numerical computing environment"
+  },
+  {
+    "name": "qemu",
+    "package_manager": { "macos": "brew" },
+    "priority": "none",
+    "optional": true,
+    "description": "Machine emulator — run x86, ARM, and other architectures on Apple Silicon"
+  },
+  {
+    "name": "mongodb-community",
+    "package_manager": { "macos": "custom" },
+    "priority": "none",
+    "optional": true,
+    "install_command": "brew tap mongodb/brew && brew install mongodb-community",
+    "description": "MongoDB Community Server — includes mongosh and mongodb-database-tools"
+  },
+  {
+    "name": "Pixelmator Pro",
+    "package_manager": { "macos": "app-store" },
+    "priority": "none",
+    "optional": true,
+    "description": "Photo editor — pay once"
+  },
+  {
+    "name": "Amphetamine",
+    "package_manager": { "macos": "app-store" },
+    "priority": "none",
+    "optional": true,
+    "description": "Keep Mac awake with scheduling and app triggers — more powerful alternative to Caffeine"
+  }
+]
