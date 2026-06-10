@@ -22,16 +22,23 @@ migration gated on dry-run parity.
 - [ ] Resolve open questions: server-as-platform vs profile; `install_command`
       string vs object; keep `priority: "none"` tier? (see UNIFICATION.md)
 
-## Ghostty config standardization
+## Dotfiles consolidation (follow-up PR after #37 merges)
 
-The ghostty config lives in two places (`macOS/ghostty.config`, `linux-desktop/ghostty.config`)
-with identical content. Consider extracting a universal `cross-platform/ghostty.config` for shared
-settings (`term = xterm-256color`, `theme`, `shell-integration`) and keeping OS-specific
-configs additive-only (e.g., macOS font settings, Linux-specific tweaks).
+Shared configs are duplicated per-folder and drift silently across devices. Current state:
+`tmux.conf` is byte-identical in `linux-desktop/` and `linux-server/` but missing from
+`macOS/` entirely (the mac setup never deploys tmux config — Macs show default green
+bottom bar while Linux boxes get the blue top bar); `ghostty.config` is byte-identical
+in `macOS/` and `linux-desktop/`. The zshrc variants intentionally differ (server drops
+Ghostty/fastfetch/notifications) and stay per-folder for now. Out of scope for #37 —
+UNIFICATION.md keeps configs where they are; do this once the root engine owns deploys.
 
-- [ ] Create `cross-platform/ghostty.config` (universal base)
-- [ ] Refactor OS configs to extend/override the universal base
-- [ ] Update both `setup.sh` scripts to deploy the new layout (universal + OS overlay)
+- [ ] Create `dotfiles/` and move the byte-identical files: `tmux.conf`, `ghostty.config`
+- [ ] Point the root engine's deploy steps (`lib/core.sh`, `platforms/server.sh`) at the
+      new paths; drop the per-folder copies
+- [ ] Deploy tmux.conf on macOS too (currently the missing platform)
+- [ ] Ghostty: keep a universal base; OS-specific configs become additive overlays only
+      (e.g., macOS font settings, Linux-specific tweaks)
+- [ ] Later: consider base + per-platform overlay for zshrc (desktop vs server vs macOS)
 
 ## OpenCode local models
 
