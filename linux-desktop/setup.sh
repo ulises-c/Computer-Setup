@@ -318,8 +318,10 @@ pnpm_install() {
         $ef
       ) | .name] | join(\" \")" \
     "$PACKAGES_JSON")
+  # Empty tier must not return 1 — under set -e that aborts the whole run.
+  [[ -z "$names" ]] && return 0
   # shellcheck disable=SC2086
-  [[ -n "$names" ]] && run pnpm add -g $names
+  run pnpm add -g $names
 }
 
 # Bootstrap the AUR helper on Arch (yay lives in the CachyOS/Arch repos, so pacman
