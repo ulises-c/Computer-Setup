@@ -34,6 +34,9 @@ fi
 
 [[ -n "$TEST_CMD" ]] || exit 0
 
+# Runner not installed (e.g. pytest on a fresh box) = no runnable suite, not a failure
+command -v "${TEST_CMD%% *}" >/dev/null 2>&1 || exit 0
+
 TMPFILE=$(mktemp)
 trap 'rm -f "$TMPFILE"' EXIT
 

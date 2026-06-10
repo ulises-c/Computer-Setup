@@ -16,7 +16,11 @@ approve: []
 allowlist: []
 
 # ── Path fence ────────────────────────────────────────────────────────
-# Project directory (CWD) is always implicitly allowed.
+# Project directory (CWD) is always implicitly allowed — but "project dir"
+# is the hook's cwd at each call, not a root captured at session start. A
+# `cd` into a nested dir re-anchors it, so `cd` back to the repo root asks
+# (#26). Dev roots below keep cwd drift inside any repo under them fenced-in
+# until upstream anchors the fence to a stable session project root.
 # ~/.gnupg and ~/.config/gh are intentionally absent — required for GPG
 # commit signing and gh CLI; managed at the validate-write.sh hook layer.
 
@@ -25,6 +29,9 @@ fence:
   allowed_paths:
     - "~/.claude"
     - "/tmp"
+    - "~/github"
+    - "~/Github"
+    - "~/Bitbucket"
   denied_paths:
     - "~/.ssh"
     - "~/.aws"
