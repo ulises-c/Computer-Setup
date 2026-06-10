@@ -1,6 +1,8 @@
 @rules/common/general.md
 @rules/common/agents.md
-@rules/bash/style.md<!-- railguard:start -->
+@rules/bash/style.md
+@rules/common/railguard.md
+<!-- railguard:start -->
 # Railguard — Active Guardrails
 
 Railguard is monitoring this session. Every tool call (Bash, Write, Edit, Read) passes through Railguard before execution.
