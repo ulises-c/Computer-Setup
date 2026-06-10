@@ -60,7 +60,7 @@ platform_main() {
   CONFIG_SRC_DIR="$SETUP_ROOT/macOS"
   # shellcheck disable=SC2034  # consumed by print_related_scripts in lib/core.sh
   RELATED_SCRIPTS=(
-    "agentic-ai/Claude/install.sh|Claude Code config — symlink settings, hooks, and CLAUDE.md into ~/.claude"
+    "agentic-ai/Claude/install.sh|Claude Code config — deploy settings, hooks, and CLAUDE.md into ~/.claude"
     "SSH_and_GPG/create_ssh_key.sh|Generate an SSH key (and add it to GitHub)"
     "SSH_and_GPG/create_gpg_key.sh|Generate a GPG key for signed commits"
     "macOS/verify.sh|Verify this install (read-only health check)"

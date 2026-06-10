@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Idempotent setup: symlinks this repo's Claude config into ~/.claude/
+# Idempotent setup: deploys this repo's Claude config into ~/.claude/
+# (settings.json is copied, everything else symlinked).
 # Safe to re-run. Backs up any existing settings.json before replacing it.
 
 set -euo pipefail
@@ -11,15 +12,21 @@ SETTINGS="$CLAUDE_DIR/settings.json"
 
 printf 'Installing from: %s\n' "$REPO_DIR"
 
-# Back up settings.json if it exists and is not already one of ours
-if [[ -e "$SETTINGS" && ! -L "$SETTINGS" ]]; then
+# settings.json is COPIED, not symlinked: Claude Code rewrites its user
+# settings at runtime (model switches, plugin installs re-serialize the file),
+# and a symlink funnels that machine state into the repo as permanent dirt.
+# The repo file is the template; the live copy is machine state. Re-running
+# resets the live copy to the template (after a backup) — re-pick your model
+# afterwards. settings-drift.sh reports when the two diverge.
+if [[ -L "$SETTINGS" ]]; then
+  rm "$SETTINGS"   # old symlink layout — live content was the repo file itself
+elif [[ -e "$SETTINGS" ]] && ! cmp -s "$REPO_DIR/settings.json" "$SETTINGS"; then
   BACKUP="$SETTINGS.bak.$(date +%Y%m%d%H%M%S)"
   printf 'Backing up existing settings.json → %s\n' "$BACKUP"
-  mv "$SETTINGS" "$BACKUP"
+  cp "$SETTINGS" "$BACKUP"
 fi
-
-ln -sf "$REPO_DIR/settings.json" "$SETTINGS"
-printf 'Linked: settings.json\n'
+cp "$REPO_DIR/settings.json" "$SETTINGS"
+printf 'Copied: settings.json\n'
 
 # Symlink CLAUDE.md
 ln -sf "$REPO_DIR/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md"
@@ -64,14 +71,11 @@ if ! [[ -x "$RAILGUARD_BIN" ]]; then
 fi
 
 # Always configure railguard (idempotent; picks up policy changes on re-run)
-# railguard install rewrites settings.json with machine-specific absolute paths;
-# save and restore it so the repo version (portable ~ paths) wins.
-SETTINGS_TMP=$(mktemp)
-cp "$REPO_DIR/settings.json" "$SETTINGS_TMP"
+# railguard install rewrites the live settings.json with machine-specific
+# absolute paths; redeploy the template afterwards so portable ~ paths win.
 printf 'Configuring railguard...\n'
 "$RAILGUARD_BIN" install
-cp "$SETTINGS_TMP" "$REPO_DIR/settings.json"
-rm -f "$SETTINGS_TMP"
+cp "$REPO_DIR/settings.json" "$SETTINGS"
 
 # Warn on Ubuntu 24.04+ if the bwrap AppArmor profile isn't set up
 if grep -qi 'ubuntu' /etc/os-release 2>/dev/null && ! [[ -f /etc/apparmor.d/bwrap ]]; then

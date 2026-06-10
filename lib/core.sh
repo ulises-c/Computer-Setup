@@ -574,7 +574,7 @@ desktop_main() {
   printf '==> Detected distro family: %s\n' "$PLATFORM"
   CONFIG_SRC_DIR="$SETUP_ROOT/linux-desktop"
   RELATED_SCRIPTS=(
-    "agentic-ai/Claude/install.sh|Claude Code config — symlink settings, hooks, and CLAUDE.md into ~/.claude"
+    "agentic-ai/Claude/install.sh|Claude Code config — deploy settings, hooks, and CLAUDE.md into ~/.claude"
     "SSH_and_GPG/create_ssh_key.sh|Generate an SSH key (and add it to GitHub)"
     "SSH_and_GPG/create_gpg_key.sh|Generate a GPG key for signed commits"
     "linux-desktop/verify.sh|Verify this install (read-only health check)"

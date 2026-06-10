@@ -115,7 +115,6 @@
       ]
     }
   },
-  "advisorModel": "opus",
   "skipDangerousModePermissionPrompt": true,
   "enabledPlugins": {
     "claude-hud@claude-hud": true
