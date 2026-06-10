@@ -128,27 +128,35 @@ platform_main() {
   claude_code_step
 
   # ── Ghostty config ──────────────────────────────────────────────────────────
-  # Written to XDG path (~/.config/ghostty/) — works on both macOS and Linux.
-  # On macOS the platform-specific path loads after XDG and overrides it,
-  # so we rename it if it exists to keep XDG as the single source of truth.
+  # Written to the XDG path (~/.config/ghostty/) as plain `config`, matching
+  # the Linux deploy — Ghostty supports XDG on macOS too. macOS ALSO loads
+  # ~/Library/Application Support/com.mitchellh.ghostty/ after XDG with later
+  # values overriding, and either location may carry a pre-1.2.3 `config` or a
+  # 1.2.3+ `config.ghostty` — rename all of them so the deployed file is the
+  # single source of truth.
   local ghostty_cfg_dir="${XDG_CONFIG_HOME:-$HOME/.config}/ghostty"
-  local ghostty_cfg="$ghostty_cfg_dir/config.ghostty"
-  local macos_ghostty_cfg="$HOME/Library/Application Support/com.mitchellh.ghostty/config.ghostty"
+  local ghostty_cfg="$ghostty_cfg_dir/config"
+  local macos_ghostty_dir="$HOME/Library/Application Support/com.mitchellh.ghostty"
+  local stale
 
   if [[ "$DRY_RUN" == true ]]; then
     printf '  [dry-run] mkdir -p %s\n' "$ghostty_cfg_dir"
     [[ -f "$ghostty_cfg" ]] && printf '  [dry-run] backup %s → %s.bak\n' "$ghostty_cfg" "$ghostty_cfg"
     printf '  [dry-run] cp ghostty.config → %s\n' "$ghostty_cfg"
-    [[ -f "$macos_ghostty_cfg" ]] && printf '  [dry-run] rename macOS-specific config to .bak\n'
+    for stale in "$ghostty_cfg_dir/config.ghostty" "$macos_ghostty_dir/config.ghostty" "$macos_ghostty_dir/config"; do
+      [[ -f "$stale" ]] && printf '  [dry-run] rename conflicting config %s → %s.bak\n' "$stale" "$stale"
+    done
   else
     mkdir -p "$ghostty_cfg_dir"
     [[ -f "$ghostty_cfg" ]] && cp "$ghostty_cfg" "${ghostty_cfg}.bak"
     cp "$SETUP_ROOT/dotfiles/ghostty.config" "$ghostty_cfg"
     printf '==> Ghostty config written to %s\n' "$ghostty_cfg"
-    if [[ -f "$macos_ghostty_cfg" ]]; then
-      mv "$macos_ghostty_cfg" "${macos_ghostty_cfg}.bak"
-      printf '==> Renamed macOS-specific Ghostty config to .bak (XDG takes precedence)\n'
-    fi
+    for stale in "$ghostty_cfg_dir/config.ghostty" "$macos_ghostty_dir/config.ghostty" "$macos_ghostty_dir/config"; do
+      if [[ -f "$stale" ]]; then
+        mv "$stale" "${stale}.bak"
+        printf '==> Renamed conflicting Ghostty config %s → .bak\n' "$stale"
+      fi
+    done
   fi
 
   # ── tmux config ─────────────────────────────────────────────────────────────
