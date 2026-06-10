@@ -17,7 +17,7 @@ notify, no zoxide, no fzf keybindings, no bat man pages.
 
 ## Target state
 
-Match linux-desktop/zshrc.example feature set while keeping macOS-specific
+Match dotfiles/zshrc.example feature set while keeping macOS-specific
 bits (Homebrew PATH, brew completions, `brewup` alias).
 
 ## Changes required
@@ -86,7 +86,7 @@ fi
 ### 3. RPROMPT with command duration
 
 **Add** the `_prompt_precmd` / `_prompt_preexec` hooks and RPROMPT from
-linux-desktop/zshrc.example. Replace the simple `precmd() { vcs_info }`
+dotfiles/zshrc.example. Replace the simple `precmd() { vcs_info }`
 with the full precmd that also tracks command duration.
 
 ```zsh

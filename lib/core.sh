@@ -228,6 +228,18 @@ pnpm_install_tier() {
 
 # ── Shared post-install steps ─────────────────────────────────────────────────
 
+# Deploy ~/.zshrc from the shared dotfiles base unless the platform folder
+# ships its own zshrc.example override (linux-server does — headless, so its
+# zshrc drops Ghostty/fastfetch/notification hooks).
+deploy_zshrc() {
+  local src="$SETUP_ROOT/dotfiles/zshrc.example" from="dotfiles/zshrc.example"
+  if [[ -f "$CONFIG_SRC_DIR/zshrc.example" ]]; then
+    src="$CONFIG_SRC_DIR/zshrc.example"
+    from="${CONFIG_SRC_DIR##*/}/zshrc.example (platform override)"
+  fi
+  deploy_config "$src" "$HOME/.zshrc" "$from" yes
+}
+
 # Copy a config file into place, backing up a differing existing one.
 deploy_config() {
   local src="$1" dst="$2" from="${3:-}" backup="${4:-yes}"
@@ -529,7 +541,7 @@ desktop_main() {
 
   set_default_shell
   printf '\n'
-  deploy_config "$CONFIG_SRC_DIR/zshrc.example" "$HOME/.zshrc" "zshrc.example" yes
+  deploy_zshrc
   printf '\n'
   deploy_config "$SETUP_ROOT/dotfiles/tmux.conf" "$HOME/.tmux.conf" "tmux.conf" yes
   printf '\n'

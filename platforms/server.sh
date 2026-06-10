@@ -30,7 +30,7 @@ platform_main() {
   set_default_shell
 
   printf '\n'
-  deploy_config "$CONFIG_SRC_DIR/zshrc.example" "$HOME/.zshrc" "zshrc.example" yes
+  deploy_zshrc
   printf '\n'
   deploy_config "$SETUP_ROOT/dotfiles/tmux.conf" "$HOME/.tmux.conf" "tmux.conf" yes
 

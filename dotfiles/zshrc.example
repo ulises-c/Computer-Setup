@@ -1,9 +1,11 @@
 # ═══════════════════════════════════════════════════════════════
-#  ~/.zshrc  —  Linux desktop zsh config (Ubuntu / Arch)
+#  ~/.zshrc  —  shared zsh config (Linux desktop: Ubuntu / Arch)
 # ═══════════════════════════════════════════════════════════════
+# Base zshrc deployed by setup.sh; a platform folder can ship its own
+# zshrc.example to override it (linux-server does — headless, no Ghostty).
 # Requires: zsh, zsh-antidote, zoxide, fastfetch, fzf, bat, fd, eza
 # Plugins managed by antidote — see ~/.zsh_plugins.txt
-# Install:  bash linux-desktop/setup.sh
+# Install:  bash setup.sh
 
 # ── Instant prompt (Powerlevel10k — keep at very top) ──────────
 [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]] && \

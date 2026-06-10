@@ -53,9 +53,7 @@ migration gated on dry-run parity.
 ## Dotfiles consolidation — DONE as unification Phase 7 (PR #37)
 
 Shared configs were duplicated per-folder and could drift silently across devices.
-Folded into #37 once the root engine owned all deploys. The zshrc variants
-intentionally differ (server drops Ghostty/fastfetch/notifications) and stay
-per-folder.
+Folded into #37 once the root engine owned all deploys.
 
 - [x] Create `dotfiles/` and move the byte-identical files: `tmux.conf`, `ghostty.config`
 - [x] Point the root engine's deploy steps (`lib/core.sh`, `platforms/macos.sh`,
@@ -65,6 +63,11 @@ per-folder.
 - [x] Ghostty: single universal config in `dotfiles/` (the two copies were already
       byte-identical); no overlay mechanism until an OS-specific setting actually
       exists
+- [x] zshrc: `dotfiles/zshrc.example` is the shared base (`deploy_zshrc`); a platform
+      folder shipping its own `zshrc.example` overrides it — only `linux-server/`
+      does, because it's headless (no Ghostty/fastfetch/notification hooks).
+      macOS isn't part of zshrc deploys (its flow appends to the existing `~/.zshrc`;
+      `macOS/zshrc.example` stays as reference only)
       (e.g., macOS font settings, Linux-specific tweaks)
 - [ ] Later: consider base + per-platform overlay for zshrc (desktop vs server vs macOS)
 

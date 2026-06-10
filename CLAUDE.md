@@ -26,11 +26,16 @@ configs and docs.
   jq selection, install loops, config deploys. `lib/verify.sh` — check engine.
 - `platforms/<platform>.sh` — per-platform quirks only (bootstrap, manager
   invocations).
-- `dotfiles/` — configs shared verbatim across platforms (`tmux.conf`,
-  `ghostty.config`); the engine deploys them from here on every platform.
+- `dotfiles/` — configs shared across platforms (`tmux.conf`,
+  `ghostty.config`, `zshrc.example`); the engine deploys them from here.
+  zshrc has an override system (`deploy_zshrc`): a platform folder shipping
+  its own `zshrc.example` wins over the dotfiles base — only `linux-server/`
+  does (headless: no Ghostty/fastfetch/notification hooks). macOS is not part
+  of zshrc deploys at all — its flow appends lines to the user's existing
+  `~/.zshrc` (`add_to_zshrc`), and `macOS/zshrc.example` is reference only.
 - `macOS/`, `linux-desktop/`, `linux-server/` — platform-specific configs
-  (zshrc variants, zsh_plugins, p10k), docs, and thin shim scripts that exec
-  the root entrypoints.
+  (server zshrc override, macOS reference zshrc, zsh_plugins, p10k), docs,
+  and thin shim scripts that exec the root entrypoints.
 - `scripts/dryrun-smoke.sh` — runs `setup.sh --dry-run` for every platform and
   asserts it exits clean with install actions; also run in CI.
 
