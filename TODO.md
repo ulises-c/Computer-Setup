@@ -15,7 +15,8 @@ migration gated on dry-run parity.
 - [x] Phase 2 — Extract `lib/core.sh` + `platforms/{macos,arch,ubuntu,server}.sh`; add
       root `setup.sh` dispatcher; gate on `--dry-run` parity vs old scripts
       — `scripts/dryrun-parity.sh` passes 22/22 platform × flag combos
-- [ ] Phase 3 — Unify `verify.sh` the same way (shared core + platform checks)
+- [x] Phase 3 — Unify `verify.sh` the same way (shared core + platform checks)
+      — `scripts/verify-parity.sh` passes 21/21 platform × flag combos
 - [ ] Phase 4 — Convert per-folder `setup.sh`/`verify.sh` into thin shims; update
       `README.md` / `CLAUDE.md` for the root entrypoint
 - [ ] Phase 5 — Delete the three old per-folder package JSONs once parity is proven
