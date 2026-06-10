@@ -1,0 +1,76 @@
+# LACT config for AMD Radeon AI PRO R9700 — AI inference / daily driver tuning
+#
+# Place at: /etc/lact/config.yaml
+# After editing: sudo systemctl restart lactd
+#
+# Find your GPU ID:  lact-cli list-gpus
+# Replace GPU_ID_HERE with the output (e.g. 0000:09:00.0)
+#
+# ── BEFORE APPLYING: verify fan control works on your unit ──────────────────
+#   Some R9700 boards (ASUS Turbo, vBIOS 115-G287BP00-100) have a known SMU
+#   firmware mismatch (driver v46 vs card v50) that makes pwm1 read-only and
+#   grays out LACT's fan controls entirely. Check first:
+#
+#     ls /sys/class/drm/card0/device/gpu_od/fan_ctrl/
+#     # must exist and list: fan_curve  acoustic_limit_rpm_threshold  ...
+#     sudo dmesg | grep -i "smu.*version"
+#     # if you see "SMU driver if version not matched" → fan curve is a no-op
+#
+#   If broken: see lact_r9700_tuning.md → "Known issue: fan control" for status
+#   and the sysfs fallback for undervolting without fan control.
+#
+# ── PREREQUISITES ────────────────────────────────────────────────────────────
+#   ppfeaturemask MUST be set via kernel boot parameter — NOT via modprobe.d.
+#   The driver silently strips the OD feature bit (0x4000) when loaded from
+#   modprobe, resulting in 0xfff7bfff instead of 0xfff7ffff.
+#
+#   CachyOS systemd-boot: add to options line in /boot/loader/entries/*.conf
+#   GRUB: add to GRUB_CMDLINE_LINUX_DEFAULT in /etc/default/grub, then:
+#         sudo grub-mkconfig -o /boot/grub/grub.cfg
+#
+#     amdgpu.ppfeaturemask=0xfff7ffff
+#
+#   Verify after reboot:
+#     cat /sys/module/amdgpu/parameters/ppfeaturemask
+#     # must print 0xfff7ffff — if 0xfff7bfff, you used modprobe (fix it)
+#
+# ── TUNING RATIONALE ─────────────────────────────────────────────────────────
+#   voltage_offset: -80mV  — conservative, proven on R9700 Linux; reduces heat
+#                             without touching max clock. Go lower (-100 to
+#                             -120mV) only after stability testing.
+#   power_cap: 210W         — stock is 300W (confirmed max on R9700 AI Pro);
+#                             range is 210–300W. 210W is enough for sustained
+#                             inference (token gen is memory-bandwidth bound).
+#                             Reduces fan noise. ~15% slower prefill (TTFT).
+#                             For max performance: 300W + -75mV (see tuning doc)
+#   fan curve (junction)    — 5 entries required on RDNA3+. Quiet below 70°C,
+#                             gradual 5°C-step ramp to 60% at 90°C junction.
+#                             Silently ignored if SMU mismatch bug is present.
+
+daemon:
+  log_level: info
+  admin_group: wheel
+
+apply_settings_timer: 5
+
+gpus:
+  GPU_ID_HERE:
+    fan_control_enabled: true
+    fan_control_settings:
+      mode: curve
+      temperature_key: junction
+      interval_ms: 500
+      # RDNA3+ requires exactly 5 curve entries.
+      # Keys = junction temp (°C), values = fan speed (0.0–1.0).
+      curve:
+        35: 0.25
+        70: 0.38
+        75: 0.42
+        80: 0.50
+        90: 0.60
+      spindown_delay_ms: 0
+      change_threshold: 2
+    clocks_configuration:
+      voltage_offset: -80
+    power_cap: 210.0
+    performance_level: manual
