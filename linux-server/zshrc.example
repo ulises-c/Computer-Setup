@@ -1,8 +1,9 @@
 # ═══════════════════════════════════════════════════════════════
 #  ~/.zshrc  —  Linux server zsh config (Ubuntu Server)
 # ═══════════════════════════════════════════════════════════════
-# Requires: zsh, zsh-autosuggestions, zsh-syntax-highlighting,
-#           fastfetch, fzf, bat (batcat), fd-find (fdfind), eza
+# Requires: zsh, antidote (~/.antidote), fastfetch, fzf,
+#           bat (batcat), fd-find (fdfind), eza
+# Plugins managed by antidote — see ~/.zsh_plugins.txt
 # Install:  bash linux-server/setup.sh
 
 
@@ -106,9 +107,10 @@ export LC_ALL='en_US.UTF-8'
 
 
 # ═══════════════════════════════════════════════════════════════
-#  PLUGINS  (apt install zsh-autosuggestions zsh-syntax-highlighting)
+#  ANTIDOTE  (plugin manager — git clone, noble has no apt package)
 # ═══════════════════════════════════════════════════════════════
-[[ -f /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh ]] && \
-  source /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh
-[[ -f /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh ]] && \
-  source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+# antidote sources all plugins listed in ~/.zsh_plugins.txt
+if [[ -f "$HOME/.antidote/antidote.zsh" ]]; then
+  source "$HOME/.antidote/antidote.zsh"
+  antidote load
+fi

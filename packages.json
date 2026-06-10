@@ -8,11 +8,13 @@
   },
   {
     "name": "zsh-antidote",
-    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay" },
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "custom" },
     "macos_name": "antidote",
     "priority": "high",
     "optional": false,
-    "description": "Lightweight zsh plugin manager — handles autosuggestions, syntax highlighting, completions, substring search, and abbreviations via a plugins file"
+    "handled_by_setup": true,
+    "install_command": { "server": "git clone --depth=1 https://github.com/mattmc3/antidote.git \"$HOME/.antidote\"" },
+    "description": "Lightweight zsh plugin manager — handles autosuggestions, syntax highlighting, completions, substring search, and abbreviations via a plugins file; noble has no zsh-antidote apt package, so the server clones it to ~/.antidote"
   },
   {
     "name": "zsh-theme-powerlevel10k",
@@ -20,20 +22,6 @@
     "priority": "high",
     "optional": false,
     "description": "Powerlevel10k zsh prompt — rich git status, command duration, exit code, instant prompt; Arch only (Ubuntu: add romkatv/powerlevel10k to zsh_plugins.txt; macOS: brew install powerlevel10k by hand — zshrc falls back to vcs_info); run `p10k configure` to set up"
-  },
-  {
-    "name": "zsh-autosuggestions",
-    "package_manager": { "server": "apt" },
-    "priority": "high",
-    "optional": false,
-    "description": "Fish-style history-based suggestions for zsh (desktops get this via antidote)"
-  },
-  {
-    "name": "zsh-syntax-highlighting",
-    "package_manager": { "server": "apt" },
-    "priority": "high",
-    "optional": false,
-    "description": "Real-time syntax highlighting in zsh (desktops get this via antidote)"
   },
   {
     "name": "zoxide",
@@ -106,12 +94,20 @@
   },
   {
     "name": "rust",
-    "package_manager": { "ubuntu": "apt", "arch": "yay" },
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay" },
     "ubuntu_name": "rustup",
     "arch_name": "rustup",
     "priority": "medium",
     "optional": false,
-    "description": "Rust toolchain via rustup — distro rustc goes stale; setup runs 'rustup default stable'"
+    "description": "Rust toolchain — rustup on Linux (distro rustc goes stale; setup runs 'rustup default stable'), plain rust formula on macOS"
+  },
+  {
+    "name": "go",
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay" },
+    "ubuntu_name": "golang-go",
+    "priority": "medium",
+    "optional": false,
+    "description": "Go toolchain"
   },
   {
     "name": "ghostty",
@@ -135,6 +131,14 @@
     "priority": "medium",
     "optional": false,
     "description": "GitHub CLI — PRs, issues, Actions from the terminal; apt platforms use the GitHub CLI apt repo (setup adds it)"
+  },
+  {
+    "name": "forgejo-cli",
+    "package_manager": { "macos": "brew", "ubuntu": "custom", "arch": "custom" },
+    "priority": "medium",
+    "optional": false,
+    "install_command": "cargo install forgejo-cli",
+    "description": "Forgejo CLI (fj) — PRs, issues, releases against the self-hosted Forgejo instance; no Linux package, cargo is the upstream install path"
   },
   {
     "name": "git-lfs",
@@ -168,10 +172,31 @@
   },
   {
     "name": "shellcheck",
-    "package_manager": { "ubuntu": "apt", "arch": "yay" },
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay" },
     "priority": "medium",
     "optional": false,
     "description": "Static analysis linter for shell scripts — used by the pre-commit config and CI"
+  },
+  {
+    "name": "codespell",
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Spell checker for source code — catches common misspellings in identifiers, comments, and docs"
+  },
+  {
+    "name": "swiftlint",
+    "package_manager": { "macos": "brew" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Swift linter — Swift development is macOS-only"
+  },
+  {
+    "name": "swiftformat",
+    "package_manager": { "macos": "brew" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Swift code formatter — pairs with swiftlint"
   },
   {
     "name": "gnupg",
@@ -217,6 +242,13 @@
     "optional": true,
     "install_command": "See https://github.com/ggml-org/llama.cpp#build",
     "description": "LLM inference engine — run local models on CPU/GPU"
+  },
+  {
+    "name": "mlx-lm",
+    "package_manager": { "macos": "brew" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Run and fine-tune LLMs with Apple MLX on Apple silicon"
   },
   {
     "name": "mactop",
@@ -284,7 +316,7 @@
   },
   {
     "name": "ripgrep",
-    "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
     "description": "Fast recursive grep replacement — command: rg"
@@ -401,6 +433,16 @@
     "description": "Claude Code — terminal-based AI coding assistant"
   },
   {
+    "name": "opencode",
+    "package_manager": { "macos": "brew", "ubuntu": "custom", "arch": "yay" },
+    "macos_name": "anomalyco/tap/opencode",
+    "arch_name": "opencode-bin",
+    "priority": "medium",
+    "optional": false,
+    "install_command": { "ubuntu": "curl -fsSL https://opencode.ai/install | bash" },
+    "description": "Terminal-based AI coding agent — brew installs from the anomalyco tap"
+  },
+  {
     "name": "claude-desktop",
     "package_manager": { "macos": "brew-cask", "ubuntu": "custom", "arch": "yay" },
     "macos_name": "claude",
@@ -426,6 +468,16 @@
     "priority": "medium",
     "optional": false,
     "description": "Open source web browser"
+  },
+  {
+    "name": "zen-browser",
+    "package_manager": { "macos": "brew-cask", "ubuntu": "custom", "arch": "yay" },
+    "macos_name": "zen",
+    "arch_name": "zen-browser-bin",
+    "priority": "medium",
+    "optional": false,
+    "install_command": { "ubuntu": "flatpak install flathub app.zen_browser.zen" },
+    "description": "Firefox-based browser focused on privacy and a calmer UI — no Ubuntu snap/apt package, flatpak is the upstream install path"
   },
   {
     "name": "chromium",
@@ -575,6 +627,22 @@
     "description": "Notes and project management — unofficial snap/AUR packages on Linux"
   },
   {
+    "name": "obsidian",
+    "package_manager": { "macos": "brew-cask", "ubuntu": "snap", "arch": "yay" },
+    "priority": "medium",
+    "optional": false,
+    "install_command": "sudo snap install obsidian --classic",
+    "description": "Markdown knowledge base — official snap requires --classic for vault access"
+  },
+  {
+    "name": "anki",
+    "package_manager": { "macos": "brew-cask", "ubuntu": "custom", "arch": "yay" },
+    "priority": "medium",
+    "optional": false,
+    "install_command": { "ubuntu": "Download the installer from https://apps.ankiweb.net (apt's anki is years stale)" },
+    "description": "Spaced-repetition flashcards"
+  },
+  {
     "name": "Spark Mail – AI Email Inbox",
     "package_manager": { "macos": "app-store" },
     "priority": "medium",
@@ -637,7 +705,7 @@
   },
   {
     "name": "nmap",
-    "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "low",
     "optional": true,
     "description": "Network scanner — discover hosts and open ports on the local network"

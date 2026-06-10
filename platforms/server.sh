@@ -33,10 +33,21 @@ platform_main() {
   setup_bat_fd_symlinks
   set_default_shell
 
+  # ── antidote (zsh plugin manager — no noble apt package) ───────────────────
+  printf '\n'
+  if [[ -d "$HOME/.antidote" ]]; then
+    printf '==> antidote already installed\n'
+  else
+    printf '==> Installing antidote...\n'
+    run_eval "$(custom_cmd zsh-antidote)"
+  fi
+
   printf '\n'
   deploy_zshrc
   printf '\n'
   deploy_config "$SETUP_ROOT/dotfiles/tmux.conf" "$HOME/.tmux.conf" "tmux.conf" yes
+  printf '\n'
+  deploy_config "$CONFIG_SRC_DIR/zsh_plugins.txt" "$HOME/.zsh_plugins.txt" "linux-server/zsh_plugins.txt (platform override)" no
 
   # ── Tailscale ───────────────────────────────────────────────────────────────
   printf '\n'

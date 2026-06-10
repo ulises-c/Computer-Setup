@@ -76,6 +76,14 @@ Folded into #37 once the root engine owned all deploys.
       manages the plugins now — `brew uninstall` them on the Mac after migrating).
       `macOS/zshrc.example` + `zshrc-upgrade.md` deleted (plan absorbed)
       (e.g., macOS font settings, Linux-specific tweaks)
+- [ ] Mac mini live-run cleanup (from the 2026-06 `brew leaves` audit): `brew
+      uninstall` the testing leftovers `forgejo`, `tea`, and `python@3.12`
+      (project Pythons come from pyenv/uv), plus `zsh-autosuggestions` /
+      `zsh-syntax-highlighting` (antidote manages them now), and
+      `brew uninstall --cask claude-code` (repo installs it via curl)
+- [ ] MBP live-run cleanup (same audit): `brew uninstall tea python-tk@3.11
+      python@3.11 zsh-autosuggestions zsh-syntax-highlighting`; pre-existing
+      casks (anki, ghostty, obsidian) get picked up by the cask `--adopt` flag
 - [ ] Later: consider base + per-platform overlay for zshrc (desktop vs server vs macOS)
 
 ## OpenCode local models
