@@ -390,6 +390,14 @@ snap_install_tier() {
 }
 
 # Echo the other repo setup scripts (those present on disk) for discoverability.
+# One list for all platforms — root verify.sh auto-detects, so nothing diverges.
+RELATED_SCRIPTS=(
+  "agentic-ai/Claude/install.sh|Claude Code config — deploy settings, hooks, and CLAUDE.md into ~/.claude"
+  "SSH_and_GPG/create_ssh_key.sh|Generate an SSH key (and add it to GitHub)"
+  "SSH_and_GPG/create_gpg_key.sh|Generate a GPG key for signed commits"
+  "verify.sh|Verify this install (read-only health check; auto-detects platform)"
+)
+
 print_related_scripts() {
   local entry rel desc shown=false
   for entry in "${RELATED_SCRIPTS[@]}"; do
@@ -573,13 +581,6 @@ desktop_footer() {
 desktop_main() {
   printf '==> Detected distro family: %s\n' "$PLATFORM"
   CONFIG_SRC_DIR="$SETUP_ROOT/linux-desktop"
-  RELATED_SCRIPTS=(
-    "agentic-ai/Claude/install.sh|Claude Code config — deploy settings, hooks, and CLAUDE.md into ~/.claude"
-    "SSH_and_GPG/create_ssh_key.sh|Generate an SSH key (and add it to GitHub)"
-    "SSH_and_GPG/create_gpg_key.sh|Generate a GPG key for signed commits"
-    "linux-desktop/verify.sh|Verify this install (read-only health check)"
-  )
-
   platform_bootstrap
 
   printf '\n'

@@ -58,14 +58,6 @@ print_app_store_reminders() {
 platform_main() {
   # shellcheck disable=SC2034  # consumed by deploy_zshrc in lib/core.sh
   CONFIG_SRC_DIR="$SETUP_ROOT/macOS"
-  # shellcheck disable=SC2034  # consumed by print_related_scripts in lib/core.sh
-  RELATED_SCRIPTS=(
-    "agentic-ai/Claude/install.sh|Claude Code config — deploy settings, hooks, and CLAUDE.md into ~/.claude"
-    "SSH_and_GPG/create_ssh_key.sh|Generate an SSH key (and add it to GitHub)"
-    "SSH_and_GPG/create_gpg_key.sh|Generate a GPG key for signed commits"
-    "macOS/verify.sh|Verify this install (read-only health check)"
-  )
-
   # ── Homebrew ────────────────────────────────────────────────────────────────
   if ! command -v brew &>/dev/null; then
     printf '==> Installing Homebrew...\n'
