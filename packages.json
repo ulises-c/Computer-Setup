@@ -15,13 +15,6 @@
     "description": "Lightweight zsh plugin manager — handles autosuggestions, syntax highlighting, completions, substring search, and abbreviations via a plugins file"
   },
   {
-    "name": "zsh-theme-powerlevel10k",
-    "package_manager": { "arch": "yay" },
-    "priority": "high",
-    "optional": false,
-    "description": "Powerlevel10k zsh prompt — rich git status, command duration, exit code, instant prompt; Arch only (Ubuntu: add romkatv/powerlevel10k to zsh_plugins.txt; macOS: brew install powerlevel10k by hand — zshrc falls back to vcs_info); run `p10k configure` to set up"
-  },
-  {
     "name": "zoxide",
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay" },
     "priority": "high",

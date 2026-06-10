@@ -79,16 +79,22 @@ Folded into #37 once the root engine owned all deploys.
 - [ ] Mac mini live-run cleanup (from the 2026-06 `brew leaves` audit): `brew
       uninstall` the testing leftovers `forgejo`, `tea`, and `python@3.12`
       (project Pythons come from pyenv/uv), plus `zsh-autosuggestions` /
-      `zsh-syntax-highlighting` (antidote manages them now), and
-      `brew uninstall --cask claude-code` (repo installs it via curl)
+      `zsh-syntax-highlighting` / `powerlevel10k` (antidote manages them now),
+      and `brew uninstall --cask claude-code` (repo installs it via curl)
 - [ ] MBP live-run cleanup (same audit): `brew uninstall tea python-tk@3.11
-      python@3.11 zsh-autosuggestions zsh-syntax-highlighting`; pre-existing
-      casks (anki, ghostty, obsidian) get picked up by the cask `--adopt` flag
+      python@3.11 zsh-autosuggestions zsh-syntax-highlighting powerlevel10k`;
+      pre-existing casks (anki, ghostty, obsidian) get picked up by the cask
+      `--adopt` flag
 - [x] Ubuntu desktop live run (2026-06, at `eb0fe49`): gh migrated to the
       official cli.github.com apt repo, micro/obsidian snaps in, uv via pipx,
       shared zshrc + p10k + ghostty deployed (zshrc auto-backup worked).
       `verify.sh --work` green except the by-design manual installs
       (forgejo-cli, opencode, zen-browser, anki)
+- [x] Ubuntu live-run follow-up: p10k never loaded — the only installer was the
+      arch-only `zsh-theme-powerlevel10k` yay entry, so Ubuntu/macOS fell back to
+      vcs_info. Dropped the entry; `romkatv/powerlevel10k` is now an antidote
+      plugin on all desktops and the zshrc guards the fallback on
+      `$+functions[p10k]`
 - [ ] Ubuntu desktop leftover: `sudo apt remove micro` — the stale apt 2.0.13
       still shadows the snap (`/usr/bin` precedes `/snap/bin` in PATH)
 - [ ] Caveat for the remaining live runs (CachyOS, both Macs): setup migrates

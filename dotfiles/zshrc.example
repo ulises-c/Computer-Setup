@@ -104,13 +104,9 @@ setopt NO_BEEP
 # ═══════════════════════════════════════════════════════════════
 #  PROMPT  (Powerlevel10k if available, vcs_info fallback)
 # ═══════════════════════════════════════════════════════════════
-# Arch: pacman -S zsh-theme-powerlevel10k | macOS: brew install powerlevel10k
-# Run `p10k configure` once after install.
-if [[ -f /usr/share/zsh-theme-powerlevel10k/powerlevel10k.zsh-theme ]]; then
-  source /usr/share/zsh-theme-powerlevel10k/powerlevel10k.zsh-theme
-elif [[ -f /opt/homebrew/share/powerlevel10k/powerlevel10k.zsh-theme ]]; then
-  source /opt/homebrew/share/powerlevel10k/powerlevel10k.zsh-theme
-else
+# Powerlevel10k loads via antidote (romkatv/powerlevel10k in ~/.zsh_plugins.txt);
+# settings come from ~/.p10k.zsh sourced at the bottom of this file.
+if ! (( $+functions[p10k] )); then
   autoload -Uz vcs_info
 
   _prompt_precmd() {
