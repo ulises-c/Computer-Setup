@@ -328,6 +328,14 @@ apt_bootstrap() {
     need_update=true
   fi
 
+  # obs-studio — noble's archive lags; OBS officially recommends their PPA.
+  # Ubuntu-only: the server doesn't install obs-studio.
+  if [[ "$PLATFORM" == "ubuntu" ]] && ! grep -rq obsproject /etc/apt/sources.list.d/ 2>/dev/null; then
+    printf '==> Adding OBS Studio PPA...\n'
+    run sudo add-apt-repository -y ppa:obsproject/obs-studio
+    need_update=true
+  fi
+
   # gh — GitHub CLI apt repo. Gate on the repo file, not the binary: a stale
   # distro-repo gh (e.g. Ubuntu universe 2.45) must still get migrated (#25).
   if [[ ! -f /etc/apt/sources.list.d/github-cli.list ]]; then

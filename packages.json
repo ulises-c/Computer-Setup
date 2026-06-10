@@ -152,8 +152,7 @@
   },
   {
     "name": "git-xet",
-    "package_manager": { "ubuntu": "custom", "arch": "yay" },
-    "arch_name": "git-xet-bin",
+    "package_manager": { "ubuntu": "custom", "arch": "custom" },
     "priority": "medium",
     "optional": false,
     "environment": ["personal"],
@@ -190,8 +189,7 @@
   },
   {
     "name": "hf",
-    "package_manager": { "ubuntu": "pipx", "arch": "yay" },
-    "arch_name": "python-huggingface-hub",
+    "package_manager": { "ubuntu": "pipx", "arch": "pipx" },
     "priority": "medium",
     "optional": false,
     "environment": ["personal"],
@@ -229,14 +227,15 @@
   },
   {
     "name": "micro",
-    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "package_manager": { "macos": "brew", "ubuntu": "snap", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
-    "description": "Modern terminal text editor with mouse support and familiar keybindings"
+    "install_command": "sudo snap install micro --classic",
+    "description": "Modern terminal text editor — snap on Ubuntu (noble apt is stuck at 2.0.13; upstream guarantees latest via snap)"
   },
   {
     "name": "nvtop",
-    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "package_manager": { "macos": "brew", "ubuntu": "snap", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
     "description": "GPU process monitor — complements htop with GPU visibility"
@@ -376,6 +375,7 @@
   {
     "name": "docker",
     "package_manager": { "macos": "brew-cask", "ubuntu": "custom", "arch": "yay" },
+    "macos_name": "docker-desktop",
     "priority": "low",
     "optional": true,
     "handled_by_setup": true,
