@@ -12,19 +12,6 @@ server_apt_install_tier() {
   run sudo apt install -y $names
 }
 
-print_custom_reminders() {
-  local priority="$1" items
-  # shellcheck disable=SC2016
-  items=$(jq -r --arg plat "$PLATFORM" --arg pr "$priority" \
-    "$CORE_JQ_DEFS"'.[] | select(
-        .package_manager[$plat] == "custom" and .priority == $pr and
-        (.handled_by_setup != true)
-      ) | "  - \(.name)\n    \(.description)\n    Install: \(icfor($plat))"' \
-    "$PACKAGES_JSON")
-  [[ -n "$items" ]] && printf '%s\n' "$items"
-  return 0
-}
-
 platform_main() {
   apt_bootstrap
 
@@ -92,12 +79,10 @@ platform_main() {
   run loginctl enable-linger "$USER"
 
   # ── claude-code ─────────────────────────────────────────────────────────────
-  # Not in packages.json for server (would break Phase 1 parity); fold it into
-  # the data once the legacy server JSON is deleted in Phase 5.
   printf '\n'
   if ! command -v claude &>/dev/null; then
     printf '==> Installing claude-code...\n'
-    run_eval "curl -fsSL https://claude.ai/install.sh | bash"
+    run_eval "$(custom_cmd claude-code)"
   else
     printf '==> claude-code already installed\n'
   fi
@@ -187,14 +172,7 @@ platform_main() {
   done
 
   # ── Manual install reminders ────────────────────────────────────────────────
-  local custom_reminders
-  custom_reminders="$(print_custom_reminders medium)"
-  [[ "$INCLUDE_OPTIONAL" == true ]] && custom_reminders+="$(print_custom_reminders low)"
-  if [[ -n "$custom_reminders" ]]; then
-    printf '\n'
-    printf 'Install these manually (require their own repo setup):\n'
-    printf '%s\n' "$custom_reminders"
-  fi
+  custom_reminders_section
 
   # ── Done ────────────────────────────────────────────────────────────────────
   printf '\n'

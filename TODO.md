@@ -11,7 +11,8 @@ migration gated on dry-run parity.
 
 - [x] Phase 1 — Author unified root `packages.json`; build `scripts/parity-check.sh`
       proving per-platform install lists match the current per-folder scripts
-      — 231 checks pass (platform × manager × priority × work/personal combos)
+      — 231 checks passed (platform × manager × priority × work/personal combos;
+      gate deleted in Phase 5 along with its legacy-JSON inputs)
 - [x] Phase 2 — Extract `lib/core.sh` + `platforms/{macos,arch,ubuntu,server}.sh`; add
       root `setup.sh` dispatcher; gate on `--dry-run` parity vs old scripts
       — `scripts/dryrun-parity.sh` passed 22/22 platform × flag combos (gate deleted in Phase 4)
@@ -22,11 +23,20 @@ migration gated on dry-run parity.
       — shim output diffed byte-identical vs direct root invocation; the script-level
       gates (`dryrun-parity.sh`, `verify-parity.sh`) self-compare post-shim and were
       deleted (last green run at a8d4149); `scripts/dryrun-smoke.sh` (root dry-run on
-      all four platforms, also in CI) took their place; `parity-check.sh` stays until
-      Phase 5
-- [ ] Phase 5 — Delete the three old per-folder package JSONs once parity is proven
-- [ ] Resolve open questions: server-as-platform vs profile; `install_command`
+      all four platforms, also in CI) took their place; `parity-check.sh` stayed
+      through Phase 5's final green run
+- [x] Phase 5 — Delete the three old per-folder package JSONs once parity is proven
+      — legacy JSONs + `scripts/parity-check.sh` (whose inputs they were) deleted;
+      server claude-code install folded into `packages.json` (`server: custom`,
+      `handled_by_setup: true`); custom-package reminders generalized into
+      `lib/core.sh`, so ubuntu now prints manual-install commands for `git-xet` /
+      `claude-desktop` instead of silently skipping them (the legacy gap);
+      dry-run output diffed vs pre-Phase-5 baseline — identical except that addition
+- [x] Resolve open questions: server-as-platform vs profile; `install_command`
       string vs object; keep `priority: "none"` tier? (see UNIFICATION.md)
+      — resolved: server is a platform key (option A, locked in Phase 1);
+      `install_command` supports both string and per-platform object (`icfor`);
+      `priority: "none"` tier kept — reminder/`--all`-only, never auto-installs
 
 ## Dotfiles consolidation (follow-up PR after #37 merges)
 

@@ -29,7 +29,7 @@ sudo tailscale up
 - [`apt_packages.md`](apt_packages.md) — full package list with descriptions and links
 - [`zshrc.example`](zshrc.example) — reference zsh config; copied to `~/.zshrc` by `setup.sh` if none exists
 - [`tmux.conf`](tmux.conf) — tmux config with mouse support, vi copy mode, and a status bar; copied to `~/.tmux.conf` by `setup.sh`
-- [`linux_server_packages.json`](linux_server_packages.json) — legacy manifest; package data now lives in the root [`packages.json`](../packages.json)
+- [`../packages.json`](../packages.json) — machine-readable package manifest (shared across all platforms)
 
 ## Next steps
 

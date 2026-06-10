@@ -166,6 +166,40 @@ custom_cmd() {
       | icfor($plat) // empty' "$PACKAGES_JSON"
 }
 
+# Manual-install reminders for one tier's custom packages that the engine does
+# not run itself (handled_by_setup != true).
+print_custom_reminders() {
+  local priority="$1" items
+  # shellcheck disable=SC2016
+  items=$(jq -r --arg plat "$PLATFORM" --arg pr "$priority" \
+     --arg w "$INCLUDE_WORK" --arg p "$INCLUDE_PERSONAL" \
+    "$CORE_JQ_DEFS"'.[] | select(
+        .package_manager[$plat] == "custom" and .priority == $pr and
+        (.handled_by_setup != true) and envok($w; $p)
+      ) | "  - \(.name)\n    \(.description)\n    Install: \(icfor($plat))"' \
+    "$PACKAGES_JSON")
+  [[ -n "$items" ]] && printf '%s\n' "$items"
+  return 0
+}
+
+custom_reminders_section() {
+  local reminders low
+  reminders="$(print_custom_reminders medium)"
+  if [[ "$INCLUDE_OPTIONAL" == true ]]; then
+    low="$(print_custom_reminders low)"
+    if [[ -n "$low" ]]; then
+      [[ -n "$reminders" ]] && reminders+=$'\n'
+      reminders+="$low"
+    fi
+  fi
+  if [[ -n "$reminders" ]]; then
+    printf '\n'
+    printf 'Install these manually (require their own repo setup):\n'
+    printf '%s\n' "$reminders"
+  fi
+  return 0
+}
+
 pipx_install_tier() {
   local priority="$1"
   # shellcheck disable=SC2016
@@ -509,6 +543,8 @@ desktop_main() {
     pnpm_install_tier low
     platform_docker_optional
   fi
+
+  custom_reminders_section
 
   desktop_footer
 }

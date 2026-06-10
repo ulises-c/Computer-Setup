@@ -19,17 +19,15 @@ configs and docs.
 - `packages.json` — single source of truth for all package data. Managers are
   keyed by platform (`{macos, ubuntu, arch, server}`); `<platform>_name`
   overrides the install token; `environment` tags gate on `--work`/`--personal`;
-  `custom` managers carry `install_command` (string or per-platform object).
+  `custom` managers carry `install_command` (string or per-platform object) —
+  run by the engine when `handled_by_setup` is true, otherwise printed as a
+  manual-install reminder.
 - `lib/core.sh` — shared engine: arg parsing, platform detection, env filter,
   jq selection, install loops, config deploys. `lib/verify.sh` — check engine.
 - `platforms/<platform>.sh` — per-platform quirks only (bootstrap, manager
   invocations).
 - `macOS/`, `linux-desktop/`, `linux-server/` — configs, docs, and thin shim
-  scripts that exec the root entrypoints. The per-folder `*_packages.json`
-  files are legacy, no longer read by anything (to be deleted in Phase 5; see
-  `UNIFICATION.md`).
-- `scripts/parity-check.sh` — gate proving `packages.json` matches the legacy
-  per-folder JSONs; valid until the legacy JSONs are deleted.
+  scripts that exec the root entrypoints.
 - `scripts/dryrun-smoke.sh` — runs `setup.sh --dry-run` for every platform and
   asserts it exits clean with install actions; also run in CI.
 

@@ -60,6 +60,7 @@
     "package_manager": { "macos": "brew", "ubuntu": "custom", "arch": "custom" },
     "priority": "high",
     "optional": false,
+    "handled_by_setup": true,
     "install_command": "curl https://pyenv.run | bash",
     "description": "Python version manager — compiles from source to avoid distro-packaged Python quirks and broken Homebrew bottles on macOS Tahoe"
   },
@@ -68,6 +69,7 @@
     "package_manager": { "macos": "custom", "ubuntu": "custom", "arch": "custom" },
     "priority": "high",
     "optional": false,
+    "handled_by_setup": true,
     "install_command": "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash",
     "description": "Node version manager — installed via curl per nvm recommendation; brew install causes PATH issues"
   },
@@ -360,6 +362,7 @@
     "package_manager": { "macos": "brew-cask", "ubuntu": "custom", "arch": "yay" },
     "priority": "low",
     "optional": true,
+    "handled_by_setup": true,
     "install_command": "curl -fsSL https://get.docker.com | sudo sh",
     "description": "Container platform — Docker Desktop on macOS, official Docker Engine on Linux"
   },
@@ -374,9 +377,10 @@
   },
   {
     "name": "claude-code",
-    "package_manager": { "macos": "brew-cask", "ubuntu": "custom", "arch": "custom" },
+    "package_manager": { "macos": "brew-cask", "ubuntu": "custom", "arch": "custom", "server": "custom" },
     "priority": "medium",
     "optional": false,
+    "handled_by_setup": true,
     "install_command": "curl -fsSL https://claude.ai/install.sh | bash",
     "description": "Claude Code — terminal-based AI coding assistant"
   },
