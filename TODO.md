@@ -84,6 +84,16 @@ Folded into #37 once the root engine owned all deploys.
 - [ ] MBP live-run cleanup (same audit): `brew uninstall tea python-tk@3.11
       python@3.11 zsh-autosuggestions zsh-syntax-highlighting`; pre-existing
       casks (anki, ghostty, obsidian) get picked up by the cask `--adopt` flag
+- [x] Ubuntu desktop live run (2026-06, at `eb0fe49`): gh migrated to the
+      official cli.github.com apt repo, micro/obsidian snaps in, uv via pipx,
+      shared zshrc + p10k + ghostty deployed (zshrc auto-backup worked).
+      `verify.sh --work` green except the by-design manual installs
+      (forgejo-cli, opencode, zen-browser, anki)
+- [ ] Ubuntu desktop leftover: `sudo apt remove micro` — the stale apt 2.0.13
+      still shadows the snap (`/usr/bin` precedes `/snap/bin` in PATH)
+- [ ] Caveat for the remaining live runs (CachyOS, both Macs): setup migrates
+      install methods but never uninstalls the old copy — after each run,
+      `command -v` every migrated tool to catch shadowed binaries
 - [ ] Later: consider base + per-platform overlay for zshrc (desktop vs server vs macOS)
 
 ## OpenCode local models
