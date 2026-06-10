@@ -5,10 +5,12 @@ Tested on Ubuntu Server LTS. Most packages work on other Debian-based distros.
 ## Quick start
 
 ```sh
-bash linux-server/setup.sh             # core packages + zsh setup
-bash linux-server/setup.sh --optional  # also install samba, smartmontools, nmap, ffmpeg, etc.
-bash linux-server/setup.sh --dry-run   # preview without installing
+bash setup.sh --profile server             # core packages + zsh setup
+bash setup.sh --profile server --optional  # also install samba, smartmontools, nmap, ffmpeg, etc.
+bash setup.sh --profile server --dry-run   # preview without installing
 ```
+
+(Run from the repo root; `linux-server/setup.sh` is a thin shim onto it.)
 
 After running, log out and back in to start using zsh.
 
@@ -22,12 +24,12 @@ sudo tailscale up
 
 ## Files
 
-- [`setup.sh`](setup.sh) — automated install script
+- [`setup.sh`](setup.sh) — thin shim onto the root [`setup.sh`](../setup.sh) (server platform)
 - [`post-install.md`](post-install.md) — step-by-step checklist to follow after setup.sh
 - [`apt_packages.md`](apt_packages.md) — full package list with descriptions and links
 - [`zshrc.example`](zshrc.example) — reference zsh config; copied to `~/.zshrc` by `setup.sh` if none exists
 - [`tmux.conf`](tmux.conf) — tmux config with mouse support, vi copy mode, and a status bar; copied to `~/.tmux.conf` by `setup.sh`
-- [`linux_server_packages.json`](linux_server_packages.json) — machine-readable package manifest used by `setup.sh`
+- [`linux_server_packages.json`](linux_server_packages.json) — legacy manifest; package data now lives in the root [`packages.json`](../packages.json)
 
 ## Next steps
 

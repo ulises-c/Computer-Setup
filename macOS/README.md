@@ -90,7 +90,7 @@
 
 ## Work
 
-Install with `zsh setup.sh --work`.
+Install with `bash setup.sh --work` from the repo root (`macOS/setup.sh` is a thin shim onto it).
 
 1. Slack | [brew](https://formulae.brew.sh/cask/slack)
    1. Team messaging and collaboration
