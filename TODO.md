@@ -14,14 +14,16 @@ migration gated on dry-run parity.
       — 231 checks pass (platform × manager × priority × work/personal combos)
 - [x] Phase 2 — Extract `lib/core.sh` + `platforms/{macos,arch,ubuntu,server}.sh`; add
       root `setup.sh` dispatcher; gate on `--dry-run` parity vs old scripts
-      — `scripts/dryrun-parity.sh` passes 22/22 platform × flag combos
+      — `scripts/dryrun-parity.sh` passed 22/22 platform × flag combos (gate deleted in Phase 4)
 - [x] Phase 3 — Unify `verify.sh` the same way (shared core + platform checks)
-      — `scripts/verify-parity.sh` passes 21/21 platform × flag combos
+      — `scripts/verify-parity.sh` passed 21/21 platform × flag combos (gate deleted in Phase 4)
 - [x] Phase 4 — Convert per-folder `setup.sh`/`verify.sh` into thin shims; update
       `README.md` / `CLAUDE.md` for the root entrypoint
       — shim output diffed byte-identical vs direct root invocation; the script-level
       gates (`dryrun-parity.sh`, `verify-parity.sh`) self-compare post-shim and were
-      deleted (last green run at a8d4149); `parity-check.sh` stays until Phase 5
+      deleted (last green run at a8d4149); `scripts/dryrun-smoke.sh` (root dry-run on
+      all four platforms, also in CI) took their place; `parity-check.sh` stays until
+      Phase 5
 - [ ] Phase 5 — Delete the three old per-folder package JSONs once parity is proven
 - [ ] Resolve open questions: server-as-platform vs profile; `install_command`
       string vs object; keep `priority: "none"` tier? (see UNIFICATION.md)

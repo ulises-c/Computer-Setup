@@ -21,9 +21,9 @@ bash verify.sh [--optional] [--work] [--personal] [--all]
 
 Package data lives in [`packages.json`](packages.json); the engine is
 [`lib/core.sh`](lib/core.sh) with per-platform quirks in
-[`platforms/`](platforms/). The per-folder `setup.sh`/`verify.sh` scripts are
-thin shims onto these root scripts. See [UNIFICATION.md](UNIFICATION.md) for the
-design.
+[`platforms/`](platforms/). The per-folder `setup.sh` scripts (and the
+macOS/linux-desktop `verify.sh`) are thin shims onto these root scripts. See
+[UNIFICATION.md](UNIFICATION.md) for the design.
 
 For OS-specific software and install instructions, see:
 - [macOS/README.md](macOS/README.md)

@@ -16,6 +16,13 @@ verify_parse_args() {
       --personal) INCLUDE_PERSONAL=true ;;
       --all)      INCLUDE_OPTIONAL=true; INCLUDE_WORK=true; INCLUDE_PERSONAL=true; INCLUDE_NONE=true ;;
       --distro|--platform) PLATFORM="${2:-}"; shift ;;
+      --profile)
+        case "${2:-}" in
+          server)  PLATFORM="server" ;;
+          desktop) ;;
+          *) printf 'ERROR: --profile must be desktop or server (got %s).\n' "${2:-}" >&2; exit 1 ;;
+        esac
+        shift ;;
       *) printf 'Unknown argument: %s\n' "$1" >&2 ;;
     esac
     shift

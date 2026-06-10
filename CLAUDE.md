@@ -10,7 +10,9 @@ configs and docs.
   Flags: `--optional --work --personal --dry-run --platform <macos|ubuntu|arch|server> --profile <desktop|server>`.
   The server platform is never auto-detected (`--profile server` or `--platform server` required).
 - `verify.sh` — read-only health check mirroring `setup.sh`'s selection logic.
-  Same flags plus `--all`; no server support (nothing legacy existed to port).
+  Flags: `--optional --work --personal --all --platform <macos|ubuntu|arch>`
+  (no `--dry-run`; `--platform server`/`--profile server` is rejected — nothing
+  legacy existed to port). Unknown flags warn and are ignored, they don't abort.
 
 ## Architecture
 
@@ -24,17 +26,20 @@ configs and docs.
   invocations).
 - `macOS/`, `linux-desktop/`, `linux-server/` — configs, docs, and thin shim
   scripts that exec the root entrypoints. The per-folder `*_packages.json`
-  files are legacy (deleted in Phase 5; see `UNIFICATION.md`).
+  files are legacy, no longer read by anything (to be deleted in Phase 5; see
+  `UNIFICATION.md`).
 - `scripts/parity-check.sh` — gate proving `packages.json` matches the legacy
-  per-folder JSONs (231 checks); valid until the legacy JSONs are deleted.
+  per-folder JSONs; valid until the legacy JSONs are deleted.
+- `scripts/dryrun-smoke.sh` — runs `setup.sh --dry-run` for every platform and
+  asserts it exits clean with install actions; also run in CI.
 
 `UNIFICATION.md` is the design doc for this layout; `TODO.md` tracks remaining
 phases.
 
 ## Conventions
 
-- Pre-commit runs `shellcheck --severity=warning` (the `macOS/` folder is
-  checked with `zsh -n` instead).
+- Pre-commit runs `shellcheck --severity=warning` on all shell scripts;
+  `zsh -n` checks `.zsh` files and `zshrc.example`.
 - Probe semantics in `lib/verify.sh` are platform-faithful ports — macOS has no
   `command -v` fallback for casks/pipx/app-store, Linux falls back everywhere.
   Don't "fix" the asymmetry without checking `UNIFICATION.md` history.
