@@ -80,6 +80,8 @@ probe_pkg() {
         pyenv)       [[ -d "$HOME/.pyenv" ]] && INSTALLED=true ;;
         nvm)         [[ -s "$HOME/.nvm/nvm.sh" ]] && INSTALLED=true ;;
         claude-code) command -v claude &>/dev/null && INSTALLED=true ;;
+        forgejo-cli) command -v fj &>/dev/null && INSTALLED=true ;;
+        zen-browser) flatpak info app.zen_browser.zen &>/dev/null && INSTALLED=true ;;
         *)
           if [[ "$PLATFORM" == "macos" ]]; then
             { brew list --formula "$rname" || command -v "$rname"; } &>/dev/null && INSTALLED=true

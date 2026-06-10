@@ -35,7 +35,7 @@ platform_main() {
 
   # ── antidote (zsh plugin manager — no noble apt package) ───────────────────
   printf '\n'
-  if [[ -d "$HOME/.antidote" ]]; then
+  if [[ -f "$HOME/.antidote/antidote.zsh" ]]; then
     printf '==> antidote already installed\n'
   else
     printf '==> Installing antidote...\n'
@@ -48,6 +48,11 @@ platform_main() {
   deploy_config "$SETUP_ROOT/dotfiles/tmux.conf" "$HOME/.tmux.conf" "tmux.conf" yes
   printf '\n'
   deploy_config "$CONFIG_SRC_DIR/zsh_plugins.txt" "$HOME/.zsh_plugins.txt" "linux-server/zsh_plugins.txt (platform override)" no
+
+  # Pre-clone the plugins now (network is up — antidote itself just cloned);
+  # otherwise the first interactive login does the GitHub clones lazily.
+  printf '\n==> Pre-cloning antidote plugins...\n'
+  run zsh -c 'source "$HOME/.antidote/antidote.zsh" && antidote bundle <"$HOME/.zsh_plugins.txt" >/dev/null'
 
   # ── Tailscale ───────────────────────────────────────────────────────────────
   printf '\n'
