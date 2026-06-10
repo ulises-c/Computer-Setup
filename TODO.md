@@ -44,22 +44,27 @@ migration gated on dry-run parity.
       Legacy `linux-desktop/setup.sh` stayed a shim; the legacy JSON stayed deleted.
       Gate: per-platform dry-run diff vs pre-merge baseline — only the intended
       additions (two arch packages, p10k deploy lines)
+- [x] Phase 7 — Dotfiles consolidation (details in the section below): shared
+      `tmux.conf`/`ghostty.config` moved to `dotfiles/`, all engine deploys
+      repointed, macOS gains the previously missing tmux deploy.
+      Gate: per-platform dry-run diff vs pre-change baseline — identical except
+      macOS's new tmux step
 
-## Dotfiles consolidation (follow-up PR after #37 merges)
+## Dotfiles consolidation — DONE as unification Phase 7 (PR #37)
 
-Shared configs are duplicated per-folder and drift silently across devices. Current state:
-`tmux.conf` is byte-identical in `linux-desktop/` and `linux-server/` but missing from
-`macOS/` entirely (the mac setup never deploys tmux config — Macs show default green
-bottom bar while Linux boxes get the blue top bar); `ghostty.config` is byte-identical
-in `macOS/` and `linux-desktop/`. The zshrc variants intentionally differ (server drops
-Ghostty/fastfetch/notifications) and stay per-folder for now. Out of scope for #37 —
-UNIFICATION.md keeps configs where they are; do this once the root engine owns deploys.
+Shared configs were duplicated per-folder and could drift silently across devices.
+Folded into #37 once the root engine owned all deploys. The zshrc variants
+intentionally differ (server drops Ghostty/fastfetch/notifications) and stay
+per-folder.
 
-- [ ] Create `dotfiles/` and move the byte-identical files: `tmux.conf`, `ghostty.config`
-- [ ] Point the root engine's deploy steps (`lib/core.sh`, `platforms/server.sh`) at the
-      new paths; drop the per-folder copies
-- [ ] Deploy tmux.conf on macOS too (currently the missing platform)
-- [ ] Ghostty: keep a universal base; OS-specific configs become additive overlays only
+- [x] Create `dotfiles/` and move the byte-identical files: `tmux.conf`, `ghostty.config`
+- [x] Point the root engine's deploy steps (`lib/core.sh`, `platforms/macos.sh`,
+      `platforms/server.sh`) at the new paths; drop the per-folder copies
+- [x] Deploy tmux.conf on macOS too (was the missing platform — Macs showed the
+      default green bottom bar while Linux boxes got the blue top bar)
+- [x] Ghostty: single universal config in `dotfiles/` (the two copies were already
+      byte-identical); no overlay mechanism until an OS-specific setting actually
+      exists
       (e.g., macOS font settings, Linux-specific tweaks)
 - [ ] Later: consider base + per-platform overlay for zshrc (desktop vs server vs macOS)
 

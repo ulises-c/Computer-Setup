@@ -433,7 +433,7 @@ claude_code_step() {
 ghostty_deploy_linux() {
   local cfg_dir="${XDG_CONFIG_HOME:-$HOME/.config}/ghostty"
   local cfg="$cfg_dir/config"
-  local src="$CONFIG_SRC_DIR/ghostty.config"
+  local src="$SETUP_ROOT/dotfiles/ghostty.config"
   printf '\n'
   if [[ "$DRY_RUN" == true ]]; then
     printf '  [dry-run] mkdir -p %s\n' "$cfg_dir"
@@ -531,7 +531,7 @@ desktop_main() {
   printf '\n'
   deploy_config "$CONFIG_SRC_DIR/zshrc.example" "$HOME/.zshrc" "zshrc.example" yes
   printf '\n'
-  deploy_config "$CONFIG_SRC_DIR/tmux.conf" "$HOME/.tmux.conf" "tmux.conf" yes
+  deploy_config "$SETUP_ROOT/dotfiles/tmux.conf" "$HOME/.tmux.conf" "tmux.conf" yes
   printf '\n'
   deploy_config "$CONFIG_SRC_DIR/zsh_plugins.txt" "$HOME/.zsh_plugins.txt" "" no
   printf '\n'

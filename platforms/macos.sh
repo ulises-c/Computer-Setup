@@ -166,13 +166,20 @@ platform_main() {
   else
     mkdir -p "$ghostty_cfg_dir"
     [[ -f "$ghostty_cfg" ]] && cp "$ghostty_cfg" "${ghostty_cfg}.bak"
-    cp "$SETUP_ROOT/macOS/ghostty.config" "$ghostty_cfg"
+    cp "$SETUP_ROOT/dotfiles/ghostty.config" "$ghostty_cfg"
     printf '==> Ghostty config written to %s\n' "$ghostty_cfg"
     if [[ -f "$macos_ghostty_cfg" ]]; then
       mv "$macos_ghostty_cfg" "${macos_ghostty_cfg}.bak"
       printf '==> Renamed macOS-specific Ghostty config to .bak (XDG takes precedence)\n'
     fi
   fi
+
+  # ── tmux config ─────────────────────────────────────────────────────────────
+  # New with the dotfiles consolidation — the legacy macOS setup never deployed
+  # a tmux config, so Macs were stuck with the default green status bar.
+  printf '\n'
+  deploy_config "$SETUP_ROOT/dotfiles/tmux.conf" "$HOME/.tmux.conf" "tmux.conf" yes
+  printf '\n'
 
   # ── Git: GPG signing ────────────────────────────────────────────────────────
   run git config --global gpg.program /opt/homebrew/bin/gpg

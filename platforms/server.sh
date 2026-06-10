@@ -32,7 +32,7 @@ platform_main() {
   printf '\n'
   deploy_config "$CONFIG_SRC_DIR/zshrc.example" "$HOME/.zshrc" "zshrc.example" yes
   printf '\n'
-  deploy_config "$CONFIG_SRC_DIR/tmux.conf" "$HOME/.tmux.conf" "tmux.conf" yes
+  deploy_config "$SETUP_ROOT/dotfiles/tmux.conf" "$HOME/.tmux.conf" "tmux.conf" yes
 
   # ── Tailscale ───────────────────────────────────────────────────────────────
   printf '\n'

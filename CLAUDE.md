@@ -26,8 +26,11 @@ configs and docs.
   jq selection, install loops, config deploys. `lib/verify.sh` — check engine.
 - `platforms/<platform>.sh` — per-platform quirks only (bootstrap, manager
   invocations).
-- `macOS/`, `linux-desktop/`, `linux-server/` — configs, docs, and thin shim
-  scripts that exec the root entrypoints.
+- `dotfiles/` — configs shared verbatim across platforms (`tmux.conf`,
+  `ghostty.config`); the engine deploys them from here on every platform.
+- `macOS/`, `linux-desktop/`, `linux-server/` — platform-specific configs
+  (zshrc variants, zsh_plugins, p10k), docs, and thin shim scripts that exec
+  the root entrypoints.
 - `scripts/dryrun-smoke.sh` — runs `setup.sh --dry-run` for every platform and
   asserts it exits clean with install actions; also run in CI.
 
