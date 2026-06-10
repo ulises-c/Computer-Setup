@@ -5,6 +5,10 @@
 # Plugins managed by antidote — see ~/.zsh_plugins.txt
 # Install:  bash linux-desktop/setup.sh
 
+# ── Instant prompt (Powerlevel10k — keep at very top) ──────────
+[[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]] && \
+  source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
+
 
 # ═══════════════════════════════════════════════════════════════
 #  PATH
@@ -76,46 +80,51 @@ setopt NO_BEEP
 
 
 # ═══════════════════════════════════════════════════════════════
-#  PROMPT  (branch · * unstaged · + staged · duration right)
+#  PROMPT  (Powerlevel10k if available, vcs_info fallback)
 # ═══════════════════════════════════════════════════════════════
-autoload -Uz vcs_info
+# Arch: pacman -S zsh-theme-powerlevel10k  |  run: p10k configure
+if [[ -f /usr/share/zsh-theme-powerlevel10k/powerlevel10k.zsh-theme ]]; then
+  source /usr/share/zsh-theme-powerlevel10k/powerlevel10k.zsh-theme
+else
+  autoload -Uz vcs_info
 
-_prompt_precmd() {
-  local exit_code=$?
-  vcs_info
-  _last_exit=$exit_code
-  _cmd_end=$EPOCHSECONDS
-  if (( _cmd_start > 0 && _cmd_end - _cmd_start >= 2 )); then
-    local elapsed=$(( _cmd_end - _cmd_start ))
-    local mins=$(( elapsed / 60 ))
-    local secs=$(( elapsed % 60 ))
-    if (( mins > 0 )); then
-      _cmd_duration="${mins}m${secs}s"
+  _prompt_precmd() {
+    local exit_code=$?
+    vcs_info
+    _last_exit=$exit_code
+    _cmd_end=$EPOCHSECONDS
+    if (( _cmd_start > 0 && _cmd_end - _cmd_start >= 2 )); then
+      local elapsed=$(( _cmd_end - _cmd_start ))
+      local mins=$(( elapsed / 60 ))
+      local secs=$(( elapsed % 60 ))
+      if (( mins > 0 )); then
+        _cmd_duration="${mins}m${secs}s"
+      else
+        _cmd_duration="${secs}s"
+      fi
     else
-      _cmd_duration="${secs}s"
+      _cmd_duration=""
     fi
-  else
-    _cmd_duration=""
-  fi
-  _cmd_start=0
-}
+    _cmd_start=0
+  }
 
-_prompt_preexec() {
-  _cmd_start=$EPOCHSECONDS
-}
+  _prompt_preexec() {
+    _cmd_start=$EPOCHSECONDS
+  }
 
-precmd_functions+=(_prompt_precmd)
-preexec_functions+=(_prompt_preexec)
+  precmd_functions+=(_prompt_precmd)
+  preexec_functions+=(_prompt_preexec)
 
-zstyle ':vcs_info:*'      enable            git
-zstyle ':vcs_info:*'      check-for-changes true
-zstyle ':vcs_info:git:*'  stagedstr         '%F{green}+%f'
-zstyle ':vcs_info:git:*'  unstagedstr       '%F{red}*%f'
-zstyle ':vcs_info:git:*'  formats           ' (%F{magenta}%b%f%u%c)'
-zstyle ':vcs_info:git:*'  actionformats     ' (%F{magenta}%b%f|%F{yellow}%a%f%u%c)'
-setopt PROMPT_SUBST
-PROMPT='%F{blue}%n%f%F{white}@%f%F{cyan}%m%f %F{yellow}%~%f${vcs_info_msg_0_} %# '
-RPROMPT='${_cmd_duration:+%F{242}${_cmd_duration}%f}'
+  zstyle ':vcs_info:*'      enable            git
+  zstyle ':vcs_info:*'      check-for-changes true
+  zstyle ':vcs_info:git:*'  stagedstr         '%F{green}+%f'
+  zstyle ':vcs_info:git:*'  unstagedstr       '%F{red}*%f'
+  zstyle ':vcs_info:git:*'  formats           ' (%F{magenta}%b%f%u%c)'
+  zstyle ':vcs_info:git:*'  actionformats     ' (%F{magenta}%b%f|%F{yellow}%a%f%u%c)'
+  setopt PROMPT_SUBST
+  PROMPT='%F{blue}%n%f%F{white}@%f%F{cyan}%m%f %F{yellow}%~%f${vcs_info_msg_0_} %# '
+  RPROMPT='${_cmd_duration:+%F{242}${_cmd_duration}%f}'
+fi
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -221,3 +230,5 @@ zstyle ':notify:*' success-title "Command finished"
 #  SYSINFO DISPLAY  (Ghostty startup)
 # ═══════════════════════════════════════════════════════════════
 [[ -o interactive && "$TERM_PROGRAM" == "ghostty" ]] && fastfetch
+
+[[ -f ~/.p10k.zsh ]] && source ~/.p10k.zsh

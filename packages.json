@@ -14,6 +14,13 @@
     "description": "Lightweight zsh plugin manager — handles autosuggestions, syntax highlighting, completions, substring search, and abbreviations via a plugins file"
   },
   {
+    "name": "zsh-theme-powerlevel10k",
+    "package_manager": { "arch": "yay" },
+    "priority": "high",
+    "optional": false,
+    "description": "Powerlevel10k zsh prompt — rich git status, command duration, exit code, instant prompt; Arch only (Ubuntu: add romkatv/powerlevel10k to zsh_plugins.txt; macOS: brew install powerlevel10k by hand — zshrc falls back to vcs_info); run `p10k configure` to set up"
+  },
+  {
     "name": "zsh-autosuggestions",
     "package_manager": { "macos": "brew" },
     "priority": "medium",
@@ -238,6 +245,13 @@
     "priority": "medium",
     "optional": false,
     "description": "GPU process monitor — complements htop with GPU visibility"
+  },
+  {
+    "name": "lact",
+    "package_manager": { "arch": "yay" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Linux AMD GPU control panel — fan curves, voltage offset, power cap, clock limits via GUI + background daemon; see linux-desktop/lact_r9700_tuning.md for R9700 config"
   },
   {
     "name": "sshpass",

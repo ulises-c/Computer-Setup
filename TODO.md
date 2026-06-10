@@ -37,6 +37,13 @@ migration gated on dry-run parity.
       — resolved: server is a platform key (option A, locked in Phase 1);
       `install_command` supports both string and per-platform object (`icfor`);
       `priority: "none"` tier kept — reminder/`--all`-only, never auto-installs
+- [x] Phase 6 — Merge main (PRs #28 p10k/LACT, #35 railguard, #38 claude-hud) into
+      the branch; port the features that landed on the legacy stack into the unified
+      one: `zsh-theme-powerlevel10k` + `lact` entries into root `packages.json`,
+      `~/.p10k.zsh` deploy (`deploy_config`) into the shared desktop flow.
+      Legacy `linux-desktop/setup.sh` stayed a shim; the legacy JSON stayed deleted.
+      Gate: per-platform dry-run diff vs pre-merge baseline — only the intended
+      additions (two arch packages, p10k deploy lines)
 
 ## Dotfiles consolidation (follow-up PR after #37 merges)
 
