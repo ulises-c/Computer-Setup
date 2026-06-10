@@ -328,8 +328,9 @@ apt_bootstrap() {
     need_update=true
   fi
 
-  # gh — GitHub CLI apt repo
-  if ! command -v gh &>/dev/null; then
+  # gh — GitHub CLI apt repo. Gate on the repo file, not the binary: a stale
+  # distro-repo gh (e.g. Ubuntu universe 2.45) must still get migrated (#25).
+  if [[ ! -f /etc/apt/sources.list.d/github-cli.list ]]; then
     printf '==> Adding GitHub CLI apt repo...\n'
     if [[ "$DRY_RUN" != true ]]; then
       wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg \
@@ -426,6 +427,21 @@ linux_nvm_flow() {
   # Apply the supply-chain cooldown before any package install runs below.
   configure_npm_cooldown
   configure_pnpm
+}
+
+# rustup ships no toolchain — rustc/cargo are proxies that error until
+# 'rustup default stable' picks one.
+rust_toolchain_step() {
+  command -v rustup &>/dev/null || return 0
+  printf '\n'
+  if [[ "$DRY_RUN" == true ]]; then
+    printf '  [dry-run] rustup default stable (if no default toolchain)\n'
+  elif ! rustup show active-toolchain &>/dev/null; then
+    printf '==> Installing stable Rust toolchain...\n'
+    run rustup default stable
+  else
+    printf '==> Rust toolchain already configured (%s)\n' "$(rustup show active-toolchain 2>/dev/null | head -1)"
+  fi
 }
 
 claude_code_step() {
@@ -536,6 +552,7 @@ desktop_main() {
 
   platform_tailscale_step
   claude_code_step
+  rust_toolchain_step
   desktop_pipx_section
   desktop_pnpm_section
 

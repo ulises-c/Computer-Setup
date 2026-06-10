@@ -108,9 +108,10 @@
     "name": "rust",
     "package_manager": { "ubuntu": "apt", "arch": "yay" },
     "ubuntu_name": "rustup",
+    "arch_name": "rustup",
     "priority": "medium",
     "optional": false,
-    "description": "Rust toolchain — rustc and cargo"
+    "description": "Rust toolchain via rustup — distro rustc goes stale; setup runs 'rustup default stable'"
   },
   {
     "name": "ghostty",

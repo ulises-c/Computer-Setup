@@ -19,6 +19,8 @@
 # macOS: Homebrew (Apple Silicon)
 [[ -d /opt/homebrew/bin ]] && export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
 export PATH="$HOME/.local/bin:$PATH"
+# cargo install artifacts (rustup toolchains proxy via /usr/bin)
+[[ -d "$HOME/.cargo/bin" ]] && export PATH="$HOME/.cargo/bin:$PATH"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -155,6 +157,9 @@ fi
 # ═══════════════════════════════════════════════════════════════
 if [[ "$OSTYPE" == darwin* ]]; then
   alias ls='ls -G'          # BSD ls has no --color=auto
+  # App Store Tailscale bundles the CLI inside the app — not on PATH (#22)
+  [[ -x "/Applications/Tailscale.app/Contents/MacOS/Tailscale" ]] && \
+    alias tailscale="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
 else
   alias ls='ls --color=auto'
 fi
