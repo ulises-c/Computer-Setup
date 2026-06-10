@@ -27,44 +27,42 @@ Install via `brew install <name>` unless noted otherwise.
    1. PDF rendering library that ships useful CLI tools: `pdftotext`, `pdfimages`, `pdfinfo`, `pdftoppm`
 9. sshpass | [brew](https://formulae.brew.sh/formula/sshpass)
    1. Non-interactive SSH password authentication — used by `add_remote_host.sh` to automate host setup
-10. zsh-autosuggestions | [brew](https://formulae.brew.sh/formula/zsh-autosuggestions) | [GitHub](https://github.com/zsh-users/zsh-autosuggestions)
-    1. Fish-style history-based suggestions for zsh — press → to accept
-11. zsh-syntax-highlighting | [brew](https://formulae.brew.sh/formula/zsh-syntax-highlighting) | [GitHub](https://github.com/zsh-users/zsh-syntax-highlighting)
-    1. Real-time syntax highlighting in zsh — valid commands appear green, invalid ones red, before pressing Enter
-12. mongodb-community | [brew tap](https://www.mongodb.com/docs/manual/tutorial/install-mongodb-on-os-x/) | [Download](https://www.mongodb.com/try/download/community)
+10. antidote | [brew](https://formulae.brew.sh/formula/antidote) | [GitHub](https://github.com/mattmc3/antidote)
+    1. Zsh plugin manager — loads autosuggestions, syntax highlighting, substring search, abbreviations, and zsh-notify from [dotfiles/zsh_plugins.txt](../dotfiles/zsh_plugins.txt) (replaces the standalone zsh-autosuggestions / zsh-syntax-highlighting formulae)
+11. mongodb-community | [brew tap](https://www.mongodb.com/docs/manual/tutorial/install-mongodb-on-os-x/) | [Download](https://www.mongodb.com/try/download/community)
     1. MongoDB Community Server; installing via the `mongodb/brew` tap also provides `mongosh` and `mongodb-database-tools`
     2. Install: `brew tap mongodb/brew && brew install mongodb-community`
-13. htop | [brew](https://formulae.brew.sh/formula/htop) | [GitHub](https://github.com/htop-dev/htop)
+12. htop | [brew](https://formulae.brew.sh/formula/htop) | [GitHub](https://github.com/htop-dev/htop)
     1. Interactive process viewer — colorized, scrollable alternative to `top` with per-core CPU, memory, and swap meters
-14. nvtop | [brew](https://formulae.brew.sh/formula/nvtop) | [GitHub](https://github.com/Syllo/nvtop)
+13. nvtop | [brew](https://formulae.brew.sh/formula/nvtop) | [GitHub](https://github.com/Syllo/nvtop)
     1. GPU process monitor similar to htop — supports NVIDIA, AMD, Intel, and Apple Silicon GPUs
-15. asitop | [brew](https://formulae.brew.sh/formula/asitop) | [GitHub](https://github.com/tlkh/asitop)
+14. asitop | [brew](https://formulae.brew.sh/formula/asitop) | [GitHub](https://github.com/tlkh/asitop)
     1. Performance monitoring TUI for Apple Silicon — shows CPU, GPU, ANE, memory bandwidth, and power usage in real time; requires `sudo`
-16. llama.cpp | [brew](https://formulae.brew.sh/formula/llama.cpp) | [GitHub](https://github.com/ggml-org/llama.cpp)
+15. llama.cpp | [brew](https://formulae.brew.sh/formula/llama.cpp) | [GitHub](https://github.com/ggml-org/llama.cpp)
     1. LLM inference engine in C/C++ — run local models (GGUF format) on CPU and Apple Silicon GPU via Metal
-17. mactop | [brew](https://formulae.brew.sh/formula/mactop) | [GitHub](https://github.com/metaspartan/mactop)
+16. mactop | [brew](https://formulae.brew.sh/formula/mactop) | [GitHub](https://github.com/metaspartan/mactop)
     1. Apple Silicon system monitor — shows CPU/GPU/ANE/memory/power usage in a real-time TUI; requires `sudo`
-18. micro | [brew](https://formulae.brew.sh/formula/micro) | [GitHub](https://github.com/zyedidia/micro)
+17. micro | [brew](https://formulae.brew.sh/formula/micro) | [GitHub](https://github.com/zyedidia/micro)
     1. Modern terminal text editor with mouse support, syntax highlighting, and familiar keybindings (Ctrl+S, Ctrl+C, etc.)
-19. eza | [brew](https://formulae.brew.sh/formula/eza) | [GitHub](https://github.com/eza-community/eza)
+18. eza | [brew](https://formulae.brew.sh/formula/eza) | [GitHub](https://github.com/eza-community/eza)
     1. Modern `ls` replacement — color output, icons, git-aware status column, and tree view; used as `ll`/`la` aliases in the example zshrc
-20. tmux | [brew](https://formulae.brew.sh/formula/tmux) | [GitHub](https://github.com/tmux/tmux)
+19. tmux | [brew](https://formulae.brew.sh/formula/tmux) | [GitHub](https://github.com/tmux/tmux)
     1. Terminal multiplexer — split panes, persist sessions across disconnects, and run background processes
-21. ffmpeg | [brew](https://formulae.brew.sh/formula/ffmpeg) | [Homepage](https://ffmpeg.org/)
+20. ffmpeg | [brew](https://formulae.brew.sh/formula/ffmpeg) | [Homepage](https://ffmpeg.org/)
     1. Audio/video processing toolkit — convert, trim, encode, stream, and extract frames from media files
-22. exiftool | [brew](https://formulae.brew.sh/formula/exiftool) | [Homepage](https://exiftool.org/)
+21. exiftool | [brew](https://formulae.brew.sh/formula/exiftool) | [Homepage](https://exiftool.org/)
     1. Read and write metadata (EXIF, IPTC, XMP) in photos, videos, and other files
-23. tesseract | [brew](https://formulae.brew.sh/formula/tesseract) | [GitHub](https://github.com/tesseract-ocr/tesseract)
+22. tesseract | [brew](https://formulae.brew.sh/formula/tesseract) | [GitHub](https://github.com/tesseract-ocr/tesseract)
     1. OCR engine — extract text from images and scanned documents via CLI or library
-24. smartmontools | [brew](https://formulae.brew.sh/formula/smartmontools) | [Homepage](https://www.smartmontools.org/)
+23. smartmontools | [brew](https://formulae.brew.sh/formula/smartmontools) | [Homepage](https://www.smartmontools.org/)
     1. Monitor SSD/HDD health via S.M.A.R.T. data; `smartctl -a /dev/disk0` shows drive status
-25. octave | [brew](https://formulae.brew.sh/formula/octave) | [Homepage](https://octave.org/)
+24. octave | [brew](https://formulae.brew.sh/formula/octave) | [Homepage](https://octave.org/)
     1. MATLAB-compatible numerical computing environment — matrix operations, plotting, and scripting
-26. qemu | [brew](https://formulae.brew.sh/formula/qemu) | [Homepage](https://www.qemu.org/)
+25. qemu | [brew](https://formulae.brew.sh/formula/qemu) | [Homepage](https://www.qemu.org/)
     1. Machine emulator and virtualizer — run x86, ARM, and other architectures on Apple Silicon
-27. gogcli | [brew](https://formulae.brew.sh/formula/gogcli) | [Homepage](https://gogcli.sh/)
+26. gogcli | [brew](https://formulae.brew.sh/formula/gogcli) | [Homepage](https://gogcli.sh/)
     1. Google Workspace CLI — Gmail, Calendar, Drive, Docs, Sheets, Slides, and more in the terminal; built for scripts, CI, and coding agents
-28. powerlevel10k | [brew](https://formulae.brew.sh/formula/powerlevel10k) | [GitHub](https://github.com/romkatv/powerlevel10k)
+27. powerlevel10k | [brew](https://formulae.brew.sh/formula/powerlevel10k) | [GitHub](https://github.com/romkatv/powerlevel10k)
     1. Feature-rich zsh prompt theme — git status, command duration, exit code, instant prompt; run `p10k configure` once after install to set up `~/.p10k.zsh`
 
 ## Casks

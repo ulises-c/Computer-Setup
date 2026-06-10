@@ -65,9 +65,16 @@ Folded into #37 once the root engine owned all deploys.
       exists
 - [x] zshrc: `dotfiles/zshrc.example` is the shared base (`deploy_zshrc`); a platform
       folder shipping its own `zshrc.example` overrides it — only `linux-server/`
-      does, because it's headless (no Ghostty/fastfetch/notification hooks).
-      macOS isn't part of zshrc deploys (its flow appends to the existing `~/.zshrc`;
-      `macOS/zshrc.example` stays as reference only)
+      does, because it's headless (no Ghostty/fastfetch/notification hooks)
+- [x] macOS zsh unification: the dotfiles zshrc is cross-platform (macOS bits guarded
+      on `/opt/homebrew`/`$OSTYPE` — Homebrew PATH+FPATH, brew p10k/antidote/fzf
+      paths, `ls -G`, `brewup`, `PIPX_DEFAULT_PYTHON`, nvm `--delete-prefix`); macOS
+      deploys it + `dotfiles/zsh_plugins.txt` via the engine instead of appending
+      lines to `~/.zshrc` (`add_to_zshrc` deleted). antidote/zoxide/fzf/bat/fd/
+      terminal-notifier gained `macos: brew` entries; the brew
+      zsh-autosuggestions/zsh-syntax-highlighting entries were dropped (antidote
+      manages the plugins now — `brew uninstall` them on the Mac after migrating).
+      `macOS/zshrc.example` + `zshrc-upgrade.md` deleted (plan absorbed)
       (e.g., macOS font settings, Linux-specific tweaks)
 - [ ] Later: consider base + per-platform overlay for zshrc (desktop vs server vs macOS)
 
@@ -84,24 +91,6 @@ Still to explore:
 - [ ] Add CachyOS provider config once the model/runtime is chosen
 - [ ] Consider `small_model` for lightweight tasks (title gen, etc.)
 - [ ] Install `opencode-local` via install.sh and verify PATH
-
-## macOS zshrc modernization
-
-Port the linux-desktop zsh enhancements to the macOS config. See
-[macOS/zshrc-upgrade.md](macOS/zshrc-upgrade.md) for the full plan.
-
-- [ ] Switch from manual Homebrew plugin sourcing to antidote
-- [ ] Add eza aliases with `--icons --group-directories-first`
-- [ ] Add RPROMPT with command duration
-- [ ] Add colorized man pages via bat
-- [ ] Add zsh-notify for desktop notifications on long commands
-- [ ] Add fish-style abbreviations via zsh-abbr
-- [ ] Add zsh-history-substring-search with Up/Down keybindings
-- [ ] Add grouped completion descriptions
-- [ ] Add path underlining in syntax highlighting
-- [ ] Add zoxide init
-- [ ] Add FZF keybindings and completion (Homebrew paths)
-- [ ] Create macOS zsh_plugins.txt
 
 ## linux-desktop (personal) — CachyOS / Arch
 

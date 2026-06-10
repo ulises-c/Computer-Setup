@@ -1,17 +1,6 @@
 #!/usr/bin/env bash
-# macOS quirks: Homebrew bootstrap, brew/brew-cask/custom installs, .zshrc line
-# management, expat-pinned pyenv build (Tahoe fix), App Store reminders.
-
-ZSHRC="$HOME/.zshrc"
-
-add_to_zshrc() {
-  local line="$1"
-  if [[ "$DRY_RUN" == true ]]; then
-    printf '  [dry-run] add to .zshrc: %s\n' "$line"
-  else
-    grep -qF "$line" "$ZSHRC" 2>/dev/null || printf '%s\n' "$line" >> "$ZSHRC"
-  fi
-}
+# macOS quirks: Homebrew bootstrap, brew/brew-cask/custom installs,
+# expat-pinned pyenv build (Tahoe fix), App Store reminders.
 
 brew_install_tier() {
   local priority="$1" names
@@ -65,6 +54,8 @@ print_app_store_reminders() {
 }
 
 platform_main() {
+  # shellcheck disable=SC2034  # consumed by deploy_zshrc in lib/core.sh
+  CONFIG_SRC_DIR="$SETUP_ROOT/macOS"
   # shellcheck disable=SC2034  # consumed by print_related_scripts in lib/core.sh
   RELATED_SCRIPTS=(
     "agentic-ai/Claude/install.sh|Claude Code config — symlink settings, hooks, and CLAUDE.md into ~/.claude"
@@ -104,11 +95,6 @@ platform_main() {
     pyenv global "$PYTHON_VERSION"
   fi
 
-  add_to_zshrc 'export PYENV_ROOT="$HOME/.pyenv"'
-  add_to_zshrc 'export PATH="$PYENV_ROOT/bin:$PATH"'
-  add_to_zshrc 'eval "$(pyenv init -)"'
-  add_to_zshrc "export PIPX_DEFAULT_PYTHON=\"$pyenv_python\""
-
   if [[ "$DRY_RUN" == false ]]; then
     export PYENV_ROOT="$HOME/.pyenv"
     export PATH="$PYENV_ROOT/bin:$PATH"
@@ -138,13 +124,6 @@ platform_main() {
   # Apply the supply-chain cooldown before any package install runs below.
   configure_npm_cooldown
   configure_pnpm
-
-  add_to_zshrc 'export NVM_DIR="$HOME/.nvm"'
-  add_to_zshrc '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"'
-  add_to_zshrc 'nvm use --delete-prefix default --silent 2>/dev/null'
-  # pnpm global bin dir (corepack provides the pnpm shim; PNPM_HOME holds global CLIs)
-  add_to_zshrc 'export PNPM_HOME="$HOME/.local/share/pnpm"'
-  add_to_zshrc '[ -d "$PNPM_HOME/bin" ] && export PATH="$PNPM_HOME/bin:$PATH"'
 
   # ── Medium-priority brew casks ──────────────────────────────────────────────
   printf '==> Installing brew casks...\n'
@@ -179,11 +158,19 @@ platform_main() {
   # a tmux config, so Macs were stuck with the default green status bar.
   printf '\n'
   deploy_config "$SETUP_ROOT/dotfiles/tmux.conf" "$HOME/.tmux.conf" "tmux.conf" yes
+
+  # ── zshrc + antidote plugins ────────────────────────────────────────────────
+  # The shared dotfiles zshrc replaces the legacy append-lines approach; the
+  # previous ~/.zshrc is backed up. macOS bits in it are guarded on
+  # /opt/homebrew and $OSTYPE.
+  printf '\n'
+  deploy_zshrc
+  printf '\n'
+  deploy_config "$SETUP_ROOT/dotfiles/zsh_plugins.txt" "$HOME/.zsh_plugins.txt" "" no
   printf '\n'
 
   # ── Git: GPG signing ────────────────────────────────────────────────────────
   run git config --global gpg.program /opt/homebrew/bin/gpg
-  add_to_zshrc 'export GPG_TTY=$(tty)'
 
   # ── Medium-priority pipx packages ───────────────────────────────────────────
   printf '==> Installing pipx packages...\n'

@@ -545,7 +545,7 @@ desktop_main() {
   printf '\n'
   deploy_config "$SETUP_ROOT/dotfiles/tmux.conf" "$HOME/.tmux.conf" "tmux.conf" yes
   printf '\n'
-  deploy_config "$CONFIG_SRC_DIR/zsh_plugins.txt" "$HOME/.zsh_plugins.txt" "" no
+  deploy_config "$SETUP_ROOT/dotfiles/zsh_plugins.txt" "$HOME/.zsh_plugins.txt" "" no
   printf '\n'
   deploy_config "$CONFIG_SRC_DIR/p10k.zsh.example" "$HOME/.p10k.zsh" "p10k.zsh.example" yes
   ghostty_deploy_linux

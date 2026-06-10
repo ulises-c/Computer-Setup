@@ -8,7 +8,8 @@
   },
   {
     "name": "zsh-antidote",
-    "package_manager": { "ubuntu": "apt", "arch": "yay" },
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay" },
+    "macos_name": "antidote",
     "priority": "high",
     "optional": false,
     "description": "Lightweight zsh plugin manager — handles autosuggestions, syntax highlighting, completions, substring search, and abbreviations via a plugins file"
@@ -22,35 +23,21 @@
   },
   {
     "name": "zsh-autosuggestions",
-    "package_manager": { "macos": "brew" },
-    "priority": "medium",
-    "optional": false,
-    "description": "Fish-style history-based suggestions for zsh — macOS sources the brew plugin directly (antidote migration tracked in TODO)"
-  },
-  {
-    "name": "zsh-autosuggestions",
     "package_manager": { "server": "apt" },
     "priority": "high",
     "optional": false,
-    "description": "Fish-style history-based suggestions for zsh"
-  },
-  {
-    "name": "zsh-syntax-highlighting",
-    "package_manager": { "macos": "brew" },
-    "priority": "medium",
-    "optional": false,
-    "description": "Real-time syntax highlighting in zsh — macOS sources the brew plugin directly (antidote migration tracked in TODO)"
+    "description": "Fish-style history-based suggestions for zsh (desktops get this via antidote)"
   },
   {
     "name": "zsh-syntax-highlighting",
     "package_manager": { "server": "apt" },
     "priority": "high",
     "optional": false,
-    "description": "Real-time syntax highlighting in zsh"
+    "description": "Real-time syntax highlighting in zsh (desktops get this via antidote)"
   },
   {
     "name": "zoxide",
-    "package_manager": { "ubuntu": "apt", "arch": "yay" },
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay" },
     "priority": "high",
     "optional": false,
     "description": "Smarter cd — learns your frequent directories, use z to jump instantly"
@@ -275,8 +262,15 @@
     "description": "Modern ls replacement — colors, icons, git status, tree view; Ubuntu needs the eza community apt repo (setup adds it)"
   },
   {
+    "name": "terminal-notifier",
+    "package_manager": { "macos": "brew" },
+    "priority": "medium",
+    "optional": false,
+    "description": "macOS notification CLI — backend for zsh-notify (Linux uses notify-send/xdotool instead)"
+  },
+  {
     "name": "fzf",
-    "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
     "description": "Fuzzy finder — Ctrl+R history search, Ctrl+T file search"
@@ -290,14 +284,14 @@
   },
   {
     "name": "bat",
-    "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
     "description": "cat with syntax highlighting and git integration — Ubuntu installs binary as batcat (setup symlinks bat)"
   },
   {
     "name": "fd",
-    "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "ubuntu_name": "fd-find",
     "server_name": "fd-find",
     "priority": "medium",

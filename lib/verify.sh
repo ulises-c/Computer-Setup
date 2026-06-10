@@ -152,6 +152,17 @@ verify_extras_macos() {
 
   verify_npm_pnpm_cooldowns
 
+  [[ -f "$HOME/.zshrc" ]]           && check "zshrc present (~/.zshrc)" true                  || check "zshrc present (~/.zshrc)" false
+  [[ -f "$HOME/.zsh_plugins.txt" ]] && check "antidote plugin list present (~/.zsh_plugins.txt)" true || check "antidote plugin list present (~/.zsh_plugins.txt)" false
+  [[ -f "$HOME/.tmux.conf" ]]       && check "tmux config present (~/.tmux.conf)" true            || check "tmux config present (~/.tmux.conf)" false
+
+  # antidote (brew formula puts antidote.zsh under /opt/homebrew/opt/antidote)
+  if [[ -f /opt/homebrew/opt/antidote/share/antidote/antidote.zsh ]]; then
+    check "antidote available" true
+  else
+    check "antidote available" false
+  fi
+
   local ghostty_cfg="${XDG_CONFIG_HOME:-$HOME/.config}/ghostty/config.ghostty"
   [[ -f "$ghostty_cfg" ]] && check "ghostty config at XDG path" true || check "ghostty config at XDG path" false
 
