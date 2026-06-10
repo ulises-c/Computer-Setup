@@ -1,0 +1,13 @@
+# LACT default config — Sapphire R9700 AI Pro, CachyOS, captured 2026-05-29
+# This is the stock state before any tuning. Restore with:
+#   sudo cp linux-desktop/lact_default_backup.yaml /etc/lact/config.yaml
+#   sudo systemctl restart lactd
+
+version: 5
+daemon:
+  log_level: info
+  admin_group: wheel
+  disable_clocks_cleanup: false
+apply_settings_timer: 5
+current_profile: null
+auto_switch_profiles: false

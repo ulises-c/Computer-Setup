@@ -64,6 +64,8 @@ Install via `brew install <name>` unless noted otherwise.
     1. Machine emulator and virtualizer — run x86, ARM, and other architectures on Apple Silicon
 27. gogcli | [brew](https://formulae.brew.sh/formula/gogcli) | [Homepage](https://gogcli.sh/)
     1. Google Workspace CLI — Gmail, Calendar, Drive, Docs, Sheets, Slides, and more in the terminal; built for scripts, CI, and coding agents
+28. powerlevel10k | [brew](https://formulae.brew.sh/formula/powerlevel10k) | [GitHub](https://github.com/romkatv/powerlevel10k)
+    1. Feature-rich zsh prompt theme — git status, command duration, exit code, instant prompt; run `p10k configure` once after install to set up `~/.p10k.zsh`
 
 ## Casks
 
