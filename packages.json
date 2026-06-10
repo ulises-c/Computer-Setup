@@ -76,6 +76,13 @@
     "description": "Installs Python CLI tools in isolated virtual environments"
   },
   {
+    "name": "uv",
+    "package_manager": { "macos": "brew", "ubuntu": "pipx", "arch": "yay" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Fast Python package and project manager — pip/venv/pyenv successor"
+  },
+  {
     "name": "build-essential",
     "package_manager": { "ubuntu": "apt", "arch": "yay" },
     "arch_name": "base-devel",
@@ -385,7 +392,7 @@
   },
   {
     "name": "claude-code",
-    "package_manager": { "macos": "brew-cask", "ubuntu": "custom", "arch": "custom", "server": "custom" },
+    "package_manager": { "macos": "custom", "ubuntu": "custom", "arch": "custom", "server": "custom" },
     "priority": "medium",
     "optional": false,
     "handled_by_setup": true,

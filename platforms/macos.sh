@@ -14,8 +14,10 @@ brew_cask_install_tier() {
   local priority="$1" names
   names=$(pkg_names brew-cask "$priority")
   [[ -z "$names" ]] && return 0
+  # --adopt: take ownership of apps already in /Applications (manual installs)
+  # instead of hard-failing the whole tier (#31)
   # shellcheck disable=SC2086
-  run brew install --cask $names
+  run brew install --cask --adopt $names
 }
 
 mac_custom_install_tier() {
@@ -128,6 +130,10 @@ platform_main() {
   # ── Medium-priority brew casks ──────────────────────────────────────────────
   printf '==> Installing brew casks...\n'
   brew_cask_install_tier medium
+
+  # ── Claude Code ─────────────────────────────────────────────────────────────
+  # Official curl installer instead of brew cask — self-updates in place (#39).
+  claude_code_step
 
   # ── Ghostty config ──────────────────────────────────────────────────────────
   # Written to XDG path (~/.config/ghostty/) — works on both macOS and Linux.
