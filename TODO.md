@@ -95,6 +95,11 @@ Folded into #37 once the root engine owned all deploys.
       vcs_info. Dropped the entry; `romkatv/powerlevel10k` is now an antidote
       plugin on all desktops and the zshrc guards the fallback on
       `$+functions[p10k]`
+- [ ] Dropped when PR #38 auto-closed #34: track the claude-hud display config
+      (`~/.claude/plugins/claude-hud/config.json`) under `agentic-ai/Claude/` and
+      symlink it from `install.sh` (#34 task 2). Task 3 — the statusLine
+      `/usr/bin/node` hardcode — is fixed on this branch (runtime `command -v
+      node` with an nvm-glob fallback)
 - [ ] Ubuntu desktop leftover: `sudo apt remove micro` — the stale apt 2.0.13
       still shadows the snap (`/usr/bin` precedes `/snap/bin` in PATH)
 - [ ] Caveat for the remaining live runs (CachyOS, both Macs): setup migrates
