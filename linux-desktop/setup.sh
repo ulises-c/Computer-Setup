@@ -637,12 +637,12 @@ fi
 # ── Powerlevel10k config ─────────────────────────────────────────────────────
 echo ""
 if [[ ! -f "$HOME/.p10k.zsh" ]]; then
-  run cp "$SCRIPT_DIR/p10k.zsh" "$HOME/.p10k.zsh"
-  echo "==> ~/.p10k.zsh installed from p10k.zsh"
-elif ! diff -q "$SCRIPT_DIR/p10k.zsh" "$HOME/.p10k.zsh" &>/dev/null; then
+  run cp "$SCRIPT_DIR/p10k.zsh.example" "$HOME/.p10k.zsh"
+  echo "==> ~/.p10k.zsh installed from p10k.zsh.example"
+elif ! diff -q "$SCRIPT_DIR/p10k.zsh.example" "$HOME/.p10k.zsh" &>/dev/null; then
   P10K_BACKUP="$HOME/.p10k.zsh.bak.$(date +%Y%m%d_%H%M%S)"
   run cp "$HOME/.p10k.zsh" "$P10K_BACKUP"
-  run cp "$SCRIPT_DIR/p10k.zsh" "$HOME/.p10k.zsh"
+  run cp "$SCRIPT_DIR/p10k.zsh.example" "$HOME/.p10k.zsh"
   echo "==> ~/.p10k.zsh updated (backup saved to $P10K_BACKUP)"
 else
   echo "==> ~/.p10k.zsh already up to date"
