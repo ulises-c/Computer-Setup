@@ -2,22 +2,48 @@
 # macOS quirks: Homebrew bootstrap, brew/brew-cask/custom installs,
 # expat-pinned pyenv build (Tahoe fix), App Store reminders.
 
+# Populated by brew_install_tier / brew_cask_install_tier; printed at the end.
+BREW_FAILURES=()
+BREW_TOTAL=0
+
 brew_install_tier() {
-  local priority="$1" names
+  local priority="$1" names name err reason
   names=$(pkg_names brew "$priority")
   [[ -z "$names" ]] && return 0
-  # shellcheck disable=SC2086
-  run brew install $names
+  for name in $names; do
+    if [[ "$DRY_RUN" == true ]]; then
+      printf '  [dry-run] brew install %s\n' "$name"
+      continue
+    fi
+    BREW_TOTAL=$((BREW_TOTAL + 1))
+    if ! err=$(brew install "$name" 2>&1); then
+      reason=$(printf '%s\n' "$err" | grep -m1 'Error:' | sed 's/^Error: //')
+      [[ -z "$reason" ]] && reason=$(printf '%s\n' "$err" | tail -1)
+      BREW_FAILURES+=("brew/$name: $reason")
+      printf '  [FAIL] brew install %s — %s\n' "$name" "$reason"
+    fi
+  done
 }
 
 brew_cask_install_tier() {
-  local priority="$1" names
+  local priority="$1" names name err reason
   names=$(pkg_names brew-cask "$priority")
   [[ -z "$names" ]] && return 0
   # --adopt: take ownership of apps already in /Applications (manual installs)
   # instead of hard-failing the whole tier (#31)
-  # shellcheck disable=SC2086
-  run brew install --cask --adopt $names
+  for name in $names; do
+    if [[ "$DRY_RUN" == true ]]; then
+      printf '  [dry-run] brew install --cask --adopt %s\n' "$name"
+      continue
+    fi
+    BREW_TOTAL=$((BREW_TOTAL + 1))
+    if ! err=$(brew install --cask --adopt "$name" 2>&1); then
+      reason=$(printf '%s\n' "$err" | grep -m1 'Error:' | sed 's/^Error: //')
+      [[ -z "$reason" ]] && reason=$(printf '%s\n' "$err" | tail -1)
+      BREW_FAILURES+=("cask/$name: $reason")
+      printf '  [FAIL] brew install --cask %s — %s\n' "$name" "$reason"
+    fi
+  done
 }
 
 mac_custom_install_tier() {
@@ -174,6 +200,8 @@ platform_main() {
   printf '\n'
   deploy_config "$SETUP_ROOT/dotfiles/zsh_plugins.txt" "$HOME/.zsh_plugins.txt" "" no
   printf '\n'
+  deploy_config "$SETUP_ROOT/dotfiles/p10k.zsh.example" "$HOME/.p10k.zsh" "p10k.zsh.example" yes
+  printf '\n'
 
   # ── Git: GPG signing ────────────────────────────────────────────────────────
   run git config --global gpg.program /opt/homebrew/bin/gpg
@@ -223,6 +251,18 @@ platform_main() {
   printf '\n'
   printf 'Optional — run these from the repo root as needed:\n'
   print_related_scripts
+
+  if [[ "$DRY_RUN" == false && $BREW_TOTAL -gt 0 ]]; then
+    local ok=$((BREW_TOTAL - ${#BREW_FAILURES[@]}))
+    printf '\n==> Brew install summary: %d/%d succeeded\n' "$ok" "$BREW_TOTAL"
+    if [[ ${#BREW_FAILURES[@]} -gt 0 ]]; then
+      printf '    Failed:\n'
+      for f in "${BREW_FAILURES[@]}"; do
+        printf '      - %s\n' "$f"
+      done
+      printf '    Run setup.sh again after resolving the above.\n'
+    fi
+  fi
 
   printf '\n'
   [[ "$DRY_RUN" == true ]] && printf 'Dry run complete — nothing was installed.\n' || printf 'Done! Restart your terminal or open a new tab.\n'

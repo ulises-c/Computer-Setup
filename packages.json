@@ -635,6 +635,7 @@
   },
   {
     "name": "Spark Mail – AI Email Inbox",
+    "macos_name": "Spark Desktop",
     "package_manager": { "macos": "app-store" },
     "priority": "medium",
     "optional": false,

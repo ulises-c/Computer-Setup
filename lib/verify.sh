@@ -165,7 +165,7 @@ verify_extras_macos() {
     check "antidote available" false
   fi
 
-  local ghostty_cfg="${XDG_CONFIG_HOME:-$HOME/.config}/ghostty/config.ghostty"
+  local ghostty_cfg="${XDG_CONFIG_HOME:-$HOME/.config}/ghostty/config"
   [[ -f "$ghostty_cfg" ]] && check "ghostty config at XDG path" true || check "ghostty config at XDG path" false
 
   if [[ -n "${PIPX_DEFAULT_PYTHON:-}" && -f "${PIPX_DEFAULT_PYTHON:-}" ]]; then
