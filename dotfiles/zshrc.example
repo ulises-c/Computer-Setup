@@ -172,6 +172,7 @@ alias grep='grep --color=auto'
 alias df='df -h'
 alias du='du -sh'
 alias reload='source ~/.zshrc'
+command -v fastfetch &>/dev/null && alias cf='clear && fastfetch'
 
 # macOS: Homebrew maintenance
 command -v brew &>/dev/null && alias brewup='brew update && brew upgrade && brew cleanup'

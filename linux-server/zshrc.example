@@ -70,6 +70,7 @@ alias grep='grep --color=auto'
 alias df='df -h'
 alias du='du -sh'
 alias reload='source ~/.zshrc'
+command -v fastfetch &>/dev/null && alias cf='clear && fastfetch'
 
 # Ubuntu binary name shims
 alias bat='batcat'
