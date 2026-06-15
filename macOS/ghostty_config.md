@@ -2,7 +2,7 @@
 
 Source: [ghostty.org/docs/config](https://ghostty.org/docs/config)
 
-The raw config file is [ghostty.config](ghostty.config) — `setup.sh` copies it to the XDG path automatically.
+The raw config file is [dotfiles/ghostty.config](../dotfiles/ghostty.config) (shared across macOS and Linux) — `setup.sh` copies it to the XDG path automatically.
 
 ## File Locations
 
@@ -25,5 +25,7 @@ Both locations are supported on macOS. Since the XDG path works cross-platform a
 
 ```
 theme = Dark Pastel
+font-family = MesloLGS Nerd Font Mono
 shell-integration = zsh
+term = xterm-256color
 ```

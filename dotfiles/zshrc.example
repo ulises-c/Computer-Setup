@@ -1,9 +1,12 @@
 # ═══════════════════════════════════════════════════════════════
-#  ~/.zshrc  —  Linux desktop zsh config (Ubuntu / Arch)
+#  ~/.zshrc  —  shared zsh config (macOS / Ubuntu / Arch)
 # ═══════════════════════════════════════════════════════════════
-# Requires: zsh, zsh-antidote, zoxide, fastfetch, fzf, bat, fd, eza
+# Base zshrc deployed by setup.sh; a platform folder can ship its own
+# zshrc.example to override it (linux-server does — headless, no Ghostty).
+# macOS-specific bits are guarded on /opt/homebrew (Apple Silicon) or $OSTYPE.
+# Requires: zsh, antidote, zoxide, fastfetch, fzf, bat, fd, eza
 # Plugins managed by antidote — see ~/.zsh_plugins.txt
-# Install:  bash linux-desktop/setup.sh
+# Install:  bash setup.sh
 
 # ── Instant prompt (Powerlevel10k — keep at very top) ──────────
 [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]] && \
@@ -13,7 +16,11 @@
 # ═══════════════════════════════════════════════════════════════
 #  PATH
 # ═══════════════════════════════════════════════════════════════
+# macOS: Homebrew (Apple Silicon)
+[[ -d /opt/homebrew/bin ]] && export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
 export PATH="$HOME/.local/bin:$PATH"
+# cargo install artifacts (rustup toolchains proxy via /usr/bin)
+[[ -d "$HOME/.cargo/bin" ]] && export PATH="$HOME/.cargo/bin:$PATH"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -25,9 +32,18 @@ export PYENV_ROOT="$HOME/.pyenv"
 [[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"
 command -v pyenv &>/dev/null && eval "$(pyenv init -)"
 
+# macOS: point pipx at the pyenv python — brew's Python bottles are broken
+# on Tahoe (missing libexpat symbols)
+[[ "$OSTYPE" == darwin* && -x $PYENV_ROOT/shims/python3 ]] && \
+  export PIPX_DEFAULT_PYTHON="$PYENV_ROOT/shims/python3"
+
 export NVM_DIR="$HOME/.nvm"
 [[ -s $NVM_DIR/nvm.sh ]] && source "$NVM_DIR/nvm.sh"
 [[ -s $NVM_DIR/bash_completion ]] && source "$NVM_DIR/bash_completion"
+# macOS: brew's node may shadow nvm's — force the default alias, dropping any
+# prefix conflict
+[[ "$OSTYPE" == darwin* ]] && command -v nvm &>/dev/null && \
+  nvm use --delete-prefix default --silent 2>/dev/null
 
 # pnpm — enabled by setup.sh via corepack (the pnpm binary itself is a corepack
 # shim on PATH via nvm). Global CLI binaries land in $PNPM_HOME/bin.
@@ -53,8 +69,11 @@ setopt HIST_REDUCE_BLANKS
 # antidote sources all plugins listed in ~/.zsh_plugins.txt:
 #   zsh-completions, zsh-autosuggestions, zsh-syntax-highlighting,
 #   zsh-history-substring-search, zsh-abbr
-if [[ -f /usr/share/zsh-antidote/antidote.zsh ]]; then
+if [[ -f /usr/share/zsh-antidote/antidote.zsh ]]; then          # Linux
   source /usr/share/zsh-antidote/antidote.zsh
+  antidote load
+elif [[ -f /opt/homebrew/opt/antidote/share/antidote/antidote.zsh ]]; then  # macOS (brew)
+  source /opt/homebrew/opt/antidote/share/antidote/antidote.zsh
   antidote load
 fi
 
@@ -62,6 +81,9 @@ fi
 # ═══════════════════════════════════════════════════════════════
 #  COMPLETION
 # ═══════════════════════════════════════════════════════════════
+# macOS: brew-provided completion definitions (must precede compinit)
+[[ -d /opt/homebrew/share/zsh/site-functions ]] && \
+  FPATH="/opt/homebrew/share/zsh/site-functions:$FPATH"
 autoload -Uz compinit && compinit
 zstyle ':completion:*' menu select
 zstyle ':completion:*' matcher-list 'm:{a-z}={A-Z}'
@@ -82,10 +104,9 @@ setopt NO_BEEP
 # ═══════════════════════════════════════════════════════════════
 #  PROMPT  (Powerlevel10k if available, vcs_info fallback)
 # ═══════════════════════════════════════════════════════════════
-# Arch: pacman -S zsh-theme-powerlevel10k  |  run: p10k configure
-if [[ -f /usr/share/zsh-theme-powerlevel10k/powerlevel10k.zsh-theme ]]; then
-  source /usr/share/zsh-theme-powerlevel10k/powerlevel10k.zsh-theme
-else
+# Powerlevel10k loads via antidote (romkatv/powerlevel10k in ~/.zsh_plugins.txt);
+# settings come from ~/.p10k.zsh sourced at the bottom of this file.
+if ! (( $+functions[p10k] )); then
   autoload -Uz vcs_info
 
   _prompt_precmd() {
@@ -130,7 +151,14 @@ fi
 # ═══════════════════════════════════════════════════════════════
 #  ALIASES
 # ═══════════════════════════════════════════════════════════════
-alias ls='ls --color=auto'
+if [[ "$OSTYPE" == darwin* ]]; then
+  alias ls='ls -G'          # BSD ls has no --color=auto
+  # App Store Tailscale bundles the CLI inside the app — not on PATH (#22)
+  [[ -x "/Applications/Tailscale.app/Contents/MacOS/Tailscale" ]] && \
+    alias tailscale="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+else
+  alias ls='ls --color=auto'
+fi
 if command -v eza &>/dev/null; then
   alias ll='eza -lah --git --icons --group-directories-first'
   alias la='eza -a --icons --group-directories-first'
@@ -144,6 +172,10 @@ alias grep='grep --color=auto'
 alias df='df -h'
 alias du='du -sh'
 alias reload='source ~/.zshrc'
+command -v fastfetch &>/dev/null && alias cf='clear && fastfetch'
+
+# macOS: Homebrew maintenance
+command -v brew &>/dev/null && alias brewup='brew update && brew upgrade && brew cleanup'
 
 # Ubuntu binary name shims (bat → batcat, fd → fdfind)
 [[ -x /usr/bin/batcat ]] && ! command -v bat &>/dev/null && alias bat='batcat'
@@ -176,6 +208,7 @@ fi
 export EDITOR='micro'
 export LANG='en_US.UTF-8'
 export LC_ALL='en_US.UTF-8'
+export GPG_TTY=$(tty)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -197,6 +230,11 @@ command -v zoxide &>/dev/null && eval "$(zoxide init zsh)"
   source /usr/share/fzf/key-bindings.zsh
 [[ -f /usr/share/fzf/completion.zsh ]] && \
   source /usr/share/fzf/completion.zsh
+# macOS (brew)
+[[ -f /opt/homebrew/opt/fzf/shell/key-bindings.zsh ]] && \
+  source /opt/homebrew/opt/fzf/shell/key-bindings.zsh
+[[ -f /opt/homebrew/opt/fzf/shell/completion.zsh ]] && \
+  source /opt/homebrew/opt/fzf/shell/completion.zsh
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -219,7 +257,8 @@ bindkey '^[OB' history-substring-search-down
 # ═══════════════════════════════════════════════════════════════
 #  NOTIFY  (desktop notification after long commands)
 # ═══════════════════════════════════════════════════════════════
-# Requires: notify-send (libnotify), xdotool or wmctrl (focus detection)
+# Linux: notify-send (libnotify) + xdotool for focus detection.
+# macOS: terminal-notifier; focus detection is native AppleScript.
 # Loaded via antidote (marzocchi/zsh-notify)
 zstyle ':notify:*' command-complete-timeout 30
 zstyle ':notify:*' error-title "Command failed"

@@ -1,6 +1,6 @@
 # TODO
 
-## Setup-script unification (separate PR)
+## Setup-script unification (separate PR) — [#36](https://github.com/ulises-c/Computer-Setup/issues/36)
 
 Collapse the three diverged setup stacks (`macOS/`, `linux-desktop/`, `linux-server/`)
 into one root `setup.sh` + one `packages.json`, with platform quirks in `platforms/`
@@ -9,27 +9,103 @@ and a shared `lib/core.sh`. Full spec, schema, and phased breakdown in
 keyed by `{macos,ubuntu,arch,server}`), root dispatcher + platform modules, incremental
 migration gated on dry-run parity.
 
-- [ ] Phase 1 — Author unified root `packages.json`; build `scripts/parity-check.sh`
+- [x] Phase 1 — Author unified root `packages.json`; build `scripts/parity-check.sh`
       proving per-platform install lists match the current per-folder scripts
-- [ ] Phase 2 — Extract `lib/core.sh` + `platforms/{macos,arch,ubuntu,server}.sh`; add
+      — 231 checks passed (platform × manager × priority × work/personal combos;
+      gate deleted in Phase 5 along with its legacy-JSON inputs)
+- [x] Phase 2 — Extract `lib/core.sh` + `platforms/{macos,arch,ubuntu,server}.sh`; add
       root `setup.sh` dispatcher; gate on `--dry-run` parity vs old scripts
-- [ ] Phase 3 — Unify `verify.sh` the same way (shared core + platform checks)
-- [ ] Phase 4 — Convert per-folder `setup.sh`/`verify.sh` into thin shims; update
+      — `scripts/dryrun-parity.sh` passed 22/22 platform × flag combos (gate deleted in Phase 4)
+- [x] Phase 3 — Unify `verify.sh` the same way (shared core + platform checks)
+      — `scripts/verify-parity.sh` passed 21/21 platform × flag combos (gate deleted in Phase 4)
+- [x] Phase 4 — Convert per-folder `setup.sh`/`verify.sh` into thin shims; update
       `README.md` / `CLAUDE.md` for the root entrypoint
-- [ ] Phase 5 — Delete the three old per-folder package JSONs once parity is proven
-- [ ] Resolve open questions: server-as-platform vs profile; `install_command`
+      — shim output diffed byte-identical vs direct root invocation; the script-level
+      gates (`dryrun-parity.sh`, `verify-parity.sh`) self-compare post-shim and were
+      deleted (last green run at a8d4149); `scripts/dryrun-smoke.sh` (root dry-run on
+      all four platforms, also in CI) took their place; `parity-check.sh` stayed
+      through Phase 5's final green run
+- [x] Phase 5 — Delete the three old per-folder package JSONs once parity is proven
+      — legacy JSONs + `scripts/parity-check.sh` (whose inputs they were) deleted;
+      server claude-code install folded into `packages.json` (`server: custom`,
+      `handled_by_setup: true`); custom-package reminders generalized into
+      `lib/core.sh`, so ubuntu now prints manual-install commands for `git-xet` /
+      `claude-desktop` instead of silently skipping them (the legacy gap);
+      dry-run output diffed vs pre-Phase-5 baseline — identical except that addition
+- [x] Resolve open questions: server-as-platform vs profile; `install_command`
       string vs object; keep `priority: "none"` tier? (see UNIFICATION.md)
+      — resolved: server is a platform key (option A, locked in Phase 1);
+      `install_command` supports both string and per-platform object (`icfor`);
+      `priority: "none"` tier kept — reminder/`--all`-only, never auto-installs
+- [x] Phase 6 — Merge main (PRs #28 p10k/LACT, #35 railguard, #38 claude-hud) into
+      the branch; port the features that landed on the legacy stack into the unified
+      one: `zsh-theme-powerlevel10k` + `lact` entries into root `packages.json`,
+      `~/.p10k.zsh` deploy (`deploy_config`) into the shared desktop flow.
+      Legacy `linux-desktop/setup.sh` stayed a shim; the legacy JSON stayed deleted.
+      Gate: per-platform dry-run diff vs pre-merge baseline — only the intended
+      additions (two arch packages, p10k deploy lines)
+- [x] Phase 7 — Dotfiles consolidation (details in the section below): shared
+      `tmux.conf`/`ghostty.config` moved to `dotfiles/`, all engine deploys
+      repointed, macOS gains the previously missing tmux deploy.
+      Gate: per-platform dry-run diff vs pre-change baseline — identical except
+      macOS's new tmux step
 
-## Ghostty config standardization
+## Dotfiles consolidation — DONE as unification Phase 7 (PR #37)
 
-The ghostty config lives in two places (`macOS/ghostty.config`, `linux-desktop/ghostty.config`)
-with identical content. Consider extracting a universal `cross-platform/ghostty.config` for shared
-settings (`term = xterm-256color`, `theme`, `shell-integration`) and keeping OS-specific
-configs additive-only (e.g., macOS font settings, Linux-specific tweaks).
+Shared configs were duplicated per-folder and could drift silently across devices.
+Folded into #37 once the root engine owned all deploys.
 
-- [ ] Create `cross-platform/ghostty.config` (universal base)
-- [ ] Refactor OS configs to extend/override the universal base
-- [ ] Update both `setup.sh` scripts to deploy the new layout (universal + OS overlay)
+- [x] Create `dotfiles/` and move the byte-identical files: `tmux.conf`, `ghostty.config`
+- [x] Point the root engine's deploy steps (`lib/core.sh`, `platforms/macos.sh`,
+      `platforms/server.sh`) at the new paths; drop the per-folder copies
+- [x] Deploy tmux.conf on macOS too (was the missing platform — Macs showed the
+      default green bottom bar while Linux boxes got the blue top bar)
+- [x] Ghostty: single universal config in `dotfiles/` (the two copies were already
+      byte-identical); no overlay mechanism until an OS-specific setting actually
+      exists
+- [x] zshrc: `dotfiles/zshrc.example` is the shared base (`deploy_zshrc`); a platform
+      folder shipping its own `zshrc.example` overrides it — only `linux-server/`
+      does, because it's headless (no Ghostty/fastfetch/notification hooks)
+- [x] macOS zsh unification: the dotfiles zshrc is cross-platform (macOS bits guarded
+      on `/opt/homebrew`/`$OSTYPE` — Homebrew PATH+FPATH, brew p10k/antidote/fzf
+      paths, `ls -G`, `brewup`, `PIPX_DEFAULT_PYTHON`, nvm `--delete-prefix`); macOS
+      deploys it + `dotfiles/zsh_plugins.txt` via the engine instead of appending
+      lines to `~/.zshrc` (`add_to_zshrc` deleted). antidote/zoxide/fzf/bat/fd/
+      terminal-notifier gained `macos: brew` entries; the brew
+      zsh-autosuggestions/zsh-syntax-highlighting entries were dropped (antidote
+      manages the plugins now — `brew uninstall` them on the Mac after migrating).
+      `macOS/zshrc.example` + `zshrc-upgrade.md` deleted (plan absorbed)
+      (e.g., macOS font settings, Linux-specific tweaks)
+- [ ] Mac mini live-run cleanup (from the 2026-06 `brew leaves` audit): `brew
+      uninstall` the testing leftovers `forgejo`, `tea`, and `python@3.12`
+      (project Pythons come from pyenv/uv), plus `zsh-autosuggestions` /
+      `zsh-syntax-highlighting` / `powerlevel10k` (antidote manages them now),
+      and `brew uninstall --cask claude-code` (repo installs it via curl)
+- [ ] MBP live-run cleanup (same audit): `brew uninstall tea python-tk@3.11
+      python@3.11 zsh-autosuggestions zsh-syntax-highlighting powerlevel10k`;
+      pre-existing casks (anki, ghostty, obsidian) get picked up by the cask
+      `--adopt` flag
+- [x] Ubuntu desktop live run (2026-06, at `eb0fe49`): gh migrated to the
+      official cli.github.com apt repo, micro/obsidian snaps in, uv via pipx,
+      shared zshrc + p10k + ghostty deployed (zshrc auto-backup worked).
+      `verify.sh --work` green except the by-design manual installs
+      (forgejo-cli, opencode, zen-browser, anki)
+- [x] Ubuntu live-run follow-up: p10k never loaded — the only installer was the
+      arch-only `zsh-theme-powerlevel10k` yay entry, so Ubuntu/macOS fell back to
+      vcs_info. Dropped the entry; `romkatv/powerlevel10k` is now an antidote
+      plugin on all desktops and the zshrc guards the fallback on
+      `$+functions[p10k]`
+- [ ] Dropped when PR #38 auto-closed #34: track the claude-hud display config
+      (`~/.claude/plugins/claude-hud/config.json`) under `agentic-ai/Claude/` and
+      symlink it from `install.sh` (#34 task 2). Task 3 — the statusLine
+      `/usr/bin/node` hardcode — is fixed on this branch (runtime `command -v
+      node` with an nvm-glob fallback)
+- [ ] Ubuntu desktop leftover: `sudo apt remove micro` — the stale apt 2.0.13
+      still shadows the snap (`/usr/bin` precedes `/snap/bin` in PATH)
+- [ ] Caveat for the remaining live runs (CachyOS, both Macs): setup migrates
+      install methods but never uninstalls the old copy — after each run,
+      `command -v` every migrated tool to catch shadowed binaries
+- [ ] Later: consider base + per-platform overlay for zshrc (desktop vs server vs macOS)
 
 ## OpenCode local models
 
@@ -44,24 +120,6 @@ Still to explore:
 - [ ] Add CachyOS provider config once the model/runtime is chosen
 - [ ] Consider `small_model` for lightweight tasks (title gen, etc.)
 - [ ] Install `opencode-local` via install.sh and verify PATH
-
-## macOS zshrc modernization
-
-Port the linux-desktop zsh enhancements to the macOS config. See
-[macOS/zshrc-upgrade.md](macOS/zshrc-upgrade.md) for the full plan.
-
-- [ ] Switch from manual Homebrew plugin sourcing to antidote
-- [ ] Add eza aliases with `--icons --group-directories-first`
-- [ ] Add RPROMPT with command duration
-- [ ] Add colorized man pages via bat
-- [ ] Add zsh-notify for desktop notifications on long commands
-- [ ] Add fish-style abbreviations via zsh-abbr
-- [ ] Add zsh-history-substring-search with Up/Down keybindings
-- [ ] Add grouped completion descriptions
-- [ ] Add path underlining in syntax highlighting
-- [ ] Add zoxide init
-- [ ] Add FZF keybindings and completion (Homebrew paths)
-- [ ] Create macOS zsh_plugins.txt
 
 ## linux-desktop (personal) — CachyOS / Arch
 

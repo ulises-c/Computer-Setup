@@ -4,7 +4,7 @@
 
 1. Homebrew | [Download](https://brew.sh/)
    1. The missing package manager for macOS — see [brew_packages.md](brew_packages.md) for the full list of useful formulae
-   2. Packages: `gh`, `hf`, `git-lfs`, `git-xet`, `fastfetch`, `pipx`, `pyenv`, `sshpass`, `gnupg`, `zsh-autosuggestions`, `zsh-syntax-highlighting`, `htop`, `nvtop`, `mactop`, `micro`, `tmux`, `llama.cpp`, and more
+   2. Packages: `gh`, `hf`, `git-lfs`, `git-xet`, `fastfetch`, `pipx`, `pyenv`, `sshpass`, `gnupg`, `antidote`, `htop`, `nvtop`, `mactop`, `micro`, `tmux`, `llama.cpp`, and more (zsh plugins are managed by antidote — see [dotfiles/zsh_plugins.txt](../dotfiles/zsh_plugins.txt))
 2. pipx | [brew](https://formulae.brew.sh/formula/pipx)
    1. Installs Python CLI tools in isolated virtual environments — see [pipx_packages.md](pipx_packages.md) for the full list
    2. Packages: `poetry`, and more
@@ -90,7 +90,7 @@
 
 ## Work
 
-Install with `zsh setup.sh --work`.
+Install with `bash setup.sh --work` from the repo root (`macOS/setup.sh` is a thin shim onto it).
 
 1. Slack | [brew](https://formulae.brew.sh/cask/slack)
    1. Team messaging and collaboration

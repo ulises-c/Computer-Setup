@@ -7,63 +7,64 @@ Tested on Ubuntu Server LTS. Most packages work on other Debian-based distros.
 
 1. zsh | [apt](https://packages.ubuntu.com/search?keywords=zsh) | [Homepage](https://www.zsh.org/)
    1. Z shell — consistent shell across all devices; set as default by `setup.sh`
-2. zsh-autosuggestions | [apt](https://packages.ubuntu.com/search?keywords=zsh-autosuggestions) | [GitHub](https://github.com/zsh-users/zsh-autosuggestions)
-   1. Fish-style history-based suggestions for zsh — press → to accept
-3. zsh-syntax-highlighting | [apt](https://packages.ubuntu.com/search?keywords=zsh-syntax-highlighting) | [GitHub](https://github.com/zsh-users/zsh-syntax-highlighting)
-   1. Real-time syntax highlighting in zsh — valid commands appear green, invalid ones red, before pressing Enter
+2. zsh-antidote | [apt](https://packages.ubuntu.com/search?keywords=zsh-antidote) | [GitHub](https://github.com/mattmc3/antidote)
+   1. Zsh plugin manager — manages zsh-autosuggestions and zsh-syntax-highlighting per `~/.zsh_plugins.txt`
+   2. Run `antidote update` to pull latest plugin versions
 
 ## CLI Tools
 
-4. fastfetch | [PPA](https://launchpad.net/~zhangsongcui3371/+archive/ubuntu/fastfetch) | [GitHub](https://github.com/fastfetch-cli/fastfetch)
+3. fastfetch | [PPA](https://launchpad.net/~zhangsongcui3371/+archive/ubuntu/fastfetch) | [GitHub](https://github.com/fastfetch-cli/fastfetch)
    1. Fast, customizable system info display — shown on every interactive shell startup in the example zshrc
    2. Not in standard Ubuntu repos; `setup.sh` adds the official PPA automatically
-5. fzf | [apt](https://packages.ubuntu.com/search?keywords=fzf) | [GitHub](https://github.com/junegunn/fzf)
+4. fzf | [apt](https://packages.ubuntu.com/search?keywords=fzf) | [GitHub](https://github.com/junegunn/fzf)
    1. Fuzzy finder — Ctrl+R for history search, Ctrl+T for file search; key bindings sourced in zshrc
-6. ripgrep | [apt](https://packages.ubuntu.com/search?keywords=ripgrep) | [GitHub](https://github.com/BurntSushi/ripgrep)
+5. ripgrep | [apt](https://packages.ubuntu.com/search?keywords=ripgrep) | [GitHub](https://github.com/BurntSushi/ripgrep)
    1. Fast recursive grep replacement — command: `rg`
-7. bat | [apt](https://packages.ubuntu.com/search?keywords=bat) | [GitHub](https://github.com/sharkdp/bat)
+6. bat | [apt](https://packages.ubuntu.com/search?keywords=bat) | [GitHub](https://github.com/sharkdp/bat)
    1. `cat` with syntax highlighting and git integration
    2. Ubuntu installs the binary as `batcat` due to a naming conflict; zshrc aliases `bat=batcat` and `setup.sh` creates a symlink
-8. fd-find | [apt](https://packages.ubuntu.com/search?keywords=fd-find) | [GitHub](https://github.com/sharkdp/fd)
+7. fd-find | [apt](https://packages.ubuntu.com/search?keywords=fd-find) | [GitHub](https://github.com/sharkdp/fd)
    1. Fast and user-friendly `find` alternative — command: `fd`
    2. Ubuntu installs the binary as `fdfind`; zshrc aliases `fd=fdfind` and `setup.sh` creates a symlink
-9. eza | [apt](https://github.com/eza-community/eza/blob/main/INSTALL.md) | [GitHub](https://github.com/eza-community/eza)
+8. eza | [apt](https://github.com/eza-community/eza/blob/main/INSTALL.md) | [GitHub](https://github.com/eza-community/eza)
    1. Modern `ls` replacement with icons, colors, and git status per file
    2. Not in standard Ubuntu repos; `setup.sh` adds the eza community apt repo automatically
    3. Used for `ll` and `la` aliases in zshrc: `ll='eza -lAh --git'`
 
 ## Development
 
-10. gh | [apt](https://github.com/cli/cli/blob/trunk/docs/install_linux.md) | [GitHub](https://github.com/cli/cli)
-    1. GitHub CLI — create PRs, manage issues, clone repos, and trigger Actions from the terminal
-    2. `setup.sh` adds the official GitHub CLI apt repo automatically
-11. git | [apt](https://packages.ubuntu.com/search?keywords=git) | [Homepage](https://git-scm.com/)
+9. gh | [apt](https://github.com/cli/cli/blob/trunk/docs/install_linux.md) | [GitHub](https://github.com/cli/cli)
+   1. GitHub CLI — create PRs, manage issues, clone repos, and trigger Actions from the terminal
+   2. `setup.sh` adds the official GitHub CLI apt repo automatically
+10. git | [apt](https://packages.ubuntu.com/search?keywords=git) | [Homepage](https://git-scm.com/)
     1. Version control — usually pre-installed on Ubuntu Server
-12. git-lfs | [apt](https://packages.ubuntu.com/search?keywords=git-lfs) | [GitHub](https://github.com/git-lfs/git-lfs)
+11. git-lfs | [apt](https://packages.ubuntu.com/search?keywords=git-lfs) | [GitHub](https://github.com/git-lfs/git-lfs)
     1. Git extension for versioning large binary files (datasets, model weights, media)
-13. gnupg | [apt](https://packages.ubuntu.com/search?keywords=gnupg) | [Homepage](https://gnupg.org/)
+12. gnupg | [apt](https://packages.ubuntu.com/search?keywords=gnupg) | [Homepage](https://gnupg.org/)
     1. GPG — required for commit signing; used by `SSH_and_GPG/create_gpg_key.sh`
 
 ## System Monitoring
 
-14. htop | [apt](https://packages.ubuntu.com/search?keywords=htop) | [GitHub](https://github.com/htop-dev/htop)
+13. htop | [apt](https://packages.ubuntu.com/search?keywords=htop) | [GitHub](https://github.com/htop-dev/htop)
     1. Interactive process viewer — colorized, scrollable alternative to `top` with per-core CPU, memory, and swap meters
-15. nvtop | [apt](https://packages.ubuntu.com/search?keywords=nvtop) | [GitHub](https://github.com/Syllo/nvtop)
+14. nvtop | [snap](https://snapcraft.io/nvtop) | [GitHub](https://github.com/Syllo/nvtop)
     1. GPU process monitor similar to htop — supports NVIDIA, AMD, Intel, and integrated GPUs
+    2. Installed via snap by `setup.sh` (snapd is preinstalled on Ubuntu Server)
 
 ## Server Utilities
 
-16. tmux | [apt](https://packages.ubuntu.com/search?keywords=tmux) | [GitHub](https://github.com/tmux/tmux)
+15. tmux | [apt](https://packages.ubuntu.com/search?keywords=tmux) | [GitHub](https://github.com/tmux/tmux)
     1. Terminal multiplexer — split panes, persist sessions across SSH disconnects, run background processes
-17. micro | [apt](https://packages.ubuntu.com/search?keywords=micro) | [GitHub](https://github.com/zyedidia/micro)
+16. micro | [snap](https://snapcraft.io/micro) | [GitHub](https://github.com/zyedidia/micro)
     1. Modern terminal text editor with mouse support, syntax highlighting, and familiar keybindings (Ctrl+S, Ctrl+C, etc.)
-18. ncdu | [apt](https://packages.ubuntu.com/search?keywords=ncdu) | [Homepage](https://dev.yorhel.nl/ncdu)
+    2. Installed via snap (`--classic`) by `setup.sh` — noble's apt version is stuck at 2.0.13
+17. ncdu | [apt](https://packages.ubuntu.com/search?keywords=ncdu) | [Homepage](https://dev.yorhel.nl/ncdu)
     1. Interactive disk usage analyzer — essential for managing storage on a file server
-19. cockpit | [apt](https://packages.ubuntu.com/search?keywords=cockpit) | [Homepage](https://cockpit-project.org/)
+18. cockpit | [apt](https://packages.ubuntu.com/search?keywords=cockpit) | [Homepage](https://cockpit-project.org/)
     1. Web-based server admin UI — system metrics, journal logs, network config, storage, and service management
     2. Enabled automatically via systemd socket activation on install; access at `https://<server-ip>:9090`
     3. Login with your Linux username and password
-20. sshpass | [apt](https://packages.ubuntu.com/search?keywords=sshpass) | [Homepage](https://sourceforge.net/projects/sshpass/)
+19. sshpass | [apt](https://packages.ubuntu.com/search?keywords=sshpass) | [Homepage](https://sourceforge.net/projects/sshpass/)
     1. Non-interactive SSH password authentication — used by `SSH_and_GPG/add_remote_host.sh`
 
 ## Optional

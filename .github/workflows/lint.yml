@@ -16,7 +16,6 @@ jobs:
         with:
           scandir: .
           severity: warning
-          ignore_paths: macOS
 
   json-validate:
     runs-on: ubuntu-latest
@@ -36,6 +35,14 @@ jobs:
           done
           exit $failed
 
+  dryrun-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Root setup.sh dry-run on every platform
+        run: bash scripts/dryrun-smoke.sh
+
   zsh-syntax:
     runs-on: ubuntu-latest
     steps:
@@ -47,7 +54,7 @@ jobs:
       - name: Run zsh -n on zsh scripts
         run: |
           failed=0
-          for f in $(find . -not -path './.git/*' \( \( -name '*.sh' -path '*/macOS/*' \) -o -name '*.zsh' -o -name 'zshrc.example' \)); do
+          for f in $(find . -not -path './.git/*' \( -name '*.zsh' -o -name 'zshrc.example' \)); do
             if zsh -n "$f" 2>&1; then
               echo "✓ $f"
             else

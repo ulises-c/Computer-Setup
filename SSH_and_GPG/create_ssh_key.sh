@@ -28,8 +28,8 @@ prompt() {
 prompt EMAIL "Email (comment in key)"
 
 # ---- Git host selection ----
-IS_FORGEJO="${IS_FORGEJO:-}"
-FORGEJO_HOSTNAME="${FORGEJO_HOSTNAME:-}"
+IS_SELF_HOSTED="${IS_SELF_HOSTED:-}"
+GIT_HOSTNAME="${GIT_HOSTNAME:-}"
 
 if [[ -z "$GIT_HOST" ]]; then
   echo ""
@@ -38,7 +38,7 @@ if [[ -z "$GIT_HOST" ]]; then
   echo "  2) gitlab.com"
   echo "  3) bitbucket.org"
   echo "  4) hf.co"
-  echo "  5) Forgejo (self-hosted)"
+  echo "  5) Self-Hosted Git Server"
   echo "  0) Custom"
   read -r -p "Choice [1]: " host_choice
   case "${host_choice:-1}" in
@@ -47,14 +47,17 @@ if [[ -z "$GIT_HOST" ]]; then
     3) GIT_HOST="bitbucket.org" ;;
     4) GIT_HOST="hf.co" ;;
     5)
-      IS_FORGEJO=true
-      GIT_HOST="forgejo"
-      if [[ -z "$FORGEJO_HOSTNAME" ]]; then
-        read -r -p "Forgejo server hostname (e.g. hostname.ts.net): " FORGEJO_HOSTNAME
-        if [[ -z "$FORGEJO_HOSTNAME" ]]; then
-          echo "Error: FORGEJO_HOSTNAME cannot be empty." >&2
+      IS_SELF_HOSTED=true
+      if [[ -z "$GIT_HOSTNAME" ]]; then
+        read -r -p "Server hostname (e.g. hostname.ts.net): " GIT_HOSTNAME
+        if [[ -z "$GIT_HOSTNAME" ]]; then
+          echo "Error: GIT_HOSTNAME cannot be empty." >&2
           exit 1
         fi
+      fi
+      if [[ -z "$GIT_HOST" ]]; then
+        read -r -p "SSH alias for this server [gitserver]: " GIT_HOST
+        GIT_HOST="${GIT_HOST:-gitserver}"
       fi
       ;;
     0)
@@ -148,11 +151,11 @@ awk -v host="$GIT_HOST" '
 ' "$CFG_PATH" > "$tmp_cfg"
 mv "$tmp_cfg" "$CFG_PATH"
 
-if [[ -n "$IS_FORGEJO" ]]; then
+if [[ -n "$IS_SELF_HOSTED" ]]; then
   {
     echo ""
     echo "Host $GIT_HOST"
-    echo "  HostName $FORGEJO_HOSTNAME"
+    echo "  HostName $GIT_HOSTNAME"
     echo "  Port 2222"
     echo "  User git"
     echo "  AddKeysToAgent yes"
@@ -182,8 +185,8 @@ read -r -p "Press [Enter] after adding the public key to your $GIT_HOST account.
 # ---- Test SSH connection ----
 # -T avoids trying to open a shell; -v optional for debugging.
 echo ""
-if [[ -n "$IS_FORGEJO" ]]; then
-  echo "Testing SSH connection to Forgejo ($FORGEJO_HOSTNAME:2222) ..."
+if [[ -n "$IS_SELF_HOSTED" ]]; then
+  echo "Testing SSH connection to self-hosted server ($GIT_HOSTNAME:2222) ..."
   ssh -T "$GIT_HOST" || true
 else
   echo "Testing SSH connection to git@$GIT_HOST ..."

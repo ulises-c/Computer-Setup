@@ -1,8 +1,9 @@
 # ═══════════════════════════════════════════════════════════════
 #  ~/.zshrc  —  Linux server zsh config (Ubuntu Server)
 # ═══════════════════════════════════════════════════════════════
-# Requires: zsh, zsh-autosuggestions, zsh-syntax-highlighting,
-#           fastfetch, fzf, bat (batcat), fd-find (fdfind), eza
+# Requires: zsh, zsh-antidote, fastfetch, fzf,
+#           bat (batcat), fd-find (fdfind), eza
+# Plugins managed by antidote — see ~/.zsh_plugins.txt
 # Install:  bash linux-server/setup.sh
 
 
@@ -69,6 +70,7 @@ alias grep='grep --color=auto'
 alias df='df -h'
 alias du='du -sh'
 alias reload='source ~/.zshrc'
+command -v fastfetch &>/dev/null && alias cf='clear && fastfetch'
 
 # Ubuntu binary name shims
 alias bat='batcat'
@@ -106,9 +108,10 @@ export LC_ALL='en_US.UTF-8'
 
 
 # ═══════════════════════════════════════════════════════════════
-#  PLUGINS  (apt install zsh-autosuggestions zsh-syntax-highlighting)
+#  ANTIDOTE  (apt install zsh-antidote)
 # ═══════════════════════════════════════════════════════════════
-[[ -f /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh ]] && \
-  source /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh
-[[ -f /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh ]] && \
-  source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+# antidote sources all plugins listed in ~/.zsh_plugins.txt
+if [[ -f /usr/share/zsh-antidote/antidote.zsh && -f "$HOME/.zsh_plugins.txt" ]]; then
+  source /usr/share/zsh-antidote/antidote.zsh
+  antidote load
+fi
