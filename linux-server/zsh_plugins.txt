@@ -3,9 +3,10 @@
 # ═══════════════════════════════════════════════════════════════
 # antidote clones these from GitHub and generates a static
 # source file. Run `antidote update` to pull latest versions.
-# Headless subset of dotfiles/zsh_plugins.txt — no zsh-notify
-# (desktop notifications), no fpath completions (compinit runs
-# before antidote load in the server zshrc).
+# Headless subset of dotfiles/zsh_plugins.txt — no fpath
+# completions (compinit runs before antidote load in the server
+# zshrc; the desktop long-command notify hook lives in the
+# desktop zshrc, which the server override doesn't ship).
 
 # Fish-style autosuggestions
 zsh-users/zsh-autosuggestions

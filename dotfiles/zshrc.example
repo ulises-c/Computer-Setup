@@ -257,12 +257,45 @@ bindkey '^[OB' history-substring-search-down
 # ═══════════════════════════════════════════════════════════════
 #  NOTIFY  (desktop notification after long commands)
 # ═══════════════════════════════════════════════════════════════
-# Linux: notify-send (libnotify) + xdotool for focus detection.
-# macOS: terminal-notifier; focus detection is native AppleScript.
-# Loaded via antidote (marzocchi/zsh-notify)
-zstyle ':notify:*' command-complete-timeout 30
-zstyle ':notify:*' error-title "Command failed"
-zstyle ':notify:*' success-title "Command finished"
+# Fires a notification when a foreground command runs longer than
+# the threshold. macOS: terminal-notifier. Linux: notify-send.
+# No focus detection — that's deliberate: the old marzocchi/zsh-notify
+# plugin only supported iTerm/Apple Terminal (macOS) and X11 (Linux),
+# so it bailed with "unsupported environment" on a Ghostty + Wayland
+# fleet. This hook just works everywhere a notifier is installed.
+zmodload zsh/datetime
+_notify_threshold=30
+
+_notify_preexec() {
+  _notify_cmd="$1"
+  _notify_start=$EPOCHSECONDS
+}
+
+_notify_precmd() {
+  local exit_code=$?
+  [[ -z "$_notify_start" ]] && return
+  local elapsed=$(( EPOCHSECONDS - _notify_start ))
+  unset _notify_start
+  (( elapsed < _notify_threshold )) && return
+
+  local title
+  (( exit_code == 0 )) && title="Command finished (${elapsed}s)" \
+                       || title="Command failed (${elapsed}s)"
+
+  if command -v terminal-notifier &>/dev/null; then
+    terminal-notifier -title "$title" -message "$_notify_cmd" &>/dev/null
+  elif command -v notify-send &>/dev/null; then
+    # notify-send parses the body as Pango markup; escape the metachars
+    local body="${_notify_cmd//&/&amp;}"
+    body="${body//</&lt;}"; body="${body//>/&gt;}"
+    notify-send "$title" "$body" &>/dev/null
+  fi
+}
+
+preexec_functions+=(_notify_preexec)
+# Prepend so _notify_precmd runs first and reads the real command $?,
+# before p10k's precmd hook (loaded via antidote) resets it.
+precmd_functions=(_notify_precmd $precmd_functions)
 
 
 # ═══════════════════════════════════════════════════════════════
