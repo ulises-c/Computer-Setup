@@ -28,7 +28,7 @@ Install via `brew install <name>` unless noted otherwise.
 9. sshpass | [brew](https://formulae.brew.sh/formula/sshpass)
    1. Non-interactive SSH password authentication — used by `add_remote_host.sh` to automate host setup
 10. antidote | [brew](https://formulae.brew.sh/formula/antidote) | [GitHub](https://github.com/mattmc3/antidote)
-    1. Zsh plugin manager — loads autosuggestions, syntax highlighting, substring search, abbreviations, and zsh-notify from [dotfiles/zsh_plugins.txt](../dotfiles/zsh_plugins.txt) (replaces the standalone zsh-autosuggestions / zsh-syntax-highlighting formulae)
+    1. Zsh plugin manager — loads autosuggestions, syntax highlighting, substring search, and abbreviations from [dotfiles/zsh_plugins.txt](../dotfiles/zsh_plugins.txt) (replaces the standalone zsh-autosuggestions / zsh-syntax-highlighting formulae)
 11. mongodb-community | [brew tap](https://www.mongodb.com/docs/manual/tutorial/install-mongodb-on-os-x/) | [Download](https://www.mongodb.com/try/download/community)
     1. MongoDB Community Server; installing via the `mongodb/brew` tap also provides `mongosh` and `mongodb-database-tools`
     2. Install: `brew tap mongodb/brew && brew install mongodb-community`

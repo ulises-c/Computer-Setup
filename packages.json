@@ -303,7 +303,7 @@
     "package_manager": { "macos": "brew" },
     "priority": "medium",
     "optional": false,
-    "description": "macOS notification CLI — backend for zsh-notify (Linux uses notify-send/xdotool instead)"
+    "description": "macOS notification CLI — backend for the zshrc long-command notify hook (Linux uses notify-send)"
   },
   {
     "name": "fzf",
@@ -369,14 +369,7 @@
     "arch_name": "libnotify",
     "priority": "medium",
     "optional": false,
-    "description": "Desktop notifications CLI (notify-send) — used by zsh-notify plugin"
-  },
-  {
-    "name": "xdotool",
-    "package_manager": { "ubuntu": "apt", "arch": "yay" },
-    "priority": "medium",
-    "optional": false,
-    "description": "X11 window automation — used by zsh-notify for terminal focus detection"
+    "description": "Desktop notifications CLI (notify-send) — backend for the zshrc long-command notify hook"
   },
   {
     "name": "ncdu",

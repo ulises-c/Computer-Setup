@@ -52,22 +52,26 @@ for hook in "$REPO_DIR/hooks/"*.sh; do
   printf 'Linked: hooks/%s\n' "$(basename "$hook")"
 done
 
-# Install railguard binary if not already present
+# Install (or migrate) the railguard binary from the GitHub source.
+# cargo install --git reinstalls whenever the installed source/commit differs,
+# so this both provisions fresh machines and switches existing crates.io
+# installs over to the fork, while staying a no-op when already up to date.
 RAILGUARD_BIN="${CARGO_HOME:-$HOME/.cargo}/bin/railguard"
-if ! [[ -x "$RAILGUARD_BIN" ]]; then
-  CARGO_BIN="$(command -v cargo 2>/dev/null || echo "${CARGO_HOME:-$HOME/.cargo}/bin/cargo")"
-  if ! [[ -x "$CARGO_BIN" ]]; then
-    printf '\nerror: railguard is not installed and cargo was not found.\n' >&2
-    printf '  Install Rust via rustup, then re-run this script:\n' >&2
-    printf '    curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh\n' >&2
-    exit 1
-  fi
-  printf 'Installing railguard via cargo...\n'
-  if ! "$CARGO_BIN" install railguard; then
+CARGO_BIN="$(command -v cargo 2>/dev/null || echo "${CARGO_HOME:-$HOME/.cargo}/bin/cargo")"
+if [[ -x "$CARGO_BIN" ]]; then
+  printf 'Installing railguard from GitHub...\n'
+  if ! "$CARGO_BIN" install --git https://github.com/ulises-c/railguard; then
     printf '\nerror: cargo install railguard failed — see output above.\n' >&2
     exit 1
   fi
   printf 'Installed: railguard\n'
+elif [[ -x "$RAILGUARD_BIN" ]]; then
+  printf 'warning: cargo not found; keeping existing railguard binary (not migrated to the fork).\n' >&2
+else
+  printf '\nerror: railguard is not installed and cargo was not found.\n' >&2
+  printf '  Install Rust via rustup, then re-run this script:\n' >&2
+  printf '    curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh\n' >&2
+  exit 1
 fi
 
 # Always configure railguard (idempotent; picks up policy changes on re-run)

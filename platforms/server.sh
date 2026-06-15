@@ -43,7 +43,8 @@ platform_main() {
   # Pre-clone the plugins now while network is provably up; otherwise the
   # first interactive login does the GitHub clones lazily.
   printf '\n==> Pre-cloning antidote plugins...\n'
-  run zsh -c 'source /usr/share/zsh-antidote/antidote.zsh && antidote bundle <"$HOME/.zsh_plugins.txt" >/dev/null'
+  run zsh -c 'source /usr/share/zsh-antidote/antidote.zsh && antidote bundle <"$HOME/.zsh_plugins.txt" >/dev/null' \
+    || printf 'warning: antidote pre-clone failed; plugins will clone on first login\n' >&2
 
   # ── Tailscale ───────────────────────────────────────────────────────────────
   printf '\n'
