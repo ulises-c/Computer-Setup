@@ -273,7 +273,7 @@ _notify_preexec() {
 
 _notify_precmd() {
   local exit_code=$?
-  [[ -z "$_notify_start" ]] && return
+  [[ -z "${_notify_start:-}" ]] && return
   local elapsed=$(( EPOCHSECONDS - _notify_start ))
   unset _notify_start
   (( elapsed < _notify_threshold )) && return
@@ -284,7 +284,7 @@ _notify_precmd() {
 
   if command -v terminal-notifier &>/dev/null; then
     terminal-notifier -title "$title" -message "$_notify_cmd" &>/dev/null
-  elif command -v notify-send &>/dev/null; then
+  elif command -v notify-send &>/dev/null && [[ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]]; then
     # notify-send parses the body as Pango markup; escape the metachars
     local body="${_notify_cmd//&/&amp;}"
     body="${body//</&lt;}"; body="${body//>/&gt;}"

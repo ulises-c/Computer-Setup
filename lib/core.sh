@@ -22,7 +22,12 @@ core_parse_args() {
       --work)     INCLUDE_WORK=true ;;
       --personal) INCLUDE_PERSONAL=true ;;
       --dry-run)  DRY_RUN=true ;;
-      --distro|--platform) PLATFORM="${2:-}"; shift ;;
+      --distro|--platform)
+        if [[ -z "${2:-}" || "${2:-}" == -* ]]; then
+          printf 'ERROR: %s requires a value (macos|ubuntu|arch|server).\n' "$1" >&2
+          exit 1
+        fi
+        PLATFORM="$2"; shift ;;
       --profile)
         case "${2:-}" in
           server)  PLATFORM="server" ;;
@@ -183,13 +188,19 @@ print_custom_reminders() {
 }
 
 custom_reminders_section() {
-  local reminders low
+  local reminders extra
   reminders="$(print_custom_reminders medium)"
+  # priority "none" entries are never auto-installed — always surface them.
+  extra="$(print_custom_reminders none)"
+  if [[ -n "$extra" ]]; then
+    [[ -n "$reminders" ]] && reminders+=$'\n'
+    reminders+="$extra"
+  fi
   if [[ "$INCLUDE_OPTIONAL" == true ]]; then
-    low="$(print_custom_reminders low)"
-    if [[ -n "$low" ]]; then
+    extra="$(print_custom_reminders low)"
+    if [[ -n "$extra" ]]; then
       [[ -n "$reminders" ]] && reminders+=$'\n'
-      reminders+="$low"
+      reminders+="$extra"
     fi
   fi
   if [[ -n "$reminders" ]]; then
@@ -269,7 +280,7 @@ set_default_shell() {
   local zsh_bin current
   zsh_bin="$(command -v zsh 2>/dev/null || true)"
   [[ -z "$zsh_bin" ]] && return 0
-  current="$(getent passwd "$USER" | cut -d: -f7)"
+  current="$(getent passwd "$USER" | cut -d: -f7 || true)"
   if [[ "$current" != "$zsh_bin" ]]; then
     printf '\n==> Setting zsh as default shell (was: %s)...\n' "${current:-unknown}"
     run sudo usermod -s "$zsh_bin" "$USER"
@@ -435,7 +446,7 @@ linux_pyenv_flow() {
     # Force bash output — pyenv otherwise detects the shell from $SHELL and may
     # emit fish/zsh syntax that this bash script's eval rejects (aborts under set -e).
     eval "$(pyenv init - bash)"
-    if ! pyenv versions 2>/dev/null | grep -q "$PYTHON_VERSION"; then
+    if ! pyenv versions 2>/dev/null | grep -qF "$PYTHON_VERSION"; then
       printf '==> Installing pyenv build dependencies...\n'
       platform_pyenv_build_deps
       printf '==> Installing Python %s via pyenv...\n' "$PYTHON_VERSION"

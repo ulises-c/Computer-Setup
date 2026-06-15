@@ -106,7 +106,7 @@ platform_main() {
   if [[ "$DRY_RUN" == true ]]; then
     printf '  [dry-run] pyenv install %s\n' "$PYTHON_VERSION"
     printf '  [dry-run] pyenv global %s\n' "$PYTHON_VERSION"
-  elif ! pyenv versions 2>/dev/null | grep -q "$PYTHON_VERSION"; then
+  elif ! pyenv versions 2>/dev/null | grep -qF "$PYTHON_VERSION"; then
     printf '==> Installing Python %s via pyenv...\n' "$PYTHON_VERSION"
     LDFLAGS="-L/opt/homebrew/opt/expat/lib" \
     CPPFLAGS="-I/opt/homebrew/opt/expat/include" \
@@ -222,7 +222,7 @@ platform_main() {
     pnpm_install_tier medium
 
     # Post-install: codeburn menubar (macOS native Swift app)
-    run codeburn menubar
+    run codeburn menubar || printf 'warning: codeburn menubar failed (non-fatal)\n' >&2
   else
     printf '  pnpm not found — skipping (run corepack enable)\n'
   fi
@@ -246,6 +246,7 @@ platform_main() {
   printf '\n'
   printf 'Install these manually from the App Store:\n'
   print_app_store_reminders medium
+  print_app_store_reminders none
   [[ "$INCLUDE_OPTIONAL" == true ]] && print_app_store_reminders low
 
   printf '\n'
