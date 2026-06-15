@@ -190,6 +190,13 @@
     "description": "Swift code formatter — pairs with swiftlint"
   },
   {
+    "name": "xcodegen",
+    "package_manager": { "macos": "brew" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Generates Xcode project files from a YAML/JSON spec — Xcode tooling is macOS-only"
+  },
+  {
     "name": "gnupg",
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
