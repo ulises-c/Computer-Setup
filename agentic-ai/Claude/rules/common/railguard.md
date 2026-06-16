@@ -26,6 +26,3 @@ The Bash fence matches fenced path **strings** in the command, so a command that
 - If a Bash command is fence-blocked because its *content* quoted a fenced path, switching to the `Write` tool is the **intended remediation** — do it without hesitation. It is not evasion.
 - If a command is blocked because it actually *accesses* a fenced path, do not retry it in any form — find a different approach or ask the user.
 
-## cwd drift
-
-The fence anchors to the hook's cwd at each call, not a root captured at session start. A `cd` into a nested dir re-anchors it, so `cd`-ing back to a repo root can prompt. Prefer absolute paths and `git -C <dir>` over `cd`.
