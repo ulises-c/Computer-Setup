@@ -86,6 +86,7 @@ rules/
   common/
     general.md   — language-agnostic coding principles
     agents.md    — when to self-invoke Plan / Explore / review / verify
+    railguard.md — how to work under the Railguard guardrails (rules it enforces, path fence, rollback)
   bash/
     style.md     — bash scripting conventions
 ```
