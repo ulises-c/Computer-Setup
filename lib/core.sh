@@ -417,6 +417,30 @@ apt_install_tier() {
   run sudo apt install -y $names
 }
 
+# apt + snap tier composition — shared by the Ubuntu desktop and the server
+# profile. Selection is data-driven (package_manager.<platform> in packages.json),
+# so each manager runs at every tier uniformly; a package only installs where it
+# declares that platform. arch.sh overrides this with the yay batch.
+platform_install_tier() {
+  case "$1" in
+    high)
+      printf '==> Installing high-priority apt packages...\n'
+      apt_install_tier high
+      ;;
+    medium)
+      printf '==> Installing medium-priority apt packages...\n'
+      apt_install_tier medium
+      printf '\n==> Installing snap packages...\n'
+      snap_install_tier medium
+      setup_bat_fd_symlinks
+      ;;
+    low)
+      apt_install_tier low
+      snap_install_tier low
+      ;;
+  esac
+}
+
 # Tailscale via the official curl installer — apt-family default (ubuntu + server).
 # arch.sh overrides this (tailscale ships in the yay batch; just enable the daemon).
 platform_tailscale_step() {
