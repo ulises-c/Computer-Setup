@@ -215,7 +215,7 @@ and full rollout table in [linux-server/HTTPS.md](linux-server/HTTPS.md).
       `url:` must move to the HTTPS domain too (localhost stops resolving once the
       host port is dropped)
 
-## Server observability & hardening (post-HTTPS rollout)
+## Server observability & hardening (post-HTTPS rollout) — [#49](https://github.com/ulises-c/Computer-Setup/issues/49)
 
 Improvements identified once every service was wired up with a Tailscale sidecar.
 
