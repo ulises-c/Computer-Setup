@@ -33,12 +33,14 @@
           slug: default
     - glances:
         icon: si-glances
-        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:61208
+        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
         description: System monitor
         server: my-docker
         container: glances
         widget:
           type: glances
+          # glances keeps network_mode: host, so :61208 stays on the host and the
+          # widget reaches it via localhost (no need to route through the tailnet).
           url: http://localhost:61208
           version: 4
           metric: cpu

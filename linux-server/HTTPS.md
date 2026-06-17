@@ -119,6 +119,28 @@ except the `<app-port>`):
 Kernel networking (`/dev/net/tun` + `NET_ADMIN`) is used so the node exposes raw
 ports (e.g. SSH `:22`) to the tailnet directly, not only the `:443` serve proxy.
 
+### Variant: host-networked apps (glances)
+
+A service that must keep `network_mode: host` — e.g. glances, which reads the
+host's real network interfaces and processes — can't be moved into the sidecar's
+namespace without degrading exactly what it measures. Leave that app untouched
+and run the sidecar in its **own** netns, proxying back to the host's port via
+the docker bridge gateway:
+
+```yaml
+  <svc>-ts:
+    # ... same sidecar as above, plus:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+  # the app keeps network_mode: host, its own ports, everything — unchanged
+```
+
+with `ts-serve.json` proxying to `http://host.docker.internal:<port>` instead of
+`127.0.0.1:<port>`. Because the app keeps its host port, its homepage **widget**
+`url:` can stay `http://localhost:<port>` (only the `href` moves to HTTPS) — the
+opposite of the netns-shared services. Trade-off: the host port stays open on the
+LAN/tailnet (plaintext) since the app still binds it directly.
+
 ## Applying the Forgejo change (the reference, already implemented)
 
 Forgejo is intentionally **not** in `setup.sh`'s auto-start loop — it needs the
@@ -195,7 +217,7 @@ side of the `ports:` mapping (`host:container`), not the host side.
 | ntfy              | 80    | ✅ done       | `NTFY_BASE_URL=https://ntfy.<tailnet>.ts.net` + `NTFY_BEHIND_PROXY=true`; proxy to container :80, **not** the old 5080 host map |
 | filebrowser       | 80    | ✅ done       | none — works at root; proxy to container :80, **not** the old 8080 host map |
 | syncthing         | 8384  | ✅ done       | set `STGUIADDRESS=127.0.0.1:8384` (disables Syncthing's Host-header check, else `Host check error`); publish sync `:22000`/`:21027` on the **sidecar** (raw TCP/UDP, not via serve) |
-| glances           | 61208 | todo          | none — works at root                                   |
+| glances           | 61208 | todo          | **host-networked variant** — keep `network_mode: host`, sidecar proxies via `host.docker.internal`; widget url stays localhost |
 | adguard           | 8083  | todo          | none for the UI; DNS `:53` stays host-published        |
 | nginx-proxy-mgr   | 81    | optional      | only if you keep NPM                                   |
 | homepage          | 3000  | special case  | keep on main node — `tailscale serve` on `ollie-server`, no sidecar |
