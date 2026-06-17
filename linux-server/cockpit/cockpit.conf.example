@@ -1,0 +1,13 @@
+# Cockpit host config for running behind the Tailscale sidecar proxy.
+# Cockpit rejects proxied requests/websockets from an unrecognized Origin (its
+# version of a host-check), so the proxied hostname must be allow-listed.
+#
+# Deploy on the SERVER (not via this repo — Cockpit is a host service):
+#   sudo cp cockpit.conf.example /etc/cockpit/cockpit.conf   # edit <tailnet> first
+#   sudo systemctl restart cockpit
+#
+# Replace <tailnet> with your tailnet (e.g. tail01d63b.ts.net).
+
+[WebService]
+Origins = https://cockpit.<tailnet>.ts.net wss://cockpit.<tailnet>.ts.net
+ProtocolHeader = X-Forwarded-Proto

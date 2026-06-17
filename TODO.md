@@ -146,6 +146,128 @@ Test and validate the linux-desktop setup on the personal CachyOS desktop
 - [ ] Test `--personal` flag end-to-end
 - [ ] Create PR for CachyOS support
 
+## Per-service HTTPS rollout (linux-server)
+
+Convert each self-hosted service from `http://<server-ip>:<port>` to its own
+`https://<svc>.<tailnet>.ts.net/` via a Tailscale sidecar. Pattern, prereqs,
+and full rollout table in [linux-server/HTTPS.md](linux-server/HTTPS.md).
+
+- [x] forgejo — reference impl (sidecar + SSH :22), done in 8ff8a2c
+- [x] portainer — sidecar live at https://portainer.<tailnet>.ts.net/, homepage
+      link updated
+- [x] uptime-kuma — sidecar live at https://uptime-kuma.<tailnet>.ts.net/,
+      homepage link & widget url updated
+- [x] speedtest-tracker — sidecar live at https://speedtest.<tailnet>.ts.net/,
+      homepage link & widget url updated
+- [x] ntfy — sidecar live at https://ntfy.<tailnet>.ts.net/, homepage link
+      updated
+- [x] filebrowser — sidecar live at https://filebrowser.<tailnet>.ts.net/,
+      homepage link updated
+- [x] syncthing — sidecar live at https://syncthing.<tailnet>.ts.net/, homepage
+      link & widget url updated; sync `:22000`/`:21027` confirmed published
+      on the sidecar
+- [x] glances — sidecar live at https://glances.<tailnet>.ts.net/ (proxies via
+      `host.docker.internal`, glances untouched), homepage link updated
+- [x] adguard — sidecar live at https://adguard.<tailnet>.ts.net/, homepage
+      link & widget url updated; DNS `:53` confirmed still resolving on the
+      sidecar after recreate
+- [x] atvloadly — was never tracked in this repo (lived in an untracked
+      `/home/ollie/docker-compose.yml`); migrated into
+      `linux-server/atvloadly/`, sidecar live at
+      https://atvloadly.<tailnet>.ts.net/, homepage link updated. Apple TV
+      discovery (avahi/dbus socket mounts) confirmed unaffected by the netns
+      share — no `hostname:` on the app container, that conflicts with
+      `network_mode: service:...`
+- [x] nginx-proxy-manager — KEPT as the host edge; admin UI sidecar live at
+      https://npm.<tailnet>.ts.net/ (proxies host :81 via host.docker.internal,
+      no app-side change needed), homepage link updated. NPM keeps binding
+      host :80/:443 unchanged
+- [x] homepage — sidecar live at https://homepage.<tailnet>.ts.net/, confirmed
+      `HOMEPAGE_ALLOWED_HOSTS` includes the new domain and container is
+      healthy post-recreate
+- [x] cockpit — sidecar live at https://cockpit.<tailnet>.ts.net/, homepage
+      link updated. `cockpit.conf.example`'s Origins allow-list turned out
+      unnecessary — verified via raw WebSocket upgrade (101 with matching
+      Origin, 403 with a foreign one)
+- [x] tailscale-web — not in the original rollout; added because the homepage
+      Tailscale tile linked plain HTTP. New `linux-server/tailscale-web/`
+      sidecar-only stack live at https://tailscale-web.<tailnet>.ts.net/,
+      homepage link updated. Host's `tailscale-web.service` unit now runs
+      `tailscale web --listen 0.0.0.0:8088 --origin
+      https://tailscale-web.<tailnet>.ts.net`; sidecar proxies to
+      `host.docker.internal:8088`. Verified 200 with no redirect, real page
+      content, confirmed in browser. Don't use port `:5252` — see HTTPS.md
+      Gotchas
+- [x] watchtower — sidecar live at https://watchtower.<tailnet>.ts.net/v1/metrics
+      (no UI, metrics-only API; confirmed 401 unauthenticated / 200 with the
+      Bearer token, and the 3am schedule is unaffected). Still need: the
+      Uptime Kuma HTTP monitor pointed at it (recipe in HTTPS.md).
+- [x] Decide auth method: OAuth client + `tag:container` (reusing the elevated
+      tailscale-proxy client) — resolved during the Forgejo rollout, see HTTPS.md
+- [x] Decide whether to retire NPM or keep it — KEEP, as the non-tailnet HTTPS
+      edge (trusted certs for LAN/public clients like a Plex TV that can't join
+      the tailnet). See HTTPS.md → "NPM — trusted HTTPS for non-tailnet clients"
+- [ ] Set up the NPM trusted-HTTPS edge (domain `ulises-c.me`, already owned):
+      NPM wildcard Let's Encrypt cert for `*.home.ulises-c.me` via DNS-01, AdGuard
+      rewrite `*.home.ulises-c.me` → LAN IP, then per-service proxy hosts. Not
+      started — documented in HTTPS.md to pick up later.
+- [ ] Update Homepage hrefs to HTTPS as each service converts; a service's widget
+      `url:` must move to the HTTPS domain too (localhost stops resolving once the
+      host port is dropped)
+
+## Server observability & hardening (post-HTTPS rollout)
+
+Improvements identified once every service was wired up with a Tailscale sidecar.
+
+### Watchtower observability — "what updated, and when"
+
+Watchtower has no native history UI, and its `/v1/metrics` endpoint (now monitored
+by Uptime Kuma) is only cumulative **counters** (`watchtower_containers_updated` /
+`_failed` / `_scanned`, `watchtower_scans_total`) — no container names or image
+versions. So the "what was actually updated" has to come from notifications or
+logs, not metrics. Build it up in layers:
+
+- [ ] **Tier 1 — ntfy notifications (quick win, reuses the existing ntfy).** On the
+      watchtower service set `WATCHTOWER_NOTIFICATION_URL` to a shoutrrr ntfy URL
+      pointing at our ntfy instance (dedicated topic, e.g. `watchtower`) and
+      `WATCHTOWER_NOTIFICATION_REPORT=true` for a per-run report (which containers
+      updated/failed/skipped, old→new image). Gives a timestamped, persistent
+      history in ntfy + a phone push — directly answers "what & when." Lowest effort.
+- [ ] **Tier 2 — Prometheus + Grafana on the existing `/v1/metrics`.** Scrape the
+      counters, dashboard the update/scan trend, alert on
+      `watchtower_containers_failed > 0`. Counts only (no names) — pairs with Tier 1
+      for the "what." Heavier (new stack); also becomes the home for other metrics
+      (glances, node-exporter, cAdvisor).
+- [ ] **Tier 3 (optional) — dedicated update tracker with a UI.** Evaluate What's Up
+      Docker (WUD) or Diun, which show per-container available/applied updates in a
+      UI. Could complement or take over watchtower's notification role.
+
+### Broader improvements (from the post-rollout review)
+
+- [ ] **Pin the Tailscale sidecar image.** All ~13 sidecars run
+      `tailscale/tailscale:latest` and watchtower auto-updates them — a bad release
+      could drop every HTTPS front door at once. Pin a stable tag (bump
+      deliberately) or exclude the sidecars from watchtower. Cheap, high-value.
+- [ ] **Backups.** Service data volumes (Forgejo repos, AdGuard/uptime-kuma/etc.),
+      all `.env` files, and `ts-state/` node keys live only on the server and are
+      gitignored — no backup today. Document what to back up + a restic/borg or
+      Syncthing job.
+- [ ] **DRY the sidecar boilerplate.** ~13 near-identical `<svc>-ts` blocks +
+      `ts-serve.json` (differ only by hostname/port). Use Compose `extends` from a
+      shared base so a global change (the image pin above, `TS_EXTRA_ARGS`) is one
+      edit, not 13. Medium effort — touches all stacks, needs live re-verify.
+- [ ] **One shared `TS_AUTHKEY`.** The same OAuth secret is copied into ~13 `.env`
+      files; rotation/rebuild means editing all of them. Share one env file.
+- [ ] **Validation script for the server stacks** (CI, like `dryrun-smoke.sh`):
+      assert every `linux-server/*/` has matching compose + `ts-serve.json` +
+      `.env.example`, valid YAML/JSON, serve port == container port, `ts-state/`
+      gitignored. Catches the drift that bit us mid-rollout (wrong port, stale config).
+- [ ] **Tighten the Tailscale ACL** — least-privilege for the `tag:container` nodes
+      (currently default allow-all).
+- [ ] **Forward-auth for the NPM public edge** (Authelia/Authentik) — bundle with the
+      `*.home.ulises-c.me` NPM setup, since services like filebrowser/glances have
+      weak/no auth once exposed off-tailnet.
+
 ## linux-server — Raspberry Pi 4
 
 Set up the Raspberry Pi 4 headless server config under `linux-server/`.

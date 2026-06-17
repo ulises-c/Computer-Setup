@@ -1,72 +1,26 @@
 #!/usr/bin/env bash
-# Headless server (Ubuntu Server LTS) profile: apt + snap, no GUI packages,
-# SSH/Tailscale/Docker services, homepage dashboard stack.
+# Headless server (Ubuntu Server LTS) profile: apt + snap, no GUI packages.
+# Shares the Linux install spine (linux_main) with the apt desktop — the
+# apt/Tailscale/Docker hooks live in lib/core.sh. This module only carries the
+# server tier composition and the server-only "step two" infra: SSH/Tailscale
+# services, Docker dashboard stacks, cockpit, AdGuard.
 # (The Raspberry Pi — Debian proper, no snapd — is a future target; TODO.md.)
 
-CONFIG_SRC_DIR="$SETUP_ROOT/linux-server"
-
-server_apt_install_tier() {
-  local priority="$1" names
-  names=$(pkg_names apt "$priority")
-  [[ -z "$names" ]] && return 0
-  # shellcheck disable=SC2086
-  run sudo apt install -y $names
+platform_bootstrap() {
+  apt_bootstrap
 }
 
-platform_main() {
-  apt_bootstrap
-
-  printf '\n==> Installing high-priority packages...\n'
-  server_apt_install_tier high
-
-  printf '\n==> Installing medium-priority packages...\n'
-  server_apt_install_tier medium
-
-  printf '\n==> Installing snap packages...\n'
-  snap_install_tier medium
-
-  if [[ "$INCLUDE_OPTIONAL" == true ]]; then
-    printf '\n==> Installing optional (low) packages...\n'
-    server_apt_install_tier low
-  fi
-
-  setup_bat_fd_symlinks
-  set_default_shell
-
-  printf '\n'
-  deploy_zshrc
-  printf '\n'
-  deploy_config "$SETUP_ROOT/dotfiles/tmux.conf" "$HOME/.tmux.conf" "tmux.conf" yes
-  printf '\n'
-  deploy_config "$CONFIG_SRC_DIR/zsh_plugins.txt" "$HOME/.zsh_plugins.txt" "linux-server/zsh_plugins.txt (platform override)" no
-
-  # Pre-clone the plugins now while network is provably up; otherwise the
-  # first interactive login does the GitHub clones lazily.
+# Pre-clone the antidote plugins now while the network is provably up; otherwise
+# the first interactive login does the GitHub clones lazily.
+server_preclone_antidote() {
   printf '\n==> Pre-cloning antidote plugins...\n'
   run zsh -c 'source /usr/share/zsh-antidote/antidote.zsh && antidote bundle <"$HOME/.zsh_plugins.txt" >/dev/null' \
     || printf 'warning: antidote pre-clone failed; plugins will clone on first login\n' >&2
+}
 
-  # ── Tailscale ───────────────────────────────────────────────────────────────
-  printf '\n'
-  if ! command -v tailscale &>/dev/null; then
-    printf '==> Installing Tailscale...\n'
-    run_eval "$(custom_cmd tailscale)"
-  else
-    printf '==> Tailscale already installed (%s)\n' "$(tailscale version | head -1)"
-  fi
-  printf "    Run 'sudo tailscale up' to authenticate and connect to your Tailnet.\n"
-
-  # ── Docker ──────────────────────────────────────────────────────────────────
-  printf '\n'
-  if ! command -v docker &>/dev/null; then
-    printf '==> Installing Docker...\n'
-    run_eval "$(custom_cmd docker-ce)"
-    run sudo usermod -aG docker "$USER"
-    printf '    Docker installed. Log out and back in for the docker group to take effect.\n'
-  else
-    printf '==> Docker already installed (%s)\n' "$(docker --version | head -1)"
-  fi
-
+# Server-only "step two": the headless service + dashboard layer that runs after
+# the shared base install (packages, shell, dotfiles, Tailscale, Docker engine).
+server_extras() {
   # ── Cockpit ─────────────────────────────────────────────────────────────────
   printf '\n'
   if systemctl is-active --quiet cockpit.socket 2>/dev/null; then
@@ -89,15 +43,6 @@ platform_main() {
     printf '==> Tailscale web service already installed\n'
   fi
   run loginctl enable-linger "$USER"
-
-  # ── claude-code ─────────────────────────────────────────────────────────────
-  printf '\n'
-  if ! command -v claude &>/dev/null; then
-    printf '==> Installing claude-code...\n'
-    run_eval "$(custom_cmd claude-code)"
-  else
-    printf '==> claude-code already installed\n'
-  fi
 
   # ── AdGuard: free port 53 ───────────────────────────────────────────────────
   printf '\n'
@@ -182,11 +127,9 @@ platform_main() {
       fi
     fi
   done
+}
 
-  # ── Manual install reminders ────────────────────────────────────────────────
-  custom_reminders_section
-
-  # ── Done ────────────────────────────────────────────────────────────────────
+server_footer() {
   printf '\n'
   if [[ "$DRY_RUN" == true ]]; then
     printf 'Dry run complete — nothing was installed.\n'
@@ -219,4 +162,8 @@ platform_main() {
   else
     cat "$CONFIG_SRC_DIR/post-install.md"
   fi
+}
+
+platform_main() {
+  linux_main
 }

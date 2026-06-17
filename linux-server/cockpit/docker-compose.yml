@@ -1,0 +1,27 @@
+services:
+  # Cockpit is a HOST systemd service (not a container) on :9090 with its own
+  # self-signed TLS. This is a sidecar-ONLY stack — there is no app container to
+  # share a netns with. The sidecar joins the tailnet as `cockpit` and proxies
+  # https://cockpit.<tailnet>.ts.net to the host's Cockpit via host.docker.internal.
+  # See ../HTTPS.md ("host-networked apps" variant).
+  cockpit-ts:
+    image: tailscale/tailscale:latest
+    container_name: cockpit-ts
+    hostname: cockpit
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SERVE_CONFIG=/config/serve.json
+      # Requires TS_AUTHKEY to be allowed to apply tag:container (OAuth client, or
+      # a tag-scoped auth key). Drop this line if using an untagged personal key.
+      - TS_EXTRA_ARGS=--advertise-tags=tag:container
+    volumes:
+      - ./ts-state:/var/lib/tailscale
+      - ./ts-serve.json:/config/serve.json:ro
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

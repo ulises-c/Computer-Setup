@@ -87,5 +87,5 @@ platform_docker_optional() {
 }
 
 platform_main() {
-  desktop_main
+  linux_main
 }

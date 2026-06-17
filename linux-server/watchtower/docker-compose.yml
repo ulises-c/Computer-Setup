@@ -1,11 +1,45 @@
 services:
+  # Tailscale sidecar — joins the tailnet as `watchtower`, terminating HTTPS for
+  # https://watchtower.<tailnet>.ts.net. Watchtower has no human UI; this fronts
+  # only its token-gated /v1/metrics API so Uptime Kuma can health-check it.
+  # See ../HTTPS.md.
+  watchtower-ts:
+    image: tailscale/tailscale:latest
+    container_name: watchtower-ts
+    hostname: watchtower
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SERVE_CONFIG=/config/serve.json
+      # Requires TS_AUTHKEY to be allowed to apply tag:container (OAuth client, or
+      # a tag-scoped auth key). Drop this line if using an untagged personal key.
+      - TS_EXTRA_ARGS=--advertise-tags=tag:container
+    volumes:
+      - ./ts-state:/var/lib/tailscale
+      - ./ts-serve.json:/config/serve.json:ro
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+
   watchtower:
     image: containrrr/watchtower:latest
     container_name: watchtower
+    # Share the sidecar's netns: tailscale serve proxies :443 to the HTTP API on
+    # 127.0.0.1:8080. The docker socket is a file mount, unaffected by the netns.
+    network_mode: service:watchtower-ts
+    depends_on:
+      - watchtower-ts
     restart: unless-stopped
     environment:
       - WATCHTOWER_SCHEDULE=0 0 3 * * *   # 3am daily (6-field cron: sec min hr dom mon dow)
       - WATCHTOWER_CLEANUP=true            # remove old images after updating
       - DOCKER_API_VERSION=1.40            # override default 1.25 — incompatible with Docker 29.x
+      # HTTP API: metrics only (NOT the update endpoint), so the schedule above
+      # keeps running — only the update API disables periodic polls. Serves
+      # GET /v1/metrics on :8080, gated by the Bearer token below.
+      - WATCHTOWER_HTTP_API_METRICS=true
+      - WATCHTOWER_HTTP_API_TOKEN=${WATCHTOWER_API_TOKEN}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

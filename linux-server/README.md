@@ -27,7 +27,8 @@ sudo tailscale up
 - [`setup.sh`](setup.sh) — thin shim onto the root [`setup.sh`](../setup.sh) (server platform)
 - [`post-install.md`](post-install.md) — step-by-step checklist to follow after setup.sh
 - [`apt_packages.md`](apt_packages.md) — full package list with descriptions and links
-- [`zshrc.example`](zshrc.example) — server zsh config, deployed to `~/.zshrc` by `setup.sh`; overrides the shared [`dotfiles/zshrc.example`](../dotfiles/zshrc.example) base because the server is headless (no Ghostty/fastfetch/notification hooks)
+- [`../dotfiles/zshrc.example`](../dotfiles/zshrc.example) — shared zsh config (incl. Powerlevel10k), deployed to `~/.zshrc` by `setup.sh`; the desktop-only bits self-disable headless, so the server uses the same base as every other platform
+- [`../dotfiles/zsh_plugins.txt`](../dotfiles/zsh_plugins.txt) — shared antidote plugin list, deployed to `~/.zsh_plugins.txt` and pre-cloned by `setup.sh`
 - [`../dotfiles/tmux.conf`](../dotfiles/tmux.conf) — tmux config with mouse support, vi copy mode, and a status bar (shared across all platforms); copied to `~/.tmux.conf` by `setup.sh`
 - [`../packages.json`](../packages.json) — machine-readable package manifest (shared across all platforms)
 
@@ -219,7 +220,9 @@ In NPM admin (`http://<server-ip>:81`):
     3. Listens on `localhost:8089`; Homepage queries it via `customapi` widget
 
 11. nginx proxy manager | [GitHub](https://github.com/jc21/nginx-proxy-manager) | [Docs](https://nginxproxymanager.com/guide/)
-    1. Reverse proxy with a web UI — handles HTTPS termination for Homepage (Tailscale cert) and HTTP→HTTPS redirect
+    1. Reverse proxy with a web UI — the non-tailnet HTTPS edge: trusted certs for
+       LAN/public clients that can't join the tailnet (the tailnet sidecars cover
+       on-tailnet HTTPS). See [HTTPS.md](HTTPS.md) → "NPM — trusted HTTPS for non-tailnet clients"
     2. Deploy:
        ```sh
        cd linux-server/nginx-proxy-manager && docker compose up -d

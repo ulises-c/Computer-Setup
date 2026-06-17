@@ -1,13 +1,13 @@
 - Management:
     - homepage:
         icon: mdi-view-dashboard
-        href: http://{{HOMEPAGE_VAR_SERVER_IP}}
+        href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}/
         description: Server dashboard
         server: my-docker
         container: homepage
     - portainer:
         icon: si-portainer
-        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:9000
+        href: https://{{HOMEPAGE_VAR_PORTAINER_DOMAIN}}/
         description: Docker manager
         server: my-docker
         container: portainer
@@ -18,27 +18,30 @@
         container: watchtower
     - cockpit:
         icon: mdi-monitor-dashboard
-        href: https://{{HOMEPAGE_VAR_SERVER_IP}}:9090
+        href: https://{{HOMEPAGE_VAR_COCKPIT_DOMAIN}}/
         description: Server admin UI
+        # cockpit stays a host service on :9090, so the local ping still works
         ping: https://localhost:9090
     - uptime kuma:
         icon: si-uptimekuma
-        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:3001
+        href: https://{{HOMEPAGE_VAR_UPTIMEKUMA_DOMAIN}}/
         description: Uptime monitor
         server: my-docker
         container: uptime-kuma
         widget:
           type: uptimekuma
-          url: http://localhost:3001
+          url: https://{{HOMEPAGE_VAR_UPTIMEKUMA_DOMAIN}}
           slug: default
     - glances:
         icon: si-glances
-        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:61208
+        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
         description: System monitor
         server: my-docker
         container: glances
         widget:
           type: glances
+          # glances keeps network_mode: host, so :61208 stays on the host and the
+          # widget reaches it via localhost (no need to route through the tailnet).
           url: http://localhost:61208
           version: 4
           metric: cpu
@@ -46,24 +49,24 @@
 - Network:
     - nginx proxy manager:
         icon: si-nginxproxymanager
-        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:81
+        href: https://{{HOMEPAGE_VAR_NPM_DOMAIN}}/
         description: Reverse proxy + SSL
         server: my-docker
         container: nginx-proxy-manager
     - adguard home:
         icon: si-adguard
-        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:8083
+        href: https://{{HOMEPAGE_VAR_ADGUARD_DOMAIN}}/
         description: DNS ad blocker
         server: my-docker
         container: adguardhome
         widget:
           type: adguard
-          url: http://localhost:8083
+          url: https://{{HOMEPAGE_VAR_ADGUARD_DOMAIN}}
           username: "{{HOMEPAGE_VAR_ADGUARD_USER}}"
           password: "{{HOMEPAGE_VAR_ADGUARD_PASS}}"
     - tailscale:
         icon: si-tailscale
-        href: http://{{HOMEPAGE_VAR_TAILSCALE_IP}}:5252
+        href: https://{{HOMEPAGE_VAR_TAILSCALE_WEB_DOMAIN}}/
         description: Zero-config VPN
         widget:
           type: customapi
@@ -80,16 +83,16 @@
               format: relativeDate
     - speedtest tracker:
         icon: mdi-speedometer
-        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:8765
+        href: https://{{HOMEPAGE_VAR_SPEEDTEST_DOMAIN}}/
         description: ISP speed monitor
         server: my-docker
         container: speedtest-tracker
         widget:
           type: speedtest
-          url: http://localhost:8765
+          url: https://{{HOMEPAGE_VAR_SPEEDTEST_DOMAIN}}
     - ntfy:
         icon: si-ntfy
-        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:5080
+        href: https://{{HOMEPAGE_VAR_NTFY_DOMAIN}}/
         description: Push notifications
         server: my-docker
         container: ntfy
@@ -97,23 +100,23 @@
 - Storage:
     - forgejo:
         icon: si-forgejo
-        href: http://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}:3300
+        href: https://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}/
         description: Self-hosted git
         server: my-docker
         container: forgejo
         widget:
           type: gitea
-          url: http://localhost:3300
+          url: https://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}
           key: "{{HOMEPAGE_VAR_FORGEJO_TOKEN}}"
     - syncthing:
         icon: si-syncthing
-        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:8384
+        href: https://{{HOMEPAGE_VAR_SYNCTHING_DOMAIN}}/
         description: File sync
         server: my-docker
         container: syncthing
         widget:
           type: customapi
-          url: http://localhost:8384/rest/system/status
+          url: https://{{HOMEPAGE_VAR_SYNCTHING_DOMAIN}}/rest/system/status
           headers:
             X-API-Key: "{{HOMEPAGE_VAR_SYNCTHING_KEY}}"
           mappings:
@@ -128,13 +131,13 @@
               format: bytes
     - filebrowser:
         icon: mdi-folder-network
-        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:8080
+        href: https://{{HOMEPAGE_VAR_FILEBROWSER_DOMAIN}}/
         description: Web file manager
         server: my-docker
         container: filebrowser
     - atvloadly:
         icon: mdi-television-play
-        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:5533
+        href: https://{{HOMEPAGE_VAR_ATVLOADLY_DOMAIN}}/
         description: Apple TV IPA sideloader
         server: my-docker
         container: atvloadly

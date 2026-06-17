@@ -1,10 +1,36 @@
 services:
+  # Tailscale sidecar — joins the tailnet as `filebrowser`, terminating HTTPS for
+  # https://filebrowser.<tailnet>.ts.net. See ../HTTPS.md for the full pattern.
+  filebrowser-ts:
+    image: tailscale/tailscale:latest
+    container_name: filebrowser-ts
+    hostname: filebrowser
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SERVE_CONFIG=/config/serve.json
+      # Requires TS_AUTHKEY to be allowed to apply tag:container (OAuth client, or
+      # a tag-scoped auth key). Drop this line if using an untagged personal key.
+      - TS_EXTRA_ARGS=--advertise-tags=tag:container
+    volumes:
+      - ./ts-state:/var/lib/tailscale
+      - ./ts-serve.json:/config/serve.json:ro
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+
   filebrowser:
     image: filebrowser/filebrowser:latest
     container_name: filebrowser
+    # Share the sidecar's network namespace: tailscale serve proxies :443 to the
+    # app's HTTP port 80 (8080 was only the old host mapping). Works at root, no
+    # app-side base-URL config needed.
+    network_mode: service:filebrowser-ts
+    depends_on:
+      - filebrowser-ts
     restart: unless-stopped
-    ports:
-      - "8080:80"
     volumes:
       - ${FB_ROOT:-/}:/srv
       - ./database:/database

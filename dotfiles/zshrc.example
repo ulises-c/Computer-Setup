@@ -1,8 +1,11 @@
 # ═══════════════════════════════════════════════════════════════
 #  ~/.zshrc  —  shared zsh config (macOS / Ubuntu / Arch)
 # ═══════════════════════════════════════════════════════════════
-# Base zshrc deployed by setup.sh; a platform folder can ship its own
-# zshrc.example to override it (linux-server does — headless, no Ghostty).
+# Single zshrc deployed by setup.sh on every platform (macOS, Linux desktop,
+# and the headless server). Desktop-only bits self-disable headless: the
+# notify hook no-ops without a $DISPLAY/$WAYLAND_DISPLAY, fastfetch keys off
+# Ghostty or an SSH session, and version managers/zoxide are command-guarded.
+# A platform folder may still ship its own zshrc.example to override this base.
 # macOS-specific bits are guarded on /opt/homebrew (Apple Silicon) or $OSTYPE.
 # Requires: zsh, antidote, zoxide, fastfetch, fzf, bat, fd, eza
 # Plugins managed by antidote — see ~/.zsh_plugins.txt
@@ -299,8 +302,11 @@ precmd_functions=(_notify_precmd $precmd_functions)
 
 
 # ═══════════════════════════════════════════════════════════════
-#  SYSINFO DISPLAY  (Ghostty startup)
+#  SYSINFO DISPLAY  (Ghostty startup, or any SSH login)
 # ═══════════════════════════════════════════════════════════════
-[[ -o interactive && "$TERM_PROGRAM" == "ghostty" ]] && fastfetch
+# Ghostty on the desktop/laptop; SSH covers the headless server, where
+# there is no TERM_PROGRAM but every login is a remote session.
+[[ -o interactive && ( "$TERM_PROGRAM" == "ghostty" || -n "$SSH_CONNECTION" ) ]] && \
+  command -v fastfetch &>/dev/null && fastfetch
 
 [[ -f ~/.p10k.zsh ]] && source ~/.p10k.zsh

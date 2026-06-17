@@ -30,3 +30,6 @@ linux-server/syncthing/config/
 linux-server/uptime-kuma/data/
 
 linux-server/forgejo/data/
+
+# Tailscale sidecar node state (HTTPS.md) — holds node keys, never commit
+linux-server/*/ts-state/

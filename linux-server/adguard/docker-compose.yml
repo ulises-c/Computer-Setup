@@ -1,13 +1,43 @@
 services:
+  # Tailscale sidecar — joins the tailnet as `adguard`, terminating HTTPS for the
+  # web UI at https://adguard.<tailnet>.ts.net. See ../HTTPS.md.
+  # DNS (:53 tcp+udp) stays host-published HERE (the sidecar owns the network
+  # namespace) — it's raw DNS for LAN clients, not HTTP, and must not go through
+  # tailscale serve. AdGuard publishes no :443, so there's no DoH/serve conflict.
+  adguard-ts:
+    image: tailscale/tailscale:latest
+    container_name: adguard-ts
+    hostname: adguard
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SERVE_CONFIG=/config/serve.json
+      # Requires TS_AUTHKEY to be allowed to apply tag:container (OAuth client, or
+      # a tag-scoped auth key). Drop this line if using an untagged personal key.
+      - TS_EXTRA_ARGS=--advertise-tags=tag:container
+    volumes:
+      - ./ts-state:/var/lib/tailscale
+      - ./ts-serve.json:/config/serve.json:ro
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - "53:53/tcp"   # DNS — must stay host-published for LAN clients
+      - "53:53/udp"
+      # First-run only: to re-run the setup wizard, temporarily add "3003:3000/tcp"
+      # here and browse to it; the configured UI lives on :80 (served via HTTPS).
+    restart: unless-stopped
+
   adguardhome:
     image: adguard/adguardhome:latest
     container_name: adguardhome
+    # Share the sidecar's network namespace: tailscale serve proxies :443 to the
+    # configured web UI on 127.0.0.1:80 (8083 was only the old host mapping).
+    network_mode: service:adguard-ts
+    depends_on:
+      - adguard-ts
     restart: unless-stopped
-    ports:
-      - "53:53/tcp"
-      - "53:53/udp"
-      - "3003:3000/tcp"   # setup wizard (first run only) — 3000:homepage, 3001:uptime-kuma
-      - "8083:80/tcp"     # web UI after setup
     volumes:
       - ./work:/opt/adguardhome/work
       - ./conf:/opt/adguardhome/conf
