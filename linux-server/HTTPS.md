@@ -193,7 +193,7 @@ side of the `ports:` mapping (`host:container`), not the host side.
 | uptime-kuma       | 3001  | ✅ done       | none — works at root (websockets proxied)              |
 | speedtest-tracker | 80    | ✅ done       | `APP_URL=https://speedtest.<tailnet>.ts.net` (Laravel); proxy to container :80, **not** the old 8765 host map |
 | ntfy              | 80    | ✅ done       | `NTFY_BASE_URL=https://ntfy.<tailnet>.ts.net` + `NTFY_BEHIND_PROXY=true`; proxy to container :80, **not** the old 5080 host map |
-| filebrowser       | 80    | todo          | none — works at root; proxy to container :80, **not** the old 8080 host map |
+| filebrowser       | 80    | ✅ done       | none — works at root; proxy to container :80, **not** the old 8080 host map |
 | syncthing         | 8384  | todo          | GUI → "Insecure Skip Host Check" (else `Host check error`); sync `:22000` stays host-published |
 | glances           | 61208 | todo          | none — works at root                                   |
 | adguard           | 8083  | todo          | none for the UI; DNS `:53` stays host-published        |
