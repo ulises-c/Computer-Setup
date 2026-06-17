@@ -171,6 +171,13 @@ and full rollout table in [linux-server/HTTPS.md](linux-server/HTTPS.md).
 - [x] adguard — sidecar live at https://adguard.<tailnet>.ts.net/, homepage
       link & widget url updated; DNS `:53` confirmed still resolving on the
       sidecar after recreate
+- [x] atvloadly — was never tracked in this repo (lived in an untracked
+      `/home/ollie/docker-compose.yml`); migrated into
+      `linux-server/atvloadly/`, sidecar live at
+      https://atvloadly.<tailnet>.ts.net/, homepage link updated. Apple TV
+      discovery (avahi/dbus socket mounts) confirmed unaffected by the netns
+      share — no `hostname:` on the app container, that conflicts with
+      `network_mode: service:...`
 - [ ] nginx-proxy-manager — optional, only if NPM is kept
 - [ ] homepage — special case: `tailscale serve` on the main node, not a sidecar
 - [ ] cockpit — repo files scaffolded (sidecar-only stack proxying to the host's
