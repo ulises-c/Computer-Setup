@@ -292,5 +292,77 @@ for `homepage` afterward — see Homepage links below.
    the existing `tailscale-proxy` client elevated to read+write scope. See
    Prerequisites above.
 2. **NPM**: retire it (tailnet-only access) or keep it for `.local`/LAN HTTPS?
-3. **Homepage host**: keep on the main `ollie-server` node (recommended) or give
-   it its own `homepage.<tailnet>.ts.net` sidecar?
+   See "Resilience / exit strategy" — NPM + a real domain is also the
+   vendor-independent equivalent of this whole layer.
+3. ~~**Homepage host**: main node vs own sidecar?~~ Resolved: its own
+   `homepage.<tailnet>.ts.net` sidecar (host-networked variant), to keep the
+   per-service subdomain scheme consistent.
+
+## Resilience / exit strategy
+
+This layer leans on Tailscale's hosted control plane. Worth knowing what breaks
+if Tailscale has an outage or goes away — and that there's a clean exit.
+
+### What depends on Tailscale (hosted) vs what's open
+
+Every `<svc>.<tailnet>.ts.net` URL depends on the hosted **coordination server**
+for: node auth + the `100.x` tailnet IP, **MagicDNS** (`ts.net` is Tailscale's
+domain), the **Let's Encrypt certs** `tailscale serve` auto-provisions for
+`*.ts.net`, and **DERP** relays for NAT traversal. The sidecars' OAuth auth keys
+also flow through it.
+
+What is **not** dependent: the data plane is **WireGuard** (open, in-kernel,
+peer-to-peer — traffic never routes through Tailscale once peers are connected),
+`tailscaled` is open source, and the apps + data are all local.
+
+### Failure modes
+
+- **Temporary control-plane outage:** mostly fine. Existing tunnels run on cached
+  keys/endpoints; already-issued certs keep working (90-day lifetime). You just
+  can't add/re-auth nodes until it's back.
+- **Tailscale shuts down permanently:** a long fuse, not a cliff — it degrades
+  over **~90 days** as certs hit renewal and can't reissue, MagicDNS for `.ts.net`
+  stops, and sidecars eventually can't re-auth.
+
+### The exit: Headscale (planned)
+
+[Headscale](https://github.com/juanfont/headscale) is an open-source, self-hostable
+reimplementation of the coordination server (could even run on this box). Point
+`tailscaled --login-server=https://<headscale>` and the tailnet model — MagicDNS,
+ACLs, DERP — keeps working without the company. **Catch:** Headscale gives you
+neither `.ts.net` nor the zero-config certs, so you switch to **a domain you own**
+(`<svc>.home.example.com`) and **manage your own certs** — which is exactly the
+**NPM + real-domain** setup. So NPM is the bridge to vendor independence; keeping
+it (or the know-how) is the insurance policy.
+
+### Operational single point of failure
+
+Every front door now routes through `tailscaled` on this host — if the daemon or
+its config breaks (local, not Tailscale's fault), all HTTPS URLs drop at once. The
+apps keep running underneath. Two cheap mitigations:
+
+- **Keep host SSH reachable on the LAN** (not only over the tailnet), so you can
+  always get in to fix the box when the tailnet is the broken thing.
+- Each service's compose still documents its container port, so re-exposing a
+  host `ports:` block for LAN access is a one-line fallback (next section).
+
+### Sharing a container on the LAN without Tailscale
+
+The tailnet sidecar and a plain LAN host-port can **coexist** — a service can be
+reachable both at `https://<svc>.<tailnet>.ts.net` (sidecar) and at
+`http://<server-lan-ip>:<port>` (host port) for devices not on the tailnet.
+
+Because a netns-shared app can't publish its own ports, add the `ports:` block to
+the **sidecar** (it owns the namespace), exactly as syncthing/adguard already do
+for their non-HTTP ports:
+
+```yaml
+  <svc>-ts:
+    # ... sidecar as usual, plus:
+    ports:
+      - "8096:80"   # LAN access at http://<server-lan-ip>:8096 → app's :80
+```
+
+That's plaintext HTTP on the LAN. For **LAN HTTPS** (a trusted cert for non-tailnet
+devices) you need a real/own cert — which is NPM's job. Host-networked services
+(e.g. glances) already keep their LAN port open, so no change is needed for those.
