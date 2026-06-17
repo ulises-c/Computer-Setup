@@ -128,7 +128,7 @@
               format: bytes
     - filebrowser:
         icon: mdi-folder-network
-        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:8080
+        href: https://{{HOMEPAGE_VAR_FILEBROWSER_DOMAIN}}/
         description: Web file manager
         server: my-docker
         container: filebrowser

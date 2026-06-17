@@ -161,7 +161,8 @@ and full rollout table in [linux-server/HTTPS.md](linux-server/HTTPS.md).
       homepage link & widget url updated
 - [x] ntfy — sidecar live at https://ntfy.<tailnet>.ts.net/, homepage link
       updated
-- [ ] filebrowser
+- [ ] filebrowser — repo files scaffolded (compose + ts-serve.json + .env +
+      homepage link); serve targets container :80; pending live apply on server
 - [ ] syncthing — GUI only; sync ports stay host-published
 - [ ] glances
 - [ ] adguard — admin UI only; DNS :53 stays host-published
