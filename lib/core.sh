@@ -2,14 +2,20 @@
 # Shared engine for the unified root setup.sh (UNIFICATION.md, issue #36).
 # Sourced by setup.sh after SETUP_ROOT is set. Platform modules in
 # platforms/<platform>.sh provide platform_main() plus the hooks used by
-# desktop_main(): platform_bootstrap, platform_install_tier,
+# linux_main(): platform_bootstrap, platform_install_tier,
 # platform_pyenv_build_deps, platform_tailscale_step, platform_docker_optional.
+# The apt-family hooks (apt_install_tier, platform_tailscale_step,
+# platform_docker_optional) default to apt/curl implementations here, shared by
+# the Ubuntu desktop and the server profile; arch.sh overrides them for pacman.
+# linux_main() runs the shared spine; SERVER_PROFILE gates the desktop-only
+# steps off and routes to the server-extras phase.
 
 PACKAGES_JSON="$SETUP_ROOT/packages.json"
 
 PYTHON_VERSION="3.12.13"
 
 PLATFORM=""
+SERVER_PROFILE=false
 INCLUDE_OPTIONAL=false
 INCLUDE_WORK=false
 INCLUDE_PERSONAL=false
@@ -71,6 +77,7 @@ core_detect_platform() {
       printf '       Re-run with --platform macos|ubuntu|arch|server to override.\n' >&2
       exit 1 ;;
   esac
+  if [[ "$PLATFORM" == "server" ]]; then SERVER_PROFILE=true; fi
 }
 
 # ── Run helpers ───────────────────────────────────────────────────────────────
@@ -400,6 +407,45 @@ snap_install_tier() {
   fi
 }
 
+# apt install tier — shared by the Ubuntu desktop and the server profile.
+# arch.sh overrides the install path with yay_install_tier.
+apt_install_tier() {
+  local priority="$1" names
+  names=$(pkg_names apt "$priority")
+  [[ -z "$names" ]] && return 0
+  # shellcheck disable=SC2086
+  run sudo apt install -y $names
+}
+
+# Tailscale via the official curl installer — apt-family default (ubuntu + server).
+# arch.sh overrides this (tailscale ships in the yay batch; just enable the daemon).
+platform_tailscale_step() {
+  printf '\n'
+  if [[ "$DRY_RUN" == true ]]; then
+    command -v tailscale &>/dev/null \
+      && printf '==> Tailscale already installed\n' \
+      || printf '  [dry-run] eval: curl -fsSL https://tailscale.com/install.sh | sudo sh\n'
+  elif ! command -v tailscale &>/dev/null; then
+    printf '==> Installing Tailscale...\n'
+    eval "$(custom_cmd tailscale)"
+  else
+    printf '==> Tailscale already installed (%s)\n' "$(tailscale version | head -1)"
+  fi
+}
+
+# Docker via get.docker.com — apt-family default (ubuntu + server).
+# arch.sh overrides this (docker ships in the yay batch; just enable the daemon).
+platform_docker_optional() {
+  if ! command -v docker &>/dev/null; then
+    printf '==> Installing Docker...\n'
+    run_eval "curl -fsSL https://get.docker.com | sudo sh"
+    run sudo usermod -aG docker "$USER"
+    printf '    Log out and back in for the docker group to take effect.\n'
+  else
+    printf '==> Docker already installed (%s)\n' "$(docker --version | head -1)"
+  fi
+}
+
 # Echo the other repo setup scripts (those present on disk) for discoverability.
 # One list for all platforms — root verify.sh auto-detects, so nothing diverges.
 RELATED_SCRIPTS=(
@@ -589,25 +635,39 @@ desktop_footer() {
   printf '================================================================\n'
 }
 
-desktop_main() {
+# Shared Linux install spine for the apt/yay desktops and the server profile.
+# Desktop-only steps (version managers, rust/pipx/pnpm, p10k, ghostty) are gated
+# off under SERVER_PROFILE, which instead routes to the server-extras phase.
+linux_main() {
   printf '==> Detected distro family: %s\n' "$PLATFORM"
-  CONFIG_SRC_DIR="$SETUP_ROOT/linux-desktop"
+  if [[ "$SERVER_PROFILE" == true ]]; then
+    CONFIG_SRC_DIR="$SETUP_ROOT/linux-server"
+  else
+    CONFIG_SRC_DIR="$SETUP_ROOT/linux-desktop"
+  fi
   platform_bootstrap
 
   printf '\n'
   platform_install_tier high
 
-  linux_pyenv_flow
-  linux_nvm_flow
+  if [[ "$SERVER_PROFILE" != true ]]; then
+    linux_pyenv_flow
+    linux_nvm_flow
+  fi
 
   printf '\n'
   platform_install_tier medium
 
   platform_tailscale_step
+  [[ "$SERVER_PROFILE" == true ]] && \
+    printf "    Run 'sudo tailscale up' to authenticate and connect to your Tailnet.\n"
   claude_code_step
-  rust_toolchain_step
-  desktop_pipx_section
-  desktop_pnpm_section
+
+  if [[ "$SERVER_PROFILE" != true ]]; then
+    rust_toolchain_step
+    desktop_pipx_section
+    desktop_pnpm_section
+  fi
 
   set_default_shell
   printf '\n'
@@ -615,10 +675,25 @@ desktop_main() {
   printf '\n'
   deploy_config "$SETUP_ROOT/dotfiles/tmux.conf" "$HOME/.tmux.conf" "tmux.conf" yes
   printf '\n'
-  deploy_config "$SETUP_ROOT/dotfiles/zsh_plugins.txt" "$HOME/.zsh_plugins.txt" "" no
-  printf '\n'
-  deploy_config "$SETUP_ROOT/dotfiles/p10k.zsh.example" "$HOME/.p10k.zsh" "p10k.zsh.example" yes
-  ghostty_deploy_linux
+  if [[ "$SERVER_PROFILE" == true ]]; then
+    deploy_config "$CONFIG_SRC_DIR/zsh_plugins.txt" "$HOME/.zsh_plugins.txt" \
+      "linux-server/zsh_plugins.txt (platform override)" no
+    server_preclone_antidote
+  else
+    deploy_config "$SETUP_ROOT/dotfiles/zsh_plugins.txt" "$HOME/.zsh_plugins.txt" "" no
+    printf '\n'
+    deploy_config "$SETUP_ROOT/dotfiles/p10k.zsh.example" "$HOME/.p10k.zsh" "p10k.zsh.example" yes
+    ghostty_deploy_linux
+  fi
+
+  if [[ "$SERVER_PROFILE" == true ]]; then
+    printf '\n'
+    platform_docker_optional
+    server_extras
+    custom_reminders_section
+    server_footer
+    return 0
+  fi
 
   if [[ "$INCLUDE_OPTIONAL" == true ]]; then
     printf '\n==> Installing optional (low) packages...\n'
