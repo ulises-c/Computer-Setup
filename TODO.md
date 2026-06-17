@@ -186,6 +186,15 @@ and full rollout table in [linux-server/HTTPS.md](linux-server/HTTPS.md).
       link updated. `cockpit.conf.example`'s Origins allow-list turned out
       unnecessary — verified via raw WebSocket upgrade (101 with matching
       Origin, 403 with a foreign one)
+- [x] tailscale-web — not in the original rollout; added because the homepage
+      Tailscale tile linked plain HTTP. New `linux-server/tailscale-web/`
+      sidecar-only stack live at https://tailscale-web.<tailnet>.ts.net/,
+      homepage link updated. Host's `tailscale-web.service` unit now runs
+      `tailscale web --listen 0.0.0.0:8088 --origin
+      https://tailscale-web.<tailnet>.ts.net`; sidecar proxies to
+      `host.docker.internal:8088`. Verified 200 with no redirect, real page
+      content, confirmed in browser. Don't use port `:5252` — see HTTPS.md
+      Gotchas
 - [x] Decide auth method: OAuth client + `tag:container` (reusing the elevated
       tailscale-proxy client) — resolved during the Forgejo rollout, see HTTPS.md
 - [x] Decide whether to retire NPM or keep it — KEEP, as the non-tailnet HTTPS

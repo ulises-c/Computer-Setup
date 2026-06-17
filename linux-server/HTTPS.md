@@ -229,6 +229,7 @@ side of the `ports:` mapping (`host:container`), not the host side.
 | nginx-proxy-mgr   | 81    | kept          | **non-tailnet HTTPS edge** — not a sidecar; binds host `:80/:443/:81`; trusted certs for LAN/public clients (see "NPM — trusted HTTPS for non-tailnet clients") |
 | homepage          | 3000  | ✅ done       | host-networked variant — keep `network_mode: host` (reaches localhost widgets), sidecar proxies via `host.docker.internal`; add the domain to `HOMEPAGE_ALLOWED_HOSTS` |
 | cockpit           | 9090  | ✅ done       | host systemd service — **sidecar-only** stack proxies `https+insecure://host.docker.internal:9090`; `cockpit.conf.example`'s `Origins` line turned out to be unnecessary in practice — see Gotchas |
+| tailscale-web     | 8088  | ✅ done       | not in the original rollout — added because the homepage Tailscale tile linked plain HTTP. `tailscale web` is a host **systemd user unit**, not a container; `ExecStart` needs `--listen 0.0.0.0:8088 --origin https://tailscale-web.<tailnet>.ts.net` so it's reachable via `host.docker.internal` and knows it's reverse-proxied. Don't use port `:5252` — see Gotchas |
 
 Services that also expose **non-HTTP** ports the LAN/tailnet needs (AdGuard DNS
 `:53`, Syncthing sync `:22000`, Forgejo SSH `:22`) keep those as direct
@@ -284,6 +285,28 @@ for `homepage` afterward — see Homepage links below.
   header → `101 Switching Protocols`, a foreign `Origin` → `403` (proving the
   check is live, just already satisfied). Keep `cockpit.conf.example` as a
   fallback if a future Cockpit/Tailscale version regresses this.
+- **`tailscale web` needs both `--listen 0.0.0.0:<port>` and `--origin
+  https://<svc>.<tailnet>.ts.net` on its `ExecStart`**, unlike the other
+  "host-networked apps" sidecars (glances, cockpit) which needed no app-side
+  change at all. It's a host **systemd user unit**
+  (`tailscale-web.service` — `systemctl --user`, not the system scope), not a
+  container. By default it listens on `localhost:8088` only, which
+  `host.docker.internal` can't reach (loopback is per-network-namespace);
+  `--listen 0.0.0.0:8088` fixes that. Without `--origin` set to the HTTPS
+  sidecar domain, the app redirects browsers to its own bare `ip:port` —
+  harmless over plain HTTP, but a hard `SSL_ERROR_RX_RECORD_TOO_LONG` once
+  the tile is HTTPS (the browser inherits `https:` from the page and tries
+  to TLS-handshake a plain-HTTP port). Edit with `systemctl --user edit --full
+  tailscale-web.service`, then `daemon-reload` + `restart`.
+- **Don't proxy to port `:5252`** — something else (unidentified, not this
+  unit, not a container, not killed by a reboot) answers there and serves
+  what looks like the same Tailscale UI but never reflects `--origin`/
+  `--listen` changes made to `tailscale-web.service`. Cost real debugging
+  time chasing a stale redirect before realizing the sidecar's
+  `ts-serve.json` was still pointed at the old `:5252` address instead of
+  wherever `tailscale web` actually ends up listening. Always confirm the
+  port with `systemctl --user status tailscale-web.service`'s logged
+  `web server running on:` line before setting the `Proxy` target.
 
 ## Decisions to confirm
 
