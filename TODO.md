@@ -159,9 +159,8 @@ and full rollout table in [linux-server/HTTPS.md](linux-server/HTTPS.md).
       homepage link & widget url updated
 - [x] speedtest-tracker — sidecar live at https://speedtest.<tailnet>.ts.net/,
       homepage link & widget url updated
-- [ ] ntfy — repo files scaffolded (compose + ts-serve.json + .env + homepage
-      link); serve targets container :80, set `NTFY_BASE_URL` +
-      `NTFY_BEHIND_PROXY=true`; pending live apply on server
+- [x] ntfy — sidecar live at https://ntfy.<tailnet>.ts.net/, homepage link
+      updated
 - [ ] filebrowser
 - [ ] syncthing — GUI only; sync ports stay host-published
 - [ ] glances

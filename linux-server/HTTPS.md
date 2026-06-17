@@ -190,9 +190,9 @@ side of the `ports:` mapping (`host:container`), not the host side.
 |-------------------|-------|---------------|--------------------------------------------------------|
 | forgejo           | 3000  | ✅ done       | `ROOT_URL` + `SSH_DOMAIN`; also exposes git SSH `:22`  |
 | portainer         | 9000  | ✅ done       | none — works at root (websocket console proxied)       |
-| uptime-kuma       | 3001  | todo          | none — works at root (websockets proxied)              |
-| speedtest-tracker | 80    | todo          | `APP_URL=https://speedtest.<tailnet>.ts.net` (Laravel); proxy to container :80, **not** the old 8765 host map |
-| ntfy              | 80    | todo          | `NTFY_BASE_URL=https://ntfy.<tailnet>.ts.net` + `NTFY_BEHIND_PROXY=true`; proxy to container :80, **not** the old 5080 host map |
+| uptime-kuma       | 3001  | ✅ done       | none — works at root (websockets proxied)              |
+| speedtest-tracker | 80    | ✅ done       | `APP_URL=https://speedtest.<tailnet>.ts.net` (Laravel); proxy to container :80, **not** the old 8765 host map |
+| ntfy              | 80    | ✅ done       | `NTFY_BASE_URL=https://ntfy.<tailnet>.ts.net` + `NTFY_BEHIND_PROXY=true`; proxy to container :80, **not** the old 5080 host map |
 | filebrowser       | 8080  | todo          | none — works at root                                   |
 | syncthing         | 8384  | todo          | GUI → "Insecure Skip Host Check" (else `Host check error`); sync `:22000` stays host-published |
 | glances           | 61208 | todo          | none — works at root                                   |
@@ -237,6 +237,14 @@ for `homepage` afterward — see Homepage links below.
   `http: proxy error: dial tcp 127.0.0.1:<port>: connect: connection refused`.
   Fix: `docker compose restart <svc>` (the app) after the sidecar so it
   re-resolves and rejoins the sidecar's current namespace.
+- **ntfy's `/config.js` and `/v1/config` always report `"base_url": ""`** —
+  this is not a sign that `NTFY_BASE_URL` failed to apply. ntfy's source
+  hardcodes that field blank on purpose (`server.go`'s `configResponse()`),
+  so the web app falls back to `window.location.origin` instead of trusting
+  the server. To verify `NTFY_BASE_URL` actually took effect server-side,
+  hit `GET /_matrix/push/v1/notify` instead — its handler 500s
+  (`errHTTPInternalErrorMissingBaseURL`) if `BaseURL` is empty and returns
+  `200` once it's set, regardless of whether Matrix push is otherwise used.
 
 ## Decisions to confirm
 
