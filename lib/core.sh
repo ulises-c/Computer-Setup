@@ -660,8 +660,10 @@ desktop_footer() {
 }
 
 # Shared Linux install spine for the apt/yay desktops and the server profile.
-# Desktop-only steps (version managers, rust/pipx/pnpm, p10k, ghostty) are gated
-# off under SERVER_PROFILE, which instead routes to the server-extras phase.
+# Desktop-only steps (version managers, rust/pipx/pnpm, ghostty) are gated off
+# under SERVER_PROFILE, which instead routes to the server-extras phase. The zsh
+# stack — zshrc, zsh_plugins.txt, and the p10k config — deploys from dotfiles on
+# both (the desktop-only zshrc bits self-disable headless).
 linux_main() {
   printf '==> Detected distro family: %s\n' "$PLATFORM"
   if [[ "$SERVER_PROFILE" == true ]]; then
@@ -699,14 +701,14 @@ linux_main() {
   printf '\n'
   deploy_config "$SETUP_ROOT/dotfiles/tmux.conf" "$HOME/.tmux.conf" "tmux.conf" yes
   printf '\n'
+  deploy_config "$SETUP_ROOT/dotfiles/zsh_plugins.txt" "$HOME/.zsh_plugins.txt" "" no
+  printf '\n'
+  deploy_config "$SETUP_ROOT/dotfiles/p10k.zsh.example" "$HOME/.p10k.zsh" "p10k.zsh.example" yes
   if [[ "$SERVER_PROFILE" == true ]]; then
-    deploy_config "$CONFIG_SRC_DIR/zsh_plugins.txt" "$HOME/.zsh_plugins.txt" \
-      "linux-server/zsh_plugins.txt (platform override)" no
+    # Plugins/prompt are the shared dotfiles set; pre-clone now while the
+    # network is provably up rather than lazily on first interactive login.
     server_preclone_antidote
   else
-    deploy_config "$SETUP_ROOT/dotfiles/zsh_plugins.txt" "$HOME/.zsh_plugins.txt" "" no
-    printf '\n'
-    deploy_config "$SETUP_ROOT/dotfiles/p10k.zsh.example" "$HOME/.p10k.zsh" "p10k.zsh.example" yes
     ghostty_deploy_linux
   fi
 
