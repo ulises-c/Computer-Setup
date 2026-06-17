@@ -103,7 +103,7 @@
         container: forgejo
         widget:
           type: gitea
-          url: http://localhost:3300
+          url: https://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}
           key: "{{HOMEPAGE_VAR_FORGEJO_TOKEN}}"
     - syncthing:
         icon: si-syncthing
