@@ -63,11 +63,11 @@
   },
   {
     "name": "build-essential",
-    "package_manager": { "ubuntu": "apt", "arch": "yay" },
+    "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "arch_name": "base-devel",
     "priority": "high",
     "optional": false,
-    "description": "Compiler toolchain — gcc, make, etc.; required for pyenv, native Node modules, and AUR builds"
+    "description": "Compiler toolchain — gcc, make, etc.; required for pyenv, native Node modules, AUR builds, and cargo install (e.g. railguard)"
   },
   {
     "name": "git",
@@ -85,9 +85,10 @@
   },
   {
     "name": "rust",
-    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay" },
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "ubuntu_name": "rustup",
     "arch_name": "rustup",
+    "server_name": "rustup",
     "priority": "medium",
     "optional": false,
     "description": "Rust toolchain — rustup on Linux (distro rustc goes stale; setup runs 'rustup default stable'), plain rust formula on macOS"
