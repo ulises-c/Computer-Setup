@@ -228,7 +228,7 @@ side of the `ports:` mapping (`host:container`), not the host side.
 | atvloadly         | 80    | ✅ done       | no `hostname:` on the app container — conflicts with `network_mode: service:...`; Apple TV discovery is unaffected by the shared netns since it goes through the host's avahi-daemon via bind-mounted sockets, not this container's own network |
 | nginx-proxy-mgr   | 81    | optional      | only if you keep NPM                                   |
 | homepage          | 3000  | todo          | host-networked variant — keep `network_mode: host` (reaches localhost widgets), sidecar proxies via `host.docker.internal`; add the domain to `HOMEPAGE_ALLOWED_HOSTS` |
-| cockpit           | 9090  | todo          | host systemd service — **sidecar-only** stack proxies `https+insecure://host.docker.internal:9090`; add `Origins` to `/etc/cockpit/cockpit.conf` (see `cockpit/cockpit.conf.example`) |
+| cockpit           | 9090  | ✅ done       | host systemd service — **sidecar-only** stack proxies `https+insecure://host.docker.internal:9090`; `cockpit.conf.example`'s `Origins` line turned out to be unnecessary in practice — see Gotchas |
 
 Services that also expose **non-HTTP** ports the LAN/tailnet needs (AdGuard DNS
 `:53`, Syncthing sync `:22000`, Forgejo SSH `:22`) keep those as direct
@@ -274,6 +274,16 @@ for `homepage` afterward — see Homepage links below.
   hit `GET /_matrix/push/v1/notify` instead — its handler 500s
   (`errHTTPInternalErrorMissingBaseURL`) if `BaseURL` is empty and returns
   `200` once it's set, regardless of whether Matrix push is otherwise used.
+- **Cockpit's WebSocket Origin check worked without touching
+  `cockpit.conf.example`'s `Origins` line.** That file documents the
+  textbook fix for "Cockpit rejects proxied requests from an unrecognized
+  Origin," but on this Cockpit version it already derives the allowed origin
+  from the proxied request's `Host`/`X-Forwarded-Proto` (which `tailscale
+  serve` sets correctly), so the default behavior just works. Verified by
+  hand-crafting a WebSocket upgrade to `/cockpit/socket`: matching `Origin`
+  header → `101 Switching Protocols`, a foreign `Origin` → `403` (proving the
+  check is live, just already satisfied). Keep `cockpit.conf.example` as a
+  fallback if a future Cockpit/Tailscale version regresses this.
 
 ## Decisions to confirm
 

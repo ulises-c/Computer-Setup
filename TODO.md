@@ -182,9 +182,10 @@ and full rollout table in [linux-server/HTTPS.md](linux-server/HTTPS.md).
 - [ ] homepage — repo files scaffolded (host-networked variant: keeps
       network_mode: host, sidecar proxies via host.docker.internal; domain added
       to HOMEPAGE_ALLOWED_HOSTS); pending live apply on server
-- [ ] cockpit — repo files scaffolded (sidecar-only stack proxying to the host's
-      :9090 via host.docker.internal + cockpit.conf.example for the Origins
-      allow-list); pending live apply on server
+- [x] cockpit — sidecar live at https://cockpit.<tailnet>.ts.net/, homepage
+      link updated. `cockpit.conf.example`'s Origins allow-list turned out
+      unnecessary — verified via raw WebSocket upgrade (101 with matching
+      Origin, 403 with a foreign one)
 - [x] Decide auth method: OAuth client + `tag:container` (reusing the elevated
       tailscale-proxy client) — resolved during the Forgejo rollout, see HTTPS.md
 - [ ] Decide whether to retire NPM (tailnet-only) or keep it for LAN/`.local` HTTPS
