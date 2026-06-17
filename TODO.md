@@ -163,9 +163,9 @@ and full rollout table in [linux-server/HTTPS.md](linux-server/HTTPS.md).
       updated
 - [x] filebrowser — sidecar live at https://filebrowser.<tailnet>.ts.net/,
       homepage link updated
-- [ ] syncthing — repo files scaffolded (compose + ts-serve.json + .env +
-      homepage link & widget url); GUI via serve with `STGUIADDRESS` host-check
-      fix, sync `:22000`/`:21027` published on the sidecar; pending live apply
+- [x] syncthing — sidecar live at https://syncthing.<tailnet>.ts.net/, homepage
+      link & widget url updated; sync `:22000`/`:21027` confirmed published
+      on the sidecar
 - [ ] glances
 - [ ] adguard — admin UI only; DNS :53 stays host-published
 - [ ] nginx-proxy-manager — optional, only if NPM is kept

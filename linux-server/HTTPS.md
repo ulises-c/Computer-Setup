@@ -194,7 +194,7 @@ side of the `ports:` mapping (`host:container`), not the host side.
 | speedtest-tracker | 80    | ✅ done       | `APP_URL=https://speedtest.<tailnet>.ts.net` (Laravel); proxy to container :80, **not** the old 8765 host map |
 | ntfy              | 80    | ✅ done       | `NTFY_BASE_URL=https://ntfy.<tailnet>.ts.net` + `NTFY_BEHIND_PROXY=true`; proxy to container :80, **not** the old 5080 host map |
 | filebrowser       | 80    | ✅ done       | none — works at root; proxy to container :80, **not** the old 8080 host map |
-| syncthing         | 8384  | todo          | set `STGUIADDRESS=127.0.0.1:8384` (disables Syncthing's Host-header check, else `Host check error`); publish sync `:22000`/`:21027` on the **sidecar** (raw TCP/UDP, not via serve) |
+| syncthing         | 8384  | ✅ done       | set `STGUIADDRESS=127.0.0.1:8384` (disables Syncthing's Host-header check, else `Host check error`); publish sync `:22000`/`:21027` on the **sidecar** (raw TCP/UDP, not via serve) |
 | glances           | 61208 | todo          | none — works at root                                   |
 | adguard           | 8083  | todo          | none for the UI; DNS `:53` stays host-published        |
 | nginx-proxy-mgr   | 81    | optional      | only if you keep NPM                                   |
