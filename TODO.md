@@ -153,8 +153,8 @@ Convert each self-hosted service from `http://<server-ip>:<port>` to its own
 and full rollout table in [linux-server/HTTPS.md](linux-server/HTTPS.md).
 
 - [x] forgejo — reference impl (sidecar + SSH :22), done in 8ff8a2c
-- [ ] portainer — repo files scaffolded (compose + ts-serve.json + .env + homepage
-      link); pending live apply on server (pull + `docker compose up -d`)
+- [x] portainer — sidecar live at https://portainer.<tailnet>.ts.net/, homepage
+      link updated
 - [ ] uptime-kuma
 - [ ] speedtest-tracker
 - [ ] ntfy — also set `base-url: https://ntfy.<tailnet>.ts.net`

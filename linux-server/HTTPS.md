@@ -155,11 +155,20 @@ change below). HTTP(S) clone URLs come from `ROOT_URL`.
 
 `homepage/config/services.yaml` hrefs are plain `http://ip:port` today — that's
 why a tile click leaves HTTPS. As each service is converted, change its href to
-`https://<svc>.<tailnet>.ts.net/`. Widget `url:` fields stay
-`http://localhost:<port>` (homepage talks to containers locally; only the
-human-facing `href` changes). Keep homepage itself on the main node (it uses host
-networking + the docker socket — a sidecar is awkward there); serve it with
-`tailscale serve --bg https / http://127.0.0.1:3000` on `ollie-server`.
+`https://{{HOMEPAGE_VAR_<SVC>_DOMAIN}}/` and add the matching
+`HOMEPAGE_VAR_<SVC>_DOMAIN=<svc>.<tailnet>.ts.net` line to `homepage/.env`.
+Widget `url:` fields stay `http://localhost:<port>` (homepage talks to
+containers locally; only the human-facing `href` changes). Keep homepage itself
+on the main node (it uses host networking + the docker socket — a sidecar is
+awkward there); serve it with `tailscale serve --bg https / http://127.0.0.1:3000`
+on `ollie-server`.
+
+**`docker compose restart homepage` does not pick up a new/changed `.env`
+var** — `env_file` is baked into the container at creation time, and `restart`
+reuses that same container. The tile renders the literal `{{HOMEPAGE_VAR_...}}`
+placeholder instead of the URL until you run `docker compose up -d` (in
+`linux-server/homepage`), which recreates the container with the current
+`.env`. Verify with `docker exec homepage printenv | grep HOMEPAGE_VAR_<SVC>`.
 
 ## Rollout order and per-service ports
 
@@ -188,11 +197,14 @@ Services that also expose **non-HTTP** ports the LAN/tailnet needs (AdGuard DNS
 `:53`, Syncthing sync `:22000`, Forgejo SSH `:22`) keep those as direct
 tailnet/host ports — only the web UI goes through `tailscale serve`.
 
-Each conversion is four mechanical edits — copy the sidecar block + `ts-serve.json`
+Each conversion is five mechanical edits — copy the sidecar block + `ts-serve.json`
 (change only the port), set `TS_AUTHKEY` in the service's `.env`, drop the app's
-`ports:` block, and point the homepage `href` at `https://<svc>.<tailnet>.ts.net/`
-— plus the app-config cell above where non-empty. `ts-state/` is already
-gitignored for every service (`linux-server/*/ts-state/`).
+`ports:` block, add `HOMEPAGE_VAR_<SVC>_DOMAIN=<svc>.<tailnet>.ts.net` to
+`homepage/.env`, and point the homepage `href` at
+`https://{{HOMEPAGE_VAR_<SVC>_DOMAIN}}/` — plus the app-config cell above where
+non-empty. `ts-state/` is already gitignored for every service
+(`linux-server/*/ts-state/`). Remember `docker compose up -d` (not `restart`)
+for `homepage` afterward — see Homepage links below.
 
 ## Gotchas / migration
 
