@@ -178,9 +178,10 @@ and full rollout table in [linux-server/HTTPS.md](linux-server/HTTPS.md).
       discovery (avahi/dbus socket mounts) confirmed unaffected by the netns
       share — no `hostname:` on the app container, that conflicts with
       `network_mode: service:...`
-- [ ] nginx-proxy-manager — KEPT as the host edge; admin-UI sidecar scaffolded
-      (host-gateway variant → https://npm.<tailnet>.ts.net, proxies host :81);
-      NPM keeps binding host :80/:443. Pending live apply on server
+- [x] nginx-proxy-manager — KEPT as the host edge; admin UI sidecar live at
+      https://npm.<tailnet>.ts.net/ (proxies host :81 via host.docker.internal,
+      no app-side change needed), homepage link updated. NPM keeps binding
+      host :80/:443 unchanged
 - [x] homepage — sidecar live at https://homepage.<tailnet>.ts.net/, confirmed
       `HOMEPAGE_ALLOWED_HOSTS` includes the new domain and container is
       healthy post-recreate
