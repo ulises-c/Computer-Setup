@@ -157,7 +157,9 @@ and full rollout table in [linux-server/HTTPS.md](linux-server/HTTPS.md).
       link updated
 - [x] uptime-kuma — sidecar live at https://uptime-kuma.<tailnet>.ts.net/,
       homepage link & widget url updated
-- [ ] speedtest-tracker
+- [ ] speedtest-tracker — repo files scaffolded (compose + ts-serve.json + .env +
+      homepage link & widget url); serve targets container :80, set
+      `APP_URL=https://speedtest.<tailnet>.ts.net`; pending live apply on server
 - [ ] ntfy — also set `base-url: https://ntfy.<tailnet>.ts.net`
 - [ ] filebrowser
 - [ ] syncthing — GUI only; sync ports stay host-published

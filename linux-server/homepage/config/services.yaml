@@ -80,13 +80,13 @@
               format: relativeDate
     - speedtest tracker:
         icon: mdi-speedometer
-        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:8765
+        href: https://{{HOMEPAGE_VAR_SPEEDTEST_DOMAIN}}/
         description: ISP speed monitor
         server: my-docker
         container: speedtest-tracker
         widget:
           type: speedtest
-          url: http://localhost:8765
+          url: https://{{HOMEPAGE_VAR_SPEEDTEST_DOMAIN}}
     - ntfy:
         icon: si-ntfy
         href: http://{{HOMEPAGE_VAR_SERVER_IP}}:5080

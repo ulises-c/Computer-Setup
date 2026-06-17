@@ -180,12 +180,18 @@ every time (ports below); the only part that varies is the **app config** column
 rest work at the root unchanged. `tailscale serve` already sends
 `X-Forwarded-Proto: https`.
 
+The **port** column is the container's *internal* listening port — what
+`ts-serve.json` proxies to (`127.0.0.1:<port>`). It equals the old
+host-published port for every service except `speedtest-tracker`, whose host
+mapping was `8765:80`, so its serve target is `:80`. Always read the container
+side of the `ports:` mapping (`host:container`), not the host side.
+
 | service           | port  | status        | app config beyond the sidecar                          |
 |-------------------|-------|---------------|--------------------------------------------------------|
 | forgejo           | 3000  | ✅ done       | `ROOT_URL` + `SSH_DOMAIN`; also exposes git SSH `:22`  |
 | portainer         | 9000  | ✅ done       | none — works at root (websocket console proxied)       |
 | uptime-kuma       | 3001  | todo          | none — works at root (websockets proxied)              |
-| speedtest-tracker | 8765  | todo          | `APP_URL=https://speedtest.<tailnet>.ts.net` (Laravel) |
+| speedtest-tracker | 80    | todo          | `APP_URL=https://speedtest.<tailnet>.ts.net` (Laravel); proxy to container :80, **not** the old 8765 host map |
 | ntfy              | 5080  | todo          | `base-url: https://ntfy.<tailnet>.ts.net` (else links/publish break) |
 | filebrowser       | 8080  | todo          | none — works at root                                   |
 | syncthing         | 8384  | todo          | GUI → "Insecure Skip Host Check" (else `Host check error`); sync `:22000` stays host-published |
