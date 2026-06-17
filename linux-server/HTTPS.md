@@ -163,27 +163,36 @@ networking + the docker socket — a sidecar is awkward there); serve it with
 
 ## Rollout order and per-service ports
 
-Convert one at a time, verify, then move on. Internal ports (from the homepage
-widget configs):
+Convert one at a time, verify, then move on. The sidecar steps are identical
+every time (ports below); the only part that varies is the **app config** column
+— apps that generate absolute URLs or host-check need one extra setting, the
+rest work at the root unchanged. `tailscale serve` already sends
+`X-Forwarded-Proto: https`.
 
-| service           | app port | notes                                            |
-|-------------------|----------|--------------------------------------------------|
-| forgejo           | 3000     | **done — reference impl**; also exposes SSH :22  |
-| portainer         | 9000     | straightforward                                  |
-| uptime-kuma       | 3001     | straightforward                                  |
-| speedtest-tracker | 8765     | straightforward                                  |
-| ntfy              | 5080     | set `base-url: https://ntfy.<tailnet>.ts.net`    |
-| filebrowser       | 8080     | straightforward                                  |
-| syncthing         | 8384     | GUI only; sync ports stay host-published         |
-| glances           | 61208    | straightforward                                  |
-| adguard           | 8083     | admin UI; DNS :53 stays host-published           |
-| nginx-proxy-mgr   | 81       | optional — only if you keep NPM                  |
-| homepage          | 3000     | special case — keep on main node (see above)     |
-| cockpit           | 9090     | host service (not a container); use host serve   |
+| service           | port  | status        | app config beyond the sidecar                          |
+|-------------------|-------|---------------|--------------------------------------------------------|
+| forgejo           | 3000  | ✅ done       | `ROOT_URL` + `SSH_DOMAIN`; also exposes git SSH `:22`  |
+| portainer         | 9000  | ✅ done       | none — works at root (websocket console proxied)       |
+| uptime-kuma       | 3001  | todo          | none — works at root (websockets proxied)              |
+| speedtest-tracker | 8765  | todo          | `APP_URL=https://speedtest.<tailnet>.ts.net` (Laravel) |
+| ntfy              | 5080  | todo          | `base-url: https://ntfy.<tailnet>.ts.net` (else links/publish break) |
+| filebrowser       | 8080  | todo          | none — works at root                                   |
+| syncthing         | 8384  | todo          | GUI → "Insecure Skip Host Check" (else `Host check error`); sync `:22000` stays host-published |
+| glances           | 61208 | todo          | none — works at root                                   |
+| adguard           | 8083  | todo          | none for the UI; DNS `:53` stays host-published        |
+| nginx-proxy-mgr   | 81    | optional      | only if you keep NPM                                   |
+| homepage          | 3000  | special case  | keep on main node — `tailscale serve` on `ollie-server`, no sidecar |
+| cockpit           | 9090  | special case  | host service (not a container) — host-level serve      |
 
 Services that also expose **non-HTTP** ports the LAN/tailnet needs (AdGuard DNS
 `:53`, Syncthing sync `:22000`, Forgejo SSH `:22`) keep those as direct
 tailnet/host ports — only the web UI goes through `tailscale serve`.
+
+Each conversion is four mechanical edits — copy the sidecar block + `ts-serve.json`
+(change only the port), set `TS_AUTHKEY` in the service's `.env`, drop the app's
+`ports:` block, and point the homepage `href` at `https://<svc>.<tailnet>.ts.net/`
+— plus the app-config cell above where non-empty. `ts-state/` is already
+gitignored for every service (`linux-server/*/ts-state/`).
 
 ## Gotchas / migration
 

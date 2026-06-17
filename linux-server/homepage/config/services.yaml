@@ -7,7 +7,7 @@
         container: homepage
     - portainer:
         icon: si-portainer
-        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:9000
+        href: https://{{HOMEPAGE_VAR_PORTAINER_DOMAIN}}/
         description: Docker manager
         server: my-docker
         container: portainer
