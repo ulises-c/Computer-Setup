@@ -689,6 +689,10 @@ linux_main() {
   if [[ "$SERVER_PROFILE" == true ]]; then
     printf '\n'
     platform_docker_optional
+    if [[ "$INCLUDE_OPTIONAL" == true ]]; then
+      printf '\n==> Installing optional (low) packages...\n'
+      platform_install_tier low
+    fi
     server_extras
     custom_reminders_section
     server_footer
