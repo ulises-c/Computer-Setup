@@ -168,9 +168,9 @@ and full rollout table in [linux-server/HTTPS.md](linux-server/HTTPS.md).
       on the sidecar
 - [x] glances — sidecar live at https://glances.<tailnet>.ts.net/ (proxies via
       `host.docker.internal`, glances untouched), homepage link updated
-- [ ] adguard — repo files scaffolded (compose + ts-serve.json + .env + homepage
-      link & widget url); UI via serve at container :80, DNS :53 tcp+udp published
-      on the sidecar; pending live apply on server
+- [x] adguard — sidecar live at https://adguard.<tailnet>.ts.net/, homepage
+      link & widget url updated; DNS `:53` confirmed still resolving on the
+      sidecar after recreate
 - [ ] nginx-proxy-manager — optional, only if NPM is kept
 - [ ] homepage — special case: `tailscale serve` on the main node, not a sidecar
 - [ ] cockpit — host service, not a container; use host `tailscale serve`
