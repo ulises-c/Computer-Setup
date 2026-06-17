@@ -42,15 +42,28 @@ app generates correct HTTPS URLs.
 1. **Enable HTTPS** for the tailnet (DNS → "Enable HTTPS"), so `tailscale serve`
    can provision Let's Encrypt certs for `*.ts.net`.
 2. **MagicDNS** enabled (it is, since you resolve `ollie-server.<tailnet>.ts.net`).
-3. **An auth method for the sidecars.** Two options — pick one:
-   - **OAuth client + tag (recommended, reuses what you have).** You already have
-     a Tailscale OAuth client (`tailscale-proxy/.env`). Add a tag (e.g.
-     `tag:container`) to the ACL `tagOwners`, grant the OAuth client that tag,
-     and pass the client secret as `TS_AUTHKEY` with
-     `TS_EXTRA_ARGS=--advertise-tags=tag:container`. Sidecars never expire.
-   - **Reusable auth key (simplest).** Generate a *reusable* key in admin →
-     Settings → Keys and put it in each service's `.env` as `TS_AUTHKEY`. Watch
-     its expiry.
+3. **An auth method for the sidecars — resolved: OAuth client + tag.** Reuses
+   the existing Tailscale OAuth client (`linux-server/tailscale-proxy/.env`,
+   originally created read-only for the device-status proxy):
+   - In the admin console, edit that OAuth client's **scope** to include
+     **Auth Keys (read+write)**, in addition to its existing Core - Read scope.
+     Same `client_secret` continues to work for both the proxy and sidecars —
+     no new client or secret needed.
+   - Add `tag:container` to the ACL's `tagOwners` (e.g.
+     `"tag:container": ["autogroup:admin"]`). This alone was sufficient — the
+     OAuth client did **not** need a separate per-client tag assignment in its
+     own settings.
+   - Pass the existing `client_secret` as `TS_AUTHKEY` with
+     `TS_EXTRA_ARGS=--advertise-tags=tag:container` (already set in
+     `docker-compose.yml`). Sidecars never expire.
+   - **Gotcha hit during the Forgejo rollout**: granting the Auth Keys scope
+     without also adding `tag:container` to `tagOwners` fails at sidecar
+     startup with `Status: 400, Message: "requested tags [tag:container] are
+     invalid or not permitted"`. Add the tag to `tagOwners` and restart the
+     sidecar.
+   - (Reusable auth key remains a simpler fallback if you'd rather not touch
+     the OAuth client: generate one in admin → Settings → Keys and put it in
+     the service's `.env` as `TS_AUTHKEY`, but watch its expiry.)
 4. **ACL** must allow tailnet → the sidecar nodes on `:443` (HTTPS) and, for git
    over SSH, `:22`. The default allow-all ACL already does; if you've tightened
    it, add a grant for `tag:container`.
@@ -122,6 +135,10 @@ docker compose logs -f forgejo-ts   # watch the node join + cert provision
 Then in Forgejo → Site Administration, confirm the app URL, and update any
 existing local clones' remotes (see Migration below).
 
+If you have to restart/recreate the sidecar (`forgejo-ts`) for any reason
+*after* the app container is already up — e.g. to pick up a new ACL tag grant —
+restart the app container too. See the netns gotcha below.
+
 ## Git over SSH (Forgejo)
 
 With kernel-mode networking the sidecar's tailnet IP exposes Forgejo's container
@@ -178,10 +195,26 @@ tailnet/host ports — only the web UI goes through `tailscale serve`.
   tier). Name them after the service.
 - **One node, one cert**: first start of each sidecar takes a few seconds to
   provision its cert; `tailscale serve status` inside the sidecar shows progress.
+- **Stale netns after restarting the sidecar alone**: `network_mode:
+  service:<svc>-ts` makes the app container join the sidecar's network
+  namespace at *the app container's own start time* — it does not stay
+  dynamically linked. If you restart only the sidecar (e.g.
+  `docker compose restart <svc>-ts`) after the app is already running, the
+  sidecar gets a fresh netns but the app is still pinned to the old one. The
+  app's own healthcheck (`wget http://localhost:<port>` from inside the app
+  container) keeps reporting healthy — checking against its own stale
+  loopback, not the sidecar's — so the only symptom is `tailscale serve`
+  returning `502` with sidecar logs showing
+  `http: proxy error: dial tcp 127.0.0.1:<port>: connect: connection refused`.
+  Fix: `docker compose restart <svc>` (the app) after the sidecar so it
+  re-resolves and rejoins the sidecar's current namespace.
 
 ## Decisions to confirm
 
-1. **Auth**: OAuth-client-with-tag (recommended) vs reusable auth key?
+1. ~~**Auth**: OAuth-client-with-tag (recommended) vs reusable auth key?~~
+   Resolved during the Forgejo rollout: OAuth client + `tag:container`, reusing
+   the existing `tailscale-proxy` client elevated to read+write scope. See
+   Prerequisites above.
 2. **NPM**: retire it (tailnet-only access) or keep it for `.local`/LAN HTTPS?
 3. **Homepage host**: keep on the main `ollie-server` node (recommended) or give
    it its own `homepage.<tailnet>.ts.net` sidecar?

@@ -146,6 +146,28 @@ Test and validate the linux-desktop setup on the personal CachyOS desktop
 - [ ] Test `--personal` flag end-to-end
 - [ ] Create PR for CachyOS support
 
+## Per-service HTTPS rollout (linux-server)
+
+Convert each self-hosted service from `http://<server-ip>:<port>` to its own
+`https://<svc>.<tailnet>.ts.net/` via a Tailscale sidecar. Pattern, prereqs,
+and full rollout table in [linux-server/HTTPS.md](linux-server/HTTPS.md).
+
+- [x] forgejo — reference impl (sidecar + SSH :22), done in 8ff8a2c
+- [ ] portainer
+- [ ] uptime-kuma
+- [ ] speedtest-tracker
+- [ ] ntfy — also set `base-url: https://ntfy.<tailnet>.ts.net`
+- [ ] filebrowser
+- [ ] syncthing — GUI only; sync ports stay host-published
+- [ ] glances
+- [ ] adguard — admin UI only; DNS :53 stays host-published
+- [ ] nginx-proxy-manager — optional, only if NPM is kept
+- [ ] homepage — special case: `tailscale serve` on the main node, not a sidecar
+- [ ] cockpit — host service, not a container; use host `tailscale serve`
+- [ ] Decide auth method: OAuth client + tag vs. reusable auth key
+- [ ] Decide whether to retire NPM (tailnet-only) or keep it for LAN/`.local` HTTPS
+- [ ] Update Homepage hrefs to HTTPS as each service converts (widget `url:` stays http://localhost)
+
 ## linux-server — Raspberry Pi 4
 
 Set up the Raspberry Pi 4 headless server config under `linux-server/`.
