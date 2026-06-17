@@ -155,8 +155,8 @@ and full rollout table in [linux-server/HTTPS.md](linux-server/HTTPS.md).
 - [x] forgejo — reference impl (sidecar + SSH :22), done in 8ff8a2c
 - [x] portainer — sidecar live at https://portainer.<tailnet>.ts.net/, homepage
       link updated
-- [ ] uptime-kuma — repo files scaffolded (compose + ts-serve.json + .env +
-      homepage link & widget url); pending live apply on server
+- [x] uptime-kuma — sidecar live at https://uptime-kuma.<tailnet>.ts.net/,
+      homepage link & widget url updated
 - [ ] speedtest-tracker
 - [ ] ntfy — also set `base-url: https://ntfy.<tailnet>.ts.net`
 - [ ] filebrowser
