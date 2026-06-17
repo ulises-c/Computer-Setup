@@ -166,9 +166,8 @@ and full rollout table in [linux-server/HTTPS.md](linux-server/HTTPS.md).
 - [x] syncthing — sidecar live at https://syncthing.<tailnet>.ts.net/, homepage
       link & widget url updated; sync `:22000`/`:21027` confirmed published
       on the sidecar
-- [ ] glances — repo files scaffolded (host-networked variant: glances stays
-      `network_mode: host`, sidecar proxies via `host.docker.internal`); pending
-      live apply on server
+- [x] glances — sidecar live at https://glances.<tailnet>.ts.net/ (proxies via
+      `host.docker.internal`, glances untouched), homepage link updated
 - [ ] adguard — admin UI only; DNS :53 stays host-published
 - [ ] nginx-proxy-manager — optional, only if NPM is kept
 - [ ] homepage — special case: `tailscale serve` on the main node, not a sidecar
