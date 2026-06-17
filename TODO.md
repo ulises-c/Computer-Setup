@@ -179,9 +179,9 @@ and full rollout table in [linux-server/HTTPS.md](linux-server/HTTPS.md).
       share — no `hostname:` on the app container, that conflicts with
       `network_mode: service:...`
 - [ ] nginx-proxy-manager — optional, only if NPM is kept
-- [ ] homepage — repo files scaffolded (host-networked variant: keeps
-      network_mode: host, sidecar proxies via host.docker.internal; domain added
-      to HOMEPAGE_ALLOWED_HOSTS); pending live apply on server
+- [x] homepage — sidecar live at https://homepage.<tailnet>.ts.net/, confirmed
+      `HOMEPAGE_ALLOWED_HOSTS` includes the new domain and container is
+      healthy post-recreate
 - [x] cockpit — sidecar live at https://cockpit.<tailnet>.ts.net/, homepage
       link updated. `cockpit.conf.example`'s Origins allow-list turned out
       unnecessary — verified via raw WebSocket upgrade (101 with matching

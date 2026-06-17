@@ -227,7 +227,7 @@ side of the `ports:` mapping (`host:container`), not the host side.
 | adguard           | 80    | ✅ done       | UI at container :80 (not the 8083 host map); publish DNS `:53` tcp+udp on the **sidecar** (raw DNS, not via serve); no :443 so no DoH/serve conflict |
 | atvloadly         | 80    | ✅ done       | no `hostname:` on the app container — conflicts with `network_mode: service:...`; Apple TV discovery is unaffected by the shared netns since it goes through the host's avahi-daemon via bind-mounted sockets, not this container's own network |
 | nginx-proxy-mgr   | 81    | optional      | only if you keep NPM                                   |
-| homepage          | 3000  | todo          | host-networked variant — keep `network_mode: host` (reaches localhost widgets), sidecar proxies via `host.docker.internal`; add the domain to `HOMEPAGE_ALLOWED_HOSTS` |
+| homepage          | 3000  | ✅ done       | host-networked variant — keep `network_mode: host` (reaches localhost widgets), sidecar proxies via `host.docker.internal`; add the domain to `HOMEPAGE_ALLOWED_HOSTS` |
 | cockpit           | 9090  | ✅ done       | host systemd service — **sidecar-only** stack proxies `https+insecure://host.docker.internal:9090`; `cockpit.conf.example`'s `Origins` line turned out to be unnecessary in practice — see Gotchas |
 
 Services that also expose **non-HTTP** ports the LAN/tailnet needs (AdGuard DNS
