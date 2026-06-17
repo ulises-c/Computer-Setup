@@ -1,17 +1,49 @@
 services:
+  # Tailscale sidecar — joins the tailnet as `syncthing`, terminating HTTPS for
+  # the GUI at https://syncthing.<tailnet>.ts.net. See ../HTTPS.md.
+  # The sync/discovery ports stay host-published HERE (the sidecar owns the
+  # network namespace, so the app container can't declare its own ports) — peer
+  # sync is raw TCP/UDP, not HTTP, and must not go through tailscale serve.
+  syncthing-ts:
+    image: tailscale/tailscale:latest
+    container_name: syncthing-ts
+    hostname: syncthing
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SERVE_CONFIG=/config/serve.json
+      # Requires TS_AUTHKEY to be allowed to apply tag:container (OAuth client, or
+      # a tag-scoped auth key). Drop this line if using an untagged personal key.
+      - TS_EXTRA_ARGS=--advertise-tags=tag:container
+    volumes:
+      - ./ts-state:/var/lib/tailscale
+      - ./ts-serve.json:/config/serve.json:ro
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - "22000:22000/tcp"   # sync protocol
+      - "22000:22000/udp"   # sync protocol (QUIC)
+      - "21027:21027/udp"   # local discovery
+    restart: unless-stopped
+
   syncthing:
     image: lscr.io/linuxserver/syncthing:latest
     container_name: syncthing
+    # Share the sidecar's network namespace: tailscale serve proxies :443 to the
+    # GUI on 127.0.0.1:8384. STGUIADDRESS pins the GUI to loopback (only the serve
+    # proxy reaches it) and disables Syncthing's Host-header check, which would
+    # otherwise reject the proxied hostname with "Host check error".
+    network_mode: service:syncthing-ts
+    depends_on:
+      - syncthing-ts
     restart: unless-stopped
     environment:
       - PUID=1000
       - PGID=1000
       - TZ=America/Los_Angeles
-    ports:
-      - "8384:8384"         # web UI
-      - "22000:22000/tcp"   # sync protocol
-      - "22000:22000/udp"   # sync protocol (QUIC)
-      - "21027:21027/udp"   # local discovery
+      - STGUIADDRESS=127.0.0.1:8384
     volumes:
       - ./config:/config
       # Add a volume mount for each folder you want to sync, then configure

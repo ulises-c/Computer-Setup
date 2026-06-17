@@ -107,13 +107,13 @@
           key: "{{HOMEPAGE_VAR_FORGEJO_TOKEN}}"
     - syncthing:
         icon: si-syncthing
-        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:8384
+        href: https://{{HOMEPAGE_VAR_SYNCTHING_DOMAIN}}/
         description: File sync
         server: my-docker
         container: syncthing
         widget:
           type: customapi
-          url: http://localhost:8384/rest/system/status
+          url: https://{{HOMEPAGE_VAR_SYNCTHING_DOMAIN}}/rest/system/status
           headers:
             X-API-Key: "{{HOMEPAGE_VAR_SYNCTHING_KEY}}"
           mappings:
