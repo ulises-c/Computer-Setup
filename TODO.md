@@ -178,7 +178,9 @@ and full rollout table in [linux-server/HTTPS.md](linux-server/HTTPS.md).
       discovery (avahi/dbus socket mounts) confirmed unaffected by the netns
       share — no `hostname:` on the app container, that conflicts with
       `network_mode: service:...`
-- [ ] nginx-proxy-manager — optional, only if NPM is kept
+- [ ] nginx-proxy-manager — KEPT as the host edge; admin-UI sidecar scaffolded
+      (host-gateway variant → https://npm.<tailnet>.ts.net, proxies host :81);
+      NPM keeps binding host :80/:443. Pending live apply on server
 - [x] homepage — sidecar live at https://homepage.<tailnet>.ts.net/, confirmed
       `HOMEPAGE_ALLOWED_HOSTS` includes the new domain and container is
       healthy post-recreate
@@ -200,9 +202,10 @@ and full rollout table in [linux-server/HTTPS.md](linux-server/HTTPS.md).
 - [x] Decide whether to retire NPM or keep it — KEEP, as the non-tailnet HTTPS
       edge (trusted certs for LAN/public clients like a Plex TV that can't join
       the tailnet). See HTTPS.md → "NPM — trusted HTTPS for non-tailnet clients"
-- [ ] Set up the NPM trusted-HTTPS edge: own a domain, NPM wildcard cert for
-      `*.home.<domain>` via DNS-01, AdGuard rewrite `*.home.<domain>` → LAN IP,
-      then per-service proxy hosts. (Prereq: a real public domain.)
+- [ ] Set up the NPM trusted-HTTPS edge (domain `ulises-c.me`, already owned):
+      NPM wildcard Let's Encrypt cert for `*.home.ulises-c.me` via DNS-01, AdGuard
+      rewrite `*.home.ulises-c.me` → LAN IP, then per-service proxy hosts. Not
+      started — documented in HTTPS.md to pick up later.
 - [ ] Update Homepage hrefs to HTTPS as each service converts; a service's widget
       `url:` must move to the HTTPS domain too (localhost stops resolving once the
       host port is dropped)

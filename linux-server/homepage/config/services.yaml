@@ -49,7 +49,7 @@
 - Network:
     - nginx proxy manager:
         icon: si-nginxproxymanager
-        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:81
+        href: https://{{HOMEPAGE_VAR_NPM_DOMAIN}}/
         description: Reverse proxy + SSL
         server: my-docker
         container: nginx-proxy-manager

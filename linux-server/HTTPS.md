@@ -226,7 +226,7 @@ side of the `ports:` mapping (`host:container`), not the host side.
 | glances           | 61208 | ✅ done       | **host-networked variant** — keep `network_mode: host`, sidecar proxies via `host.docker.internal`; widget url stays localhost |
 | adguard           | 80    | ✅ done       | UI at container :80 (not the 8083 host map); publish DNS `:53` tcp+udp on the **sidecar** (raw DNS, not via serve); no :443 so no DoH/serve conflict |
 | atvloadly         | 80    | ✅ done       | no `hostname:` on the app container — conflicts with `network_mode: service:...`; Apple TV discovery is unaffected by the shared netns since it goes through the host's avahi-daemon via bind-mounted sockets, not this container's own network |
-| nginx-proxy-mgr   | 81    | kept          | **non-tailnet HTTPS edge** — not a sidecar; binds host `:80/:443/:81`; trusted certs for LAN/public clients (see "NPM — trusted HTTPS for non-tailnet clients") |
+| nginx-proxy-mgr   | 81    | kept          | host edge (binds `:80/:443/:81`); its **admin UI** is fronted by a host-gateway sidecar at `npm.<tailnet>`, while NPM itself stays the non-tailnet trusted-cert edge (see section below) |
 | homepage          | 3000  | ✅ done       | host-networked variant — keep `network_mode: host` (reaches localhost widgets), sidecar proxies via `host.docker.internal`; add the domain to `HOMEPAGE_ALLOWED_HOSTS` |
 | cockpit           | 9090  | ✅ done       | host systemd service — **sidecar-only** stack proxies `https+insecure://host.docker.internal:9090`; `cockpit.conf.example`'s `Origins` line turned out to be unnecessary in practice — see Gotchas |
 | tailscale-web     | 8088  | ✅ done       | not in the original rollout — added because the homepage Tailscale tile linked plain HTTP. `tailscale web` is a host **systemd user unit**, not a container; `ExecStart` needs `--listen 0.0.0.0:8088 --origin https://tailscale-web.<tailnet>.ts.net` so it's reachable via `host.docker.internal` and knows it's reverse-proxied. Don't use port `:5252` — see Gotchas |
@@ -403,21 +403,23 @@ this: a **publicly-trusted cert** on a name those clients can use.
 
 You **cannot** get a trusted cert for a made-up name (`*.local`, `*.home`) — a CA
 must verify you control the domain. So the requirement is a **real public domain**
-you own (≈$10/yr). Then, leveraging the two tools already on this box:
+— that's **`ulises-c.me`** (already owned), so the prerequisite is met. **Not set
+up yet — documented here to pick up later.** When you do, leveraging the two tools
+already on this box:
 
-1. **NPM holds a wildcard Let's Encrypt cert** for `*.home.<yourdomain>` via a
+1. **NPM holds a wildcard Let's Encrypt cert** for `*.home.ulises-c.me` via a
    **DNS-01** challenge (NPM has built-in DNS-provider plugins). DNS-01 proves
    domain control through a DNS record — it does **not** require exposing the
    server to the public internet, so this stays LAN-only if you want.
 2. **AdGuard resolves those names to the server's LAN IP** via a DNS rewrite
-   (`*.home.<yourdomain>` → `192.168.1.x`) — split-horizon DNS. Set AdGuard as the
+   (`*.home.ulises-c.me` → `192.168.1.x`) — split-horizon DNS. Set AdGuard as the
    LAN's resolver (it already is, for ad-blocking).
-3. **NPM proxies** `https://plex.home.<yourdomain>` → the service. Add a host
+3. **NPM proxies** `https://plex.home.ulises-c.me` → the service. Add a host
    `ports:` block on the relevant **sidecar** (see previous section) so NPM can
    reach the service, or point NPM at the service's `*.ts.net` name (the host is on
    the tailnet).
 
-Result: `https://plex.home.<yourdomain>` loads with a green lock on any LAN device,
+Result: `https://plex.home.ulises-c.me` loads with a green lock on any LAN device,
 no tailnet membership, no warning. For **public** access (outside the LAN), add a
 router port-forward `80/443` → the server; DNS-01 means the cert already works.
 
