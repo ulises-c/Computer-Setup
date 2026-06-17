@@ -89,7 +89,7 @@
           url: https://{{HOMEPAGE_VAR_SPEEDTEST_DOMAIN}}
     - ntfy:
         icon: si-ntfy
-        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:5080
+        href: https://{{HOMEPAGE_VAR_NTFY_DOMAIN}}/
         description: Push notifications
         server: my-docker
         container: ntfy

@@ -160,7 +160,9 @@ and full rollout table in [linux-server/HTTPS.md](linux-server/HTTPS.md).
 - [ ] speedtest-tracker — repo files scaffolded (compose + ts-serve.json + .env +
       homepage link & widget url); serve targets container :80, set
       `APP_URL=https://speedtest.<tailnet>.ts.net`; pending live apply on server
-- [ ] ntfy — also set `base-url: https://ntfy.<tailnet>.ts.net`
+- [ ] ntfy — repo files scaffolded (compose + ts-serve.json + .env + homepage
+      link); serve targets container :80, set `NTFY_BASE_URL` +
+      `NTFY_BEHIND_PROXY=true`; pending live apply on server
 - [ ] filebrowser
 - [ ] syncthing — GUI only; sync ports stay host-published
 - [ ] glances

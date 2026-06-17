@@ -1,13 +1,44 @@
 services:
+  # Tailscale sidecar — joins the tailnet as `ntfy`, terminating HTTPS for
+  # https://ntfy.<tailnet>.ts.net. See ../HTTPS.md for the full pattern.
+  ntfy-ts:
+    image: tailscale/tailscale:latest
+    container_name: ntfy-ts
+    hostname: ntfy
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SERVE_CONFIG=/config/serve.json
+      # Requires TS_AUTHKEY to be allowed to apply tag:container (OAuth client, or
+      # a tag-scoped auth key). Drop this line if using an untagged personal key.
+      - TS_EXTRA_ARGS=--advertise-tags=tag:container
+    volumes:
+      - ./ts-state:/var/lib/tailscale
+      - ./ts-serve.json:/config/serve.json:ro
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+
   ntfy:
     image: binwiederhier/ntfy:latest
     container_name: ntfy
-    restart: unless-stopped
     command: serve
+    # Share the sidecar's network namespace: tailscale serve proxies :443 to the
+    # app's HTTP port 80 (5080 was only the old host mapping). NTFY_BASE_URL must
+    # match the HTTPS domain or web/notification links and the web app break.
+    network_mode: service:ntfy-ts
+    depends_on:
+      - ntfy-ts
+    restart: unless-stopped
+    env_file:
+      - .env
     environment:
       - TZ=America/Los_Angeles
-    ports:
-      - "5080:80"
+      # ntfy is behind a reverse proxy (tailscale serve) — trust X-Forwarded-For
+      # so rate limiting / visitor identification uses the real client IP.
+      - NTFY_BEHIND_PROXY=true
     volumes:
       - ./data:/var/lib/ntfy
       - ./cache:/var/cache/ntfy
