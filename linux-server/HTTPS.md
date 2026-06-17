@@ -230,6 +230,7 @@ side of the `ports:` mapping (`host:container`), not the host side.
 | homepage          | 3000  | ✅ done       | host-networked variant — keep `network_mode: host` (reaches localhost widgets), sidecar proxies via `host.docker.internal`; add the domain to `HOMEPAGE_ALLOWED_HOSTS` |
 | cockpit           | 9090  | ✅ done       | host systemd service — **sidecar-only** stack proxies `https+insecure://host.docker.internal:9090`; `cockpit.conf.example`'s `Origins` line turned out to be unnecessary in practice — see Gotchas |
 | tailscale-web     | 8088  | ✅ done       | not in the original rollout — added because the homepage Tailscale tile linked plain HTTP. `tailscale web` is a host **systemd user unit**, not a container; `ExecStart` needs `--listen 0.0.0.0:8088 --origin https://tailscale-web.<tailnet>.ts.net` so it's reachable via `host.docker.internal` and knows it's reverse-proxied. Don't use port `:5252` — see Gotchas |
+| watchtower        | 8080  | todo          | **no UI** — the sidecar fronts only watchtower's token-gated `/v1/metrics` HTTP API (enable `WATCHTOWER_HTTP_API_METRICS=true` + `WATCHTOWER_HTTP_API_TOKEN`); no homepage `href`. Monitor it in Uptime Kuma — see below |
 
 Services that also expose **non-HTTP** ports the LAN/tailnet needs (AdGuard DNS
 `:53`, Syncthing sync `:22000`, Forgejo SSH `:22`) keep those as direct
@@ -243,6 +244,25 @@ Each conversion is five mechanical edits — copy the sidecar block + `ts-serve.
 non-empty. `ts-state/` is already gitignored for every service
 (`linux-server/*/ts-state/`). Remember `docker compose up -d` (not `restart`)
 for `homepage` afterward — see Homepage links below.
+
+### Monitoring a UI-less service in Uptime Kuma (watchtower)
+
+Watchtower is a headless daemon — no UI, nothing to click. To get the same
+up/down tracking as the other services, enable its HTTP metrics API and point an
+Uptime Kuma HTTP monitor at it (metrics-only, so the `WATCHTOWER_SCHEDULE` keeps
+running — only the *update* API would disable periodic polls):
+
+1. In `watchtower/.env`: set `WATCHTOWER_API_TOKEN` (e.g. `openssl rand -hex 32`)
+   and `TS_AUTHKEY`; `docker compose up -d`.
+2. In Uptime Kuma, add an **HTTP(s)** monitor:
+   - URL: `https://watchtower.<tailnet>.ts.net/v1/metrics`
+   - Header: `Authorization: Bearer <WATCHTOWER_API_TOKEN>`
+   - Accepted status codes: `200` (an unauthenticated probe gets `401`, so the
+     header is what proves it's both up *and* reachable).
+
+The same pattern fits any future no-UI service that exposes a health/metrics
+endpoint. For a daemon with *no* endpoint at all, Uptime Kuma's "Docker Container"
+monitor (via the docker socket) checks the container's running state instead.
 
 ## Gotchas / migration
 

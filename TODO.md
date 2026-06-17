@@ -198,6 +198,11 @@ and full rollout table in [linux-server/HTTPS.md](linux-server/HTTPS.md).
       `host.docker.internal:8088`. Verified 200 with no redirect, real page
       content, confirmed in browser. Don't use port `:5252` — see HTTPS.md
       Gotchas
+- [ ] watchtower — no UI; sidecar scaffolded to front only its token-gated
+      `/v1/metrics` API (`WATCHTOWER_HTTP_API_METRICS=true`). Pending live apply +
+      an Uptime Kuma HTTP monitor on `https://watchtower.<tailnet>.ts.net/v1/metrics`
+      with a Bearer-token header (recipe in HTTPS.md). Metrics-only, so the 3am
+      schedule is unaffected.
 - [x] Decide auth method: OAuth client + `tag:container` (reusing the elevated
       tailscale-proxy client) — resolved during the Forgejo rollout, see HTTPS.md
 - [x] Decide whether to retire NPM or keep it — KEEP, as the non-tailnet HTTPS
