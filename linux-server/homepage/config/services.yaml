@@ -54,13 +54,13 @@
         container: nginx-proxy-manager
     - adguard home:
         icon: si-adguard
-        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:8083
+        href: https://{{HOMEPAGE_VAR_ADGUARD_DOMAIN}}/
         description: DNS ad blocker
         server: my-docker
         container: adguardhome
         widget:
           type: adguard
-          url: http://localhost:8083
+          url: https://{{HOMEPAGE_VAR_ADGUARD_DOMAIN}}
           username: "{{HOMEPAGE_VAR_ADGUARD_USER}}"
           password: "{{HOMEPAGE_VAR_ADGUARD_PASS}}"
     - tailscale:
