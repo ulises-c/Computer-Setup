@@ -18,8 +18,9 @@
         container: watchtower
     - cockpit:
         icon: mdi-monitor-dashboard
-        href: https://{{HOMEPAGE_VAR_SERVER_IP}}:9090
+        href: https://{{HOMEPAGE_VAR_COCKPIT_DOMAIN}}/
         description: Server admin UI
+        # cockpit stays a host service on :9090, so the local ping still works
         ping: https://localhost:9090
     - uptime kuma:
         icon: si-uptimekuma

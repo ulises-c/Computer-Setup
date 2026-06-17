@@ -221,7 +221,7 @@ side of the `ports:` mapping (`host:container`), not the host side.
 | adguard           | 80    | ✅ done       | UI at container :80 (not the 8083 host map); publish DNS `:53` tcp+udp on the **sidecar** (raw DNS, not via serve); no :443 so no DoH/serve conflict |
 | nginx-proxy-mgr   | 81    | optional      | only if you keep NPM                                   |
 | homepage          | 3000  | special case  | keep on main node — `tailscale serve` on `ollie-server`, no sidecar |
-| cockpit           | 9090  | special case  | host service (not a container) — host-level serve      |
+| cockpit           | 9090  | todo          | host systemd service — **sidecar-only** stack proxies `https+insecure://host.docker.internal:9090`; add `Origins` to `/etc/cockpit/cockpit.conf` (see `cockpit/cockpit.conf.example`) |
 
 Services that also expose **non-HTTP** ports the LAN/tailnet needs (AdGuard DNS
 `:53`, Syncthing sync `:22000`, Forgejo SSH `:22`) keep those as direct

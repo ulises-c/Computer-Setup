@@ -173,7 +173,9 @@ and full rollout table in [linux-server/HTTPS.md](linux-server/HTTPS.md).
       sidecar after recreate
 - [ ] nginx-proxy-manager — optional, only if NPM is kept
 - [ ] homepage — special case: `tailscale serve` on the main node, not a sidecar
-- [ ] cockpit — host service, not a container; use host `tailscale serve`
+- [ ] cockpit — repo files scaffolded (sidecar-only stack proxying to the host's
+      :9090 via host.docker.internal + cockpit.conf.example for the Origins
+      allow-list); pending live apply on server
 - [x] Decide auth method: OAuth client + `tag:container` (reusing the elevated
       tailscale-proxy client) — resolved during the Forgejo rollout, see HTTPS.md
 - [ ] Decide whether to retire NPM (tailnet-only) or keep it for LAN/`.local` HTTPS
