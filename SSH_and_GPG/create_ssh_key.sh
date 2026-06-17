@@ -161,7 +161,8 @@ if [[ -n "$IS_SELF_HOSTED" ]]; then
     echo ""
     echo "Host $GIT_HOST"
     echo "  HostName $GIT_HOSTNAME"
-    echo "  Port $GIT_SSH_PORT"
+    # Port 22 is the SSH default — only emit the line for a non-standard port.
+    [[ -n "$GIT_SSH_PORT" && "$GIT_SSH_PORT" != "22" ]] && echo "  Port $GIT_SSH_PORT"
     echo "  User git"
     echo "  AddKeysToAgent yes"
     echo "  IdentityFile $KEY_PATH"
@@ -191,7 +192,7 @@ read -r -p "Press [Enter] after adding the public key to your $GIT_HOST account.
 # -T avoids trying to open a shell; -v optional for debugging.
 echo ""
 if [[ -n "$IS_SELF_HOSTED" ]]; then
-  echo "Testing SSH connection to self-hosted server ($GIT_HOSTNAME:$GIT_SSH_PORT) ..."
+  echo "Testing SSH connection to self-hosted server ($GIT_HOSTNAME:${GIT_SSH_PORT:-22}) ..."
   ssh -T "$GIT_HOST" || true
 else
   echo "Testing SSH connection to git@$GIT_HOST ..."
