@@ -188,7 +188,12 @@ and full rollout table in [linux-server/HTTPS.md](linux-server/HTTPS.md).
       Origin, 403 with a foreign one)
 - [x] Decide auth method: OAuth client + `tag:container` (reusing the elevated
       tailscale-proxy client) — resolved during the Forgejo rollout, see HTTPS.md
-- [ ] Decide whether to retire NPM (tailnet-only) or keep it for LAN/`.local` HTTPS
+- [x] Decide whether to retire NPM or keep it — KEEP, as the non-tailnet HTTPS
+      edge (trusted certs for LAN/public clients like a Plex TV that can't join
+      the tailnet). See HTTPS.md → "NPM — trusted HTTPS for non-tailnet clients"
+- [ ] Set up the NPM trusted-HTTPS edge: own a domain, NPM wildcard cert for
+      `*.home.<domain>` via DNS-01, AdGuard rewrite `*.home.<domain>` → LAN IP,
+      then per-service proxy hosts. (Prereq: a real public domain.)
 - [ ] Update Homepage hrefs to HTTPS as each service converts; a service's widget
       `url:` must move to the HTTPS domain too (localhost stops resolving once the
       host port is dropped)

@@ -220,7 +220,9 @@ In NPM admin (`http://<server-ip>:81`):
     3. Listens on `localhost:8089`; Homepage queries it via `customapi` widget
 
 11. nginx proxy manager | [GitHub](https://github.com/jc21/nginx-proxy-manager) | [Docs](https://nginxproxymanager.com/guide/)
-    1. Reverse proxy with a web UI — handles HTTPS termination for Homepage (Tailscale cert) and HTTP→HTTPS redirect
+    1. Reverse proxy with a web UI — the non-tailnet HTTPS edge: trusted certs for
+       LAN/public clients that can't join the tailnet (the tailnet sidecars cover
+       on-tailnet HTTPS). See [HTTPS.md](HTTPS.md) → "NPM — trusted HTTPS for non-tailnet clients"
     2. Deploy:
        ```sh
        cd linux-server/nginx-proxy-manager && docker compose up -d

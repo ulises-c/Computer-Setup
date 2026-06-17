@@ -226,7 +226,7 @@ side of the `ports:` mapping (`host:container`), not the host side.
 | glances           | 61208 | ✅ done       | **host-networked variant** — keep `network_mode: host`, sidecar proxies via `host.docker.internal`; widget url stays localhost |
 | adguard           | 80    | ✅ done       | UI at container :80 (not the 8083 host map); publish DNS `:53` tcp+udp on the **sidecar** (raw DNS, not via serve); no :443 so no DoH/serve conflict |
 | atvloadly         | 80    | ✅ done       | no `hostname:` on the app container — conflicts with `network_mode: service:...`; Apple TV discovery is unaffected by the shared netns since it goes through the host's avahi-daemon via bind-mounted sockets, not this container's own network |
-| nginx-proxy-mgr   | 81    | optional      | only if you keep NPM                                   |
+| nginx-proxy-mgr   | 81    | kept          | **non-tailnet HTTPS edge** — not a sidecar; binds host `:80/:443/:81`; trusted certs for LAN/public clients (see "NPM — trusted HTTPS for non-tailnet clients") |
 | homepage          | 3000  | ✅ done       | host-networked variant — keep `network_mode: host` (reaches localhost widgets), sidecar proxies via `host.docker.internal`; add the domain to `HOMEPAGE_ALLOWED_HOSTS` |
 | cockpit           | 9090  | ✅ done       | host systemd service — **sidecar-only** stack proxies `https+insecure://host.docker.internal:9090`; `cockpit.conf.example`'s `Origins` line turned out to be unnecessary in practice — see Gotchas |
 
@@ -291,9 +291,11 @@ for `homepage` afterward — see Homepage links below.
    Resolved during the Forgejo rollout: OAuth client + `tag:container`, reusing
    the existing `tailscale-proxy` client elevated to read+write scope. See
    Prerequisites above.
-2. **NPM**: retire it (tailnet-only access) or keep it for `.local`/LAN HTTPS?
-   See "Resilience / exit strategy" — NPM + a real domain is also the
-   vendor-independent equivalent of this whole layer.
+2. ~~**NPM**: retire it or keep it?~~ Resolved: **keep** NPM as the non-tailnet
+   HTTPS edge — trusted certs (no browser warning) for clients that can't/won't
+   join the tailnet (e.g. a TV running Plex). See "NPM — trusted HTTPS for
+   non-tailnet clients" below. (It's also the vendor-independent equivalent of
+   the whole tailnet layer — see "Resilience / exit strategy".)
 3. ~~**Homepage host**: main node vs own sidecar?~~ Resolved: its own
    `homepage.<tailnet>.ts.net` sidecar (host-networked variant), to keep the
    per-service subdomain scheme consistent.
@@ -363,6 +365,40 @@ for their non-HTTP ports:
       - "8096:80"   # LAN access at http://<server-lan-ip>:8096 → app's :80
 ```
 
-That's plaintext HTTP on the LAN. For **LAN HTTPS** (a trusted cert for non-tailnet
-devices) you need a real/own cert — which is NPM's job. Host-networked services
-(e.g. glances) already keep their LAN port open, so no change is needed for those.
+That's plaintext HTTP on the LAN, which browsers flag as "not secure." For
+**trusted LAN HTTPS** (no warning) you need a publicly-valid cert — that's NPM's
+job, see the next section. Host-networked services (e.g. glances) already keep
+their LAN port open, so no change is needed for those.
+
+## NPM — trusted HTTPS for non-tailnet clients
+
+The tailnet sidecars give no-warning HTTPS, but **only to devices on the tailnet**
+(`*.ts.net` resolves and is trusted only there). For clients that can't or won't
+join the tailnet — a smart TV, a game console, a guest, a Plex client — plaintext
+HTTP triggers the browser's "not secure" warning. NPM is kept to solve exactly
+this: a **publicly-trusted cert** on a name those clients can use.
+
+You **cannot** get a trusted cert for a made-up name (`*.local`, `*.home`) — a CA
+must verify you control the domain. So the requirement is a **real public domain**
+you own (≈$10/yr). Then, leveraging the two tools already on this box:
+
+1. **NPM holds a wildcard Let's Encrypt cert** for `*.home.<yourdomain>` via a
+   **DNS-01** challenge (NPM has built-in DNS-provider plugins). DNS-01 proves
+   domain control through a DNS record — it does **not** require exposing the
+   server to the public internet, so this stays LAN-only if you want.
+2. **AdGuard resolves those names to the server's LAN IP** via a DNS rewrite
+   (`*.home.<yourdomain>` → `192.168.1.x`) — split-horizon DNS. Set AdGuard as the
+   LAN's resolver (it already is, for ad-blocking).
+3. **NPM proxies** `https://plex.home.<yourdomain>` → the service. Add a host
+   `ports:` block on the relevant **sidecar** (see previous section) so NPM can
+   reach the service, or point NPM at the service's `*.ts.net` name (the host is on
+   the tailnet).
+
+Result: `https://plex.home.<yourdomain>` loads with a green lock on any LAN device,
+no tailnet membership, no warning. For **public** access (outside the LAN), add a
+router port-forward `80/443` → the server; DNS-01 means the cert already works.
+
+**Plex caveat:** Plex ships its own TLS (`*.plex.direct` certs) and its clients
+prefer Plex's own discovery/relay, so they often bypass a reverse proxy. Plex is
+usually best left on its native HTTPS rather than fronted by NPM; the NPM path
+above is the general recipe for the *other* services you'd share this way.
