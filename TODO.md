@@ -155,7 +155,8 @@ and full rollout table in [linux-server/HTTPS.md](linux-server/HTTPS.md).
 - [x] forgejo — reference impl (sidecar + SSH :22), done in 8ff8a2c
 - [x] portainer — sidecar live at https://portainer.<tailnet>.ts.net/, homepage
       link updated
-- [ ] uptime-kuma
+- [ ] uptime-kuma — repo files scaffolded (compose + ts-serve.json + .env +
+      homepage link & widget url); pending live apply on server
 - [ ] speedtest-tracker
 - [ ] ntfy — also set `base-url: https://ntfy.<tailnet>.ts.net`
 - [ ] filebrowser
@@ -168,7 +169,9 @@ and full rollout table in [linux-server/HTTPS.md](linux-server/HTTPS.md).
 - [x] Decide auth method: OAuth client + `tag:container` (reusing the elevated
       tailscale-proxy client) — resolved during the Forgejo rollout, see HTTPS.md
 - [ ] Decide whether to retire NPM (tailnet-only) or keep it for LAN/`.local` HTTPS
-- [ ] Update Homepage hrefs to HTTPS as each service converts (widget `url:` stays http://localhost)
+- [ ] Update Homepage hrefs to HTTPS as each service converts; a service's widget
+      `url:` must move to the HTTPS domain too (localhost stops resolving once the
+      host port is dropped)
 
 ## linux-server — Raspberry Pi 4
 

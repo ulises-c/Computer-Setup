@@ -157,11 +157,13 @@ change below). HTTP(S) clone URLs come from `ROOT_URL`.
 why a tile click leaves HTTPS. As each service is converted, change its href to
 `https://{{HOMEPAGE_VAR_<SVC>_DOMAIN}}/` and add the matching
 `HOMEPAGE_VAR_<SVC>_DOMAIN=<svc>.<tailnet>.ts.net` line to `homepage/.env`.
-Widget `url:` fields stay `http://localhost:<port>` (homepage talks to
-containers locally; only the human-facing `href` changes). Keep homepage itself
-on the main node (it uses host networking + the docker socket — a sidecar is
-awkward there); serve it with `tailscale serve --bg https / http://127.0.0.1:3000`
-on `ollie-server`.
+If the service has a **widget**, its `url:` must move too — `http://localhost:<port>`
+no longer resolves once the host `ports:` block is dropped (homepage runs on host
+networking and the container no longer publishes a port). Point the widget `url:`
+at `https://{{HOMEPAGE_VAR_<SVC>_DOMAIN}}` as well; homepage reaches it over the
+tailnet via MagicDNS. Keep homepage itself on the main node (it uses host
+networking + the docker socket — a sidecar is awkward there); serve it with
+`tailscale serve --bg https / http://127.0.0.1:3000` on `ollie-server`.
 
 **`docker compose restart homepage` does not pick up a new/changed `.env`
 var** — `env_file` is baked into the container at creation time, and `restart`
