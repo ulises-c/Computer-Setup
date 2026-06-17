@@ -1,7 +1,7 @@
 - Management:
     - homepage:
         icon: mdi-view-dashboard
-        href: http://{{HOMEPAGE_VAR_SERVER_IP}}
+        href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}/
         description: Server dashboard
         server: my-docker
         container: homepage

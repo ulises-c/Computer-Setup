@@ -179,7 +179,9 @@ and full rollout table in [linux-server/HTTPS.md](linux-server/HTTPS.md).
       share — no `hostname:` on the app container, that conflicts with
       `network_mode: service:...`
 - [ ] nginx-proxy-manager — optional, only if NPM is kept
-- [ ] homepage — special case: `tailscale serve` on the main node, not a sidecar
+- [ ] homepage — repo files scaffolded (host-networked variant: keeps
+      network_mode: host, sidecar proxies via host.docker.internal; domain added
+      to HOMEPAGE_ALLOWED_HOSTS); pending live apply on server
 - [ ] cockpit — repo files scaffolded (sidecar-only stack proxying to the host's
       :9090 via host.docker.internal + cockpit.conf.example for the Origins
       allow-list); pending live apply on server
