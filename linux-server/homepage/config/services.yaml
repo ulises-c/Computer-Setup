@@ -97,7 +97,7 @@
 - Storage:
     - forgejo:
         icon: si-forgejo
-        href: http://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}:3300
+        href: https://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}/
         description: Self-hosted git
         server: my-docker
         container: forgejo
