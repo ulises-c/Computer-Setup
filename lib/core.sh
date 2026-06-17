@@ -660,8 +660,9 @@ desktop_footer() {
 }
 
 # Shared Linux install spine for the apt/yay desktops and the server profile.
-# Desktop-only steps (version managers, rust/pipx/pnpm, ghostty) are gated off
-# under SERVER_PROFILE, which instead routes to the server-extras phase. The zsh
+# nvm/node runs on both (claude-hud's statusline needs node); pyenv and the
+# remaining desktop-only steps (rust/pipx/pnpm, ghostty) are gated off under
+# SERVER_PROFILE, which instead routes to the server-extras phase. The zsh
 # stack — zshrc, zsh_plugins.txt, and the p10k config — deploys from dotfiles on
 # both (the desktop-only zshrc bits self-disable headless).
 linux_main() {
@@ -676,9 +677,10 @@ linux_main() {
   printf '\n'
   platform_install_tier high
 
+  linux_nvm_flow
+
   if [[ "$SERVER_PROFILE" != true ]]; then
     linux_pyenv_flow
-    linux_nvm_flow
   fi
 
   printf '\n'
