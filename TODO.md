@@ -268,6 +268,16 @@ logs, not metrics. Build it up in layers:
       `*.home.ulises-c.me` NPM setup, since services like filebrowser/glances have
       weak/no auth once exposed off-tailnet.
 
+## qBittorrent — VPN routing
+
+`linux-server/qbittorrent` currently runs without a VPN (fine for academic/legal
+torrents only). Before broader use, route all torrent traffic through a VPN.
+
+- [ ] Add a `qmcgaw/gluetun` sidecar; set qBittorrent to `network_mode: service:gluetun`
+      (move the `6881` + web UI port mappings onto the gluetun service, add a kill-switch)
+- [ ] Pick a provider — evaluate free Cloudflare WARP vs a paid WireGuard provider
+- [ ] Add the provider creds to `.env.example` / `.env`
+
 ## linux-server — Raspberry Pi 4
 
 Set up the Raspberry Pi 4 headless server config under `linux-server/`.

@@ -141,3 +141,14 @@
         description: Apple TV IPA sideloader
         server: my-docker
         container: atvloadly
+    - qbittorrent:
+        icon: si-qbittorrent
+        href: https://{{HOMEPAGE_VAR_QBITTORRENT_DOMAIN}}/
+        description: BitTorrent client
+        server: my-docker
+        container: qbittorrent
+        widget:
+          type: qbittorrent
+          url: https://{{HOMEPAGE_VAR_QBITTORRENT_DOMAIN}}
+          username: "{{HOMEPAGE_VAR_QBITTORRENT_USERNAME}}"
+          password: "{{HOMEPAGE_VAR_QBITTORRENT_PASSWORD}}"

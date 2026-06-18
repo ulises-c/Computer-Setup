@@ -100,6 +100,14 @@ cd linux-server/adguard && docker compose up -d
 # Open http://<server-ip>:3001 for setup wizard
 # Set web UI port → 80, DNS port → 53, create admin account
 # After setup: http://<server-ip>:8083
+
+# qBittorrent — needs TS_AUTHKEY for its HTTPS sidecar (see HTTPS.md), like forgejo
+cd linux-server/qbittorrent && cp .env.example .env
+# edit .env: set TS_AUTHKEY (optionally QBITTORRENT_DOWNLOADS_PATH for an external drive), then:
+docker compose up -d
+# Access at https://qbittorrent.<tailnet>.ts.net/
+# First run: get the temporary admin password from the logs and change it:
+#   docker compose logs qbittorrent | grep -i password
 ```
 
 ### 6. Tailscale widget
@@ -284,18 +292,32 @@ In NPM admin (`http://<server-ip>:81`):
     5. Add your SSH public key in **Settings → SSH / GPG Keys** after creating your account
     6. To migrate from GitHub: use Forgejo's built-in migration (**+ → New Migration → GitHub**), then optionally configure a push mirror back to GitHub under repo **Settings → Push Mirrors** while validating the setup
 
-16. pi-hole | [GitHub](https://github.com/pi-hole/pi-hole) | [Docs](https://docs.pi-hole.net)
+16. qBittorrent | [GitHub](https://github.com/qbittorrent/qBittorrent) | [Docs](https://github.com/linuxserver/docker-qbittorrent)
+    1. BitTorrent client with a full web UI — currently used for academic torrents. Fronted by its own Tailscale HTTPS sidecar (see [`HTTPS.md`](HTTPS.md))
+    2. Deploy:
+       ```sh
+       cd linux-server/qbittorrent
+       cp .env.example .env   # set TS_AUTHKEY; optionally set QBITTORRENT_DOWNLOADS_PATH for an external drive
+       docker compose up -d
+       docker compose logs -f qbittorrent-ts   # watch the node join + cert provision
+       ```
+    3. Access at `https://qbittorrent.<tailnet>.ts.net/`
+    4. On first run, the LinuxServer image generates a temporary admin password — find it with `docker compose logs qbittorrent | grep -i password`, log in as `admin`, then change it in **Options → Web UI** (and add the new login to `HOMEPAGE_VAR_QBITTORRENT_PASSWORD` in `linux-server/homepage/.env` for the widget)
+    5. In **Options → Web UI**, set the "IP address" to `127.0.0.1` so the UI is reachable only through the HTTPS sidecar, not the raw tailnet port
+    6. BitTorrent `:6881` (tcp/udp) is published on the sidecar. **Not routed through a VPN** — fine for academic/legal torrents; see [`../TODO.md`](../TODO.md) for the planned Gluetun VPN sidecar before any other use
+
+17. pi-hole | [GitHub](https://github.com/pi-hole/pi-hole) | [Docs](https://docs.pi-hole.net)
     1. Network-wide DNS ad blocker — alternative to AdGuard Home
     2. Not yet configured
 
-17. Immich | [GitHub](https://github.com/immich-app/immich) | [Docs](https://immich.app/docs)
+18. Immich | [GitHub](https://github.com/immich-app/immich) | [Docs](https://immich.app/docs)
     1. Self-hosted photo and video backup — Google Photos alternative with mobile apps, face recognition, and timeline view
     2. Not yet configured
 
-18. Jellyfin | [GitHub](https://github.com/jellyfin/jellyfin) | [Docs](https://jellyfin.org/docs/)
+19. Jellyfin | [GitHub](https://github.com/jellyfin/jellyfin) | [Docs](https://jellyfin.org/docs/)
     1. Self-hosted media server — stream your own movies, TV shows, and music to any device
     2. Not yet configured
 
-19. Home Assistant | [GitHub](https://github.com/home-assistant/core) | [Docs](https://www.home-assistant.io/docs/)
+20. Home Assistant | [GitHub](https://github.com/home-assistant/core) | [Docs](https://www.home-assistant.io/docs/)
     1. Open source smart home hub — integrates with thousands of devices and services
     2. Not yet configured

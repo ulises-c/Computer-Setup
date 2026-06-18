@@ -59,7 +59,7 @@ server_extras() {
   printf '\n'
   printf '==> Setting up Docker service .env files...\n'
   local svc
-  for svc in homepage speedtest-tracker filebrowser tailscale-proxy; do
+  for svc in homepage speedtest-tracker filebrowser tailscale-proxy qbittorrent; do
     if [[ -f "$CONFIG_SRC_DIR/$svc/.env.example" && ! -f "$CONFIG_SRC_DIR/$svc/.env" ]]; then
       run cp "$CONFIG_SRC_DIR/$svc/.env.example" "$CONFIG_SRC_DIR/$svc/.env"
       printf '  created %s/.env\n' "$svc"
@@ -118,7 +118,8 @@ server_extras() {
   printf '==> Starting Docker services...\n'
   local svc_dir
   for svc in homepage portainer glances speedtest-tracker filebrowser watchtower \
-             uptime-kuma nginx-proxy-manager ntfy syncthing adguard tailscale-proxy; do
+             uptime-kuma nginx-proxy-manager ntfy syncthing adguard tailscale-proxy \
+             qbittorrent; do
     svc_dir="$CONFIG_SRC_DIR/$svc"
     if [[ -d "$svc_dir" && -f "$svc_dir/docker-compose.yml" ]]; then
       printf '  %s...\n' "$svc"
