@@ -42,3 +42,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /etc/os-release:/etc/os-release:ro
+      # Expose the NAS mounts (read-only) so glances `fs:` can report capacity.
+      # Block-device I/O already works via pid:host; filesystem usage needs the
+      # mounts visible inside the container.
+      - /mnt:/mnt:ro

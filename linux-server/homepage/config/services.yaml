@@ -98,6 +98,73 @@
         container: ntfy
 
 - Storage:
+    - wd 14tb:
+        icon: mdi-harddisk
+        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+        description: NAS drive I/O — /mnt/wd14tb
+        server: my-docker
+        container: glances
+        widget:
+          type: glances
+          url: http://localhost:61208
+          version: 4
+          # USB enclosure: kernel names (sda/sdb/sdc) can reorder across reboots.
+          metric: disk:sdb
+    - seagate 4tb:
+        icon: mdi-harddisk
+        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+        description: NAS drive I/O — /mnt/seagate4tb
+        server: my-docker
+        container: glances
+        widget:
+          type: glances
+          url: http://localhost:61208
+          version: 4
+          metric: disk:sdc
+    - wd 1tb:
+        icon: mdi-harddisk
+        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+        description: NAS drive I/O — /mnt/wd1tb
+        server: my-docker
+        container: glances
+        widget:
+          type: glances
+          url: http://localhost:61208
+          version: 4
+          metric: disk:sda
+    - wd 14tb usage:
+        icon: mdi-harddisk
+        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+        description: Capacity — /mnt/wd14tb
+        server: my-docker
+        container: glances
+        widget:
+          type: glances
+          url: http://localhost:61208
+          version: 4
+          metric: fs:/mnt/wd14tb
+    - seagate 4tb usage:
+        icon: mdi-harddisk
+        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+        description: Capacity — /mnt/seagate4tb
+        server: my-docker
+        container: glances
+        widget:
+          type: glances
+          url: http://localhost:61208
+          version: 4
+          metric: fs:/mnt/seagate4tb
+    - wd 1tb usage:
+        icon: mdi-harddisk
+        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+        description: Capacity — /mnt/wd1tb
+        server: my-docker
+        container: glances
+        widget:
+          type: glances
+          url: http://localhost:61208
+          version: 4
+          metric: fs:/mnt/wd1tb
     - forgejo:
         icon: si-forgejo
         href: https://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}/
