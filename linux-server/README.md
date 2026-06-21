@@ -110,9 +110,12 @@ docker compose up -d
 # First run: get the temporary admin password from the logs and change it:
 #   docker compose logs qbittorrent | grep -i password
 
-# OpenSpeedTest — LAN speed test (no sidecar; reached via the LAN IP)
-cd linux-server/openspeedtest && docker compose up -d
-# Access at http://<server-ip>:3030 — open from any LAN device and click Start
+# OpenSpeedTest — needs TS_AUTHKEY for its HTTPS sidecar (see HTTPS.md), like qbittorrent
+cd linux-server/openspeedtest && cp .env.example .env
+# edit .env: set TS_AUTHKEY, then:
+docker compose up -d
+# Tailnet UI at https://openspeedtest.<tailnet>.ts.net/ — but run LAN tests via
+# http://<server-ip>:3030 so you measure the local network, not the tailnet
 ```
 
 ### 6. Tailscale widget
@@ -312,13 +315,15 @@ In NPM admin (`http://<server-ip>:81`):
     6. BitTorrent `:6881` (tcp/udp) is published on the sidecar. **Not routed through a VPN** — fine for academic/legal torrents; see [`../TODO.md`](../TODO.md) for the planned Gluetun VPN sidecar before any other use
 
 17. OpenSpeedTest | [GitHub](https://github.com/openspeedtest/Speed-Test) | [Docs](https://openspeedtest.com/selfhosted-speedtest)
-    1. Self-hosted browser speed test for the **LAN** (the local-network counterpart to speedtest-tracker's ISP test) — any device opens it in a browser and measures its throughput to the server
+    1. Self-hosted browser speed test for the **LAN** (the local-network counterpart to speedtest-tracker's ISP test) — any device opens it in a browser and measures its throughput to the server. Fronted by its own Tailscale HTTPS sidecar (see [`HTTPS.md`](HTTPS.md)), like the other services
     2. Deploy:
        ```sh
-       cd linux-server/openspeedtest && docker compose up -d
+       cd linux-server/openspeedtest
+       cp .env.example .env   # set TS_AUTHKEY
+       docker compose up -d
        ```
-    3. Access at `http://<server-ip>:3030` — **must** use the LAN IP/hostname, not a `*.ts.net` domain, or the result reflects the tailnet path rather than the local network. Intentionally has no Tailscale sidecar for this reason
-    4. Published on `:3030`/`:3031` (not the default `:3000`/`:3001`, which collide with homepage and uptime-kuma)
+    3. Tailnet UI at `https://openspeedtest.<tailnet>.ts.net/`. For an accurate **LAN** result, test against the LAN IP instead — `http://<server-ip>:3030` — or the result reflects the tailnet path rather than the local network
+    4. LAN ports `:3030`/`:3031` are published on the sidecar (not the default `:3000`/`:3001`, which collide with homepage and uptime-kuma)
 
 18. pi-hole | [GitHub](https://github.com/pi-hole/pi-hole) | [Docs](https://docs.pi-hole.net)
     1. Network-wide DNS ad blocker — alternative to AdGuard Home

@@ -92,9 +92,10 @@
           url: https://{{HOMEPAGE_VAR_SPEEDTEST_DOMAIN}}
     - lan speedtest:
         icon: mdi-speedometer-medium
-        # LAN-only: hit the server's LAN IP directly, not a *.ts.net domain, or
-        # the test measures the tailnet path instead of the local network.
-        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:3030/
+        href: https://{{HOMEPAGE_VAR_OPENSPEEDTEST_DOMAIN}}/
+        # Tailnet HTTPS to match the other cards. Run actual LAN tests against the
+        # LAN IP (http://<server-ip>:3030) so you measure the local network, not
+        # the tailnet path.
         description: LAN speed test
         server: my-docker
         container: openspeedtest
