@@ -1,0 +1,19 @@
+services:
+  # LAN speed test — intentionally NOT behind a Tailscale sidecar (unlike the
+  # other services here). A LAN throughput test must hit the server's LAN IP
+  # directly; routing it through tailscale serve would measure the tailnet path,
+  # not the local network. Reach it from any LAN device at http://<server-ip>:3030.
+  #
+  # Uses published ports rather than network_mode: host because homepage already
+  # owns host :3000 (OpenSpeedTest's default), and uptime-kuma owns :3001. Port
+  # mapping is fine up to ~1 GbE; on a multi-gigabit link the docker-proxy hop can
+  # cap throughput — switch to host networking then (after freeing :3000/:3001).
+  openspeedtest:
+    image: openspeedtest/latest
+    container_name: openspeedtest
+    restart: unless-stopped
+    ports:
+      - "3030:3000"   # HTTP  — http://<server-ip>:3030
+      - "3031:3001"   # HTTPS — https://<server-ip>:3031 (self-signed)
+    environment:
+      - TZ=America/Los_Angeles

@@ -108,6 +108,10 @@ docker compose up -d
 # Access at https://qbittorrent.<tailnet>.ts.net/
 # First run: get the temporary admin password from the logs and change it:
 #   docker compose logs qbittorrent | grep -i password
+
+# OpenSpeedTest — LAN speed test (no sidecar; reached via the LAN IP)
+cd linux-server/openspeedtest && docker compose up -d
+# Access at http://<server-ip>:3030 — open from any LAN device and click Start
 ```
 
 ### 6. Tailscale widget
@@ -306,18 +310,27 @@ In NPM admin (`http://<server-ip>:81`):
     5. In **Options → Web UI**, set the "IP address" to `127.0.0.1` so the UI is reachable only through the HTTPS sidecar, not the raw tailnet port
     6. BitTorrent `:6881` (tcp/udp) is published on the sidecar. **Not routed through a VPN** — fine for academic/legal torrents; see [`../TODO.md`](../TODO.md) for the planned Gluetun VPN sidecar before any other use
 
-17. pi-hole | [GitHub](https://github.com/pi-hole/pi-hole) | [Docs](https://docs.pi-hole.net)
+17. OpenSpeedTest | [GitHub](https://github.com/openspeedtest/Speed-Test) | [Docs](https://openspeedtest.com/selfhosted-speedtest)
+    1. Self-hosted browser speed test for the **LAN** (the local-network counterpart to speedtest-tracker's ISP test) — any device opens it in a browser and measures its throughput to the server
+    2. Deploy:
+       ```sh
+       cd linux-server/openspeedtest && docker compose up -d
+       ```
+    3. Access at `http://<server-ip>:3030` — **must** use the LAN IP/hostname, not a `*.ts.net` domain, or the result reflects the tailnet path rather than the local network. Intentionally has no Tailscale sidecar for this reason
+    4. Published on `:3030`/`:3031` (not the default `:3000`/`:3001`, which collide with homepage and uptime-kuma)
+
+18. pi-hole | [GitHub](https://github.com/pi-hole/pi-hole) | [Docs](https://docs.pi-hole.net)
     1. Network-wide DNS ad blocker — alternative to AdGuard Home
     2. Not yet configured
 
-18. Immich | [GitHub](https://github.com/immich-app/immich) | [Docs](https://immich.app/docs)
+19. Immich | [GitHub](https://github.com/immich-app/immich) | [Docs](https://immich.app/docs)
     1. Self-hosted photo and video backup — Google Photos alternative with mobile apps, face recognition, and timeline view
     2. Not yet configured
 
-19. Jellyfin | [GitHub](https://github.com/jellyfin/jellyfin) | [Docs](https://jellyfin.org/docs/)
+20. Jellyfin | [GitHub](https://github.com/jellyfin/jellyfin) | [Docs](https://jellyfin.org/docs/)
     1. Self-hosted media server — stream your own movies, TV shows, and music to any device
     2. Not yet configured
 
-20. Home Assistant | [GitHub](https://github.com/home-assistant/core) | [Docs](https://www.home-assistant.io/docs/)
+21. Home Assistant | [GitHub](https://github.com/home-assistant/core) | [Docs](https://www.home-assistant.io/docs/)
     1. Open source smart home hub — integrates with thousands of devices and services
     2. Not yet configured
