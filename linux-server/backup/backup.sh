@@ -25,6 +25,7 @@ fi
 : "${RETENTION_KEEP_MONTHLY:=6}"
 : "${RUN_CHECK:=true}"
 : "${NTFY_TOPIC:=server-backup}"
+: "${KUMA_PUSH_URL:=}"
 : "${STATUS_JSON:=$SCRIPT_DIR/status/backup-status.json}"
 : "${RESTIC_REPOSITORY:?set RESTIC_REPOSITORY in .env}"
 : "${RESTIC_PASSWORD:?set RESTIC_PASSWORD in .env}"
@@ -48,6 +49,16 @@ notify() {
   curl "${args[@]}" "$NTFY_URL/$NTFY_TOPIC" >/dev/null 2>&1 || true
 }
 
+kuma_push() {
+  local status="$1" msg="$2" ping="${3:-}"
+  [[ -n "$KUMA_PUSH_URL" ]] || return 0
+  curl -fsS -G \
+    --data-urlencode "status=$status" \
+    --data-urlencode "msg=$msg" \
+    --data-urlencode "ping=$ping" \
+    "$KUMA_PUSH_URL" >/dev/null 2>&1 || true
+}
+
 write_status() {
   local st="$1"
   mkdir -p "$(dirname "$STATUS_JSON")"
@@ -65,6 +76,7 @@ write_status() {
 if [[ "${1:-}" == "notify-failure" ]]; then
   write_status failed
   notify "Server backup FAILED" urgent rotating_light "systemd OnFailure — see: journalctl -u backup.service"
+  kuma_push down "systemd OnFailure — see journalctl -u backup.service"
   exit 0
 fi
 
@@ -75,6 +87,7 @@ finish() {
     DURATION=$((SECONDS - START))
     write_status failed
     notify "Server backup FAILED" urgent rotating_light "exit $rc — see: journalctl -u backup.service"
+    kuma_push down "exit $rc — see journalctl -u backup.service"
   fi
   rm -rf "$STAGING_DIR"
 }
@@ -95,7 +108,9 @@ esac
 forgejo_data="$SERVER_DIR/forgejo/data"
 if [[ -f "$SERVER_DIR/forgejo/.env" ]]; then
   fdp="$(grep -E '^FORGEJO_DATA_PATH=' "$SERVER_DIR/forgejo/.env" | tail -1 | cut -d= -f2- || true)"
-  [[ -n "${fdp:-}" ]] && forgejo_data="$fdp"
+  if [[ -n "${fdp:-}" ]]; then
+    [[ "$fdp" = /* ]] && forgejo_data="$fdp" || forgejo_data="$SERVER_DIR/forgejo/$fdp"
+  fi
 fi
 
 CANDIDATES=(
@@ -214,4 +229,5 @@ STATUS=success
 write_status success
 human="$(numfmt --to=iec "$SIZE_BYTES" 2>/dev/null || printf '%s bytes' "$SIZE_BYTES")"
 notify "Server backup OK" default floppy_disk "snapshot $SNAPSHOT_ID · $human · ${DURATION}s"
+kuma_push up "snapshot $SNAPSHOT_ID · $human · ${DURATION}s" "$((DURATION * 1000))"
 log "done: snapshot $SNAPSHOT_ID, $human, ${DURATION}s"
