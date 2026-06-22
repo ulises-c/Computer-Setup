@@ -1,9 +1,16 @@
 # Forgejo runner config — example.
 #
 # The live config (~/forgejo-runner-config.yml) is the stock output of
-# `forgejo-runner generate-config` PLUS the `server:` block below. install.sh
-# regenerates the stock body and `register` appends the connection, so you
-# normally never hand-edit this. The fields that actually matter are here.
+# `forgejo-runner generate-config` PLUS the `server:` block below. The fields
+# that actually matter are here.
+#
+# Registering (the current Forgejo flow): Site Administration → Actions →
+# Runners → Create new runner hands you a ready-made `server.connections` block
+# (url / uuid / token). Paste it under `server:` and add the `labels:` line —
+# the UI issues the runner's credentials directly, so no `forgejo-runner
+# register` step is needed. Use the *Site Administration* page (instance scope),
+# not a repo/org runners page: the server-side monitor reads the admin runner
+# list, so a repo/org-scoped runner shows as "down" even while it runs fine.
 #
 # DO NOT commit a real token. The values below are placeholders.
 
@@ -28,7 +35,7 @@ server:
   connections:
     home:
       url: https://forgejo.<tailnet>.ts.net
-      uuid: 00000000-0000-0000-0000-000000000000   # filled in by register
-      token: <written-by-forgejo-runner-register>
+      uuid: 00000000-0000-0000-0000-000000000000   # from "Create new runner"
+      token: <from-forgejo-create-new-runner>      # runner secret — never commit the real one
       labels:
         - macos-latest:host   # `:host` = run jobs directly on macOS, no Docker

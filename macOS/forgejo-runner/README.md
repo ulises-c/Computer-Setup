@@ -44,11 +44,50 @@ bash verify.sh
 1. Build `forgejo-runner` from source (`brew install go` first if needed) and
    install it to `~/.local/bin/`.
 2. Generate the base config (`generate-config`) if none exists.
-3. Register the runner against the Forgejo instance — get a token from
-   **Forgejo → Settings → Actions → Runners → Create new runner** (site, org, or
-   repo scope).
+3. Register the runner against the Forgejo instance (prompts for a token).
 4. Render `net.forgejo.runner.plist` from the template and `launchctl bootstrap`
    it so it runs at login.
+
+### Registering: scope matters (global vs individual)
+
+Register this runner from **Site Administration → Actions → Runners → Create
+new runner** — the *global* (instance) scope. Do **not** register it from your
+own user account's runners page (Settings → Actions → Runners) or from a single
+repo/org. Forgejo offers a runner at several scopes, and they are not
+interchangeable:
+
+| Where you create it | Scope | Visible to whom | Runs jobs for |
+| --- | --- | --- | --- |
+| **Site Administration → Actions → Runners** | **global / instance** | the whole instance, incl. the admin API | every repo on the server |
+| Your user **Settings → Actions → Runners** | individual (user) | only your account | only repos you own |
+| A repo or org **Settings → Actions → Runners** | repo / org | only that repo/org | only that repo/org |
+
+**Why global is required here.** The server-side monitor
+(`linux-server/forgejo/runner-status.sh`) checks runner health by reading the
+*admin* runner list (`/api/v1/admin/actions/runners`). Only global runners
+appear there. A runner registered at user/repo/org scope still executes jobs
+perfectly, but it is invisible to that admin endpoint — so the monitor sees an
+empty list, can't find `m4-mini`, and reports the homepage card **down** even
+though the runner is alive.
+
+That is exactly what happened on first setup: the runner was created from the
+*individual* account page, declared successfully, and ran — yet the card stayed
+**down**. Re-creating it from **Site Administration** (global) put it in the
+admin list and the card went **up**. Switching scope means a fresh runner: a
+new uuid/token, and the old individual-scoped entry is left orphaned (delete it
+from the page where it was created).
+
+Newer Forgejo hands you a ready-made `server.connections` block (url / uuid /
+token) right there in the UI. The fastest path is to paste that block into
+`~/forgejo-runner-config.yml` and add the `labels:` line — see
+`forgejo-runner-config.example.yml`. No `forgejo-runner register` step is
+needed; the UI issues the runner's credentials directly. `install.sh`'s
+`register` prompt is the older registration-token flow and still works if your
+Forgejo shows a registration token instead.
+
+> If you deliberately want a non-global runner, the runner side is fine as-is —
+> instead point the monitor at that scope by setting `FORGEJO_RUNNER_API_URL`
+> in `linux-server/forgejo/.env` to the matching runners endpoint.
 
 Useful overrides:
 
