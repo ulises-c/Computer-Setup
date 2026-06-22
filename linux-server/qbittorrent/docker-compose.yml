@@ -48,3 +48,6 @@ services:
     volumes:
       - ./config:/config
       - ${QBITTORRENT_DOWNLOADS_PATH:-./downloads}:/downloads
+      # Whole 14TB drive, so qBittorrent can save/recheck data anywhere on it
+      # (e.g. existing downloads under /nas/media), not just the downloads dir.
+      - /mnt/wd14tb:/nas
