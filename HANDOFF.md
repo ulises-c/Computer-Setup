@@ -23,14 +23,14 @@ gotchas hit along the way.
 - `SSH_and_GPG/create_ssh_key.sh` + `README.md` — the self-hosted-server SSH
   port was hardcoded to `2222` (Forgejo's old host-published mapping); now
   prompts with default `22`, matching the sidecar setup. Verified live with
-  `ssh-keyscan -p 22 forgejo.tail01d63b.ts.net`.
+  `ssh-keyscan -p 22 forgejo.<tailnet>.ts.net`.
 
 **Live state on `ollie-server` (not in git):**
 - `linux-server/forgejo/.env`: `TS_AUTHKEY` set to the (now read+write-scoped)
-  `tailscale-proxy` OAuth client secret; `FORGEJO_DOMAIN=forgejo.tail01d63b.ts.net`
+  `tailscale-proxy` OAuth client secret; `FORGEJO_DOMAIN=forgejo.<tailnet>.ts.net`
 - `forgejo-ts` + `forgejo` containers running under the new sidecar
   `docker-compose.yml`; old host-published ports (`3300`, `2222`) are gone
-- Verified: `https://forgejo.tail01d63b.ts.net/` → `200`; SSH banner on `:22`
+- Verified: `https://forgejo.<tailnet>.ts.net/` → `200`; SSH banner on `:22`
 - Tailscale admin console changes (made by the user, not visible in this repo):
   existing `tailscale-proxy` OAuth client elevated from read-only to
   read+write scope; `tag:container` added to the tailnet ACL's `tagOwners`
@@ -38,7 +38,7 @@ gotchas hit along the way.
 
 **Not done yet:**
 - Existing git remotes pointing at the old `http://...:3300` / `ssh://...:2222`
-  Forgejo address still need updating to `git@forgejo.tail01d63b.ts.net:user/repo.git`
+  Forgejo address still need updating to `git@forgejo.<tailnet>.ts.net:user/repo.git`
   (on every machine that had a clone, not just this one)
 - Forgejo Site Administration → confirm the app URL picked up the new `ROOT_URL`
 - Continue the rollout: Portainer is next per the `TODO.md` table

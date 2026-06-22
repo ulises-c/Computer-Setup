@@ -84,7 +84,7 @@ The Homepage Tailscale widget uses a local OAuth proxy to avoid 90-day key rotat
 - [ ] Get a TLS cert:
   ```sh
   tailscale cert <your-tailscale-hostname>
-  # e.g. tailscale cert ollie-server.tail01d63b.ts.net
+  # e.g. tailscale cert ollie-server.<tailnet>.ts.net
   ```
 - [ ] In NPM admin (`http://<server-ip>:81`):
   - **SSL Certificates → Add Custom Certificate** — paste `.crt` and `.key` file contents; save as e.g. "tailscale cert"
