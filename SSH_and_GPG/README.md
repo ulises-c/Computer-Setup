@@ -34,7 +34,7 @@ Creates an Ed25519 SSH key for authenticating to a Git host (GitHub, GitLab, Bit
 - Prompts for an email (used as the key comment), Git host, key filename, and optional passphrase
 - Generates the key in `~/.ssh/` (skips generation if the key already exists, with an overwrite prompt)
 - Adds the key to `ssh-agent` and updates `~/.ssh/config` with a `Host` block (idempotent)
-- For self-hosted servers: writes an alias with `HostName`, `Port 2222`, and `User git` so you can clone as `git clone <alias>:<user>/<repo>.git`
+- For self-hosted servers: prompts for an SSH port (default `22`) and writes an alias with `HostName`, `Port`, and `User git` so you can clone as `git clone <alias>:<user>/<repo>.git`
 - Prints the public key for pasting into the Git host's settings
 - Tests the SSH connection after you confirm the key has been added
 
@@ -44,7 +44,7 @@ bash create_ssh_key.sh
 # or pre-fill inputs via env vars:
 EMAIL="jane@example.com" GIT_HOST="github.com" KEY_NAME="github" bash create_ssh_key.sh
 # Self-hosted Git server:
-EMAIL="jane@example.com" IS_SELF_HOSTED=true GIT_HOSTNAME="hostname.ts.net" GIT_HOST="gitserver" bash create_ssh_key.sh
+EMAIL="jane@example.com" IS_SELF_HOSTED=true GIT_HOSTNAME="hostname.ts.net" GIT_HOST="gitserver" GIT_SSH_PORT=22 bash create_ssh_key.sh
 ```
 
 ---

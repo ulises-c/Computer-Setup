@@ -1,7 +1,35 @@
 services:
+  # Tailscale sidecar — joins the tailnet as `speedtest`, terminating HTTPS for
+  # https://speedtest.<tailnet>.ts.net. See ../HTTPS.md for the full pattern.
+  speedtest-tracker-ts:
+    image: tailscale/tailscale:latest
+    container_name: speedtest-tracker-ts
+    hostname: speedtest
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SERVE_CONFIG=/config/serve.json
+      # Requires TS_AUTHKEY to be allowed to apply tag:container (OAuth client, or
+      # a tag-scoped auth key). Drop this line if using an untagged personal key.
+      - TS_EXTRA_ARGS=--advertise-tags=tag:container
+    volumes:
+      - ./ts-state:/var/lib/tailscale
+      - ./ts-serve.json:/config/serve.json:ro
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+
   speedtest-tracker:
     image: lscr.io/linuxserver/speedtest-tracker:latest
     container_name: speedtest-tracker
+    # Share the sidecar's network namespace: tailscale serve proxies :443 to the
+    # app's HTTP port 80 (the image's plaintext UI; 8765 was only the old host
+    # mapping). APP_URL in .env must match the HTTPS domain for correct links.
+    network_mode: service:speedtest-tracker-ts
+    depends_on:
+      - speedtest-tracker-ts
     restart: unless-stopped
     env_file:
       - .env
@@ -10,7 +38,5 @@ services:
       - PGID=1000
       - TZ=America/Los_Angeles
       - DB_CONNECTION=sqlite
-    ports:
-      - "8765:80"
     volumes:
       - ./data:/config

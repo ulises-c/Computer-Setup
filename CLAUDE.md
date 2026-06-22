@@ -29,14 +29,15 @@ tracked in TODO.md.)
   invocations).
 - `dotfiles/` — configs shared across platforms (`tmux.conf`,
   `ghostty.config`, `zshrc.example`, `zsh_plugins.txt`); the engine deploys
-  them from here. The zshrc base is cross-platform — macOS-specific bits are
-  guarded on `/opt/homebrew` or `$OSTYPE` — and has an override system
-  (`deploy_zshrc`): a platform folder shipping its own `zshrc.example` wins
-  over the dotfiles base. Only `linux-server/` does (headless: no
-  Ghostty/fastfetch/notification hooks).
-- `macOS/`, `linux-desktop/`, `linux-server/` — platform-specific configs
-  (server zshrc override, p10k), docs, and thin shim scripts that exec the
-  root entrypoints.
+  them from here. One zshrc base serves every platform including the headless
+  server — macOS-specific bits guard on `/opt/homebrew` or `$OSTYPE`, and the
+  desktop-only bits self-disable headless (notify hook no-ops without
+  `$DISPLAY`/`$WAYLAND_DISPLAY`, fastfetch keys off Ghostty or `$SSH_CONNECTION`,
+  version managers/zoxide are command-guarded). The override system
+  (`deploy_zshrc`) still lets a platform folder ship its own `zshrc.example` to
+  win over the base, but no platform currently does.
+- `macOS/`, `linux-desktop/`, `linux-server/` — platform-specific configs,
+  docs, and thin shim scripts that exec the root entrypoints.
 - `scripts/dryrun-smoke.sh` — runs `setup.sh --dry-run` for every platform and
   asserts it exits clean with install actions; also run in CI.
 

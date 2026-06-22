@@ -1,0 +1,40 @@
+services:
+  # Tailscale sidecar — joins the tailnet as `atvloadly`, terminating HTTPS for
+  # https://atvloadly.<tailnet>.ts.net. See ../HTTPS.md for the full pattern.
+  atvloadly-ts:
+    image: tailscale/tailscale:latest
+    container_name: atvloadly-ts
+    hostname: atvloadly
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SERVE_CONFIG=/config/serve.json
+      # Requires TS_AUTHKEY to be allowed to apply tag:container (OAuth client, or
+      # a tag-scoped auth key). Drop this line if using an untagged personal key.
+      - TS_EXTRA_ARGS=--advertise-tags=tag:container
+    volumes:
+      - ./ts-state:/var/lib/tailscale
+      - ./ts-serve.json:/config/serve.json:ro
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+
+  atvloadly:
+    image: bitxeno/atvloadly:latest
+    container_name: atvloadly
+    privileged: true
+    # Share the sidecar's network namespace: tailscale serve proxies :443 to the
+    # app's HTTP port 80 (5533 was only the old host mapping). Apple TV discovery
+    # goes through the host's avahi-daemon via the bind-mounted sockets below, not
+    # through this container's own network namespace, so sharing it with the
+    # sidecar doesn't affect mDNS/Bonjour pairing.
+    network_mode: service:atvloadly-ts
+    depends_on:
+      - atvloadly-ts
+    restart: unless-stopped
+    volumes:
+      - /etc/atvloadly:/data
+      - /var/run/dbus:/var/run/dbus
+      - /var/run/avahi-daemon:/var/run/avahi-daemon

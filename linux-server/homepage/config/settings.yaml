@@ -9,5 +9,8 @@ layout:
     style: column
   Network:
     style: column
+  NAS:
+    style: row
+    columns: 2
   Storage:
     style: column

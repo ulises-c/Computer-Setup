@@ -30,3 +30,12 @@ linux-server/syncthing/config/
 linux-server/uptime-kuma/data/
 
 linux-server/forgejo/data/
+
+# Tailscale sidecar node state (HTTPS.md) — holds node keys, never commit
+linux-server/*/ts-state/
+
+linux-server/qbittorrent/config/
+linux-server/qbittorrent/downloads/
+
+# Backup status JSON written at runtime (served to the homepage card)
+linux-server/backup/status/

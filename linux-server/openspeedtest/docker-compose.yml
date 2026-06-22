@@ -1,0 +1,45 @@
+services:
+  # Tailscale sidecar — joins the tailnet as `openspeedtest`, terminating HTTPS
+  # for https://openspeedtest.<tailnet>.ts.net. See ../HTTPS.md.
+  #
+  # The LAN ports stay host-published HERE (the sidecar owns the network
+  # namespace, so the app container can't declare its own ports) — same pattern
+  # as qbittorrent's BitTorrent port. Keeping :3030 on the LAN matters: an
+  # accurate LAN throughput test must hit the server's LAN IP directly, since the
+  # tailnet domain measures the VPN path rather than the local network.
+  # Published on :3030/:3031 (not the default :3000/:3001, which collide with
+  # homepage and uptime-kuma).
+  openspeedtest-ts:
+    image: tailscale/tailscale:latest
+    container_name: openspeedtest-ts
+    hostname: openspeedtest
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SERVE_CONFIG=/config/serve.json
+      # Requires TS_AUTHKEY to be allowed to apply tag:container (OAuth client, or
+      # a tag-scoped auth key). Drop this line if using an untagged personal key.
+      - TS_EXTRA_ARGS=--advertise-tags=tag:container
+    volumes:
+      - ./ts-state:/var/lib/tailscale
+      - ./ts-serve.json:/config/serve.json:ro
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - "3030:3000"   # HTTP  — http://<server-ip>:3030 (LAN test path)
+      - "3031:3001"   # HTTPS — https://<server-ip>:3031 (self-signed)
+    restart: unless-stopped
+
+  openspeedtest:
+    image: openspeedtest/latest
+    container_name: openspeedtest
+    # Share the sidecar's network namespace: tailscale serve proxies :443 to the
+    # app on 127.0.0.1:3000. See ../HTTPS.md.
+    network_mode: service:openspeedtest-ts
+    depends_on:
+      - openspeedtest-ts
+    restart: unless-stopped
+    environment:
+      - TZ=America/Los_Angeles

@@ -8,7 +8,7 @@ Tested on Ubuntu Server LTS. Most packages work on other Debian-based distros.
 1. zsh | [apt](https://packages.ubuntu.com/search?keywords=zsh) | [Homepage](https://www.zsh.org/)
    1. Z shell — consistent shell across all devices; set as default by `setup.sh`
 2. zsh-antidote | [apt](https://packages.ubuntu.com/search?keywords=zsh-antidote) | [GitHub](https://github.com/mattmc3/antidote)
-   1. Zsh plugin manager — manages zsh-autosuggestions and zsh-syntax-highlighting per `~/.zsh_plugins.txt`
+   1. Zsh plugin manager — loads the plugins in `~/.zsh_plugins.txt` (autosuggestions, syntax highlighting, completions, history substring search, abbreviations, and the Powerlevel10k prompt)
    2. Run `antidote update` to pull latest plugin versions
 
 ## CLI Tools

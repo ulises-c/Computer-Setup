@@ -1,0 +1,8 @@
+[Unit]
+Description=Alert on server backup failure
+
+[Service]
+Type=oneshot
+# Fires via backup.service's OnFailure= — records a failed status and pings
+# ntfy even if backup.sh died before its own error handler could run.
+ExecStart=/home/ollie/github/Computer-Setup/linux-server/backup/backup.sh notify-failure

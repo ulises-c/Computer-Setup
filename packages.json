@@ -39,7 +39,7 @@
   },
   {
     "name": "nvm",
-    "package_manager": { "macos": "custom", "ubuntu": "custom", "arch": "custom" },
+    "package_manager": { "macos": "custom", "ubuntu": "custom", "arch": "custom", "server": "custom" },
     "priority": "high",
     "optional": false,
     "handled_by_setup": true,
@@ -63,11 +63,11 @@
   },
   {
     "name": "build-essential",
-    "package_manager": { "ubuntu": "apt", "arch": "yay" },
+    "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "arch_name": "base-devel",
     "priority": "high",
     "optional": false,
-    "description": "Compiler toolchain — gcc, make, etc.; required for pyenv, native Node modules, and AUR builds"
+    "description": "Compiler toolchain — gcc, make, etc.; required for pyenv, native Node modules, AUR builds, and cargo install (e.g. railguard)"
   },
   {
     "name": "git",
@@ -85,9 +85,10 @@
   },
   {
     "name": "rust",
-    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay" },
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "ubuntu_name": "rustup",
     "arch_name": "rustup",
+    "server_name": "rustup",
     "priority": "medium",
     "optional": false,
     "description": "Rust toolchain — rustup on Linux (distro rustc goes stale; setup runs 'rustup default stable'), plain rust formula on macOS"
@@ -163,7 +164,7 @@
   },
   {
     "name": "shellcheck",
-    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay" },
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
     "description": "Static analysis linter for shell scripts — used by the pre-commit config and CI"
@@ -174,6 +175,16 @@
     "priority": "medium",
     "optional": false,
     "description": "Spell checker for source code — catches common misspellings in identifiers, comments, and docs"
+  },
+  {
+    "name": "pytest",
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "ubuntu_name": "python3-pytest",
+    "arch_name": "python-pytest",
+    "server_name": "python3-pytest",
+    "priority": "medium",
+    "optional": false,
+    "description": "Python testing framework — used by the post-test-runner.sh hook to auto-run test suites in Python projects"
   },
   {
     "name": "swiftlint",
@@ -303,7 +314,7 @@
     "package_manager": { "macos": "brew" },
     "priority": "medium",
     "optional": false,
-    "description": "macOS notification CLI — backend for zsh-notify (Linux uses notify-send/xdotool instead)"
+    "description": "macOS notification CLI — backend for the zshrc long-command notify hook (Linux uses notify-send)"
   },
   {
     "name": "fzf",
@@ -369,14 +380,7 @@
     "arch_name": "libnotify",
     "priority": "medium",
     "optional": false,
-    "description": "Desktop notifications CLI (notify-send) — used by zsh-notify plugin"
-  },
-  {
-    "name": "xdotool",
-    "package_manager": { "ubuntu": "apt", "arch": "yay" },
-    "priority": "medium",
-    "optional": false,
-    "description": "X11 window automation — used by zsh-notify for terminal focus detection"
+    "description": "Desktop notifications CLI (notify-send) — backend for the zshrc long-command notify hook"
   },
   {
     "name": "ncdu",
@@ -411,15 +415,6 @@
     "handled_by_setup": true,
     "install_command": "curl -fsSL https://get.docker.com | sudo sh",
     "description": "Container platform — Docker Desktop on macOS, official Docker Engine on Linux"
-  },
-  {
-    "name": "docker-ce",
-    "package_manager": { "server": "custom" },
-    "priority": "medium",
-    "optional": false,
-    "handled_by_setup": true,
-    "install_command": "curl -fsSL https://get.docker.com | sudo sh",
-    "description": "Container platform — official Docker Engine for Linux; convenience script installs CE, CLI, compose plugin, and containerd"
   },
   {
     "name": "claude-code",

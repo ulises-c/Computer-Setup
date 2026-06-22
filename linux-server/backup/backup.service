@@ -1,0 +1,15 @@
+[Unit]
+Description=Server backup (restic → external drive)
+# Don't run unless the backup drive is mounted.
+RequiresMountsFor=/mnt/wd1tb
+After=network-online.target docker.service
+OnFailure=backup-failure.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/ollie/github/Computer-Setup/linux-server/backup/backup.sh
+# Runs as root to read all container-owned data dirs and drive docker.
+# Give restic a HOME so it can use its local cache (root has none under systemd).
+Environment=HOME=/root
+Nice=10
+IOSchedulingClass=idle

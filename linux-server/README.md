@@ -27,7 +27,9 @@ sudo tailscale up
 - [`setup.sh`](setup.sh) — thin shim onto the root [`setup.sh`](../setup.sh) (server platform)
 - [`post-install.md`](post-install.md) — step-by-step checklist to follow after setup.sh
 - [`apt_packages.md`](apt_packages.md) — full package list with descriptions and links
-- [`zshrc.example`](zshrc.example) — server zsh config, deployed to `~/.zshrc` by `setup.sh`; overrides the shared [`dotfiles/zshrc.example`](../dotfiles/zshrc.example) base because the server is headless (no Ghostty/fastfetch/notification hooks)
+- [`benchmark-nas.md`](benchmark-nas.md) — how to measure LAN vs. real-world NAS throughput (`dd` over Samba + OpenSpeedTest)
+- [`../dotfiles/zshrc.example`](../dotfiles/zshrc.example) — shared zsh config (incl. Powerlevel10k), deployed to `~/.zshrc` by `setup.sh`; the desktop-only bits self-disable headless, so the server uses the same base as every other platform
+- [`../dotfiles/zsh_plugins.txt`](../dotfiles/zsh_plugins.txt) — shared antidote plugin list, deployed to `~/.zsh_plugins.txt` and pre-cloned by `setup.sh`
 - [`../dotfiles/tmux.conf`](../dotfiles/tmux.conf) — tmux config with mouse support, vi copy mode, and a status bar (shared across all platforms); copied to `~/.tmux.conf` by `setup.sh`
 - [`../packages.json`](../packages.json) — machine-readable package manifest (shared across all platforms)
 
@@ -99,6 +101,21 @@ cd linux-server/adguard && docker compose up -d
 # Open http://<server-ip>:3001 for setup wizard
 # Set web UI port → 80, DNS port → 53, create admin account
 # After setup: http://<server-ip>:8083
+
+# qBittorrent — needs TS_AUTHKEY for its HTTPS sidecar (see HTTPS.md), like forgejo
+cd linux-server/qbittorrent && cp .env.example .env
+# edit .env: set TS_AUTHKEY (optionally QBITTORRENT_DOWNLOADS_PATH for an external drive), then:
+docker compose up -d
+# Access at https://qbittorrent.<tailnet>.ts.net/
+# First run: get the temporary admin password from the logs and change it:
+#   docker compose logs qbittorrent | grep -i password
+
+# OpenSpeedTest — needs TS_AUTHKEY for its HTTPS sidecar (see HTTPS.md), like qbittorrent
+cd linux-server/openspeedtest && cp .env.example .env
+# edit .env: set TS_AUTHKEY, then:
+docker compose up -d
+# Tailnet UI at https://openspeedtest.<tailnet>.ts.net/ — but run LAN tests via
+# http://<server-ip>:3030 so you measure the local network, not the tailnet
 ```
 
 ### 6. Tailscale widget
@@ -219,7 +236,9 @@ In NPM admin (`http://<server-ip>:81`):
     3. Listens on `localhost:8089`; Homepage queries it via `customapi` widget
 
 11. nginx proxy manager | [GitHub](https://github.com/jc21/nginx-proxy-manager) | [Docs](https://nginxproxymanager.com/guide/)
-    1. Reverse proxy with a web UI — handles HTTPS termination for Homepage (Tailscale cert) and HTTP→HTTPS redirect
+    1. Reverse proxy with a web UI — the non-tailnet HTTPS edge: trusted certs for
+       LAN/public clients that can't join the tailnet (the tailnet sidecars cover
+       on-tailnet HTTPS). See [HTTPS.md](HTTPS.md) → "NPM — trusted HTTPS for non-tailnet clients"
     2. Deploy:
        ```sh
        cd linux-server/nginx-proxy-manager && docker compose up -d
@@ -281,18 +300,57 @@ In NPM admin (`http://<server-ip>:81`):
     5. Add your SSH public key in **Settings → SSH / GPG Keys** after creating your account
     6. To migrate from GitHub: use Forgejo's built-in migration (**+ → New Migration → GitHub**), then optionally configure a push mirror back to GitHub under repo **Settings → Push Mirrors** while validating the setup
 
-16. pi-hole | [GitHub](https://github.com/pi-hole/pi-hole) | [Docs](https://docs.pi-hole.net)
+16. qBittorrent | [GitHub](https://github.com/qbittorrent/qBittorrent) | [Docs](https://github.com/linuxserver/docker-qbittorrent)
+    1. BitTorrent client with a full web UI — currently used for academic torrents. Fronted by its own Tailscale HTTPS sidecar (see [`HTTPS.md`](HTTPS.md))
+    2. Deploy:
+       ```sh
+       cd linux-server/qbittorrent
+       cp .env.example .env   # set TS_AUTHKEY; optionally set QBITTORRENT_DOWNLOADS_PATH for an external drive
+       docker compose up -d
+       docker compose logs -f qbittorrent-ts   # watch the node join + cert provision
+       ```
+    3. Access at `https://qbittorrent.<tailnet>.ts.net/`
+    4. On first run, the LinuxServer image generates a temporary admin password — find it with `docker compose logs qbittorrent | grep -i password`, log in as `admin`, then change it in **Options → Web UI** (and add the new login to `HOMEPAGE_VAR_QBITTORRENT_PASSWORD` in `linux-server/homepage/.env` for the widget)
+    5. In **Options → Web UI**, set the "IP address" to `127.0.0.1` so the UI is reachable only through the HTTPS sidecar, not the raw tailnet port
+    6. BitTorrent `:6881` (tcp/udp) is published on the sidecar. **Not routed through a VPN** — fine for academic/legal torrents; see [`../TODO.md`](../TODO.md) for the planned Gluetun VPN sidecar before any other use
+
+17. OpenSpeedTest | [GitHub](https://github.com/openspeedtest/Speed-Test) | [Docs](https://openspeedtest.com/selfhosted-speedtest)
+    1. Self-hosted browser speed test for the **LAN** (the local-network counterpart to speedtest-tracker's ISP test) — any device opens it in a browser and measures its throughput to the server. Fronted by its own Tailscale HTTPS sidecar (see [`HTTPS.md`](HTTPS.md)), like the other services
+    2. Deploy:
+       ```sh
+       cd linux-server/openspeedtest
+       cp .env.example .env   # set TS_AUTHKEY
+       docker compose up -d
+       ```
+    3. Tailnet UI at `https://openspeedtest.<tailnet>.ts.net/`. For an accurate **LAN** result, test against the LAN IP instead — `http://<server-ip>:3030` — or the result reflects the tailnet path rather than the local network
+    4. LAN ports `:3030`/`:3031` are published on the sidecar (not the default `:3000`/`:3001`, which collide with homepage and uptime-kuma)
+
+18. backup | [restic](https://restic.net) | [Docs](https://restic.readthedocs.io)
+    1. Nightly encrypted, deduplicated backup of all persistent service state (SQLite DBs, Forgejo git repos, certs, configs, `.env`s) to the 1TB drive, with an optional second copy to the 14TB drive. systemd timer + ntfy alerts + a homepage status card. Full setup and restore runbook in [`backup/README.md`](backup/README.md)
+    2. Deploy:
+       ```sh
+       sudo apt install restic sqlite3 jq
+       cd linux-server/backup
+       cp .env.example .env   # set RESTIC_PASSWORD (save it in Bitwarden!) + ntfy
+       sudo touch /mnt/wd1tb/.backup-target-ok
+       docker compose up -d   # status-card server (loopback :8099)
+       sudo cp backup.service backup.timer backup-failure.service /etc/systemd/system/
+       sudo systemctl daemon-reload && sudo systemctl enable --now backup.timer
+       ```
+    3. The status card on Homepage shows last-run time, status, and repo size; failures push to ntfy
+
+19. pi-hole | [GitHub](https://github.com/pi-hole/pi-hole) | [Docs](https://docs.pi-hole.net)
     1. Network-wide DNS ad blocker — alternative to AdGuard Home
     2. Not yet configured
 
-17. Immich | [GitHub](https://github.com/immich-app/immich) | [Docs](https://immich.app/docs)
+20. Immich | [GitHub](https://github.com/immich-app/immich) | [Docs](https://immich.app/docs)
     1. Self-hosted photo and video backup — Google Photos alternative with mobile apps, face recognition, and timeline view
     2. Not yet configured
 
-18. Jellyfin | [GitHub](https://github.com/jellyfin/jellyfin) | [Docs](https://jellyfin.org/docs/)
+21. Jellyfin | [GitHub](https://github.com/jellyfin/jellyfin) | [Docs](https://jellyfin.org/docs/)
     1. Self-hosted media server — stream your own movies, TV shows, and music to any device
     2. Not yet configured
 
-19. Home Assistant | [GitHub](https://github.com/home-assistant/core) | [Docs](https://www.home-assistant.io/docs/)
+22. Home Assistant | [GitHub](https://github.com/home-assistant/core) | [Docs](https://www.home-assistant.io/docs/)
     1. Open source smart home hub — integrates with thousands of devices and services
     2. Not yet configured

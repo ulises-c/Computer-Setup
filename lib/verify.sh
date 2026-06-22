@@ -15,7 +15,12 @@ verify_parse_args() {
       --work)     INCLUDE_WORK=true ;;
       --personal) INCLUDE_PERSONAL=true ;;
       --all)      INCLUDE_OPTIONAL=true; INCLUDE_WORK=true; INCLUDE_PERSONAL=true; INCLUDE_NONE=true ;;
-      --distro|--platform) PLATFORM="${2:-}"; shift ;;
+      --distro|--platform)
+        if [[ -z "${2:-}" || "${2:-}" == -* ]]; then
+          printf 'ERROR: %s requires a value (macos|ubuntu|arch).\n' "$1" >&2
+          exit 1
+        fi
+        PLATFORM="$2"; shift ;;
       --profile)
         case "${2:-}" in
           server)  PLATFORM="server" ;;

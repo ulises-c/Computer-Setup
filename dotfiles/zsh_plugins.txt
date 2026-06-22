@@ -19,8 +19,5 @@ zsh-users/zsh-history-substring-search
 # Fish-style abbreviations
 olets/zsh-abbr
 
-# Desktop notifications for long-running commands (like fish done.fish)
-marzocchi/zsh-notify
-
 # Powerlevel10k prompt theme (settings in ~/.p10k.zsh; rerun `p10k configure` to change)
 romkatv/powerlevel10k
