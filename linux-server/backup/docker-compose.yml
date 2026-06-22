@@ -1,0 +1,13 @@
+services:
+  # Tiny static server exposing the backup status JSON to the homepage card.
+  # Bound to loopback only — homepage is host-networked and reads it via
+  # localhost; nothing about backups is exposed to the LAN. No Tailscale sidecar
+  # (it's a host-local plumbing endpoint, not a user-facing service).
+  backup-status:
+    image: nginx:alpine
+    container_name: backup-status
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8099:80"
+    volumes:
+      - ./status:/usr/share/nginx/html:ro

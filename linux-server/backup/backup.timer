@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly server backup
+
+[Timer]
+# 03:30 — after watchtower's 3 AM image updates settle.
+OnCalendar=*-*-* 03:30:00
+# Catch up if the machine was off at the scheduled time.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -36,3 +36,6 @@ linux-server/*/ts-state/
 
 linux-server/qbittorrent/config/
 linux-server/qbittorrent/downloads/
+
+# Backup status JSON written at runtime (served to the homepage card)
+linux-server/backup/status/

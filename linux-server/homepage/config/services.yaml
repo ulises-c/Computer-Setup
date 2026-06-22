@@ -32,6 +32,27 @@
           type: uptimekuma
           url: https://{{HOMEPAGE_VAR_UPTIMEKUMA_DOMAIN}}
           slug: default
+    - backups:
+        icon: mdi-backup-restore
+        description: restic → wd1tb (+wd14tb copy)
+        server: my-docker
+        container: backup-status
+        widget:
+          type: customapi
+          # backup.sh writes this JSON; the loopback nginx in linux-server/backup
+          # serves it. homepage is host-networked, so localhost reaches it.
+          url: http://localhost:8099/backup-status.json
+          refreshInterval: 600000
+          mappings:
+            - field: status
+              label: Status
+              format: text
+            - field: last_run
+              label: Last run
+              format: relativeDate
+            - field: repo_size_bytes
+              label: Repo size
+              format: bytes
     - glances:
         icon: si-glances
         href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/

@@ -325,18 +325,32 @@ In NPM admin (`http://<server-ip>:81`):
     3. Tailnet UI at `https://openspeedtest.<tailnet>.ts.net/`. For an accurate **LAN** result, test against the LAN IP instead — `http://<server-ip>:3030` — or the result reflects the tailnet path rather than the local network
     4. LAN ports `:3030`/`:3031` are published on the sidecar (not the default `:3000`/`:3001`, which collide with homepage and uptime-kuma)
 
-18. pi-hole | [GitHub](https://github.com/pi-hole/pi-hole) | [Docs](https://docs.pi-hole.net)
+18. backup | [restic](https://restic.net) | [Docs](https://restic.readthedocs.io)
+    1. Nightly encrypted, deduplicated backup of all persistent service state (SQLite DBs, Forgejo git repos, certs, configs, `.env`s) to the 1TB drive, with an optional second copy to the 14TB drive. systemd timer + ntfy alerts + a homepage status card. Full setup and restore runbook in [`backup/README.md`](backup/README.md)
+    2. Deploy:
+       ```sh
+       sudo apt install restic sqlite3 jq
+       cd linux-server/backup
+       cp .env.example .env   # set RESTIC_PASSWORD (save it in Bitwarden!) + ntfy
+       sudo touch /mnt/wd1tb/.backup-target-ok
+       docker compose up -d   # status-card server (loopback :8099)
+       sudo cp backup.service backup.timer backup-failure.service /etc/systemd/system/
+       sudo systemctl daemon-reload && sudo systemctl enable --now backup.timer
+       ```
+    3. The status card on Homepage shows last-run time, status, and repo size; failures push to ntfy
+
+19. pi-hole | [GitHub](https://github.com/pi-hole/pi-hole) | [Docs](https://docs.pi-hole.net)
     1. Network-wide DNS ad blocker — alternative to AdGuard Home
     2. Not yet configured
 
-19. Immich | [GitHub](https://github.com/immich-app/immich) | [Docs](https://immich.app/docs)
+20. Immich | [GitHub](https://github.com/immich-app/immich) | [Docs](https://immich.app/docs)
     1. Self-hosted photo and video backup — Google Photos alternative with mobile apps, face recognition, and timeline view
     2. Not yet configured
 
-20. Jellyfin | [GitHub](https://github.com/jellyfin/jellyfin) | [Docs](https://jellyfin.org/docs/)
+21. Jellyfin | [GitHub](https://github.com/jellyfin/jellyfin) | [Docs](https://jellyfin.org/docs/)
     1. Self-hosted media server — stream your own movies, TV shows, and music to any device
     2. Not yet configured
 
-21. Home Assistant | [GitHub](https://github.com/home-assistant/core) | [Docs](https://www.home-assistant.io/docs/)
+22. Home Assistant | [GitHub](https://github.com/home-assistant/core) | [Docs](https://www.home-assistant.io/docs/)
     1. Open source smart home hub — integrates with thousands of devices and services
     2. Not yet configured
