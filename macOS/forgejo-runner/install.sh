@@ -76,7 +76,8 @@ register_runner() {
   [[ -n "${reply:-}" ]] && url="$reply"
 
   printf 'Registration token (Forgejo → Settings → Actions → Runners → Create new runner): '
-  read -r token || true
+  read -rs token || true
+  printf '\n'
   [[ -n "${token:-}" ]] || die "a registration token is required"
 
   info "registering '$RUNNER_NAME' (labels: $RUNNER_LABELS) against $url"

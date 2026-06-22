@@ -11,7 +11,6 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$HERE/lib.sh"
 
 failures=0
-check() { if "$@"; then return 0; else failures=$((failures + 1)); return 1; fi; }
 
 printf 'Forgejo runner health check\n\n'
 
