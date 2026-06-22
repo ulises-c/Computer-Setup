@@ -127,6 +127,83 @@
         server: my-docker
         container: ntfy
 
+- Storage:
+    - forgejo:
+        icon: si-forgejo
+        href: https://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}/
+        description: Self-hosted git
+        server: my-docker
+        container: forgejo
+        widget:
+          type: gitea
+          url: https://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}
+          key: "{{HOMEPAGE_VAR_FORGEJO_TOKEN}}"
+    - forgejo-runner:
+        icon: mdi-robot
+        description: Mac mini CI runner
+        server: my-docker
+        container: forgejo-runner-status
+        widget:
+          type: customapi
+          # runner-status.sh writes this JSON; the loopback nginx in
+          # linux-server/forgejo serves it. homepage is host-networked.
+          url: http://localhost:8098/runner-status.json
+          refreshInterval: 60000
+          mappings:
+            - field: state
+              label: Runner
+              format: text
+            - field: status
+              label: Status
+              format: text
+            - field: checked
+              label: Checked
+              format: relativeDate
+    - syncthing:
+        icon: si-syncthing
+        href: https://{{HOMEPAGE_VAR_SYNCTHING_DOMAIN}}/
+        description: File sync
+        server: my-docker
+        container: syncthing
+        widget:
+          type: customapi
+          url: https://{{HOMEPAGE_VAR_SYNCTHING_DOMAIN}}/rest/system/status
+          headers:
+            X-API-Key: "{{HOMEPAGE_VAR_SYNCTHING_KEY}}"
+          mappings:
+            - field: uptime
+              label: Uptime
+              format: duration
+            - field: cpuPercent
+              label: CPU
+              format: percent
+            - field: alloc
+              label: Memory
+              format: bytes
+    - filebrowser:
+        icon: mdi-folder-network
+        href: https://{{HOMEPAGE_VAR_FILEBROWSER_DOMAIN}}/
+        description: Web file manager
+        server: my-docker
+        container: filebrowser
+    - atvloadly:
+        icon: mdi-television-play
+        href: https://{{HOMEPAGE_VAR_ATVLOADLY_DOMAIN}}/
+        description: Apple TV IPA sideloader
+        server: my-docker
+        container: atvloadly
+    - qbittorrent:
+        icon: si-qbittorrent
+        href: https://{{HOMEPAGE_VAR_QBITTORRENT_DOMAIN}}/
+        description: BitTorrent client
+        server: my-docker
+        container: qbittorrent
+        widget:
+          type: qbittorrent
+          url: https://{{HOMEPAGE_VAR_QBITTORRENT_DOMAIN}}
+          username: "{{HOMEPAGE_VAR_QBITTORRENT_USERNAME}}"
+          password: "{{HOMEPAGE_VAR_QBITTORRENT_PASSWORD}}"
+
 - NAS:
     - wd 14tb r/w:
         icon: mdi-harddisk
@@ -195,59 +272,3 @@
           url: http://localhost:61208
           version: 4
           metric: fs:/mnt/wd1tb
-
-- Storage:
-    - forgejo:
-        icon: si-forgejo
-        href: https://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}/
-        description: Self-hosted git
-        server: my-docker
-        container: forgejo
-        widget:
-          type: gitea
-          url: https://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}
-          key: "{{HOMEPAGE_VAR_FORGEJO_TOKEN}}"
-    - syncthing:
-        icon: si-syncthing
-        href: https://{{HOMEPAGE_VAR_SYNCTHING_DOMAIN}}/
-        description: File sync
-        server: my-docker
-        container: syncthing
-        widget:
-          type: customapi
-          url: https://{{HOMEPAGE_VAR_SYNCTHING_DOMAIN}}/rest/system/status
-          headers:
-            X-API-Key: "{{HOMEPAGE_VAR_SYNCTHING_KEY}}"
-          mappings:
-            - field: uptime
-              label: Uptime
-              format: duration
-            - field: cpuPercent
-              label: CPU
-              format: percent
-            - field: alloc
-              label: Memory
-              format: bytes
-    - filebrowser:
-        icon: mdi-folder-network
-        href: https://{{HOMEPAGE_VAR_FILEBROWSER_DOMAIN}}/
-        description: Web file manager
-        server: my-docker
-        container: filebrowser
-    - atvloadly:
-        icon: mdi-television-play
-        href: https://{{HOMEPAGE_VAR_ATVLOADLY_DOMAIN}}/
-        description: Apple TV IPA sideloader
-        server: my-docker
-        container: atvloadly
-    - qbittorrent:
-        icon: si-qbittorrent
-        href: https://{{HOMEPAGE_VAR_QBITTORRENT_DOMAIN}}/
-        description: BitTorrent client
-        server: my-docker
-        container: qbittorrent
-        widget:
-          type: qbittorrent
-          url: https://{{HOMEPAGE_VAR_QBITTORRENT_DOMAIN}}
-          username: "{{HOMEPAGE_VAR_QBITTORRENT_USERNAME}}"
-          password: "{{HOMEPAGE_VAR_QBITTORRENT_PASSWORD}}"

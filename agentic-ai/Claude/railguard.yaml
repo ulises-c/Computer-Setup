@@ -26,6 +26,10 @@ allowlist: []
 
 fence:
   enabled: true
+  # Opt in to project-local `.railguard.local.yaml` files, which may only ADD
+  # to allowed_paths (never remove denies; denied_paths always win). Grants
+  # nothing by itself — each project must ship its own .railguard.local.yaml.
+  allow_local_overrides: true
   allowed_paths:
     - "~/.claude"
     - "/tmp"

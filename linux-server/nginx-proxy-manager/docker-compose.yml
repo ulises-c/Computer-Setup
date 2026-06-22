@@ -31,7 +31,7 @@ services:
     container_name: nginx-proxy-manager
     restart: unless-stopped
     ports:
-      - "80:80"      # HTTP proxy (redirects ollie-server.local → HTTPS)
+      - "80:80"      # HTTP proxy (redirects <hostname>.local → HTTPS)
       - "443:443"     # HTTPS proxy
       - "81:81"       # admin UI
     volumes:

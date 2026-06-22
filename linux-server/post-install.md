@@ -46,7 +46,7 @@ cd linux-server/homepage && docker compose restart
 
 | Variable | How to get the value |
 |---|---|
-| `HOMEPAGE_VAR_SERVER_IP` | Your server hostname (e.g. `ollie-server.local`) |
+| `HOMEPAGE_VAR_SERVER_IP` | Your server hostname (e.g. `<hostname>.local`) |
 | `HOMEPAGE_VAR_TAILSCALE_IP` | `tailscale ip -4` |
 | `HOMEPAGE_VAR_ADGUARD_USER` / `_PASS` | Set after AdGuard wizard (step 5 below) |
 | `HOMEPAGE_VAR_SYNCTHING_KEY` | Set after Syncthing is running (step 5 below) |
@@ -84,7 +84,7 @@ The Homepage Tailscale widget uses a local OAuth proxy to avoid 90-day key rotat
 - [ ] Get a TLS cert:
   ```sh
   tailscale cert <your-tailscale-hostname>
-  # e.g. tailscale cert ollie-server.<tailnet>.ts.net
+  # e.g. tailscale cert <hostname>.<tailnet>.ts.net
   ```
 - [ ] In NPM admin (`http://<server-ip>:81`):
   - **SSL Certificates → Add Custom Certificate** — paste `.crt` and `.key` file contents; save as e.g. "tailscale cert"
@@ -127,22 +127,27 @@ The Homepage Tailscale widget uses a local OAuth proxy to avoid 90-day key rotat
   - Create admin credentials — then add them to `homepage/.env`
 - [ ] Point your router's DNS to `<server-ip>` for network-wide filtering
 
-### Forgejo — http://\<server-ip\>:3300
+### Forgejo — https://\<tailscale-hostname\>/
+
+Forgejo runs behind a Tailscale sidecar (HTTPS via `tailscale serve`), so it is
+reachable only on the tailnet at `https://forgejo.<tailnet>.ts.net/` — there is
+no `<server-ip>` host port.
 
 - [ ] Copy and edit the env file:
   ```sh
   cd linux-server/forgejo && cp .env.example .env
-  # Set FORGEJO_DOMAIN to your Tailscale hostname
+  # Set FORGEJO_DOMAIN to forgejo.<tailnet>.ts.net
+  # Set TS_AUTHKEY (tailscale.com/admin/settings/keys) so the sidecar can join
   # Optionally set FORGEJO_DATA_PATH to an external drive path
   ```
 - [ ] Start Forgejo:
   ```sh
   docker compose up -d
   ```
-- [ ] Open `http://<server-ip>:3300` and complete the setup wizard:
+- [ ] Open `https://forgejo.<tailnet>.ts.net/` and complete the setup wizard:
   - Database: SQLite (pre-set)
   - SSH server domain and port: pre-filled from `.env` — verify they look correct
-  - Application URL: should match `http://<tailscale-hostname>:3300`
+  - Application URL: should match `https://forgejo.<tailnet>.ts.net/`
   - Create the admin account at the bottom of the wizard page
 - [ ] Generate a personal access token for the Homepage widget:
   - Top-right avatar → **Settings → Applications → Generate Token** — scope: all (or read-only is enough for the widget)
@@ -166,14 +171,44 @@ Everything Forgejo needs to restore from scratch lives in `FORGEJO_DATA_PATH` (d
 
 > Hot backups of the SQLite database are safe with Forgejo — it uses WAL mode. A simple `cp` or `rsync` of the data directory while Forgejo is running is sufficient.
 
+#### Runner status monitor
+
+A host timer (`runner-status.sh`) asks Forgejo whether the Mac mini Actions
+runner (see [`../../macOS/forgejo-runner/`](../../macOS/forgejo-runner/)) is
+connected, and surfaces it three ways: the homepage **forgejo-runner** card,
+an Uptime Kuma push monitor, and an ntfy alert when it drops (and recovers).
+Optional — skip if you aren't running CI.
+
+- [ ] In `forgejo/.env`, set `FORGEJO_RUNNER_API_TOKEN` (a Forgejo token that can
+      read runners; the default API URL is instance/admin scope) and
+      `RUNNER_NAME` (the name shown under **Settings → Actions → Runners**,
+      default `m4-mini`). Optionally set `KUMA_PUSH_URL` (create a Push monitor
+      in Uptime Kuma and paste its URL) and the `NTFY_*` vars.
+- [ ] Start the loopback status server (shipped in `forgejo/docker-compose.yml`):
+  ```sh
+  cd linux-server/forgejo && docker compose up -d forgejo-runner-status
+  ```
+- [ ] Install the timer (polls every 2 minutes):
+  ```sh
+  sudo cp forgejo-runner-status.service forgejo-runner-status.timer /etc/systemd/system/
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now forgejo-runner-status.timer
+  ```
+- [ ] Verify:
+  ```sh
+  sudo systemctl start forgejo-runner-status.service
+  cat runner-status/runner-status.json   # "state": "up" when connected
+  ```
+  The homepage card reads the same JSON; Uptime Kuma shows up/down history.
+
 #### Cloning / remotes from Mac
 
 ```sh
 # SSH clone (use this for all git operations on Mac)
-git clone ssh://git@<tailscale-hostname>:2222/<username>/<repo>.git
+git clone ssh://git@forgejo.<tailnet>.ts.net:22/<username>/<repo>.git
 
 # Set as remote on an existing repo
-git remote set-url origin ssh://git@<tailscale-hostname>:2222/<username>/<repo>.git
+git remote set-url origin ssh://git@forgejo.<tailnet>.ts.net:22/<username>/<repo>.git
 ```
 
 #### Migrating an existing repo (e.g. Obsidian vault) from GitHub
@@ -181,7 +216,7 @@ git remote set-url origin ssh://git@<tailscale-hostname>:2222/<username>/<repo>.
 1. In Forgejo web UI: **+ → New Migration → GitHub** — imports history, branches, and tags
 2. On Mac, point the local repo at Forgejo:
    ```sh
-   git remote set-url origin ssh://git@<tailscale-hostname>:2222/<username>/<repo>.git
+   git remote set-url origin ssh://git@forgejo.<tailnet>.ts.net:22/<username>/<repo>.git
    ```
 3. Add GitHub as a push mirror for validation while you transition:
    - In Forgejo: repo **Settings → Git Hooks → Push Mirrors → Add Push Mirror**
@@ -216,4 +251,4 @@ git remote set-url origin ssh://git@<tailscale-hostname>:2222/<username>/<repo>.
 | Cockpit | https://\<server-ip\>:9090 | |
 | Tailscale Web UI | http://localhost:8088 | After `tailscale up` |
 | Tailscale proxy | http://localhost:8089 | Internal — used by Homepage widget |
-| Forgejo | http://\<server-ip\>:3300 | Git over SSH on port 2222 |
+| Forgejo | https://forgejo.\<tailnet\>.ts.net/ | Tailscale sidecar (HTTPS via serve); Git over SSH on port 22 |

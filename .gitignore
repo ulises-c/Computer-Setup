@@ -4,6 +4,9 @@ Thumbs.db
 
 # Railguard per-session traces and snapshots
 .railguard/
+# Stray `railguard init` starter in the repo root — the real policy lives in
+# agentic-ai/Claude/railguard.yaml. Anchored so only the root file is ignored.
+/railguard.yaml
 
 linux-server/adguard/work/
 linux-server/adguard/conf/
@@ -39,3 +42,6 @@ linux-server/qbittorrent/downloads/
 
 # Backup status JSON written at runtime (served to the homepage card)
 linux-server/backup/status/
+
+# Forgejo runner status JSON + last-state written at runtime (homepage card)
+linux-server/forgejo/runner-status/

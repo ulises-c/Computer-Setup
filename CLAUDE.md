@@ -55,3 +55,21 @@ phases.
   primary cross-platform test mechanism (only one platform can run live).
 - App-store packages and `priority: "none"` entries are reminders only — never
   auto-installed.
+
+## Privacy & Security
+
+This repo is **public**. Never commit identifying or secret information.
+
+- Keep these out of tracked files entirely: tailnet names / MagicDNS suffixes
+  (`tailXXXXXX.ts.net`), real hostnames, server IPs, usernames, emails, tokens,
+  auth keys, and personal absolute paths.
+- Put any machine-specific or private value in a `.env` file (gitignored
+  repo-wide) and ship a committed `.env.example` with placeholders instead —
+  e.g. `linux-server/forgejo/.env.example`, `macOS/forgejo-runner/.env.example`.
+  Scripts read these via `${VAR:-<placeholder>}` and source a local `.env` when
+  present; they never hardcode the real value.
+- In docs and configs use placeholders: `<tailnet>`, `<server-ip>`,
+  `<username>`, `<hostname>`. Default to `.env` whenever a value is
+  identifying — prefer one more env var over leaking a real value.
+- When editing, scan the diff for accidentally introduced real identifiers
+  before committing.
