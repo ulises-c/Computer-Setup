@@ -118,7 +118,7 @@ The Tailscale widget uses a local OAuth proxy (`linux-server/tailscale-proxy`) t
 Get a TLS cert from Tailscale and configure NPM to terminate HTTPS:
 
 ```sh
-tailscale cert <your-tailscale-hostname>   # e.g. ollie-server.tail01d63b.ts.net
+tailscale cert <your-tailscale-hostname>   # e.g. <hostname>.<tailnet>.ts.net
 ```
 
 In NPM admin (`http://<server-ip>:81`):

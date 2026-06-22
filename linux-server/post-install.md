@@ -46,7 +46,7 @@ cd linux-server/homepage && docker compose restart
 
 | Variable | How to get the value |
 |---|---|
-| `HOMEPAGE_VAR_SERVER_IP` | Your server hostname (e.g. `ollie-server.local`) |
+| `HOMEPAGE_VAR_SERVER_IP` | Your server hostname (e.g. `<hostname>.local`) |
 | `HOMEPAGE_VAR_TAILSCALE_IP` | `tailscale ip -4` |
 | `HOMEPAGE_VAR_ADGUARD_USER` / `_PASS` | Set after AdGuard wizard (step 5 below) |
 | `HOMEPAGE_VAR_SYNCTHING_KEY` | Set after Syncthing is running (step 5 below) |
@@ -84,7 +84,7 @@ The Homepage Tailscale widget uses a local OAuth proxy to avoid 90-day key rotat
 - [ ] Get a TLS cert:
   ```sh
   tailscale cert <your-tailscale-hostname>
-  # e.g. tailscale cert ollie-server.tail01d63b.ts.net
+  # e.g. tailscale cert <hostname>.<tailnet>.ts.net
   ```
 - [ ] In NPM admin (`http://<server-ip>:81`):
   - **SSL Certificates → Add Custom Certificate** — paste `.crt` and `.key` file contents; save as e.g. "tailscale cert"
