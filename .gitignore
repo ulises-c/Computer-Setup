@@ -39,3 +39,6 @@ linux-server/qbittorrent/downloads/
 
 # Backup status JSON written at runtime (served to the homepage card)
 linux-server/backup/status/
+
+# Forgejo runner status JSON + last-state written at runtime (homepage card)
+linux-server/forgejo/runner-status/

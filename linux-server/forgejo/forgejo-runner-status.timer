@@ -1,0 +1,10 @@
+[Unit]
+Description=Poll the Forgejo runner status every 2 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+Unit=forgejo-runner-status.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,8 @@
+[Unit]
+Description=Forgejo Actions runner status check (Mac mini)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/ollie/github/Computer-Setup/linux-server/forgejo/runner-status.sh

@@ -207,6 +207,27 @@
           type: gitea
           url: https://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}
           key: "{{HOMEPAGE_VAR_FORGEJO_TOKEN}}"
+    - forgejo-runner:
+        icon: mdi-robot
+        description: Mac mini CI runner
+        server: my-docker
+        container: forgejo-runner-status
+        widget:
+          type: customapi
+          # runner-status.sh writes this JSON; the loopback nginx in
+          # linux-server/forgejo serves it. homepage is host-networked.
+          url: http://localhost:8098/runner-status.json
+          refreshInterval: 60000
+          mappings:
+            - field: state
+              label: Runner
+              format: text
+            - field: status
+              label: Status
+              format: text
+            - field: checked
+              label: Checked
+              format: relativeDate
     - syncthing:
         icon: si-syncthing
         href: https://{{HOMEPAGE_VAR_SYNCTHING_DOMAIN}}/

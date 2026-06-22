@@ -171,6 +171,36 @@ Everything Forgejo needs to restore from scratch lives in `FORGEJO_DATA_PATH` (d
 
 > Hot backups of the SQLite database are safe with Forgejo — it uses WAL mode. A simple `cp` or `rsync` of the data directory while Forgejo is running is sufficient.
 
+#### Runner status monitor
+
+A host timer (`runner-status.sh`) asks Forgejo whether the Mac mini Actions
+runner (see [`../../macOS/forgejo-runner/`](../../macOS/forgejo-runner/)) is
+connected, and surfaces it three ways: the homepage **forgejo-runner** card,
+an Uptime Kuma push monitor, and an ntfy alert when it drops (and recovers).
+Optional — skip if you aren't running CI.
+
+- [ ] In `forgejo/.env`, set `FORGEJO_RUNNER_API_TOKEN` (a Forgejo token that can
+      read runners; the default API URL is instance/admin scope) and
+      `RUNNER_NAME` (the name shown under **Settings → Actions → Runners**,
+      default `m4-mini`). Optionally set `KUMA_PUSH_URL` (create a Push monitor
+      in Uptime Kuma and paste its URL) and the `NTFY_*` vars.
+- [ ] Start the loopback status server (shipped in `forgejo/docker-compose.yml`):
+  ```sh
+  cd linux-server/forgejo && docker compose up -d forgejo-runner-status
+  ```
+- [ ] Install the timer (polls every 2 minutes):
+  ```sh
+  sudo cp forgejo-runner-status.service forgejo-runner-status.timer /etc/systemd/system/
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now forgejo-runner-status.timer
+  ```
+- [ ] Verify:
+  ```sh
+  sudo systemctl start forgejo-runner-status.service
+  cat runner-status/runner-status.json   # "state": "up" when connected
+  ```
+  The homepage card reads the same JSON; Uptime Kuma shows up/down history.
+
 #### Cloning / remotes from Mac
 
 ```sh

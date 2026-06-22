@@ -47,3 +47,16 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+
+  # Loopback static server for the homepage "forgejo-runner" card. The host
+  # systemd timer (forgejo-runner-status.timer → runner-status.sh) writes
+  # runner-status.json here; homepage is host-networked, so localhost reaches it.
+  # Not user-facing — bound to loopback, no Tailscale sidecar.
+  forgejo-runner-status:
+    image: nginx:alpine
+    container_name: forgejo-runner-status
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8098:80"
+    volumes:
+      - ./runner-status:/usr/share/nginx/html:ro
