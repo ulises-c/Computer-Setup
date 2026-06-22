@@ -11,7 +11,7 @@
 #   bash install.sh --skip-build    # reuse an existing binary
 #   bash install.sh --skip-register # don't touch server.connections
 #   RUNNER_VERSION=v12.12.0 bash install.sh
-#   FORGEJO_INSTANCE_URL=http://forgejo.<tailnet>.ts.net:3000 bash install.sh
+#   FORGEJO_INSTANCE_URL=https://forgejo.<tailnet>.ts.net bash install.sh
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"

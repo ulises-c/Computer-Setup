@@ -127,10 +127,11 @@ The Homepage Tailscale widget uses a local OAuth proxy to avoid 90-day key rotat
   - Create admin credentials — then add them to `homepage/.env`
 - [ ] Point your router's DNS to `<server-ip>` for network-wide filtering
 
-### Forgejo — http://\<tailscale-hostname\>:3000
+### Forgejo — https://\<tailscale-hostname\>/
 
-Forgejo runs behind a Tailscale sidecar, so it is reachable only on the tailnet
-at `http://forgejo.<tailnet>.ts.net:3000` — there is no `<server-ip>` host port.
+Forgejo runs behind a Tailscale sidecar (HTTPS via `tailscale serve`), so it is
+reachable only on the tailnet at `https://forgejo.<tailnet>.ts.net/` — there is
+no `<server-ip>` host port.
 
 - [ ] Copy and edit the env file:
   ```sh
@@ -143,10 +144,10 @@ at `http://forgejo.<tailnet>.ts.net:3000` — there is no `<server-ip>` host por
   ```sh
   docker compose up -d
   ```
-- [ ] Open `http://forgejo.<tailnet>.ts.net:3000` and complete the setup wizard:
+- [ ] Open `https://forgejo.<tailnet>.ts.net/` and complete the setup wizard:
   - Database: SQLite (pre-set)
   - SSH server domain and port: pre-filled from `.env` — verify they look correct
-  - Application URL: should match `http://forgejo.<tailnet>.ts.net:3000`
+  - Application URL: should match `https://forgejo.<tailnet>.ts.net/`
   - Create the admin account at the bottom of the wizard page
 - [ ] Generate a personal access token for the Homepage widget:
   - Top-right avatar → **Settings → Applications → Generate Token** — scope: all (or read-only is enough for the widget)
@@ -220,4 +221,4 @@ git remote set-url origin ssh://git@forgejo.<tailnet>.ts.net:22/<username>/<repo
 | Cockpit | https://\<server-ip\>:9090 | |
 | Tailscale Web UI | http://localhost:8088 | After `tailscale up` |
 | Tailscale proxy | http://localhost:8089 | Internal — used by Homepage widget |
-| Forgejo | http://forgejo.\<tailnet\>.ts.net:3000 | Tailscale sidecar; Git over SSH on port 22 |
+| Forgejo | https://forgejo.\<tailnet\>.ts.net/ | Tailscale sidecar (HTTPS via serve); Git over SSH on port 22 |

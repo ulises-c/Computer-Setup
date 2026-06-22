@@ -20,13 +20,14 @@ cache:
   port: 0              # random free port for the internal cache server
 
 # Each connection points the runner at one Forgejo instance. The url MUST
-# match where the server actually listens (its ROOT_URL host + port).
+# match the host in the server's ROOT_URL.
 # This is the field that broke after the server moved from
-# <hostname>:3300 to its own Tailscale node forgejo.<tailnet>.ts.net:3000.
+# <hostname>:3300 to its own Tailscale node https://forgejo.<tailnet>.ts.net
+# (HTTPS via tailscale serve).
 server:
   connections:
     home:
-      url: http://forgejo.<tailnet>.ts.net:3000
+      url: https://forgejo.<tailnet>.ts.net
       uuid: 00000000-0000-0000-0000-000000000000   # filled in by register
       token: <written-by-forgejo-runner-register>
       labels:

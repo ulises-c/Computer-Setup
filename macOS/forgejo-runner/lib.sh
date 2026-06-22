@@ -16,11 +16,12 @@ PLIST="$HOME/Library/LaunchAgents/net.forgejo.runner.plist"
 LOG="$HOME/Library/Logs/forgejo-runner.log"
 LABEL="net.forgejo.runner"
 
-# Default Forgejo instance the runner talks to (Tailscale MagicDNS, port 3000).
+# Default Forgejo instance the runner talks to (Tailscale MagicDNS over HTTPS,
+# terminated by the server's `tailscale serve` sidecar — no port).
 # Set FORGEJO_INSTANCE_URL in .env (or the environment); the placeholder below
 # is only a prompt hint. Discover your tailnet with:
 #   tailscale status --json | jq -r '.MagicDNSSuffix'
-DEFAULT_INSTANCE_URL="${FORGEJO_INSTANCE_URL:-http://forgejo.<tailnet>.ts.net:3000}"
+DEFAULT_INSTANCE_URL="${FORGEJO_INSTANCE_URL:-https://forgejo.<tailnet>.ts.net}"
 
 info()  { printf '  %s\n' "$*"; }
 ok()    { printf '\033[32m✓\033[0m %s\n' "$*"; }
