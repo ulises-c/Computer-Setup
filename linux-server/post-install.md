@@ -182,8 +182,8 @@ Optional — skip if you aren't running CI.
 - [ ] In `forgejo/.env`, set `FORGEJO_RUNNER_API_TOKEN` (a Forgejo token that can
       read runners; the default API URL is instance/admin scope) and
       `RUNNER_NAME` (the name shown under **Settings → Actions → Runners**,
-      default `m4-mini`). Optionally set `KUMA_PUSH_URL` (create a Push monitor
-      in Uptime Kuma and paste its URL) and the `NTFY_*` vars.
+      default `m4-mini`). Optionally set `KUMA_PUSH_URL` (see *Uptime Kuma push
+      monitor* below) and the `NTFY_*` vars.
 - [ ] Start the loopback status server (shipped in `forgejo/docker-compose.yml`):
   ```sh
   cd linux-server/forgejo && docker compose up -d forgejo-runner-status
@@ -200,6 +200,27 @@ Optional — skip if you aren't running CI.
   cat runner-status/runner-status.json   # "state": "up" when connected
   ```
   The homepage card reads the same JSON; Uptime Kuma shows up/down history.
+
+##### Uptime Kuma push monitor
+
+The script's `kuma_push` fires on every run — wiring it up is config only, no
+code changes.
+
+- [ ] In Uptime Kuma (`https://uptime-kuma.<tailnet>.ts.net`): **Add New
+      Monitor → Monitor Type: `Push`**. Name it e.g. `Forgejo runner (m4-mini)`.
+- [ ] Match the timer: **Heartbeat Interval 120s**, **Retries 2**, **Retry
+      Interval 20s**. The retries give ~160s of slack before a down, so normal
+      jitter on the 2-minute push doesn't trip a false alarm.
+- [ ] Save, then copy the generated push URL (through `/api/push/<token>` — the
+      script appends its own `status`/`msg` params) into `KUMA_PUSH_URL` in
+      `forgejo/.env`.
+- [ ] Fire one push: `sudo systemctl start forgejo-runner-status.service`. The
+      monitor goes green within a cycle.
+
+Coverage is dual on purpose: the script pushes an explicit `status=down` when
+Forgejo can't see the runner, while a missed heartbeat catches the script/timer
+/server itself dying — so Kuma distinguishes "runner is down" from "monitoring
+path is down."
 
 #### Cloning / remotes from Mac
 
