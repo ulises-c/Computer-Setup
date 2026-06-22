@@ -127,75 +127,6 @@
         server: my-docker
         container: ntfy
 
-- NAS:
-    - wd 14tb r/w:
-        icon: mdi-harddisk
-        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
-        description: I/O — /mnt/wd14tb
-        server: my-docker
-        container: glances
-        widget:
-          type: glances
-          url: http://localhost:61208
-          version: 4
-          # USB enclosure: kernel names (sda/sdb/sdc) can reorder across reboots.
-          metric: disk:sdb
-    - wd 14tb usage:
-        icon: mdi-harddisk
-        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
-        description: Capacity — /mnt/wd14tb
-        server: my-docker
-        container: glances
-        widget:
-          type: glances
-          url: http://localhost:61208
-          version: 4
-          metric: fs:/mnt/wd14tb
-    - seagate 4tb r/w:
-        icon: mdi-harddisk
-        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
-        description: I/O — /mnt/seagate4tb
-        server: my-docker
-        container: glances
-        widget:
-          type: glances
-          url: http://localhost:61208
-          version: 4
-          metric: disk:sdc
-    - seagate 4tb usage:
-        icon: mdi-harddisk
-        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
-        description: Capacity — /mnt/seagate4tb
-        server: my-docker
-        container: glances
-        widget:
-          type: glances
-          url: http://localhost:61208
-          version: 4
-          metric: fs:/mnt/seagate4tb
-    - wd 1tb r/w:
-        icon: mdi-harddisk
-        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
-        description: I/O — /mnt/wd1tb
-        server: my-docker
-        container: glances
-        widget:
-          type: glances
-          url: http://localhost:61208
-          version: 4
-          metric: disk:sda
-    - wd 1tb usage:
-        icon: mdi-harddisk
-        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
-        description: Capacity — /mnt/wd1tb
-        server: my-docker
-        container: glances
-        widget:
-          type: glances
-          url: http://localhost:61208
-          version: 4
-          metric: fs:/mnt/wd1tb
-
 - Storage:
     - forgejo:
         icon: si-forgejo
@@ -272,3 +203,72 @@
           url: https://{{HOMEPAGE_VAR_QBITTORRENT_DOMAIN}}
           username: "{{HOMEPAGE_VAR_QBITTORRENT_USERNAME}}"
           password: "{{HOMEPAGE_VAR_QBITTORRENT_PASSWORD}}"
+
+- NAS:
+    - wd 14tb r/w:
+        icon: mdi-harddisk
+        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+        description: I/O — /mnt/wd14tb
+        server: my-docker
+        container: glances
+        widget:
+          type: glances
+          url: http://localhost:61208
+          version: 4
+          # USB enclosure: kernel names (sda/sdb/sdc) can reorder across reboots.
+          metric: disk:sdb
+    - wd 14tb usage:
+        icon: mdi-harddisk
+        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+        description: Capacity — /mnt/wd14tb
+        server: my-docker
+        container: glances
+        widget:
+          type: glances
+          url: http://localhost:61208
+          version: 4
+          metric: fs:/mnt/wd14tb
+    - seagate 4tb r/w:
+        icon: mdi-harddisk
+        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+        description: I/O — /mnt/seagate4tb
+        server: my-docker
+        container: glances
+        widget:
+          type: glances
+          url: http://localhost:61208
+          version: 4
+          metric: disk:sdc
+    - seagate 4tb usage:
+        icon: mdi-harddisk
+        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+        description: Capacity — /mnt/seagate4tb
+        server: my-docker
+        container: glances
+        widget:
+          type: glances
+          url: http://localhost:61208
+          version: 4
+          metric: fs:/mnt/seagate4tb
+    - wd 1tb r/w:
+        icon: mdi-harddisk
+        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+        description: I/O — /mnt/wd1tb
+        server: my-docker
+        container: glances
+        widget:
+          type: glances
+          url: http://localhost:61208
+          version: 4
+          metric: disk:sda
+    - wd 1tb usage:
+        icon: mdi-harddisk
+        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+        description: Capacity — /mnt/wd1tb
+        server: my-docker
+        container: glances
+        widget:
+          type: glances
+          url: http://localhost:61208
+          version: 4
+          metric: fs:/mnt/wd1tb
