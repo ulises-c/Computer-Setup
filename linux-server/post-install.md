@@ -127,22 +127,26 @@ The Homepage Tailscale widget uses a local OAuth proxy to avoid 90-day key rotat
   - Create admin credentials — then add them to `homepage/.env`
 - [ ] Point your router's DNS to `<server-ip>` for network-wide filtering
 
-### Forgejo — http://\<server-ip\>:3300
+### Forgejo — http://\<tailscale-hostname\>:3000
+
+Forgejo runs behind a Tailscale sidecar, so it is reachable only on the tailnet
+at `http://forgejo.<tailnet>.ts.net:3000` — there is no `<server-ip>` host port.
 
 - [ ] Copy and edit the env file:
   ```sh
   cd linux-server/forgejo && cp .env.example .env
-  # Set FORGEJO_DOMAIN to your Tailscale hostname
+  # Set FORGEJO_DOMAIN to forgejo.<tailnet>.ts.net
+  # Set TS_AUTHKEY (tailscale.com/admin/settings/keys) so the sidecar can join
   # Optionally set FORGEJO_DATA_PATH to an external drive path
   ```
 - [ ] Start Forgejo:
   ```sh
   docker compose up -d
   ```
-- [ ] Open `http://<server-ip>:3300` and complete the setup wizard:
+- [ ] Open `http://forgejo.<tailnet>.ts.net:3000` and complete the setup wizard:
   - Database: SQLite (pre-set)
   - SSH server domain and port: pre-filled from `.env` — verify they look correct
-  - Application URL: should match `http://<tailscale-hostname>:3300`
+  - Application URL: should match `http://forgejo.<tailnet>.ts.net:3000`
   - Create the admin account at the bottom of the wizard page
 - [ ] Generate a personal access token for the Homepage widget:
   - Top-right avatar → **Settings → Applications → Generate Token** — scope: all (or read-only is enough for the widget)
@@ -170,10 +174,10 @@ Everything Forgejo needs to restore from scratch lives in `FORGEJO_DATA_PATH` (d
 
 ```sh
 # SSH clone (use this for all git operations on Mac)
-git clone ssh://git@<tailscale-hostname>:2222/<username>/<repo>.git
+git clone ssh://git@forgejo.<tailnet>.ts.net:22/<username>/<repo>.git
 
 # Set as remote on an existing repo
-git remote set-url origin ssh://git@<tailscale-hostname>:2222/<username>/<repo>.git
+git remote set-url origin ssh://git@forgejo.<tailnet>.ts.net:22/<username>/<repo>.git
 ```
 
 #### Migrating an existing repo (e.g. Obsidian vault) from GitHub
@@ -181,7 +185,7 @@ git remote set-url origin ssh://git@<tailscale-hostname>:2222/<username>/<repo>.
 1. In Forgejo web UI: **+ → New Migration → GitHub** — imports history, branches, and tags
 2. On Mac, point the local repo at Forgejo:
    ```sh
-   git remote set-url origin ssh://git@<tailscale-hostname>:2222/<username>/<repo>.git
+   git remote set-url origin ssh://git@forgejo.<tailnet>.ts.net:22/<username>/<repo>.git
    ```
 3. Add GitHub as a push mirror for validation while you transition:
    - In Forgejo: repo **Settings → Git Hooks → Push Mirrors → Add Push Mirror**
@@ -216,4 +220,4 @@ git remote set-url origin ssh://git@<tailscale-hostname>:2222/<username>/<repo>.
 | Cockpit | https://\<server-ip\>:9090 | |
 | Tailscale Web UI | http://localhost:8088 | After `tailscale up` |
 | Tailscale proxy | http://localhost:8089 | Internal — used by Homepage widget |
-| Forgejo | http://\<server-ip\>:3300 | Git over SSH on port 2222 |
+| Forgejo | http://forgejo.\<tailnet\>.ts.net:3000 | Tailscale sidecar; Git over SSH on port 22 |

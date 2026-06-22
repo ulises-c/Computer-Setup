@@ -1,0 +1,33 @@
+# Forgejo runner config — example.
+#
+# The live config (~/forgejo-runner-config.yml) is the stock output of
+# `forgejo-runner generate-config` PLUS the `server:` block below. install.sh
+# regenerates the stock body and `register` appends the connection, so you
+# normally never hand-edit this. The fields that actually matter are here.
+#
+# DO NOT commit a real token. The values below are placeholders.
+
+runner:
+  file: .runner
+  capacity: 1          # one job at a time on the Mac mini
+  timeout: 3h
+  shutdown_timeout: 3h
+  fetch_interval: 2s
+  labels: []           # labels live per-connection (below), not here
+
+cache:
+  enabled: true
+  port: 0              # random free port for the internal cache server
+
+# Each connection points the runner at one Forgejo instance. The url MUST
+# match where the server actually listens (its ROOT_URL host + port).
+# This is the field that broke after the server moved from
+# ollie-server:3300 to its own Tailscale node forgejo.<tailnet>.ts.net:3000.
+server:
+  connections:
+    ollie:
+      url: http://forgejo.<tailnet>.ts.net:3000
+      uuid: 00000000-0000-0000-0000-000000000000   # filled in by register
+      token: <written-by-forgejo-runner-register>
+      labels:
+        - macos-latest:host   # `:host` = run jobs directly on macOS, no Docker

@@ -1,21 +1,43 @@
 services:
+  # Tailscale sidecar: gives Forgejo its own tailnet device (forgejo.<tailnet>.ts.net)
+  # instead of sharing the host's identity. Forgejo joins this container's network
+  # namespace below, so it's reachable on the tailnet at this hostname.
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: forgejo-tailscale
+    hostname: forgejo                       # -> forgejo.<tailnet>.ts.net
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}            # tailscale.com/admin/settings/keys
+      - TS_STATE_DIR=/var/lib/tailscale     # persist node identity across restarts
+      - TS_EXTRA_ARGS=--advertise-tags=tag:server
+    volumes:
+      - ${TS_STATE_PATH:-./ts-state}:/var/lib/tailscale
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - net_admin
+    restart: unless-stopped
+
   forgejo:
     # Pin to a major version tag to avoid surprise upgrades — check latest at:
     # https://codeberg.org/forgejo/forgejo/releases
     image: codeberg.org/forgejo/forgejo:15
     container_name: forgejo
-    restart: unless-stopped
+    # Share the sidecar's netns: no host port mappings, reached only over Tailscale.
+    network_mode: service:tailscale
+    depends_on:
+      - tailscale
     environment:
       - USER_UID=1000
       - USER_GID=1000
       - TZ=${TZ:-America/Los_Angeles}
       - FORGEJO__database__DB_TYPE=sqlite3
-      - FORGEJO__server__ROOT_URL=http://${FORGEJO_DOMAIN}:3300
+      # ROOT_URL host:port MUST match where clients reach Forgejo. The Mac mini
+      # Actions runner connects here (see macOS/forgejo-runner/). Forgejo serves
+      # on 3000 inside the netns; that's the tailnet port too (no remap).
+      - FORGEJO__server__ROOT_URL=http://${FORGEJO_DOMAIN}:3000
       - FORGEJO__server__SSH_DOMAIN=${FORGEJO_DOMAIN}
-      - FORGEJO__server__SSH_PORT=2222
-    ports:
-      - "3300:3000"   # web UI
-      - "2222:22"     # git over SSH
+      - FORGEJO__server__SSH_PORT=22
     volumes:
       - ${FORGEJO_DATA_PATH:-./data}:/data
     healthcheck:
@@ -23,3 +45,4 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+    restart: unless-stopped

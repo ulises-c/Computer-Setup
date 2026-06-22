@@ -97,13 +97,13 @@
 - Storage:
     - forgejo:
         icon: si-forgejo
-        href: http://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}:3300
+        href: http://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}:3000
         description: Self-hosted git
         server: my-docker
         container: forgejo
         widget:
           type: gitea
-          url: http://localhost:3300
+          url: http://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}:3000
           key: "{{HOMEPAGE_VAR_FORGEJO_TOKEN}}"
     - syncthing:
         icon: si-syncthing

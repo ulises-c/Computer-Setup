@@ -110,3 +110,10 @@ Install with `bash setup.sh --work` from the repo root (`macOS/setup.sh` is a th
 2. Amazon Photos | [Download](https://www.amazon.com/Amazon-Photos/b?node=13234696011) | [brew](https://formulae.brew.sh/cask/amazon-photos)
    1. Unlimited full-resolution photo backup for Amazon Prime members
    2. Install: `brew install --cask amazon-photos`
+
+## Services
+
+- **[Forgejo Actions runner](forgejo-runner/)** — this Mac mini runs CI jobs for
+  the home Forgejo server over Tailscale. See
+  [`forgejo-runner/README.md`](forgejo-runner/README.md) for setup, the
+  `install`/`verify`/`run` scripts, and troubleshooting.

@@ -270,13 +270,13 @@ In NPM admin (`http://<server-ip>:81`):
     2. Deploy:
        ```sh
        cd linux-server/forgejo
-       cp .env.example .env   # set FORGEJO_DOMAIN to your Tailscale hostname; optionally set FORGEJO_DATA_PATH for external drive
+       cp .env.example .env   # set FORGEJO_DOMAIN (forgejo.<tailnet>.ts.net) and TS_AUTHKEY; optionally FORGEJO_DATA_PATH for external drive
        docker compose up -d
        ```
-    3. Web UI at `http://<server-ip>:3300` — complete the setup wizard on first visit, create admin account
-    4. Git over SSH on port `2222`:
+    3. Runs behind a Tailscale sidecar (its own tailnet device), so it's reachable only on the tailnet — no host port. Web UI at `http://forgejo.<tailnet>.ts.net:3000` — complete the setup wizard on first visit, create admin account
+    4. Git over SSH on port `22` (the sidecar's own tailnet device, no conflict with the host's sshd):
        ```sh
-       git clone ssh://git@<tailscale-hostname>:2222/<username>/<repo>.git
+       git clone ssh://git@forgejo.<tailnet>.ts.net:22/<username>/<repo>.git
        ```
     5. Add your SSH public key in **Settings → SSH / GPG Keys** after creating your account
     6. To migrate from GitHub: use Forgejo's built-in migration (**+ → New Migration → GitHub**), then optionally configure a push mirror back to GitHub under repo **Settings → Push Mirrors** while validating the setup
