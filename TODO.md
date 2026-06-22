@@ -248,10 +248,13 @@ logs, not metrics. Build it up in layers:
       `tailscale/tailscale:latest` and watchtower auto-updates them — a bad release
       could drop every HTTPS front door at once. Pin a stable tag (bump
       deliberately) or exclude the sidecars from watchtower. Cheap, high-value.
-- [ ] **Backups.** Service data volumes (Forgejo repos, AdGuard/uptime-kuma/etc.),
-      all `.env` files, and `ts-state/` node keys live only on the server and are
-      gitignored — no backup today. Document what to back up + a restic/borg or
-      Syncthing job.
+- [x] **Backups.** Nightly restic backup of all persistent server state to the
+      dedicated 1TB drive (+ optional 14TB second copy), encrypted/deduplicated/pruned,
+      with ntfy alerts and a homepage status card — `linux-server/backup/` (6965c1b).
+      Covers Forgejo (repos+LFS+DB), all SQLite app DBs (online `.backup`, no downtime),
+      Portainer BoltDB, certs/configs, and every `.env`. `ts-state/` deliberately
+      excluded (re-auth via `TS_AUTHKEY` regenerates node keys). systemd timer (03:30,
+      Persistent) + OnFailure alert; restore runbook in `linux-server/backup/README.md`.
 - [ ] **DRY the sidecar boilerplate.** ~13 near-identical `<svc>-ts` blocks +
       `ts-serve.json` (differ only by hostname/port). Use Compose `extends` from a
       shared base so a global change (the image pin above, `TS_EXTRA_ARGS`) is one
