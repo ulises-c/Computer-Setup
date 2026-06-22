@@ -75,7 +75,7 @@ bash run.sh stop|start
 **`connection refused` / `fail to invoke Declare` in the log — the most common
 failure.** The runner host is fine; the configured instance URL no longer points
 at where Forgejo listens. This is exactly what happened when the server moved
-from `ollie-server:3300` to its own Tailscale node `forgejo.<tailnet>.ts.net:3000`
+from `<hostname>:3300` to its own Tailscale node `forgejo.<tailnet>.ts.net:3000`
 — the runner kept dialing the old `:3300` and `KeepAlive` restarted it in a loop.
 
 1. `bash verify.sh` — the instance-reachable check pinpoints it.

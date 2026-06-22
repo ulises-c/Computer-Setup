@@ -4,6 +4,12 @@
 # shellcheck disable=SC2034  # constants are consumed by the sourcing scripts
 set -euo pipefail
 
+LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+
+# Local, gitignored overrides (instance URL, etc.). Copy .env.example to .env
+# and edit — keeps tailnet-specific values out of the committed repo.
+[[ -f "$LIB_DIR/.env" ]] && source "$LIB_DIR/.env"
+
 RUNNER_BIN="${RUNNER_BIN:-$HOME/.local/bin/forgejo-runner}"
 CONFIG="${FORGEJO_RUNNER_CONFIG:-$HOME/forgejo-runner-config.yml}"
 PLIST="$HOME/Library/LaunchAgents/net.forgejo.runner.plist"
@@ -11,9 +17,10 @@ LOG="$HOME/Library/Logs/forgejo-runner.log"
 LABEL="net.forgejo.runner"
 
 # Default Forgejo instance the runner talks to (Tailscale MagicDNS, port 3000).
-# Override with FORGEJO_INSTANCE_URL. Discover the tailnet with:
+# Set FORGEJO_INSTANCE_URL in .env (or the environment); the placeholder below
+# is only a prompt hint. Discover your tailnet with:
 #   tailscale status --json | jq -r '.MagicDNSSuffix'
-DEFAULT_INSTANCE_URL="${FORGEJO_INSTANCE_URL:-http://forgejo.tail01d63b.ts.net:3000}"
+DEFAULT_INSTANCE_URL="${FORGEJO_INSTANCE_URL:-http://forgejo.<tailnet>.ts.net:3000}"
 
 info()  { printf '  %s\n' "$*"; }
 ok()    { printf '\033[32m✓\033[0m %s\n' "$*"; }
