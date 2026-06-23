@@ -14,6 +14,13 @@ repos:
         types: [file]
         files: (\.zsh$|zshrc\.example$)
 
+      - id: validate-packages
+        name: validate packages.json schema
+        language: system
+        entry: bash scripts/validate-packages.sh
+        files: ^packages\.json$
+        pass_filenames: false
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:

@@ -150,10 +150,14 @@ configure_pnpm() {
 
 # shellcheck disable=SC2016  # $vars below are jq variables, not shell expansions
 CORE_JQ_DEFS='
-def envok($w; $p):
-  (.environment == null) or
-  (($w == "true") and (.environment | index("work"))) or
-  (($p == "true") and (.environment | index("personal")));
+def prfor($plat): (.priority | if type == "object" then .[$plat] else . end);
+def optfor($plat): (.optional | if type == "object" then .[$plat] else . end);
+def envfor($plat): (.environment | if type == "object" then .[$plat] else . end);
+def envok($plat; $w; $p):
+  (envfor($plat) as $e |
+    ($e == null) or
+    (($w == "true") and ($e | index("work"))) or
+    (($p == "true") and ($e | index("personal"))));
 def icfor($plat):
   (.install_command | if type == "object" then .[$plat] else . end);
 def pname($plat): (.[$plat + "_name"] // .name);
@@ -166,7 +170,7 @@ pkg_names() {
   jq -r --arg plat "$PLATFORM" --arg m "$manager" --arg pr "$priority" \
      --arg w "$INCLUDE_WORK" --arg p "$INCLUDE_PERSONAL" \
     "$CORE_JQ_DEFS"'[.[] | select(
-        .package_manager[$plat] == $m and .priority == $pr and envok($w; $p)
+        .package_manager[$plat] == $m and prfor($plat) == $pr and envok($plat; $w; $p)
       ) | pname($plat)] | join(" ")' "$PACKAGES_JSON"
 }
 
@@ -186,8 +190,8 @@ print_custom_reminders() {
   items=$(jq -r --arg plat "$PLATFORM" --arg pr "$priority" \
      --arg w "$INCLUDE_WORK" --arg p "$INCLUDE_PERSONAL" \
     "$CORE_JQ_DEFS"'.[] | select(
-        .package_manager[$plat] == "custom" and .priority == $pr and
-        (.handled_by_setup != true) and envok($w; $p)
+        .package_manager[$plat] == "custom" and prfor($plat) == $pr and
+        (.handled_by_setup != true) and envok($plat; $w; $p)
       ) | "  - \(.name)\n    \(.description)\n    Install: \(icfor($plat))"' \
     "$PACKAGES_JSON")
   [[ -n "$items" ]] && printf '%s\n' "$items"
@@ -224,7 +228,7 @@ pipx_install_tier() {
   jq -r --arg plat "$PLATFORM" --arg pr "$priority" \
      --arg w "$INCLUDE_WORK" --arg p "$INCLUDE_PERSONAL" \
     "$CORE_JQ_DEFS"'.[] | select(
-        .package_manager[$plat] == "pipx" and .priority == $pr and envok($w; $p)
+        .package_manager[$plat] == "pipx" and prfor($plat) == $pr and envok($plat; $w; $p)
       ) | (icfor($plat) // ("pipx install " + .name))' "$PACKAGES_JSON" |
   while read -r cmd; do
     run_eval "$cmd"
@@ -237,7 +241,7 @@ pnpm_install_tier() {
   names=$(jq -r --arg plat "$PLATFORM" --arg pr "$priority" \
      --arg w "$INCLUDE_WORK" --arg p "$INCLUDE_PERSONAL" \
     "$CORE_JQ_DEFS"'[.[] | select(
-        .package_manager[$plat] == "pnpm" and .priority == $pr and envok($w; $p)
+        .package_manager[$plat] == "pnpm" and prfor($plat) == $pr and envok($plat; $w; $p)
       ) | .name] | join(" ")' "$PACKAGES_JSON")
   [[ -z "$names" ]] && return 0
   # shellcheck disable=SC2086
@@ -381,16 +385,16 @@ snap_install_tier() {
   regular_snaps=$(jq -r --arg plat "$PLATFORM" --arg pr "$priority" \
      --arg w "$INCLUDE_WORK" --arg p "$INCLUDE_PERSONAL" \
     "$CORE_JQ_DEFS"'[.[] | select(
-        .package_manager[$plat] == "snap" and .priority == $pr and
-        envok($w; $p) and (icfor($plat) == null)
+        .package_manager[$plat] == "snap" and prfor($plat) == $pr and
+        envok($plat; $w; $p) and (icfor($plat) == null)
       ) | pname($plat)] | join(" ")' "$PACKAGES_JSON")
   # Snaps needing flags (e.g. --classic) carry their full install_command.
   # shellcheck disable=SC2016
   custom_snaps=$(jq -r --arg plat "$PLATFORM" --arg pr "$priority" \
      --arg w "$INCLUDE_WORK" --arg p "$INCLUDE_PERSONAL" \
     "$CORE_JQ_DEFS"'.[] | select(
-        .package_manager[$plat] == "snap" and .priority == $pr and
-        envok($w; $p) and (icfor($plat) != null)
+        .package_manager[$plat] == "snap" and prfor($plat) == $pr and
+        envok($plat; $w; $p) and (icfor($plat) != null)
       ) | "\(.name)|\(icfor($plat))"' "$PACKAGES_JSON")
 
   if [[ -n "$regular_snaps" ]]; then
