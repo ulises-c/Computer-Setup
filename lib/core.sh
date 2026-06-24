@@ -441,9 +441,17 @@ apt_bootstrap() {
   printf '==> Updating package list...\n'
   run sudo apt update
 
-  if ! command -v jq &>/dev/null; then
-    printf '==> Bootstrapping jq...\n'
-    run sudo apt install -y jq
+  # Bootstrap the essentials the rest of setup relies on before the package
+  # tiers run: curl/wget drive the nvm/pyenv/tailscale/claude install scripts and
+  # the apt-repo key fetches below; jq drives package selection. Fresh Ubuntu
+  # desktop ships none of curl/jq, so the first curl step (nvm) used to fail.
+  local boot=() b
+  for b in curl wget jq; do
+    command -v "$b" &>/dev/null || boot+=("$b")
+  done
+  if [[ ${#boot[@]} -gt 0 ]]; then
+    printf '==> Bootstrapping essentials: %s\n' "${boot[*]}"
+    run sudo apt install -y ca-certificates "${boot[@]}"
   fi
 
   local need_update=false
