@@ -312,6 +312,24 @@ pkg_names() {
       ) | pname($plat)] | join(" ")' "$PACKAGES_JSON"
 }
 
+# True (exit 0) when the named package is selected for the current platform
+# under the active flags and tag filter — mirrors the tier/envok/tagok logic the
+# install loops use (high/medium always, low only with --optional, none never).
+# Lets the dedicated custom-install steps (tailscale, claude-code, docker) honor
+# --base/--tags instead of always running. On the server profile the tag filter
+# is inactive, so these resolve exactly as before.
+pkg_selected() {
+  # shellcheck disable=SC2016
+  jq -e --arg plat "$PLATFORM" --arg n "$1" \
+     --arg w "$INCLUDE_WORK" --arg p "$INCLUDE_PERSONAL" --arg opt "$INCLUDE_OPTIONAL" \
+    "$CORE_JQ_DEFS"'any(.[];
+        .name == $n and .package_manager[$plat] != null
+        and envok($plat; $w; $p) and tagok($plat)
+        and (prfor($plat) as $pr
+             | $pr == "high" or $pr == "medium" or ($pr == "low" and $opt == "true")))' \
+    "$PACKAGES_JSON" >/dev/null 2>&1
+}
+
 # install_command of a single package for this platform.
 custom_cmd() {
   # shellcheck disable=SC2016
@@ -596,6 +614,7 @@ platform_install_tier() {
 # Tailscale via the official curl installer — apt-family default (ubuntu + server).
 # arch.sh overrides this (tailscale ships in the yay batch; just enable the daemon).
 platform_tailscale_step() {
+  pkg_selected tailscale || return 0
   printf '\n'
   if [[ "$DRY_RUN" == true ]]; then
     command -v tailscale &>/dev/null \
@@ -727,6 +746,7 @@ rust_toolchain_step() {
 }
 
 claude_code_step() {
+  pkg_selected claude-code || return 0
   printf '\n'
   if [[ "$DRY_RUN" == true ]]; then
     command -v claude &>/dev/null \
@@ -885,7 +905,7 @@ linux_main() {
     platform_install_tier low
     pipx_install_tier low
     pnpm_install_tier low
-    platform_docker_optional
+    if pkg_selected docker; then platform_docker_optional; fi
   fi
 
   custom_reminders_section

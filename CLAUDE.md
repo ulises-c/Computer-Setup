@@ -17,7 +17,9 @@ tracked in TODO.md.)
   it is skipped on the server profile and in non-interactive/CI runs. The filter
   is implemented by `tagok()` in `CORE_JQ_DEFS`, which reads `TAG_FILTER_ACTIVE`
   and `SELECTED_TAGS` from the environment — inactive by default, so flag-driven
-  and CI runs are unchanged.
+  and CI runs are unchanged. The dedicated custom-install steps (tailscale,
+  claude-code, docker) gate on `pkg_selected` so they honor the selection too;
+  the server profile keeps the filter inactive, so they install as before there.
 - `verify.sh` — read-only health check mirroring `setup.sh`'s selection logic.
   Flags: `--optional --work --personal --all --platform <macos|ubuntu|arch>`
   (no `--dry-run`; `--platform server`/`--profile server` is rejected — nothing
