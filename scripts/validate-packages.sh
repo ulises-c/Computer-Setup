@@ -29,6 +29,11 @@ if ! jq empty "$PKG" 2>/dev/null; then
   exit 1
 fi
 
+if ! jq -e 'type == "array"' "$PKG" >/dev/null 2>&1; then
+  printf 'error: %s top-level value must be a JSON array\n' "$PKG" >&2
+  exit 1
+fi
+
 # shellcheck disable=SC2016  # $vars below are jq variables, not shell expansions
 errors=$(jq -r '
   def PLATFORMS: ["macos","ubuntu","arch","server"];
@@ -41,33 +46,45 @@ errors=$(jq -r '
   def prfor($p): (.priority | if type == "object" then .[$p] else . end);
   def optfor($p): (.optional | if type == "object" then .[$p] else . end);
 
-  to_entries[]
+  ( group_by(.name)[] | select(length > 1)
+      | "duplicate name \"\(.[0].name // "(unnamed)")\" — \(length) entries" ),
+  ( to_entries[]
   | .key as $i | .value as $e
   | ($e.name // "<unnamed #\($i)>") as $nm
   | $e
   | [
-      (if (.package_manager | type) != "object"
-        then "\($nm): package_manager must be an object" else empty end),
+      (if (.name | type) != "string" or (.name | length) == 0
+        then "<entry #\($i)>: name must be a non-empty string" else empty end),
 
-      ((.package_manager | keys[]) as $k
-        | if (PLATFORMS | index($k)) == null
-          then "\($nm): unknown platform \"\($k)\" in package_manager" else empty end),
+      (if (.package_manager | type) != "object"
+        then "\($nm): package_manager must be an object"
+       elif (.package_manager | length) == 0
+        then "\($nm): package_manager must list at least one platform"
+       else empty end),
+
+      (if (.package_manager | type) == "object"
+        then ((.package_manager | keys[]) as $k
+              | if (PLATFORMS | index($k)) == null
+                then "\($nm): unknown platform \"\($k)\" in package_manager" else empty end)
+        else empty end),
 
       (["priority","optional","environment","install_command"][] as $f
         | .[$f] as $v
-        | if ($v | type) == "object"
+        | if ($v | type) == "object" and (.package_manager | type) == "object"
           then (($v | keys[]) as $k
                 | if ((.package_manager | keys) | index($k)) == null
                   then "\($nm): \($f) keys platform \"\($k)\" not in package_manager" else empty end)
           else empty end),
 
-      ((.package_manager | keys[]) as $p
-        | (prfor($p) as $pr
-            | if (TIERS | index($pr)) == null
-              then "\($nm): priority for \"\($p)\" is \($pr | tojson) — must be high/medium/low/none" else empty end),
-          (optfor($p) as $o
-            | if ($o | type) != "boolean"
-              then "\($nm): optional for \"\($p)\" is \($o | tojson) — must be boolean" else empty end)),
+      (if (.package_manager | type) == "object"
+        then ((.package_manager | keys[]) as $p
+              | (prfor($p) as $pr
+                  | if (TIERS | index($pr)) == null
+                    then "\($nm): priority for \"\($p)\" is \($pr | tojson) — must be high/medium/low/none" else empty end),
+                (optfor($p) as $o
+                  | if ($o | type) != "boolean"
+                    then "\($nm): optional for \"\($p)\" is \($o | tojson) — must be boolean" else empty end))
+        else empty end),
 
       (.environment as $env
         | if $env == null then empty
@@ -92,7 +109,7 @@ errors=$(jq -r '
                then "\($nm): unknown tag \"\($tg)\" — not in the controlled vocabulary" else empty end)
        end)
     ]
-  | .[]
+  | .[] )
 ' "$PKG")
 
 if [[ -n "$errors" ]]; then

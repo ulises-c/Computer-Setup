@@ -30,6 +30,7 @@ source "$SETUP_ROOT/lib/core.sh"
 
 core_parse_args "$@"
 core_detect_platform
+core_validate_tag_selection
 core_maybe_prompt_selection
 
 # shellcheck source=/dev/null

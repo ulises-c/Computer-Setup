@@ -46,6 +46,8 @@ core_parse_args() {
           exit 1
         fi
         SELECTED_TAGS="$(core_csv_to_json "$2")"
+        [[ "$SELECTED_TAGS" == "[]" ]] && \
+          printf 'WARNING: --tags resolved to no categories — installing base only.\n' >&2
         TAG_FILTER_ACTIVE=true; SELECTION_EXPLICIT=true; shift ;;
       --dry-run)  DRY_RUN=true ;;
       --distro|--platform)
@@ -183,6 +185,21 @@ core_prompt_selection() {
   [[ "$INCLUDE_OPTIONAL" == true ]] && printf ' + optional'
   [[ "$TAG_FILTER_ACTIVE" != true ]] && printf ' (full set)'
   printf '\n'
+}
+
+# Warn (don't fail) when --tags names a category that matches no package — tags
+# are metadata, so a typo would otherwise silently install only the base set.
+core_validate_tag_selection() {
+  [[ "$TAG_FILTER_ACTIVE" == true ]] || return 0
+  [[ "$SELECTED_TAGS" == "[]" ]] && return 0
+  command -v jq >/dev/null || return 0
+  local vocab tag
+  vocab="$(jq -r '[.[].tags[]] | unique | .[]' "$PACKAGES_JSON" 2>/dev/null)" || return 0
+  while IFS= read -r tag; do
+    [[ -z "$tag" ]] && continue
+    grep -qxF -- "$tag" <<< "$vocab" \
+      || printf 'WARNING: --tags category "%s" matches no packages (ignored).\n' "$tag" >&2
+  done < <(printf '%s' "$SELECTED_TAGS" | jq -r '.[]')
 }
 
 # Prompt only when run interactively with no selection flags; never on the
@@ -449,7 +466,9 @@ apt_bootstrap() {
   for b in curl wget jq; do
     command -v "$b" &>/dev/null || boot+=("$b")
   done
-  if [[ ${#boot[@]} -gt 0 ]]; then
+  if [[ "$DRY_RUN" == true ]]; then
+    printf '  [dry-run] ensure ca-certificates curl wget jq are present\n'
+  elif [[ ${#boot[@]} -gt 0 ]]; then
     printf '==> Bootstrapping essentials: %s\n' "${boot[*]}"
     run sudo apt install -y ca-certificates "${boot[@]}"
   fi

@@ -363,18 +363,10 @@
   {
     "name": "jq",
     "tags": ["development"],
-    "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
-    "priority": "medium",
-    "optional": false,
-    "description": "JSON processor — required by setup.sh to parse this file"
-  },
-  {
-    "name": "jq",
-    "tags": ["development"],
-    "package_manager": { "macos": "brew" },
-    "priority": "low",
-    "optional": true,
-    "description": "JSON processor — system-provided on macOS; brew version only needed if the system one is missing or outdated"
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "priority": { "macos": "low", "ubuntu": "medium", "arch": "medium", "server": "medium" },
+    "optional": { "macos": true, "ubuntu": false, "arch": false, "server": false },
+    "description": "JSON processor — required by setup.sh to parse this file; system-provided on macOS so the brew build is low-priority/optional there"
   },
   {
     "name": "curl",
