@@ -8,8 +8,16 @@ tracked in TODO.md.)
 ## Entrypoints
 
 - `setup.sh` — installs everything for the detected platform.
-  Flags: `--optional --work --personal --dry-run --platform <macos|ubuntu|arch|server> --profile <desktop|server>`.
+  Flags: `--optional --work --personal --base --tags <csv> --dry-run --platform <macos|ubuntu|arch|server> --profile <desktop|server>`.
   The server platform is never auto-detected (`--profile server` or `--platform server` required).
+  Category selection: `--base` installs only the high-priority base set; `--tags
+  development,terminal` installs base + those `packages.json` tag categories
+  (enabled work/personal apps install regardless of category). Run bare on a TTY
+  with no selection flag and `core_maybe_prompt_selection` prompts interactively;
+  it is skipped on the server profile and in non-interactive/CI runs. The filter
+  is implemented by `tagok()` in `CORE_JQ_DEFS`, which reads `TAG_FILTER_ACTIVE`
+  and `SELECTED_TAGS` from the environment — inactive by default, so flag-driven
+  and CI runs are unchanged.
 - `verify.sh` — read-only health check mirroring `setup.sh`'s selection logic.
   Flags: `--optional --work --personal --all --platform <macos|ubuntu|arch>`
   (no `--dry-run`; `--platform server`/`--profile server` is rejected — nothing

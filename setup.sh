@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 # Unified setup entrypoint (UNIFICATION.md, issue #36).
-# Usage: bash setup.sh [--optional] [--work] [--personal] [--dry-run]
-#                      [--platform <macos|ubuntu|arch|server>] [--profile <desktop|server>]
+# Usage: bash setup.sh [--optional] [--work] [--personal] [--base] [--tags <csv>]
+#                      [--dry-run] [--platform <macos|ubuntu|arch|server>]
+#                      [--profile <desktop|server>]
 #   --optional       also install low-priority optional packages
 #   --work           also install work-only packages
 #   --personal       also install personal-only packages
+#   --base           install only the base essentials (no category packages)
+#   --tags <csv>     install base + only the named categories, e.g.
+#                    --tags development,terminal  (categories are packages.json tags)
 #   --dry-run        print all commands without executing anything
+#
+# Run bare on a terminal (no selection flags) and setup prompts you to pick
+# categories interactively; base essentials are always installed.
 #   --platform <p>   force platform; default: auto-detect (uname / /etc/os-release).
 #                    --distro <ubuntu|arch> is accepted as an alias.
 #   --profile server headless server profile (apt only, no GUI packages);
@@ -23,6 +30,7 @@ source "$SETUP_ROOT/lib/core.sh"
 
 core_parse_args "$@"
 core_detect_platform
+core_maybe_prompt_selection
 
 # shellcheck source=/dev/null
 source "$SETUP_ROOT/platforms/$PLATFORM.sh"
