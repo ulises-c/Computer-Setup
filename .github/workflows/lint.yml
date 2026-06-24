@@ -35,6 +35,14 @@ jobs:
           done
           exit $failed
 
+  validate-packages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate packages.json schema
+        run: bash scripts/validate-packages.sh
+
   dryrun-smoke:
     runs-on: ubuntu-latest
     steps:

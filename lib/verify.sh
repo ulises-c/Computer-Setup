@@ -106,8 +106,8 @@ verify_section() {
   rows=$(jq -r --arg plat "$PLATFORM" --arg pr "$priority" \
      --arg w "$INCLUDE_WORK" --arg p "$INCLUDE_PERSONAL" \
     "$CORE_JQ_DEFS"'.[] | select(
-        .package_manager[$plat] != null and .priority == $pr and envok($w; $p)
-      ) | [.name, .package_manager[$plat], pname($plat), (.optional | tostring)] | @tsv' \
+        .package_manager[$plat] != null and prfor($plat) == $pr and envok($plat; $w; $p)
+      ) | [.name, .package_manager[$plat], pname($plat), (optfor($plat) | tostring)] | @tsv' \
     "$PACKAGES_JSON")
 
   [[ -z "$rows" ]] && return 0

@@ -1,6 +1,7 @@
 [
   {
     "name": "zsh",
+    "tags": ["terminal"],
     "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "high",
     "optional": false,
@@ -8,6 +9,7 @@
   },
   {
     "name": "zsh-antidote",
+    "tags": ["terminal"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "macos_name": "antidote",
     "priority": "high",
@@ -16,6 +18,7 @@
   },
   {
     "name": "zoxide",
+    "tags": ["terminal"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay" },
     "priority": "high",
     "optional": false,
@@ -23,6 +26,7 @@
   },
   {
     "name": "expat",
+    "tags": ["development"],
     "package_manager": { "macos": "brew" },
     "priority": "high",
     "optional": false,
@@ -30,6 +34,7 @@
   },
   {
     "name": "pyenv",
+    "tags": ["development"],
     "package_manager": { "macos": "brew", "ubuntu": "custom", "arch": "custom" },
     "priority": "high",
     "optional": false,
@@ -39,6 +44,7 @@
   },
   {
     "name": "nvm",
+    "tags": ["development"],
     "package_manager": { "macos": "custom", "ubuntu": "custom", "arch": "custom", "server": "custom" },
     "priority": "high",
     "optional": false,
@@ -48,6 +54,7 @@
   },
   {
     "name": "pipx",
+    "tags": ["development"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay" },
     "arch_name": "python-pipx",
     "priority": "high",
@@ -56,13 +63,15 @@
   },
   {
     "name": "uv",
+    "tags": ["development"],
     "package_manager": { "macos": "brew", "ubuntu": "pipx", "arch": "yay" },
-    "priority": "medium",
+    "priority": "high",
     "optional": false,
     "description": "Fast Python package and project manager — pip/venv/pyenv successor"
   },
   {
     "name": "build-essential",
+    "tags": ["development"],
     "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "arch_name": "base-devel",
     "priority": "high",
@@ -71,20 +80,15 @@
   },
   {
     "name": "git",
-    "package_manager": { "ubuntu": "apt", "arch": "yay" },
-    "priority": "high",
+    "tags": ["development"],
+    "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "priority": { "ubuntu": "high", "arch": "high", "server": "medium" },
     "optional": false,
     "description": "Version control — usually pre-installed but listed to ensure it's present"
   },
   {
-    "name": "git",
-    "package_manager": { "server": "apt" },
-    "priority": "medium",
-    "optional": false,
-    "description": "Version control — usually pre-installed on Ubuntu Server"
-  },
-  {
     "name": "rust",
+    "tags": ["development"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "ubuntu_name": "rustup",
     "arch_name": "rustup",
@@ -95,6 +99,7 @@
   },
   {
     "name": "go",
+    "tags": ["development"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay" },
     "ubuntu_name": "golang-go",
     "priority": "medium",
@@ -103,6 +108,7 @@
   },
   {
     "name": "ghostty",
+    "tags": ["terminal"],
     "package_manager": { "macos": "brew-cask", "ubuntu": "snap", "arch": "yay" },
     "priority": "medium",
     "optional": false,
@@ -111,6 +117,7 @@
   },
   {
     "name": "fastfetch",
+    "tags": ["terminal", "system-monitoring"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -118,6 +125,7 @@
   },
   {
     "name": "gh",
+    "tags": ["development"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "arch_name": "github-cli",
     "priority": "medium",
@@ -126,6 +134,7 @@
   },
   {
     "name": "forgejo-cli",
+    "tags": ["development"],
     "package_manager": { "macos": "brew", "ubuntu": "custom", "arch": "custom" },
     "priority": "medium",
     "optional": false,
@@ -134,6 +143,7 @@
   },
   {
     "name": "git-lfs",
+    "tags": ["development"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -141,22 +151,17 @@
   },
   {
     "name": "git-xet",
-    "package_manager": { "macos": "brew" },
+    "tags": ["development", "local-llm"],
+    "package_manager": { "macos": "brew", "ubuntu": "custom", "arch": "custom" },
     "priority": "medium",
     "optional": false,
-    "description": "Git LFS plugin using the Xet protocol for Hugging Face Hub"
-  },
-  {
-    "name": "git-xet",
-    "package_manager": { "ubuntu": "custom", "arch": "custom" },
-    "priority": "medium",
-    "optional": false,
-    "environment": ["personal"],
+    "environment": { "ubuntu": ["personal"], "arch": ["personal"] },
     "install_command": "curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/huggingface/xet-core/refs/heads/main/git_xet/install.sh | sh",
     "description": "Git LFS plugin using the Xet protocol for Hugging Face Hub"
   },
   {
     "name": "pre-commit",
+    "tags": ["development"],
     "package_manager": { "ubuntu": "pipx", "arch": "yay" },
     "priority": "medium",
     "optional": false,
@@ -164,6 +169,7 @@
   },
   {
     "name": "shellcheck",
+    "tags": ["development"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -171,6 +177,7 @@
   },
   {
     "name": "codespell",
+    "tags": ["development"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay" },
     "priority": "medium",
     "optional": false,
@@ -178,6 +185,7 @@
   },
   {
     "name": "pytest",
+    "tags": ["development"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "ubuntu_name": "python3-pytest",
     "arch_name": "python-pytest",
@@ -188,6 +196,7 @@
   },
   {
     "name": "swiftlint",
+    "tags": ["development"],
     "package_manager": { "macos": "brew" },
     "priority": "medium",
     "optional": false,
@@ -195,6 +204,7 @@
   },
   {
     "name": "swiftformat",
+    "tags": ["development"],
     "package_manager": { "macos": "brew" },
     "priority": "medium",
     "optional": false,
@@ -202,6 +212,7 @@
   },
   {
     "name": "xcodegen",
+    "tags": ["development"],
     "package_manager": { "macos": "brew" },
     "priority": "medium",
     "optional": false,
@@ -209,6 +220,7 @@
   },
   {
     "name": "gnupg",
+    "tags": ["security"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -216,22 +228,17 @@
   },
   {
     "name": "hf",
-    "package_manager": { "macos": "brew" },
+    "tags": ["local-llm"],
+    "package_manager": { "macos": "brew", "ubuntu": "pipx", "arch": "pipx" },
     "priority": "medium",
     "optional": false,
-    "description": "Hugging Face Hub CLI — download, upload, and manage ML models"
-  },
-  {
-    "name": "hf",
-    "package_manager": { "ubuntu": "pipx", "arch": "pipx" },
-    "priority": "medium",
-    "optional": false,
-    "environment": ["personal"],
-    "install_command": "pipx install huggingface-hub[cli]",
+    "environment": { "ubuntu": ["personal"], "arch": ["personal"] },
+    "install_command": { "ubuntu": "pipx install huggingface-hub[cli]", "arch": "pipx install huggingface-hub[cli]" },
     "description": "Hugging Face Hub CLI — download, upload, and manage ML models"
   },
   {
     "name": "htop",
+    "tags": ["system-monitoring"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -239,21 +246,16 @@
   },
   {
     "name": "llama.cpp",
-    "package_manager": { "macos": "brew" },
-    "priority": "medium",
-    "optional": false,
+    "tags": ["local-llm"],
+    "package_manager": { "macos": "brew", "ubuntu": "custom", "arch": "yay" },
+    "priority": { "macos": "medium", "ubuntu": "none", "arch": "none" },
+    "optional": { "macos": false, "ubuntu": true, "arch": true },
+    "install_command": { "ubuntu": "See https://github.com/ggml-org/llama.cpp#build" },
     "description": "LLM inference engine — run local models on CPU and Apple Silicon GPU"
   },
   {
-    "name": "llama.cpp",
-    "package_manager": { "ubuntu": "custom", "arch": "yay" },
-    "priority": "none",
-    "optional": true,
-    "install_command": "See https://github.com/ggml-org/llama.cpp#build",
-    "description": "LLM inference engine — run local models on CPU/GPU"
-  },
-  {
     "name": "mlx-lm",
+    "tags": ["local-llm"],
     "package_manager": { "macos": "brew" },
     "priority": "medium",
     "optional": false,
@@ -261,6 +263,7 @@
   },
   {
     "name": "mactop",
+    "tags": ["system-monitoring"],
     "package_manager": { "macos": "brew" },
     "priority": "medium",
     "optional": false,
@@ -268,6 +271,7 @@
   },
   {
     "name": "micro",
+    "tags": ["terminal"],
     "package_manager": { "macos": "brew", "ubuntu": "snap", "arch": "yay", "server": "snap" },
     "priority": "medium",
     "optional": false,
@@ -276,6 +280,7 @@
   },
   {
     "name": "nvtop",
+    "tags": ["system-monitoring"],
     "package_manager": { "macos": "brew", "ubuntu": "snap", "arch": "yay", "server": "snap" },
     "priority": "medium",
     "optional": false,
@@ -283,6 +288,7 @@
   },
   {
     "name": "lact",
+    "tags": ["system-monitoring"],
     "package_manager": { "arch": "yay" },
     "priority": "medium",
     "optional": false,
@@ -290,6 +296,7 @@
   },
   {
     "name": "sshpass",
+    "tags": ["networking"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -297,6 +304,7 @@
   },
   {
     "name": "tmux",
+    "tags": ["terminal"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -304,6 +312,7 @@
   },
   {
     "name": "eza",
+    "tags": ["terminal"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -311,6 +320,7 @@
   },
   {
     "name": "terminal-notifier",
+    "tags": ["desktop-utility"],
     "package_manager": { "macos": "brew" },
     "priority": "medium",
     "optional": false,
@@ -318,6 +328,7 @@
   },
   {
     "name": "fzf",
+    "tags": ["terminal"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -325,6 +336,7 @@
   },
   {
     "name": "ripgrep",
+    "tags": ["terminal"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -332,6 +344,7 @@
   },
   {
     "name": "bat",
+    "tags": ["terminal"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -339,6 +352,7 @@
   },
   {
     "name": "fd",
+    "tags": ["terminal"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "ubuntu_name": "fd-find",
     "server_name": "fd-find",
@@ -348,20 +362,15 @@
   },
   {
     "name": "jq",
-    "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
-    "priority": "medium",
-    "optional": false,
-    "description": "JSON processor — required by setup.sh to parse this file"
-  },
-  {
-    "name": "jq",
-    "package_manager": { "macos": "brew" },
-    "priority": "low",
-    "optional": true,
-    "description": "JSON processor — system-provided on macOS; brew version only needed if the system one is missing or outdated"
+    "tags": ["development"],
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
+    "priority": { "macos": "low", "ubuntu": "medium", "arch": "medium", "server": "medium" },
+    "optional": { "macos": true, "ubuntu": false, "arch": false, "server": false },
+    "description": "JSON processor — required by setup.sh to parse this file; system-provided on macOS so the brew build is low-priority/optional there"
   },
   {
     "name": "curl",
+    "tags": ["networking"],
     "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -369,6 +378,7 @@
   },
   {
     "name": "wget",
+    "tags": ["networking"],
     "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -376,6 +386,7 @@
   },
   {
     "name": "libnotify-bin",
+    "tags": ["desktop-utility"],
     "package_manager": { "ubuntu": "apt", "arch": "yay" },
     "arch_name": "libnotify",
     "priority": "medium",
@@ -384,6 +395,7 @@
   },
   {
     "name": "ncdu",
+    "tags": ["system-monitoring"],
     "package_manager": { "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -391,6 +403,7 @@
   },
   {
     "name": "cockpit",
+    "tags": ["system-monitoring", "networking"],
     "package_manager": { "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -398,6 +411,7 @@
   },
   {
     "name": "tailscale",
+    "tags": ["networking"],
     "package_manager": { "macos": "app-store", "ubuntu": "custom", "arch": "yay", "server": "custom" },
     "macos_name": "Tailscale",
     "priority": "medium",
@@ -408,7 +422,8 @@
   },
   {
     "name": "docker",
-    "package_manager": { "macos": "brew-cask", "ubuntu": "custom", "arch": "yay" },
+    "tags": ["development", "containers"],
+    "package_manager": { "macos": "brew-cask", "ubuntu": "custom", "arch": "yay", "server": "custom" },
     "macos_name": "docker-desktop",
     "priority": "low",
     "optional": true,
@@ -418,6 +433,7 @@
   },
   {
     "name": "claude-code",
+    "tags": ["ai-coding"],
     "package_manager": { "macos": "custom", "ubuntu": "custom", "arch": "custom", "server": "custom" },
     "priority": "medium",
     "optional": false,
@@ -427,6 +443,7 @@
   },
   {
     "name": "opencode",
+    "tags": ["ai-coding"],
     "package_manager": { "macos": "brew", "ubuntu": "custom", "arch": "yay" },
     "macos_name": "anomalyco/tap/opencode",
     "arch_name": "opencode-bin",
@@ -437,6 +454,7 @@
   },
   {
     "name": "claude-desktop",
+    "tags": ["ai-coding"],
     "package_manager": { "macos": "brew-cask", "ubuntu": "custom", "arch": "yay" },
     "macos_name": "claude",
     "arch_name": "claude-desktop-bin",
@@ -447,6 +465,7 @@
   },
   {
     "name": "visual-studio-code",
+    "tags": ["development"],
     "package_manager": { "macos": "brew-cask", "ubuntu": "snap", "arch": "yay" },
     "ubuntu_name": "code",
     "arch_name": "visual-studio-code-bin",
@@ -457,6 +476,7 @@
   },
   {
     "name": "firefox",
+    "tags": ["browser"],
     "package_manager": { "macos": "brew-cask", "ubuntu": "snap", "arch": "yay" },
     "priority": "medium",
     "optional": false,
@@ -464,6 +484,7 @@
   },
   {
     "name": "zen-browser",
+    "tags": ["browser"],
     "package_manager": { "macos": "brew-cask", "ubuntu": "custom", "arch": "yay" },
     "macos_name": "zen",
     "arch_name": "zen-browser-bin",
@@ -474,6 +495,7 @@
   },
   {
     "name": "chromium",
+    "tags": ["browser"],
     "package_manager": { "ubuntu": "snap", "arch": "yay" },
     "priority": "medium",
     "optional": false,
@@ -482,6 +504,7 @@
   },
   {
     "name": "obs-studio",
+    "tags": ["media"],
     "package_manager": { "macos": "brew-cask", "ubuntu": "apt", "arch": "yay" },
     "macos_name": "obs",
     "priority": "medium",
@@ -490,6 +513,7 @@
   },
   {
     "name": "vlc",
+    "tags": ["media"],
     "package_manager": { "macos": "brew-cask", "ubuntu": "apt", "arch": "yay" },
     "priority": "medium",
     "optional": false,
@@ -497,21 +521,16 @@
   },
   {
     "name": "discord",
-    "package_manager": { "macos": "brew-cask" },
+    "tags": ["communication", "entertainment"],
+    "package_manager": { "macos": "brew-cask", "ubuntu": "snap", "arch": "yay" },
     "priority": "medium",
     "optional": false,
-    "description": "Voice, video, and text chat platform"
-  },
-  {
-    "name": "discord",
-    "package_manager": { "ubuntu": "snap", "arch": "yay" },
-    "priority": "medium",
-    "optional": false,
-    "environment": ["personal"],
+    "environment": { "ubuntu": ["personal"], "arch": ["personal"] },
     "description": "Voice, video, and text chat platform"
   },
   {
     "name": "bitwarden",
+    "tags": ["security"],
     "package_manager": { "macos": "app-store", "ubuntu": "snap", "arch": "yay" },
     "macos_name": "Bitwarden",
     "priority": "medium",
@@ -520,6 +539,7 @@
   },
   {
     "name": "slack",
+    "tags": ["communication"],
     "package_manager": { "macos": "brew-cask", "ubuntu": "snap", "arch": "yay" },
     "arch_name": "slack-desktop",
     "priority": "medium",
@@ -529,6 +549,7 @@
   },
   {
     "name": "zoom",
+    "tags": ["communication"],
     "package_manager": { "macos": "brew-cask", "ubuntu": "snap", "arch": "yay" },
     "ubuntu_name": "zoom-client",
     "priority": "medium",
@@ -538,6 +559,7 @@
   },
   {
     "name": "microsoft-outlook",
+    "tags": ["communication"],
     "package_manager": { "macos": "brew-cask" },
     "priority": "medium",
     "optional": false,
@@ -546,6 +568,7 @@
   },
   {
     "name": "teams-for-linux",
+    "tags": ["communication"],
     "package_manager": { "ubuntu": "snap", "arch": "yay" },
     "priority": "medium",
     "optional": false,
@@ -553,15 +576,8 @@
     "description": "Unofficial Microsoft Teams client for Linux"
   },
   {
-    "name": "poetry",
-    "package_manager": { "macos": "pipx", "ubuntu": "pipx", "arch": "yay" },
-    "arch_name": "python-poetry",
-    "priority": "medium",
-    "optional": false,
-    "description": "Python project and dependency manager"
-  },
-  {
     "name": "codeburn",
+    "tags": ["development", "ai-coding"],
     "package_manager": { "macos": "pnpm", "ubuntu": "pnpm", "arch": "pnpm" },
     "priority": "medium",
     "optional": false,
@@ -569,6 +585,7 @@
   },
   {
     "name": "mac-mouse-fix",
+    "tags": ["desktop-utility"],
     "package_manager": { "macos": "brew-cask" },
     "priority": "medium",
     "optional": false,
@@ -576,6 +593,7 @@
   },
   {
     "name": "rectangle",
+    "tags": ["desktop-utility"],
     "package_manager": { "macos": "brew-cask" },
     "priority": "medium",
     "optional": false,
@@ -583,6 +601,7 @@
   },
   {
     "name": "caffeine",
+    "tags": ["desktop-utility"],
     "package_manager": { "macos": "brew-cask" },
     "priority": "medium",
     "optional": false,
@@ -590,6 +609,7 @@
   },
   {
     "name": "google-drive",
+    "tags": ["cloud-storage"],
     "package_manager": { "macos": "brew-cask" },
     "priority": "medium",
     "optional": false,
@@ -597,6 +617,7 @@
   },
   {
     "name": "amazon-photos",
+    "tags": ["photos", "cloud-storage"],
     "package_manager": { "macos": "brew-cask" },
     "priority": "medium",
     "optional": false,
@@ -604,23 +625,18 @@
   },
   {
     "name": "notion",
-    "package_manager": { "macos": "brew-cask" },
-    "priority": "medium",
-    "optional": false,
-    "description": "Notes and project management"
-  },
-  {
-    "name": "notion",
-    "package_manager": { "ubuntu": "snap", "arch": "yay" },
+    "tags": ["productivity"],
+    "package_manager": { "macos": "brew-cask", "ubuntu": "snap", "arch": "yay" },
     "ubuntu_name": "notion-snap-reborn",
     "arch_name": "notion-app-electron",
-    "priority": "low",
-    "optional": true,
-    "environment": ["personal"],
+    "priority": { "macos": "medium", "ubuntu": "low", "arch": "low" },
+    "optional": { "macos": false, "ubuntu": true, "arch": true },
+    "environment": { "ubuntu": ["personal"], "arch": ["personal"] },
     "description": "Notes and project management — unofficial snap/AUR packages on Linux"
   },
   {
     "name": "obsidian",
+    "tags": ["productivity"],
     "package_manager": { "macos": "brew-cask", "ubuntu": "snap", "arch": "yay" },
     "priority": "medium",
     "optional": false,
@@ -629,6 +645,7 @@
   },
   {
     "name": "anki",
+    "tags": ["productivity"],
     "package_manager": { "macos": "brew-cask", "ubuntu": "custom", "arch": "yay" },
     "priority": "medium",
     "optional": false,
@@ -637,6 +654,7 @@
   },
   {
     "name": "Spark Mail – AI Email Inbox",
+    "tags": ["communication"],
     "macos_name": "Spark Desktop",
     "package_manager": { "macos": "app-store" },
     "priority": "medium",
@@ -645,6 +663,7 @@
   },
   {
     "name": "Photomator",
+    "tags": ["photos"],
     "package_manager": { "macos": "app-store" },
     "priority": "medium",
     "optional": false,
@@ -652,6 +671,7 @@
   },
   {
     "name": "net-tools",
+    "tags": ["networking"],
     "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "low",
     "optional": true,
@@ -659,6 +679,7 @@
   },
   {
     "name": "poppler",
+    "tags": ["media"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay" },
     "ubuntu_name": "poppler-utils",
     "priority": "low",
@@ -667,6 +688,7 @@
   },
   {
     "name": "ffmpeg",
+    "tags": ["media"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "low",
     "optional": true,
@@ -674,6 +696,7 @@
   },
   {
     "name": "exiftool",
+    "tags": ["media", "photos"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "ubuntu_name": "libimage-exiftool-perl",
     "arch_name": "perl-image-exiftool",
@@ -684,6 +707,7 @@
   },
   {
     "name": "tesseract",
+    "tags": ["media"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay" },
     "ubuntu_name": "tesseract-ocr",
     "priority": "low",
@@ -692,6 +716,7 @@
   },
   {
     "name": "smartmontools",
+    "tags": ["system-monitoring"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "low",
     "optional": true,
@@ -699,6 +724,7 @@
   },
   {
     "name": "nmap",
+    "tags": ["networking"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "low",
     "optional": true,
@@ -706,6 +732,7 @@
   },
   {
     "name": "samba",
+    "tags": ["networking"],
     "package_manager": { "server": "apt" },
     "priority": "low",
     "optional": true,
@@ -713,6 +740,7 @@
   },
   {
     "name": "gogcli",
+    "tags": ["productivity"],
     "package_manager": { "macos": "brew" },
     "priority": "low",
     "optional": true,
@@ -720,6 +748,7 @@
   },
   {
     "name": "fluidtop",
+    "tags": ["system-monitoring"],
     "package_manager": { "macos": "pipx" },
     "priority": "low",
     "optional": true,
@@ -727,6 +756,7 @@
   },
   {
     "name": "exifread",
+    "tags": ["media", "photos"],
     "package_manager": { "macos": "pipx" },
     "priority": "low",
     "optional": true,
@@ -734,6 +764,7 @@
   },
   {
     "name": "Goodnotes",
+    "tags": ["productivity"],
     "package_manager": { "macos": "app-store" },
     "priority": "low",
     "optional": true,
@@ -741,6 +772,7 @@
   },
   {
     "name": "spotify",
+    "tags": ["entertainment"],
     "package_manager": { "ubuntu": "snap", "arch": "yay" },
     "priority": "low",
     "optional": true,
@@ -749,6 +781,7 @@
   },
   {
     "name": "steam",
+    "tags": ["entertainment"],
     "package_manager": { "ubuntu": "apt", "arch": "yay" },
     "priority": "low",
     "optional": true,
@@ -757,6 +790,7 @@
   },
   {
     "name": "bolt-launcher",
+    "tags": ["entertainment"],
     "package_manager": { "arch": "yay" },
     "priority": "low",
     "optional": true,
@@ -765,21 +799,16 @@
   },
   {
     "name": "octave",
-    "package_manager": { "macos": "brew" },
+    "tags": ["science"],
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay" },
     "priority": "none",
     "optional": true,
-    "description": "MATLAB-compatible numerical computing environment"
-  },
-  {
-    "name": "octave",
-    "package_manager": { "ubuntu": "apt", "arch": "yay" },
-    "priority": "none",
-    "optional": true,
-    "environment": ["work"],
+    "environment": { "ubuntu": ["work"], "arch": ["work"] },
     "description": "MATLAB-compatible numerical computing environment"
   },
   {
     "name": "qemu",
+    "tags": ["containers"],
     "package_manager": { "macos": "brew" },
     "priority": "none",
     "optional": true,
@@ -787,6 +816,7 @@
   },
   {
     "name": "mongodb-community",
+    "tags": ["database"],
     "package_manager": { "macos": "custom" },
     "priority": "none",
     "optional": true,
@@ -795,6 +825,7 @@
   },
   {
     "name": "Pixelmator Pro",
+    "tags": ["photos"],
     "package_manager": { "macos": "app-store" },
     "priority": "none",
     "optional": true,
@@ -802,6 +833,7 @@
   },
   {
     "name": "Amphetamine",
+    "tags": ["desktop-utility"],
     "package_manager": { "macos": "app-store" },
     "priority": "none",
     "optional": true,

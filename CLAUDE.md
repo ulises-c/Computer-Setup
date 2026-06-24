@@ -8,8 +8,18 @@ tracked in TODO.md.)
 ## Entrypoints
 
 - `setup.sh` — installs everything for the detected platform.
-  Flags: `--optional --work --personal --dry-run --platform <macos|ubuntu|arch|server> --profile <desktop|server>`.
+  Flags: `--optional --work --personal --base --tags <csv> --dry-run --platform <macos|ubuntu|arch|server> --profile <desktop|server>`.
   The server platform is never auto-detected (`--profile server` or `--platform server` required).
+  Category selection: `--base` installs only the high-priority base set; `--tags
+  development,terminal` installs base + those `packages.json` tag categories
+  (enabled work/personal apps install regardless of category). Run bare on a TTY
+  with no selection flag and `core_maybe_prompt_selection` prompts interactively;
+  it is skipped on the server profile and in non-interactive/CI runs. The filter
+  is implemented by `tagok()` in `CORE_JQ_DEFS`, which reads `TAG_FILTER_ACTIVE`
+  and `SELECTED_TAGS` from the environment — inactive by default, so flag-driven
+  and CI runs are unchanged. The dedicated custom-install steps (tailscale,
+  claude-code, docker) gate on `pkg_selected` so they honor the selection too;
+  the server profile keeps the filter inactive, so they install as before there.
 - `verify.sh` — read-only health check mirroring `setup.sh`'s selection logic.
   Flags: `--optional --work --personal --all --platform <macos|ubuntu|arch>`
   (no `--dry-run`; `--platform server`/`--profile server` is rejected — nothing
@@ -19,10 +29,23 @@ tracked in TODO.md.)
 
 - `packages.json` — single source of truth for all package data. Managers are
   keyed by platform (`{macos, ubuntu, arch, server}`); `<platform>_name`
-  overrides the install token; `environment` tags gate on `--work`/`--personal`;
+  overrides the install token; `environment` gates on `--work`/`--personal`;
   `custom` managers carry `install_command` (string or per-platform object) —
   run by the engine when `handled_by_setup` is true, otherwise printed as a
   manual-install reminder.
+  - `priority`, `optional`, `environment`, and `install_command` each accept a
+    **scalar** (applies to every platform) **or a per-platform object** keyed by
+    platform (e.g. `"priority": { "macos": "medium", "ubuntu": "none" }`). The
+    engine resolves them via the `prfor`/`optfor`/`envfor`/`icfor` jq defs in
+    `lib/core.sh`. This is what lets one entry serve platforms that differ in
+    tier/optionality/gating, instead of splitting into duplicate entries.
+  - **`environment` caveat:** its scalar form is itself an *array* (`["work"]`),
+    so the per-platform form is detected as an *object* (`{ "ubuntu": ["work"] }`)
+    — array means legacy/all-platforms, object means per-platform. Keep the
+    per-platform value an object-of-arrays.
+  - `tags` — required non-empty array of descriptive categories from the
+    controlled vocabulary in `scripts/validate-packages.sh`. Metadata only
+    (grouping/docs); the install engine ignores them.
 - `lib/core.sh` — shared engine: arg parsing, platform detection, env filter,
   jq selection, install loops, config deploys. `lib/verify.sh` — check engine.
 - `platforms/<platform>.sh` — per-platform quirks only (bootstrap, manager
@@ -47,7 +70,10 @@ phases.
 ## Conventions
 
 - Pre-commit runs `shellcheck --severity=warning` on all shell scripts;
-  `zsh -n` checks `.zsh` files and `zshrc.example`.
+  `zsh -n` checks `.zsh` files and `zshrc.example`; `scripts/validate-packages.sh`
+  enforces the `packages.json` schema (platform vocabulary, controlled tag set,
+  and the "no silent drop" rule — every platform a package targets must resolve a
+  valid priority tier and a boolean optional). All three also run in CI.
 - Probe semantics in `lib/verify.sh` are platform-faithful ports — macOS has no
   `command -v` fallback for casks/pipx/app-store, Linux falls back everywhere.
   Don't "fix" the asymmetry without checking `UNIFICATION.md` history.

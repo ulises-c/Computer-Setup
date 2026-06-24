@@ -52,8 +52,8 @@ mac_custom_install_tier() {
   jq -r --arg plat "$PLATFORM" --arg pr "$priority" \
      --arg w "$INCLUDE_WORK" --arg p "$INCLUDE_PERSONAL" \
     "$CORE_JQ_DEFS"'.[] | select(
-        .package_manager[$plat] == "custom" and .priority == $pr and
-        envok($w; $p) and (icfor($plat) != null) and .name != "nvm"
+        .package_manager[$plat] == "custom" and prfor($plat) == $pr and
+        envok($plat; $w; $p) and (icfor($plat) != null) and .name != "nvm" and tagok($plat)
       ) | icfor($plat)' "$PACKAGES_JSON" |
   while read -r cmd; do
     run_eval "$cmd"
@@ -75,7 +75,7 @@ print_app_store_reminders() {
   apps=$(jq -r --arg plat "$PLATFORM" --arg pr "$priority" \
      --arg w "$INCLUDE_WORK" --arg p "$INCLUDE_PERSONAL" \
     "$CORE_JQ_DEFS"'.[] | select(
-        .package_manager[$plat] == "app-store" and .priority == $pr and envok($w; $p)
+        .package_manager[$plat] == "app-store" and prfor($plat) == $pr and envok($plat; $w; $p) and tagok($plat)
       ) | "  - \(.name): \(.description)"' "$PACKAGES_JSON")
   [[ -n "$apps" ]] && printf '%s\n' "$apps"
   return 0

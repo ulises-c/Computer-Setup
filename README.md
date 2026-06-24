@@ -75,8 +75,8 @@ For OS-specific software and install instructions, see:
    1. Official GitHub CLI — create PRs, manage issues, clone repos, and run Actions from the terminal
 3. pyenv | macOS · Linux | [GitHub](https://github.com/pyenv/pyenv) | [brew](https://formulae.brew.sh/formula/pyenv#default)
    1. Python version and virtual environment manager
-4. poetry | macOS · Linux · Windows | [GitHub](https://github.com/python-poetry/poetry)
-   1. Python project manager
+4. uv | macOS · Linux · Windows | [Docs](https://docs.astral.sh/uv/) | [GitHub](https://github.com/astral-sh/uv) | [brew](https://formulae.brew.sh/formula/uv)
+   1. Fast Python package and project manager — pip/venv/pyenv successor
 5. pipx | macOS · Linux · Windows | [GitHub](https://github.com/pypa/pipx) | [brew](https://formulae.brew.sh/formula/pipx)
    1. Install Python CLI tools in isolated virtual environments so they don't pollute the global Python install
 6. git-lfs | macOS · Linux · Windows | [Download](https://git-lfs.com/) | [GitHub](https://github.com/git-lfs/git-lfs) | [brew](https://formulae.brew.sh/formula/git-lfs)

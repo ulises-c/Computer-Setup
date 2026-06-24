@@ -21,12 +21,34 @@ INCLUDE_WORK=false
 INCLUDE_PERSONAL=false
 DRY_RUN=false
 
+# Category selection. When TAG_FILTER_ACTIVE is "true" the engine installs only
+# the base set (high-priority foundational packages), enabled work/personal
+# apps, and packages whose tags intersect SELECTED_TAGS — see tagok() in
+# CORE_JQ_DEFS, which reads both from the environment. SELECTION_EXPLICIT tracks
+# whether the user passed any selection flag, so a bare interactive run knows to
+# prompt instead.
+SELECTION_EXPLICIT=false
+TAG_FILTER_ACTIVE=false
+SELECTED_TAGS="[]"
+export TAG_FILTER_ACTIVE SELECTED_TAGS
+
 core_parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --optional) INCLUDE_OPTIONAL=true ;;
-      --work)     INCLUDE_WORK=true ;;
-      --personal) INCLUDE_PERSONAL=true ;;
+      --optional) INCLUDE_OPTIONAL=true; SELECTION_EXPLICIT=true ;;
+      --work)     INCLUDE_WORK=true; SELECTION_EXPLICIT=true ;;
+      --personal) INCLUDE_PERSONAL=true; SELECTION_EXPLICIT=true ;;
+      --base)
+        TAG_FILTER_ACTIVE=true; SELECTED_TAGS="[]"; SELECTION_EXPLICIT=true ;;
+      --tags)
+        if [[ -z "${2:-}" || "${2:-}" == -* ]]; then
+          printf 'ERROR: --tags requires a comma-separated list (e.g. development,terminal).\n' >&2
+          exit 1
+        fi
+        SELECTED_TAGS="$(core_csv_to_json "$2")"
+        [[ "$SELECTED_TAGS" == "[]" ]] && \
+          printf 'WARNING: --tags resolved to no categories — installing base only.\n' >&2
+        TAG_FILTER_ACTIVE=true; SELECTION_EXPLICIT=true; shift ;;
       --dry-run)  DRY_RUN=true ;;
       --distro|--platform)
         if [[ -z "${2:-}" || "${2:-}" == -* ]]; then
@@ -78,6 +100,120 @@ core_detect_platform() {
       exit 1 ;;
   esac
   if [[ "$PLATFORM" == "server" ]]; then SERVER_PROFILE=true; fi
+}
+
+# ── Interactive category selection ────────────────────────────────────────────
+
+# Newline-separated list of every tag category present in packages.json.
+core_tag_vocabulary() {
+  jq -r '[.[].tags[]] | unique | .[]' "$PACKAGES_JSON"
+}
+
+# "dev, terminal ,local-llm" -> ["dev","terminal","local-llm"] (built without jq
+# so --tags works before the jq bootstrap; tags are simple [a-z-] tokens).
+core_csv_to_json() {
+  local csv="$1" json="[" first=1 tok
+  local IFS=','
+  local -a arr
+  read -ra arr <<< "$csv"
+  for tok in "${arr[@]}"; do
+    tok="${tok#"${tok%%[![:space:]]*}"}"
+    tok="${tok%"${tok##*[![:space:]]}"}"
+    [[ -z "$tok" ]] && continue
+    [[ "$first" -eq 1 ]] && first=0 || json+=","
+    json+="\"$tok\""
+  done
+  json+="]"
+  printf '%s' "$json"
+}
+
+# Prompt the user to pick categories when setup is run bare on a terminal.
+# Sets SELECTED_TAGS / TAG_FILTER_ACTIVE and the INCLUDE_* toggles in place.
+core_prompt_selection() {
+  if ! command -v jq >/dev/null; then
+    printf '  (jq not found — skipping interactive selection; installing the full default set)\n'
+    return 0
+  fi
+  local -a cats=()
+  local cat line tok num i col=0 json first=1
+  while IFS= read -r cat; do cats+=("$cat"); done \
+    < <(core_tag_vocabulary)
+
+  printf '\nNo options given — choose what to install.\n'
+  printf 'Base essentials (shell, git, core tools) are always included.\n\n'
+  printf 'Categories:\n'
+  for i in "${!cats[@]}"; do
+    printf '  %2d) %-18s' "$((i + 1))" "${cats[$i]}"
+    col=$((col + 1))
+    [[ $((col % 3)) -eq 0 ]] && printf '\n'
+  done
+  [[ $((col % 3)) -ne 0 ]] && printf '\n'
+  printf '\nExtras:  w) work apps   p) personal apps   o) optional low-priority\n'
+  printf '\nEnter numbers/letters separated by spaces (e.g. "2 5 w"), "all", or Enter for base only: '
+
+  IFS= read -r line || line=""
+
+  if [[ "$line" == "all" || "$line" == "a" ]]; then
+    TAG_FILTER_ACTIVE=false
+    INCLUDE_WORK=true; INCLUDE_PERSONAL=true; INCLUDE_OPTIONAL=true
+  else
+    json="["
+    # shellcheck disable=SC2086  # intentional word-splitting on the input line
+    for tok in $line; do
+      case "$tok" in
+        w|W) INCLUDE_WORK=true ;;
+        p|P) INCLUDE_PERSONAL=true ;;
+        o|O) INCLUDE_OPTIONAL=true ;;
+        ''|*[!0-9]*) printf '  (ignoring "%s")\n' "$tok" >&2 ;;
+        *)
+          num=$((10#$tok))
+          if [[ "$num" -ge 1 && "$num" -le "${#cats[@]}" ]]; then
+            [[ "$first" -eq 1 ]] && first=0 || json+=","
+            json+="\"${cats[$((num - 1))]}\""
+          else
+            printf '  (ignoring out-of-range "%s")\n' "$tok" >&2
+          fi ;;
+      esac
+    done
+    json+="]"
+    SELECTED_TAGS="$json"
+    TAG_FILTER_ACTIVE=true
+  fi
+  export TAG_FILTER_ACTIVE SELECTED_TAGS
+
+  printf '\n==> Installing: base'
+  if [[ "$TAG_FILTER_ACTIVE" == true && "$SELECTED_TAGS" != "[]" ]]; then
+    printf ' + %s' "$(printf '%s' "$SELECTED_TAGS" | jq -r 'join(", ")')"
+  fi
+  [[ "$INCLUDE_WORK" == true ]] && printf ' + work'
+  [[ "$INCLUDE_PERSONAL" == true ]] && printf ' + personal'
+  [[ "$INCLUDE_OPTIONAL" == true ]] && printf ' + optional'
+  [[ "$TAG_FILTER_ACTIVE" != true ]] && printf ' (full set)'
+  printf '\n'
+}
+
+# Warn (don't fail) when --tags names a category that matches no package — tags
+# are metadata, so a typo would otherwise silently install only the base set.
+core_validate_tag_selection() {
+  [[ "$TAG_FILTER_ACTIVE" == true ]] || return 0
+  [[ "$SELECTED_TAGS" == "[]" ]] && return 0
+  command -v jq >/dev/null || return 0
+  local vocab tag
+  vocab="$(core_tag_vocabulary 2>/dev/null)" || return 0
+  while IFS= read -r tag; do
+    [[ -z "$tag" ]] && continue
+    grep -qxF -- "$tag" <<< "$vocab" \
+      || printf 'WARNING: --tags category "%s" matches no packages (ignored).\n' "$tag" >&2
+  done < <(printf '%s' "$SELECTED_TAGS" | jq -r '.[]')
+}
+
+# Prompt only when run interactively with no selection flags; never on the
+# headless server profile or in non-interactive/CI contexts.
+core_maybe_prompt_selection() {
+  [[ "$SERVER_PROFILE" == true ]] && return 0
+  [[ "$SELECTION_EXPLICIT" == true ]] && return 0
+  [[ -t 0 ]] || return 0
+  core_prompt_selection
 }
 
 # ── Run helpers ───────────────────────────────────────────────────────────────
@@ -150,10 +286,21 @@ configure_pnpm() {
 
 # shellcheck disable=SC2016  # $vars below are jq variables, not shell expansions
 CORE_JQ_DEFS='
-def envok($w; $p):
-  (.environment == null) or
-  (($w == "true") and (.environment | index("work"))) or
-  (($p == "true") and (.environment | index("personal")));
+def prfor($plat): (.priority | if type == "object" then .[$plat] else . end);
+def optfor($plat): (.optional | if type == "object" then .[$plat] else . end);
+def envfor($plat): (.environment | if type == "object" then .[$plat] else . end);
+def envok($plat; $w; $p):
+  (envfor($plat) as $e |
+    ($e == null) or
+    (($w == "true") and ($e | index("work"))) or
+    (($p == "true") and ($e | index("personal"))));
+def tagok($plat):
+  if (env.TAG_FILTER_ACTIVE != "true") then true
+  elif (prfor($plat) == "high") then true
+  elif (envfor($plat) != null) then true
+  else ((env.SELECTED_TAGS // "[]" | fromjson) as $sel
+        | (.tags // []) | any(. as $t | ($sel | index($t)) != null))
+  end;
 def icfor($plat):
   (.install_command | if type == "object" then .[$plat] else . end);
 def pname($plat): (.[$plat + "_name"] // .name);
@@ -166,8 +313,26 @@ pkg_names() {
   jq -r --arg plat "$PLATFORM" --arg m "$manager" --arg pr "$priority" \
      --arg w "$INCLUDE_WORK" --arg p "$INCLUDE_PERSONAL" \
     "$CORE_JQ_DEFS"'[.[] | select(
-        .package_manager[$plat] == $m and .priority == $pr and envok($w; $p)
+        .package_manager[$plat] == $m and prfor($plat) == $pr and envok($plat; $w; $p) and tagok($plat)
       ) | pname($plat)] | join(" ")' "$PACKAGES_JSON"
+}
+
+# True (exit 0) when the named package is selected for the current platform
+# under the active flags and tag filter — mirrors the tier/envok/tagok logic the
+# install loops use (high/medium always, low only with --optional, none never).
+# Lets the dedicated custom-install steps (tailscale, claude-code, docker) honor
+# --base/--tags instead of always running. On the server profile the tag filter
+# is inactive, so these resolve exactly as before.
+pkg_selected() {
+  # shellcheck disable=SC2016
+  jq -e --arg plat "$PLATFORM" --arg n "$1" \
+     --arg w "$INCLUDE_WORK" --arg p "$INCLUDE_PERSONAL" --arg opt "$INCLUDE_OPTIONAL" \
+    "$CORE_JQ_DEFS"'any(.[];
+        .name == $n and .package_manager[$plat] != null
+        and envok($plat; $w; $p) and tagok($plat)
+        and (prfor($plat) as $pr
+             | $pr == "high" or $pr == "medium" or ($pr == "low" and $opt == "true")))' \
+    "$PACKAGES_JSON" >/dev/null 2>&1
 }
 
 # install_command of a single package for this platform.
@@ -186,8 +351,8 @@ print_custom_reminders() {
   items=$(jq -r --arg plat "$PLATFORM" --arg pr "$priority" \
      --arg w "$INCLUDE_WORK" --arg p "$INCLUDE_PERSONAL" \
     "$CORE_JQ_DEFS"'.[] | select(
-        .package_manager[$plat] == "custom" and .priority == $pr and
-        (.handled_by_setup != true) and envok($w; $p)
+        .package_manager[$plat] == "custom" and prfor($plat) == $pr and
+        (.handled_by_setup != true) and envok($plat; $w; $p) and tagok($plat)
       ) | "  - \(.name)\n    \(.description)\n    Install: \(icfor($plat))"' \
     "$PACKAGES_JSON")
   [[ -n "$items" ]] && printf '%s\n' "$items"
@@ -224,7 +389,7 @@ pipx_install_tier() {
   jq -r --arg plat "$PLATFORM" --arg pr "$priority" \
      --arg w "$INCLUDE_WORK" --arg p "$INCLUDE_PERSONAL" \
     "$CORE_JQ_DEFS"'.[] | select(
-        .package_manager[$plat] == "pipx" and .priority == $pr and envok($w; $p)
+        .package_manager[$plat] == "pipx" and prfor($plat) == $pr and envok($plat; $w; $p) and tagok($plat)
       ) | (icfor($plat) // ("pipx install " + .name))' "$PACKAGES_JSON" |
   while read -r cmd; do
     run_eval "$cmd"
@@ -237,7 +402,7 @@ pnpm_install_tier() {
   names=$(jq -r --arg plat "$PLATFORM" --arg pr "$priority" \
      --arg w "$INCLUDE_WORK" --arg p "$INCLUDE_PERSONAL" \
     "$CORE_JQ_DEFS"'[.[] | select(
-        .package_manager[$plat] == "pnpm" and .priority == $pr and envok($w; $p)
+        .package_manager[$plat] == "pnpm" and prfor($plat) == $pr and envok($plat; $w; $p) and tagok($plat)
       ) | .name] | join(" ")' "$PACKAGES_JSON")
   [[ -z "$names" ]] && return 0
   # shellcheck disable=SC2086
@@ -316,9 +481,19 @@ apt_bootstrap() {
   printf '==> Updating package list...\n'
   run sudo apt update
 
-  if ! command -v jq &>/dev/null; then
-    printf '==> Bootstrapping jq...\n'
-    run sudo apt install -y jq
+  # Bootstrap the essentials the rest of setup relies on before the package
+  # tiers run: curl/wget drive the nvm/pyenv/tailscale/claude install scripts and
+  # the apt-repo key fetches below; jq drives package selection. Fresh Ubuntu
+  # desktop ships none of curl/jq, so the first curl step (nvm) used to fail.
+  local boot=() b
+  for b in curl wget jq; do
+    command -v "$b" &>/dev/null || boot+=("$b")
+  done
+  if [[ "$DRY_RUN" == true ]]; then
+    printf '  [dry-run] ensure ca-certificates curl wget jq are present\n'
+  elif [[ ${#boot[@]} -gt 0 ]]; then
+    printf '==> Bootstrapping essentials: %s\n' "${boot[*]}"
+    run sudo apt install -y ca-certificates "${boot[@]}"
   fi
 
   local need_update=false
@@ -381,16 +556,16 @@ snap_install_tier() {
   regular_snaps=$(jq -r --arg plat "$PLATFORM" --arg pr "$priority" \
      --arg w "$INCLUDE_WORK" --arg p "$INCLUDE_PERSONAL" \
     "$CORE_JQ_DEFS"'[.[] | select(
-        .package_manager[$plat] == "snap" and .priority == $pr and
-        envok($w; $p) and (icfor($plat) == null)
+        .package_manager[$plat] == "snap" and prfor($plat) == $pr and
+        envok($plat; $w; $p) and (icfor($plat) == null) and tagok($plat)
       ) | pname($plat)] | join(" ")' "$PACKAGES_JSON")
   # Snaps needing flags (e.g. --classic) carry their full install_command.
   # shellcheck disable=SC2016
   custom_snaps=$(jq -r --arg plat "$PLATFORM" --arg pr "$priority" \
      --arg w "$INCLUDE_WORK" --arg p "$INCLUDE_PERSONAL" \
     "$CORE_JQ_DEFS"'.[] | select(
-        .package_manager[$plat] == "snap" and .priority == $pr and
-        envok($w; $p) and (icfor($plat) != null)
+        .package_manager[$plat] == "snap" and prfor($plat) == $pr and
+        envok($plat; $w; $p) and (icfor($plat) != null) and tagok($plat)
       ) | "\(.name)|\(icfor($plat))"' "$PACKAGES_JSON")
 
   if [[ -n "$regular_snaps" ]]; then
@@ -444,6 +619,7 @@ platform_install_tier() {
 # Tailscale via the official curl installer — apt-family default (ubuntu + server).
 # arch.sh overrides this (tailscale ships in the yay batch; just enable the daemon).
 platform_tailscale_step() {
+  pkg_selected tailscale || return 0
   printf '\n'
   if [[ "$DRY_RUN" == true ]]; then
     command -v tailscale &>/dev/null \
@@ -457,12 +633,14 @@ platform_tailscale_step() {
   fi
 }
 
-# Docker via get.docker.com — apt-family default (ubuntu + server).
-# arch.sh overrides this (docker ships in the yay batch; just enable the daemon).
+# Docker — apt-family default (ubuntu + server); the install command comes from
+# packages.json (docker's install_command) via custom_cmd, the post-install
+# group step lives here. arch.sh overrides this (docker ships in the yay batch;
+# just enable the daemon).
 platform_docker_optional() {
   if ! command -v docker &>/dev/null; then
     printf '==> Installing Docker...\n'
-    run_eval "curl -fsSL https://get.docker.com | sudo sh"
+    run_eval "$(custom_cmd docker)"
     run sudo usermod -aG docker "$USER"
     printf '    Log out and back in for the docker group to take effect.\n'
   else
@@ -575,6 +753,7 @@ rust_toolchain_step() {
 }
 
 claude_code_step() {
+  pkg_selected claude-code || return 0
   printf '\n'
   if [[ "$DRY_RUN" == true ]]; then
     command -v claude &>/dev/null \
@@ -733,7 +912,7 @@ linux_main() {
     platform_install_tier low
     pipx_install_tier low
     pnpm_install_tier low
-    platform_docker_optional
+    if pkg_selected docker; then platform_docker_optional; fi
   fi
 
   custom_reminders_section
