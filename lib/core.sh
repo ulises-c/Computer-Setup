@@ -628,12 +628,14 @@ platform_tailscale_step() {
   fi
 }
 
-# Docker via get.docker.com — apt-family default (ubuntu + server).
-# arch.sh overrides this (docker ships in the yay batch; just enable the daemon).
+# Docker — apt-family default (ubuntu + server); the install command comes from
+# packages.json (docker's install_command) via custom_cmd, the post-install
+# group step lives here. arch.sh overrides this (docker ships in the yay batch;
+# just enable the daemon).
 platform_docker_optional() {
   if ! command -v docker &>/dev/null; then
     printf '==> Installing Docker...\n'
-    run_eval "curl -fsSL https://get.docker.com | sudo sh"
+    run_eval "$(custom_cmd docker)"
     run sudo usermod -aG docker "$USER"
     printf '    Log out and back in for the docker group to take effect.\n'
   else

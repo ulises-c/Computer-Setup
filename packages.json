@@ -423,7 +423,7 @@
   {
     "name": "docker",
     "tags": ["development", "containers"],
-    "package_manager": { "macos": "brew-cask", "ubuntu": "custom", "arch": "yay" },
+    "package_manager": { "macos": "brew-cask", "ubuntu": "custom", "arch": "yay", "server": "custom" },
     "macos_name": "docker-desktop",
     "priority": "low",
     "optional": true,
