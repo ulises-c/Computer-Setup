@@ -104,6 +104,11 @@ core_detect_platform() {
 
 # ── Interactive category selection ────────────────────────────────────────────
 
+# Newline-separated list of every tag category present in packages.json.
+core_tag_vocabulary() {
+  jq -r '[.[].tags[]] | unique | .[]' "$PACKAGES_JSON"
+}
+
 # "dev, terminal ,local-llm" -> ["dev","terminal","local-llm"] (built without jq
 # so --tags works before the jq bootstrap; tags are simple [a-z-] tokens).
 core_csv_to_json() {
@@ -132,7 +137,7 @@ core_prompt_selection() {
   local -a cats=()
   local cat line tok num i col=0 json first=1
   while IFS= read -r cat; do cats+=("$cat"); done \
-    < <(jq -r '[.[].tags[]] | unique | .[]' "$PACKAGES_JSON")
+    < <(core_tag_vocabulary)
 
   printf '\nNo options given — choose what to install.\n'
   printf 'Base essentials (shell, git, core tools) are always included.\n\n'
@@ -194,7 +199,7 @@ core_validate_tag_selection() {
   [[ "$SELECTED_TAGS" == "[]" ]] && return 0
   command -v jq >/dev/null || return 0
   local vocab tag
-  vocab="$(jq -r '[.[].tags[]] | unique | .[]' "$PACKAGES_JSON" 2>/dev/null)" || return 0
+  vocab="$(core_tag_vocabulary 2>/dev/null)" || return 0
   while IFS= read -r tag; do
     [[ -z "$tag" ]] && continue
     grep -qxF -- "$tag" <<< "$vocab" \
