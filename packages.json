@@ -608,6 +608,14 @@
     "description": "Simple menubar toggle to keep Mac awake"
   },
   {
+    "name": "stats",
+    "tags": ["system-monitoring", "desktop-utility"],
+    "package_manager": { "macos": "brew-cask" },
+    "priority": "medium",
+    "optional": false,
+    "description": "macOS menubar system monitor for CPU, GPU, memory, network, and disk"
+  },
+  {
     "name": "google-drive",
     "tags": ["cloud-storage"],
     "package_manager": { "macos": "brew-cask" },
