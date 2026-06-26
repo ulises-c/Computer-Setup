@@ -763,6 +763,14 @@
     "description": "Geekbench 6 — standardized CPU + Metal GPU benchmark; used by macOS/benchmarks/standardized.sh"
   },
   {
+    "name": "geekbench-ai",
+    "tags": ["system-monitoring"],
+    "package_manager": { "macos": "brew-cask" },
+    "priority": "low",
+    "optional": true,
+    "description": "Geekbench AI — standardized ML inference benchmark (Core ML / Metal / ANE); used by macOS/benchmarks/standardized.sh"
+  },
+  {
     "name": "cinebench",
     "tags": ["system-monitoring"],
     "package_manager": { "macos": "brew-cask" },

@@ -38,7 +38,7 @@ brew install hyperfine   # timing stats with stddev for CPU section
 For `standardized.sh`:
 
 ```sh
-brew install --cask geekbench cinebench blender-benchmark
+brew install --cask geekbench geekbench-ai cinebench blender-benchmark
 ```
 
 For `llm-bench.sh`:
@@ -103,6 +103,10 @@ bash macOS/benchmarks/standardized.sh --cpu-only # skip GPU/compute sub-tests
 - **Geekbench 6** — free tier uploads to the public Geekbench Browser and the
   script records the result URL; a Pro license enables offline JSON export and
   the script records the numeric single/multi scores directly.
+- **Geekbench AI** — runs the `banff` CLI (`--ai`), an ML-inference benchmark
+  (single-precision / half-precision / quantized scores across Core ML / Metal
+  / Neural Engine). The free CLI uploads to the Geekbench AI Browser; the script
+  records the result URL.
 - **Cinebench / Blender** — CLI flags and score formats vary by version. The
   script captures what it can and always keeps the raw output; verify against
   `results/standardized_*_raw/` if a score looks off.
@@ -183,6 +187,15 @@ Key output fields: `single_stream_tps`, `peak_aggregate_tps`,
 > The peak-aggregate figure is the meaningful one for comparing Macs as
 > inference hosts — it reflects memory bandwidth and the batch scheduler under
 > real concurrent load, not just single-request decode speed.
+
+**vs. oMLX's built-in benchmark.** The oMLX admin dashboard
+(`http://localhost:8000/admin`) has a one-click benchmark with *performance*
+and *intelligence* sections. *Performance* measures prefill/generation
+tokens/sec with prefix-cache-hit testing — the same throughput `omlx-bench.sh`
+captures via the API, plus our concurrency sweep on top. *Intelligence* is a
+model-quality eval. Both are dashboard-only (no documented API/CLI), so they
+stay a manual step; `omlx-bench.sh` is the scriptable, two-machine-comparable
+counterpart for the performance side.
 
 ## Stress test (throttle detection)
 

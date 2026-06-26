@@ -70,6 +70,34 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Geekbench AI (banff CLI)
+# ---------------------------------------------------------------------------
+GEEKBENCH_AI_JSON="null"
+GBAI_BIN=""
+for cand in banff_aarch64 banff; do
+  p="/Applications/Geekbench AI.app/Contents/Resources/$cand"
+  [[ -x "$p" ]] && { GBAI_BIN="$p"; break; }
+done
+
+if [[ -n "$GBAI_BIN" ]]; then
+  header "Geekbench AI"
+  GBAI_RAW="$RAWDIR/geekbench_ai.txt"
+  # Free CLI runs the inference benchmark and uploads; scores land in the
+  # Geekbench AI Browser and the result URL is printed to stdout.
+  "$GBAI_BIN" --ai >"$GBAI_RAW" 2>&1 || true
+  GBAI_URL=$(grep -oE 'https://browser\.geekbench\.com/ai/[^ ]+' "$GBAI_RAW" | head -1 || true)
+  if [[ -n "$GBAI_URL" ]]; then
+    GEEKBENCH_AI_JSON=$(jq -n --arg url "$GBAI_URL" '{ result_url: $url, mode: "free-upload", note: "single/half/quantized scores in the Geekbench AI Browser" }')
+    ok "Geekbench AI result: $GBAI_URL"
+  else
+    warn "Geekbench AI produced no parseable result — see $GBAI_RAW"
+    GEEKBENCH_AI_JSON=$(jq -n '{ error: "no score/url parsed" }')
+  fi
+else
+  info "Geekbench AI not installed (brew install --cask geekbench-ai) — skipping"
+fi
+
+# ---------------------------------------------------------------------------
 # Cinebench
 # ---------------------------------------------------------------------------
 CINEBENCH_JSON="null"
@@ -138,16 +166,18 @@ header "Writing results"
 DURATION_S=$(( SECONDS - START_S ))
 
 jq -n \
-  --argjson sysinfo   "$SYSINFO" \
-  --argjson geekbench "$GEEKBENCH_JSON" \
-  --argjson cinebench "$CINEBENCH_JSON" \
-  --argjson blender   "$BLENDER_JSON" \
-  --arg     ts        "$(ts_iso)" \
-  --argjson dur       "$DURATION_S" \
+  --argjson sysinfo     "$SYSINFO" \
+  --argjson geekbench   "$GEEKBENCH_JSON" \
+  --argjson geekbenchai "$GEEKBENCH_AI_JSON" \
+  --argjson cinebench   "$CINEBENCH_JSON" \
+  --argjson blender     "$BLENDER_JSON" \
+  --arg     ts          "$(ts_iso)" \
+  --argjson dur         "$DURATION_S" \
   '{
     metadata: { suite: "standardized", timestamp: $ts, duration_s: $dur, suite_version: "1.0.0" },
     sysinfo: $sysinfo,
     geekbench6: $geekbench,
+    geekbench_ai: $geekbenchai,
     cinebench: $cinebench,
     blender_benchmark: $blender
   }' > "$OUTFILE"

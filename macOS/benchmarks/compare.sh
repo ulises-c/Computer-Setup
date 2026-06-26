@@ -58,6 +58,7 @@ rows_for_suite() {
       jq -n --slurpfile a "$FILE_A" --slurpfile b "$FILE_B" "$common"'
       [ row("Geekbench single";   safenum($a[0].geekbench6.single_core);            safenum($b[0].geekbench6.single_core);            true; ""),
         row("Geekbench multi";    safenum($a[0].geekbench6.multi_core);             safenum($b[0].geekbench6.multi_core);             true; ""),
+        row("Geekbench AI score"; safenum($a[0].geekbench_ai.score);                safenum($b[0].geekbench_ai.score);                true; ""),
         row("Cinebench single";   safenum($a[0].cinebench.cpu_single);              safenum($b[0].cinebench.cpu_single);              true; ""),
         row("Cinebench multi";    safenum($a[0].cinebench.cpu_multi);               safenum($b[0].cinebench.cpu_multi);               true; ""),
         row("Blender (samp/min)"; safenum($a[0].blender_benchmark.total_samples_per_minute); safenum($b[0].blender_benchmark.total_samples_per_minute); true; "s/min") ]'
