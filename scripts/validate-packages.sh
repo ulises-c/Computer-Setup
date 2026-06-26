@@ -39,10 +39,10 @@ errors=$(jq -r '
   def PLATFORMS: ["macos","ubuntu","arch","server"];
   def TIERS: ["high","medium","low","none"];
   def ENVS: ["work","personal"];
-  def TAGS: ["ai-coding","browser","cloud-storage","communication","containers",
-             "database","desktop-utility","development","entertainment","local-llm",
-             "media","networking","photos","productivity","science","security",
-             "system-monitoring","terminal"];
+  def TAGS: ["ai-coding","benchmarking","browser","cloud-storage","communication",
+             "containers","database","desktop-utility","development","entertainment",
+             "local-llm","media","networking","photos","productivity","science",
+             "security","system-monitoring","terminal"];
   def prfor($p): (.priority | if type == "object" then .[$p] else . end);
   def optfor($p): (.optional | if type == "object" then .[$p] else . end);
 
