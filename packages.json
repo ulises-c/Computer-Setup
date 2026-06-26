@@ -723,12 +723,70 @@
     "description": "OCR engine — extract text from images and scanned documents"
   },
   {
+    "name": "fio",
+    "tags": ["system-monitoring"],
+    "package_manager": { "macos": "brew" },
+    "priority": "low",
+    "optional": true,
+    "description": "Storage I/O benchmark — sequential and random IOPS; used by macOS/benchmarks/"
+  },
+  {
+    "name": "hyperfine",
+    "tags": ["system-monitoring"],
+    "package_manager": { "macos": "brew" },
+    "priority": "low",
+    "optional": true,
+    "description": "Command-line benchmarking tool with warmup, N runs, and JSON export"
+  },
+  {
     "name": "smartmontools",
     "tags": ["system-monitoring"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "low",
     "optional": true,
     "description": "Monitor SSD/HDD health via S.M.A.R.T. data — use: smartctl -a /dev/sdX"
+  },
+  {
+    "name": "stress-ng",
+    "tags": ["system-monitoring"],
+    "package_manager": { "macos": "brew" },
+    "priority": "low",
+    "optional": true,
+    "description": "CPU/memory stress tester — STREAM memory bandwidth; used by macOS/benchmarks/"
+  },
+  {
+    "name": "geekbench",
+    "tags": ["system-monitoring"],
+    "package_manager": { "macos": "brew-cask" },
+    "priority": "low",
+    "optional": true,
+    "description": "Geekbench 6 — standardized CPU + Metal GPU benchmark; used by macOS/benchmarks/standardized.sh"
+  },
+  {
+    "name": "cinebench",
+    "tags": ["system-monitoring"],
+    "package_manager": { "macos": "brew-cask" },
+    "priority": "low",
+    "optional": true,
+    "description": "Cinebench — native Apple Silicon CPU + GPU render benchmark; used by macOS/benchmarks/standardized.sh"
+  },
+  {
+    "name": "blender-benchmark",
+    "tags": ["system-monitoring"],
+    "package_manager": { "macos": "brew-cask" },
+    "priority": "low",
+    "optional": true,
+    "description": "Blender Benchmark — Metal GPU render workload (samples/min); used by macOS/benchmarks/standardized.sh"
+  },
+  {
+    "name": "omlx",
+    "tags": ["local-llm"],
+    "package_manager": { "macos": "custom" },
+    "install_command": "bash \"$SETUP_ROOT/macOS/install-omlx-app.sh\"",
+    "handled_by_setup": true,
+    "priority": "low",
+    "optional": true,
+    "description": "oMLX menu-bar app — native macOS front end + MLX inference server (web chat at /admin/chat). Installed from the GitHub .dmg; do not also install the omlx brew formula (port/state conflict)"
   },
   {
     "name": "nmap",

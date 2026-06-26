@@ -40,6 +40,9 @@ linux-server/*/ts-state/
 linux-server/qbittorrent/config/
 linux-server/qbittorrent/downloads/
 
+# Benchmark result files (machine-local, may contain hostname)
+macOS/benchmarks/results/
+
 # Backup status JSON written at runtime (served to the homepage card)
 linux-server/backup/status/
 
