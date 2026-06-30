@@ -38,7 +38,8 @@ brew install hyperfine   # timing stats with stddev for CPU section
 For `standardized.sh`:
 
 ```sh
-brew install --cask geekbench geekbench-ai cinebench blender-benchmark
+brew install --cask geekbench geekbench-ai blender-benchmark
+bash macOS/install-cinebench.sh   # Cinebench: direct .dmg (brew cask checksum goes stale vs Maxon's rolling build)
 ```
 
 For `llm-bench.sh`:

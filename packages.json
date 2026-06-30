@@ -773,10 +773,12 @@
   {
     "name": "cinebench",
     "tags": ["benchmarking"],
-    "package_manager": { "macos": "brew-cask" },
+    "package_manager": { "macos": "custom" },
+    "install_command": "bash \"$SETUP_ROOT/macOS/install-cinebench.sh\"",
+    "handled_by_setup": true,
     "priority": "low",
     "optional": true,
-    "description": "Cinebench — native Apple Silicon CPU + GPU render benchmark; used by macOS/benchmarks/standardized.sh"
+    "description": "Cinebench — native Apple Silicon CPU + GPU render benchmark; used by macOS/benchmarks/standardized.sh. Installed from Maxon's .dmg (the brew cask's pinned checksum goes stale against Maxon's rolling build)"
   },
   {
     "name": "blender-benchmark",

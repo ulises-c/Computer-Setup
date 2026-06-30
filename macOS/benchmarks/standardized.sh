@@ -122,7 +122,7 @@ if [[ -n "$CB_BIN" ]]; then
     '{ cpu_single: $s, cpu_multi: $m, note: "CLI score format varies by Cinebench version — verify against raw output" }')
   ok "Cinebench CPU: single=${CB_SINGLE} multi=${CB_MULTI}"
 else
-  info "Cinebench not installed (brew install --cask cinebench) — skipping"
+  info "Cinebench not installed (bash macOS/install-cinebench.sh) — skipping"
 fi
 
 # ---------------------------------------------------------------------------

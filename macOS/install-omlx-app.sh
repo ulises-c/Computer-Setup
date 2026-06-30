@@ -22,11 +22,22 @@ if [[ -d "/Applications/oMLX.app" ]]; then
 fi
 
 info "Resolving latest oMLX release..."
-dmg_url=$(curl -fsSL "$API" \
+dmg_urls=$(curl -fsSL "$API" \
   | grep -oE '"browser_download_url":[[:space:]]*"[^"]+\.dmg"' \
-  | grep -oE 'https://[^"]+\.dmg' \
-  | head -1 || true)
-[[ -n "$dmg_url" ]] || die "could not find a .dmg asset in the latest release of $REPO"
+  | grep -oE 'https://[^"]+\.dmg' || true)
+[[ -n "$dmg_urls" ]] || die "could not find a .dmg asset in the latest release of $REPO"
+
+# oMLX ships one DMG per macOS generation (e.g. macos15-sequoia vs macos26-27),
+# with no architecture variants. Pick the build matching this Mac's major
+# version; fall back to the first asset if nothing matches.
+os_major=$(sw_vers -productVersion | cut -d. -f1)
+if (( os_major >= 26 )); then
+  dmg_url=$(grep -iE "macos(26|27)|tahoe" <<< "$dmg_urls" | head -1 || true)
+elif (( os_major == 15 )); then
+  dmg_url=$(grep -iE "macos15|sequoia" <<< "$dmg_urls" | head -1 || true)
+fi
+[[ -n "${dmg_url:-}" ]] || dmg_url=$(head -1 <<< "$dmg_urls")
+info "Selected DMG for macOS $os_major: $(basename "$dmg_url")"
 
 workdir=$(mktemp -d)
 mnt="$workdir/mnt"

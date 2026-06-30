@@ -7,14 +7,20 @@ BREW_FAILURES=()
 BREW_TOTAL=0
 
 brew_install_tier() {
-  local priority="$1" names name err reason
+  local priority="$1" names name err reason i total
+  local -a list
   names=$(pkg_names brew "$priority")
   [[ -z "$names" ]] && return 0
-  for name in $names; do
+  read -ra list <<< "$names"
+  total=${#list[@]}
+  i=0
+  for name in "${list[@]}"; do
+    i=$((i + 1))
     if [[ "$DRY_RUN" == true ]]; then
-      printf '  [dry-run] brew install %s\n' "$name"
+      printf '  [dry-run] [%d/%d] brew install %s\n' "$i" "$total" "$name"
       continue
     fi
+    printf '  [%d/%d] brew install %s...\n' "$i" "$total" "$name"
     BREW_TOTAL=$((BREW_TOTAL + 1))
     if ! err=$(brew install "$name" 2>&1); then
       reason=$(printf '%s\n' "$err" | grep -m1 'Error:' | sed 's/^Error: //')
@@ -26,16 +32,22 @@ brew_install_tier() {
 }
 
 brew_cask_install_tier() {
-  local priority="$1" names name err reason
+  local priority="$1" names name err reason i total
+  local -a list
   names=$(pkg_names brew-cask "$priority")
   [[ -z "$names" ]] && return 0
+  read -ra list <<< "$names"
+  total=${#list[@]}
+  i=0
   # --adopt: take ownership of apps already in /Applications (manual installs)
   # instead of hard-failing the whole tier (#31)
-  for name in $names; do
+  for name in "${list[@]}"; do
+    i=$((i + 1))
     if [[ "$DRY_RUN" == true ]]; then
-      printf '  [dry-run] brew install --cask --adopt %s\n' "$name"
+      printf '  [dry-run] [%d/%d] brew install --cask --adopt %s\n' "$i" "$total" "$name"
       continue
     fi
+    printf '  [%d/%d] brew install --cask %s...\n' "$i" "$total" "$name"
     BREW_TOTAL=$((BREW_TOTAL + 1))
     if ! err=$(brew install --cask --adopt "$name" 2>&1); then
       reason=$(printf '%s\n' "$err" | grep -m1 'Error:' | sed 's/^Error: //')
@@ -61,12 +73,29 @@ mac_custom_install_tier() {
 }
 
 mac_pipx_install_tier() {
-  local priority="$1" names name
+  local priority="$1" names name i total
+  local -a list
   names=$(pkg_names pipx "$priority")
   [[ -z "$names" ]] && return 0
-  for name in $names; do
+  read -ra list <<< "$names"
+  total=${#list[@]}
+  i=0
+  for name in "${list[@]}"; do
+    i=$((i + 1))
+    printf '  [%d/%d] pipx install %s...\n' "$i" "$total" "$name"
     run pipx install "$name"
   done
+}
+
+# Cache sudo credentials once up front. Homebrew's cask/pkg installers each shell
+# out to `sudo`, so without this a fresh install prompts for the password ~6
+# times. Prime the timestamp once, then refresh it in the background until this
+# script exits so every later sudo call reuses it silently.
+mac_prime_sudo() {
+  [[ "$DRY_RUN" == true ]] && return 0
+  printf '==> Caching credentials (you may be prompted for your password once)...\n'
+  sudo -v || return 0
+  ( while true; do sudo -n true; sleep 60; kill -0 "$$" 2>/dev/null || exit; done ) 2>/dev/null &
 }
 
 print_app_store_reminders() {
@@ -84,6 +113,10 @@ print_app_store_reminders() {
 platform_main() {
   # shellcheck disable=SC2034  # consumed by deploy_zshrc in lib/core.sh
   CONFIG_SRC_DIR="$SETUP_ROOT/macOS"
+
+  # ── sudo priming ──────────────────────────────────────────────────────────────
+  mac_prime_sudo
+
   # ── Homebrew ────────────────────────────────────────────────────────────────
   if ! command -v brew &>/dev/null; then
     printf '==> Installing Homebrew...\n'
@@ -220,9 +253,8 @@ platform_main() {
   export PATH="$PNPM_HOME/bin:$PATH"
   if [[ "$DRY_RUN" == true ]] || command -v pnpm &>/dev/null; then
     pnpm_install_tier medium
-
-    # Post-install: codeburn menubar (macOS native Swift app)
-    run codeburn menubar || printf 'warning: codeburn menubar failed (non-fatal)\n' >&2
+    # codeburn's menu-bar app is buggy upstream, so it is NOT installed
+    # automatically — it is printed as a manual post-install step below.
   else
     printf '  pnpm not found — skipping (run corepack enable)\n'
   fi
@@ -248,6 +280,12 @@ platform_main() {
   print_app_store_reminders medium
   print_app_store_reminders none
   [[ "$INCLUDE_OPTIONAL" == true ]] && print_app_store_reminders low
+
+  if pkg_selected codeburn; then
+    printf '\n'
+    printf 'Manual post-install steps:\n'
+    printf '  - codeburn menubar    # installs the menu-bar app (currently buggy upstream — run only if you want it)\n'
+  fi
 
   printf '\n'
   printf 'Optional — run these from the repo root as needed:\n'
