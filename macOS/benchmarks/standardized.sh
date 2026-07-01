@@ -102,22 +102,24 @@ fi
 # Cinebench
 # ---------------------------------------------------------------------------
 CINEBENCH_JSON="null"
-CB_BIN=$(find /Applications -maxdepth 3 -name 'Cinebench' -type f -path '*Contents/MacOS*' 2>/dev/null | head -1 || true)
+# binary sits at depth 4: /Applications/Cinebench.app/Contents/MacOS/Cinebench
+CB_BIN=$(find /Applications -maxdepth 4 -name 'Cinebench' -type f -path '*Contents/MacOS*' 2>/dev/null | head -1 || true)
 
 if [[ -n "$CB_BIN" ]]; then
   header "Cinebench"
-  CB_RAW="$RAWDIR/cinebench.txt"
+  # Each run parses its own raw file — a shared file would let a failed
+  # single-core run silently pick up the multi-core score.
+  CB_MULTI_RAW="$RAWDIR/cinebench-multi.txt"
   # CLI runs the multi-threaded CPU test and prints "CB <score>"
-  "$CB_BIN" g_CinebenchCpuXTest=true >"$CB_RAW" 2>&1 || true
-  CB_MULTI=$(grep -oE 'CB[[:space:]]+[0-9]+' "$CB_RAW" | grep -oE '[0-9]+' | tail -1 || true)
+  "$CB_BIN" g_CinebenchCpuXTest=true >"$CB_MULTI_RAW" 2>&1 || true
+  CB_MULTI=$(grep -oE 'CB[[:space:]]+[0-9]+' "$CB_MULTI_RAW" | grep -oE '[0-9]+' | tail -1 || true)
   [[ -z "$CB_MULTI" ]] && CB_MULTI="null"
 
-  CB_SINGLE="null"
-  if ! $CPU_ONLY; then
-    "$CB_BIN" g_CinebenchCpu1Test=true >>"$CB_RAW" 2>&1 || true
-    CB_SINGLE=$(grep -oE 'CB[[:space:]]+[0-9]+' "$CB_RAW" | grep -oE '[0-9]+' | tail -1 || true)
-    [[ -z "$CB_SINGLE" ]] && CB_SINGLE="null"
-  fi
+  # Both Cinebench passes are CPU tests — --cpu-only does not skip them
+  CB_SINGLE_RAW="$RAWDIR/cinebench-single.txt"
+  "$CB_BIN" g_CinebenchCpu1Test=true >"$CB_SINGLE_RAW" 2>&1 || true
+  CB_SINGLE=$(grep -oE 'CB[[:space:]]+[0-9]+' "$CB_SINGLE_RAW" | grep -oE '[0-9]+' | tail -1 || true)
+  [[ -z "$CB_SINGLE" ]] && CB_SINGLE="null"
 
   CINEBENCH_JSON=$(jq -n --argjson s "$CB_SINGLE" --argjson m "$CB_MULTI" \
     '{ cpu_single: $s, cpu_multi: $m, note: "CLI score format varies by Cinebench version — verify against raw output" }')
@@ -138,7 +140,11 @@ if [[ -n "$BB_BIN" ]] && ! $CPU_ONLY; then
   # Resolve latest available Blender version, then run the standard scenes on Metal
   BB_VER=$("$BB_BIN" blender list 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | tail -1 || true)
   if [[ -n "$BB_VER" ]]; then
+    # The benchmark subcommand does not auto-download; fetch the runtime and
+    # scenes explicitly first (no-ops when already cached)
     info "Blender $BB_VER — downloading runtime + scenes (first run only)..."
+    "$BB_BIN" blender download "$BB_VER" >/dev/null 2>&1 || true
+    "$BB_BIN" scenes download -b "$BB_VER" monster junkshop classroom >/dev/null 2>&1 || true
     "$BB_BIN" benchmark monster junkshop classroom \
       --blender-version "$BB_VER" \
       --device-type METAL \

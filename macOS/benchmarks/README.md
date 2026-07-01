@@ -7,7 +7,7 @@ run identically on two machines so results can be diffed with `compare.sh`.
 
 | File | Purpose |
 |---|---|
-| `benchmark.sh` | Synthetic CPU, memory bandwidth, storage I/O, optional GPU |
+| `benchmark.sh` | Synthetic CPU, memory bandwidth, storage I/O |
 | `standardized.sh` | Geekbench 6, Cinebench, Blender Benchmark wrappers |
 | `llm-bench.sh` | Local LLM tokens/s — same model through MLX and llama.cpp |
 | `omlx-bench.sh` | oMLX server concurrency sweep — continuous-batching throughput |
@@ -18,13 +18,15 @@ run identically on two machines so results can be diffed with `compare.sh`.
 | `results/` | Output directory — gitignored, machine-local |
 
 All result files carry a `metadata.suite` tag (`benchmark`, `standardized`,
-`llm`, `stress`). `compare.sh` auto-detects it and refuses to compare across
-suites.
+`llm`, `omlx`, `stress`). `compare.sh` auto-detects it and refuses to compare
+across suites.
 
 ## Prerequisites
 
-Required (both are macOS built-ins):
-- `openssl` — CPU benchmark (comes with Homebrew's openssl or macOS system)
+Required:
+- `openssl@3` — CPU benchmark (`brew install openssl@3`). Stock macOS
+  `openssl` is LibreSSL, which lacks `speed -seconds`; the scripts pick up the
+  keg-only brew install automatically.
 - `jq` — JSON assembly (`brew install jq`)
 
 Optional, for `benchmark.sh` (each unlocks an additional section):
@@ -82,12 +84,15 @@ Results land in `macOS/benchmarks/results/benchmark_<hostname>_<datetime>.json`.
 3. Run:
 
 ```sh
-bash macOS/benchmarks/compare.sh results/benchmark_m5-max*.json results/benchmark_m4-max*.json
+bash macOS/benchmarks/compare.sh \
+  macOS/benchmarks/results/benchmark_<hostname-a>*.json \
+  macOS/benchmarks/results/benchmark_<hostname-b>*.json
 ```
 
 Output is a table with absolute delta and % difference, with a winner column
-for each metric. `compare.sh` works the same way for `standardized_*` and
-`llm_*` result files — it picks the right metric table from the suite tag.
+for each metric. `compare.sh` works the same way for `standardized_*`,
+`llm_*`, `omlx_*`, and `stress_*` result files — it picks the right metric
+table from the suite tag.
 
 ## Standardized benchmarks
 
@@ -143,11 +148,12 @@ GGUF_REPO=bartowski/Meta-Llama-3.1-8B-Instruct-GGUF GGUF_QUANT=Q4_K_M \
   bash macOS/benchmarks/llm-bench.sh
 ```
 
-> **First run downloads weights** (~13GB per runtime for the 12B-8bit default)
-> to the Hugging Face cache. MLX 8-bit and GGUF Q8_0 are different quantization
-> schemes — close in size/quality but not bit-identical; the tokens/sec rates
-> remain comparable. If `llama-bench` fails, the GGUF repo/quant likely doesn't
-> exist — override `GGUF_REPO`/`GGUF_QUANT`.
+> **First run downloads weights** (~13GB per runtime for the 12B-8bit default).
+> MLX uses the Hugging Face cache; the GGUF is resolved via the HF API and
+> cached under `~/.cache/llama.cpp` (override with `GGUF_CACHE`). MLX 8-bit and
+> GGUF Q8_0 are different quantization schemes — close in size/quality but not
+> bit-identical; the tokens/sec rates remain comparable. If no GGUF is found,
+> the repo/quant likely doesn't exist — override `GGUF_REPO`/`GGUF_QUANT`.
 
 Results land in `results/llm_<hostname>_<datetime>.json`.
 
@@ -202,7 +208,10 @@ counterpart for the performance side.
 
 Runs all CPU cores at full load for 5 minutes (default), samples sha256
 throughput every 30 seconds, and flags any sample where performance drops
-below 90% of baseline.
+below 90% of baseline. The baseline is measured **under load** after a short
+settle period (an idle baseline would read single-core boost clocks and flag
+normal scheduler contention as throttling), so the ratio isolates thermal
+decline over the run.
 
 ```sh
 bash macOS/benchmarks/stress-test.sh          # 5 min
@@ -229,7 +238,6 @@ The `throttle_detection.throttled` field in the JSON is the quick answer:
 | `storage.seq_read_mbs` | MB/s | yes — may reflect SLC cache |
 | `storage.rand_write_iops` | IOPS | yes |
 | `storage.rand_read_iops` | IOPS | yes |
-| `gpu.tg_tokens_per_s` | tok/s | yes |
 
 ## Notes
 

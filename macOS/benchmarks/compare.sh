@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Compare two result JSON files side-by-side. Auto-detects the suite type
-# (benchmark | llm | standardized) from .metadata.suite and renders the
-# appropriate metric table with absolute delta, % difference, and a winner.
+# (benchmark | standardized | llm | omlx | stress) from .metadata.suite and
+# renders the appropriate metric table with absolute delta, % difference, and
+# a winner.
 #
 # Usage: bash compare.sh <result_a.json> <result_b.json>
 set -euo pipefail
@@ -33,7 +34,9 @@ rows_for_suite() {
       elif hib and d > 0 then "B" elif (hib|not) and d < 0 then "B" else "A" end;
     def row(lbl; av; bv; hib; unit):
       (bv - av) as $d
-      | {label: lbl, a: av, b: bv, delta: $d, pct: pct(av; bv), winner: win($d; hib), unit: unit};
+      | {label: lbl, a: av, b: bv, delta: $d,
+         pct: (pct(av; bv) // "null"),
+         winner: win($d; hib), unit: unit};
   '
   case "$suite" in
     benchmark)
@@ -68,6 +71,12 @@ rows_for_suite() {
       [ row("single-stream (tok/s)"; safenum($a[0].single_stream_tps);  safenum($b[0].single_stream_tps);  true; "tok/s"),
         row("peak aggregate (tok/s)";safenum($a[0].peak_aggregate_tps); safenum($b[0].peak_aggregate_tps); true; "tok/s"),
         row("batching speedup (x)";  safenum($a[0].batching_speedup);   safenum($b[0].batching_speedup);   true; "x") ]'
+      ;;
+    stress)
+      jq -n --slurpfile a "$FILE_A" --slurpfile b "$FILE_B" "$common"'
+      [ row("loaded baseline (KB/s)"; safenum($a[0].baseline_sha256_kbs);           safenum($b[0].baseline_sha256_kbs);           true; "KB/s"),
+        row("min throttle ratio";     safenum($a[0].throttle_detection.min_ratio);  safenum($b[0].throttle_detection.min_ratio);  true; ""),
+        row("avg throttle ratio";     safenum($a[0].throttle_detection.avg_ratio);  safenum($b[0].throttle_detection.avg_ratio);  true; "") ]'
       ;;
     *)
       die "unknown suite: $suite"

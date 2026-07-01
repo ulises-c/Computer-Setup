@@ -18,4 +18,15 @@ check_dep_required() { check_dep "$1" || die "required: $1 — install with: bre
 ts_iso()  { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
 ts_file() { date +"%Y%m%d_%H%M%S"; }
 
+# Stock macOS `openssl` is LibreSSL, which lacks `speed -seconds`; prefer the
+# keg-only brew openssl@3 and accept a PATH openssl only if it is real OpenSSL.
+resolve_openssl() {
+  local cand
+  for cand in "$(brew --prefix openssl@3 2>/dev/null || true)/bin/openssl" openssl; do
+    command -v "$cand" >/dev/null 2>&1 || continue
+    [[ "$("$cand" version 2>/dev/null)" == OpenSSL* ]] && { printf '%s' "$cand"; return 0; }
+  done
+  die "no OpenSSL with 'speed -seconds' support found (stock macOS ships LibreSSL) — brew install openssl@3"
+}
+
 ensure_results_dir() { mkdir -p "$RESULTS_DIR"; }

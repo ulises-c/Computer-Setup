@@ -17,8 +17,8 @@ INTERVAL=30
 THROTTLE_THRESHOLD="0.90"
 
 check_dep_required jq
-check_dep_required openssl
 check_dep_required stress-ng
+OPENSSL_BIN=$(resolve_openssl)
 
 ensure_results_dir
 
@@ -53,25 +53,33 @@ ok "Duration: ${DURATION}s | Sample interval: ${INTERVAL}s | Cores: ${NCPU}"
 info "Results will be written to: $OUTFILE"
 
 # ---------------------------------------------------------------------------
-# Baseline measurement (no load)
+# Start stress load
 # ---------------------------------------------------------------------------
-header "Baseline throughput (5s, idle)"
-BASELINE_RAW=$(openssl speed -elapsed -seconds 5 sha256 2>&1)
+header "Starting stress load on all ${NCPU} cores"
+# --cpu 0 = one stressor per logical CPU; sha512 exercises integer + vector
+# units. The extra 30s covers the baseline settle/measure time so the last
+# sample still lands under load.
+stress-ng --cpu 0 --cpu-method sha512 --timeout "$(( DURATION + 30 ))s" &
+STRESS_PID=$!
+info "Stress PID: $STRESS_PID"
+
+# ---------------------------------------------------------------------------
+# Baseline measurement (under load)
+# ---------------------------------------------------------------------------
+# The baseline must be taken while the stressors are running: an idle baseline
+# reads a single-core-boost P-core, and the probe then contends with NCPU
+# stressors on every sample — scheduler contention alone would read as a
+# "throttle". Let clocks settle at the sustained all-core level first;
+# throttling then shows up as a decline relative to this early-load figure.
+header "Baseline throughput (5s, under load)"
+sleep 10
+BASELINE_RAW=$("$OPENSSL_BIN" speed -elapsed -seconds 5 sha256 2>&1 || true)
 BASELINE_KBS=$(printf '%s\n' "$BASELINE_RAW" \
   | awk '/^sha256/{gsub(/k$/,"",$7); printf "%.0f", $7+0}')
 if [[ -z "$BASELINE_KBS" || "$BASELINE_KBS" == 0 ]]; then
   die "could not establish a baseline sha256 throughput (openssl parse failed) — cannot compute throttle ratios"
 fi
-ok "Baseline sha256: ${BASELINE_KBS} KB/s"
-
-# ---------------------------------------------------------------------------
-# Start stress load
-# ---------------------------------------------------------------------------
-header "Starting stress load on all ${NCPU} cores"
-# --cpu 0 = one stressor per logical CPU; sha512 exercises integer + vector units
-stress-ng --cpu 0 --cpu-method sha512 --timeout "${DURATION}s" &
-STRESS_PID=$!
-info "Stress PID: $STRESS_PID"
+ok "Loaded baseline sha256: ${BASELINE_KBS} KB/s"
 
 # ---------------------------------------------------------------------------
 # Sample loop
@@ -88,7 +96,7 @@ for (( i = 1; i <= SAMPLE_COUNT; i++ )); do
   ELAPSED=$(( i * INTERVAL ))
 
   # 1-second throughput measurement (brief window, parallel to stress load)
-  CUR_RAW=$(openssl speed -elapsed -seconds 1 sha256 2>&1)
+  CUR_RAW=$("$OPENSSL_BIN" speed -elapsed -seconds 1 sha256 2>&1 || true)
   CUR_KBS=$(printf '%s\n' "$CUR_RAW" \
     | awk '/^sha256/{gsub(/k$/,"",$7); printf "%.0f", $7+0}')
   [[ -z "$CUR_KBS" ]] && CUR_KBS=0
@@ -104,14 +112,15 @@ for (( i = 1; i <= SAMPLE_COUNT; i++ )); do
   if $HAS_SUDO_N; then
     PM_OUT=$(sudo powermetrics -n 1 -i 200 \
       --samplers cpu_power --hide-cpu-duty-cycle 2>/dev/null || true)
-    # Parse first "Frequency:" line from P-cluster section
+    # Apple Silicon: "P0-Cluster HW active frequency: 3204 MHz" (or "P-Cluster"
+    # on base chips) and "CPU Power: 4382 mW" — there is no Intel-style
+    # "Package power:" line
     RAW_FREQ=$(printf '%s\n' "$PM_OUT" \
-      | awk '/Frequency:.*MHz/{match($0,/[0-9]+/); print substr($0,RSTART,RLENGTH)+0; exit}' \
+      | awk '/^P[0-9]*-Cluster HW active frequency:/{print $(NF-1)+0; exit}' \
       || printf '')
     [[ -n "$RAW_FREQ" ]] && CPU_FREQ_MHZ="$RAW_FREQ"
-    # Parse "Package power:" line
     RAW_WATTS=$(printf '%s\n' "$PM_OUT" \
-      | awk '/Package power:/{print $3+0; exit}' \
+      | awk '/^CPU Power:/{printf "%.2f", $3/1000; exit}' \
       || printf '')
     [[ -n "$RAW_WATTS" ]] && POWER_W="$RAW_WATTS"
   fi
@@ -187,7 +196,8 @@ jq -n \
       throttled: ($throttled == "true"),
       min_ratio: $min_ratio,
       avg_ratio: $avg_ratio,
-      threshold_ratio: ($threshold | tonumber)
+      threshold_ratio: ($threshold | tonumber),
+      method: "ratio vs early-load baseline (settled clocks, probe contending with stressors)"
     },
     samples: $samples
   }' > "$OUTFILE"

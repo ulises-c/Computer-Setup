@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# macOS benchmark suite — CPU, memory bandwidth, storage I/O, optional GPU.
+# macOS benchmark suite — CPU, memory bandwidth, storage I/O.
 # Produces a timestamped JSON result file in results/.
+# (LLM/GPU tokens/s lives in llm-bench.sh, which pins the model.)
 #
 # Usage: bash benchmark.sh [--quick]
 #   --quick  reduced iteration counts for a fast sanity-check run
@@ -17,12 +18,11 @@ QUICK=false
 # Dependency checks
 # ---------------------------------------------------------------------------
 check_dep_required jq
-check_dep_required openssl
+OPENSSL_BIN=$(resolve_openssl)
 
 HAS_HYPERFINE=false; check_dep hyperfine && HAS_HYPERFINE=true || warn "hyperfine not found (brew install hyperfine) — skipping timing stats"
 HAS_STRESS_NG=false; check_dep stress-ng  && HAS_STRESS_NG=true  || warn "stress-ng not found (brew install stress-ng) — skipping memory bandwidth"
 HAS_FIO=false;       check_dep fio         && HAS_FIO=true         || warn "fio not found (brew install fio) — skipping storage IOPS"
-HAS_LLAMA=false;     check_dep llama-bench && HAS_LLAMA=true       || true  # silent — uncommon
 
 # ---------------------------------------------------------------------------
 # Setup
@@ -53,7 +53,7 @@ info "Results will be written to: $OUTFILE"
 # ---------------------------------------------------------------------------
 header "CPU — single-core (openssl sha256, ${SSL_SECS}s)"
 
-SINGLE_RAW=$(openssl speed -elapsed -seconds "$SSL_SECS" sha256 2>&1)
+SINGLE_RAW=$("$OPENSSL_BIN" speed -elapsed -seconds "$SSL_SECS" sha256 2>&1 || true)
 SINGLE_16K_KBS=$(printf '%s\n' "$SINGLE_RAW" \
   | awk '/^sha256/{gsub(/k$/,"",$7); printf "%.0f", $7+0}')
 [[ -z "$SINGLE_16K_KBS" ]] && { warn "could not parse openssl sha256 throughput (single-core) — recording 0"; SINGLE_16K_KBS=0; }
@@ -65,13 +65,13 @@ if $HAS_HYPERFINE; then
   info "Running hyperfine timing (${HF_RUNS} runs)..."
   BENCH_INPUT=$(mktemp)
   # Use openssl rand instead of /dev/zero to avoid Railguard path-fence
-  openssl rand $((16 * 1024 * 1024)) > "$BENCH_INPUT"
+  "$OPENSSL_BIN" rand $((16 * 1024 * 1024)) > "$BENCH_INPUT"
   HF_JSON=$(mktemp)
   hyperfine \
     --warmup "$HF_WARMUP" \
     --runs "$HF_RUNS" \
     --export-json "$HF_JSON" \
-    "openssl dgst -sha256 '$BENCH_INPUT'" \
+    "'$OPENSSL_BIN' dgst -sha256 '$BENCH_INPUT'" \
     2>/dev/null
   SINGLE_MEAN_MS=$(jq '.results[0].mean * 1000 | round' "$HF_JSON")
   SINGLE_STDDEV_MS=$(jq '.results[0].stddev * 1000 | round' "$HF_JSON")
@@ -90,7 +90,7 @@ CPU_SINGLE_JSON=$(jq -n \
 # ---------------------------------------------------------------------------
 header "CPU — multi-core (openssl sha256 x${NCPU}, ${SSL_SECS}s)"
 
-MULTI_RAW=$(openssl speed -elapsed -seconds "$SSL_SECS" -multi "$NCPU" sha256 2>&1)
+MULTI_RAW=$("$OPENSSL_BIN" speed -elapsed -seconds "$SSL_SECS" -multi "$NCPU" sha256 2>&1 || true)
 MULTI_16K_KBS=$(printf '%s\n' "$MULTI_RAW" \
   | awk '/^sha256/{gsub(/k$/,"",$7); printf "%.0f", $7+0}')
 [[ -z "$MULTI_16K_KBS" ]] && { warn "could not parse openssl sha256 throughput (multi-core) — recording 0"; MULTI_16K_KBS=0; }
@@ -119,9 +119,11 @@ if $HAS_STRESS_NG; then
     --metrics-brief 2>&1 || true)
 
   # Parse "bogo-ops/s" columns from the metrics line — stress-ng reports
-  # memory bandwidth in MB/s as bogo-ops/s for the stream stressor
+  # memory bandwidth in MB/s as bogo-ops/s for the stream stressor.
+  # Anchor on the metrc row: the earlier "dispatching hogs: 1 stream" info
+  # line also matches a bare /stream/.
   STREAM_BW_MBS=$(printf '%s\n' "$STREAM_OUT" \
-    | awk '/stream/{print $9+0; exit}')
+    | awk '/metrc/ && $4 == "stream" {print $9+0; exit}')
 
   if [[ -n "$STREAM_BW_MBS" && "$STREAM_BW_MBS" != "0" ]]; then
     STREAM_BW_GBS=$(jq -n "$STREAM_BW_MBS / 1024" | xargs printf "%.2f")
@@ -216,58 +218,6 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# GPU / Metal (llama-bench)
-# ---------------------------------------------------------------------------
-GPU_JSON="null"
-
-if $HAS_LLAMA; then
-  header "GPU / Metal (llama-bench)"
-  MODEL=""
-  SEARCH_DIRS=(
-    "${LLAMA_CACHE:-}"
-    "$HOME/.cache/llama.cpp"
-    "$HOME/models"
-    "$HOME/Library/Application Support/com.ggml.llama"
-  )
-  for d in "${SEARCH_DIRS[@]}"; do
-    [[ -n "$d" && -d "$d" ]] || continue
-    MODEL=$(find "$d" -name "*.gguf" -size +100M 2>/dev/null | head -1 || true)
-    [[ -n "$MODEL" ]] && break
-  done
-
-  if [[ -n "$MODEL" ]]; then
-    info "Model: $(basename "$MODEL")"
-    N_GEN=128; N_PROMPT=512; REPS=3
-    $QUICK && N_GEN=64 && REPS=1
-
-    LLAMA_OUT=$(llama-bench \
-      --model "$MODEL" \
-      --n-gpu-layers 999 \
-      --n-gen "$N_GEN" \
-      --n-prompt "$N_PROMPT" \
-      --repetitions "$REPS" \
-      --output json 2>/dev/null \
-      | grep -v "^ggml_\|^load_backend\|^llama_\|^\[" || true)
-
-    if [[ -n "$LLAMA_OUT" ]]; then
-      TG_TPS=$(printf '%s\n' "$LLAMA_OUT" | jq -s '.[0].avg_ts // null' 2>/dev/null || printf 'null')
-      ok "Token generation: ${TG_TPS} tokens/s"
-      GPU_JSON=$(jq -n \
-        --arg  model   "$(basename "$MODEL")" \
-        --argjson tg   "$TG_TPS" \
-        --argjson ngen "$N_GEN" \
-        --argjson npmt "$N_PROMPT" \
-        '{ model: $model, tg_tokens_per_s: $tg,
-           n_gen: $ngen, n_prompt: $npmt, layers: "gpu-all" }')
-    else
-      warn "llama-bench produced no parseable output"
-    fi
-  else
-    warn "No .gguf model found — set LLAMA_CACHE=/path/to/models or place models in ~/models"
-  fi
-fi
-
-# ---------------------------------------------------------------------------
 # Write result file
 # ---------------------------------------------------------------------------
 header "Writing results"
@@ -280,7 +230,6 @@ jq -n \
   --argjson cpu_multi  "$CPU_MULTI_JSON" \
   --argjson memory_bw  "$MEMORY_BW_JSON" \
   --argjson storage    "$STORAGE_JSON" \
-  --argjson gpu        "$GPU_JSON" \
   --arg     timestamp  "$(ts_iso)" \
   --argjson duration_s "$DURATION_S" \
   '{
@@ -289,8 +238,7 @@ jq -n \
     cpu_single: $cpu_single,
     cpu_multi:  $cpu_multi,
     memory_bw:  $memory_bw,
-    storage:    $storage,
-    gpu:        $gpu
+    storage:    $storage
   }' > "$OUTFILE"
 
 ok "Done in ${DURATION_S}s"

@@ -117,76 +117,76 @@ the result JSON has no unexpected nulls before trusting numbers.
 
 ### P0 — measurement paths broken, data corruption, or setup aborts
 
-- [ ] `macOS/benchmarks/benchmark.sh:56` (also `stress-test.sh:59,91`) —
+- [x] `macOS/benchmarks/benchmark.sh:56` (also `stress-test.sh:59,91`) —
       `openssl speed -seconds` is not supported by stock macOS LibreSSL, and the
       unguarded `$( )` under `set -e` kills the script silently right after the
       section header. Resolve a `-seconds`-capable openssl at startup (brew
       `openssl@3` is keg-only — probe `$(brew --prefix openssl@3)/bin/openssl`)
       or die with a clear install hint; never let the substitution abort silently
-- [ ] `macOS/benchmarks/llm-bench.sh:137` — `llama-bench` does not accept
+- [x] `macOS/benchmarks/llm-bench.sh:137` — `llama-bench` does not accept
       `--hf-repo` (that flag belongs to llama-cli/llama-server), so the whole
       llama.cpp half fails arg parsing with stderr discarded. Pre-download the
       GGUF and pass `-m <path>`; stop discarding llama-bench stderr
-- [ ] `macOS/benchmarks/benchmark.sh:250-253` — GPU llama-bench parse always
+- [x] `macOS/benchmarks/benchmark.sh:250-253` — GPU llama-bench parse always
       null: the `grep -v "^\["` filter strips the JSON array's opening bracket,
       and `jq -s '.[0].avg_ts'` double-wraps the array (and `[0]` would be the
       pp row, not tg). Either parse like llm-bench.sh does
       (`jq '[.[] | select(...)]'`) or drop the GPU section and defer to
       llm-bench.sh — it duplicates that suite with a nondeterministic
       pick-any-gguf heuristic anyway (`benchmark.sh:234`)
-- [ ] `macOS/benchmarks/standardized.sh:105` — Cinebench detection uses
+- [x] `macOS/benchmarks/standardized.sh:105` — Cinebench detection uses
       `-maxdepth 3` but the binary sits at depth 4
       (`/Applications/Cinebench.app/Contents/MacOS/Cinebench`); Cinebench is
       never detected even after our own installer runs. Use `-maxdepth 4`
-- [ ] `platforms/macos.sh:72` — one failing custom installer (e.g. the Cinebench
+- [x] `platforms/macos.sh:72` — one failing custom installer (e.g. the Cinebench
       DMG URL 404s) aborts the entire remaining setup run under `set -e`.
       Collect failures and continue, like `BREW_FAILURES` (#31 pattern)
-- [ ] `macOS/benchmarks/compare.sh:117` — a metric missing on machine A crashes
+- [x] `macOS/benchmarks/compare.sh:117` — a metric missing on machine A crashes
       the comparison mid-table: `pct()` yields null when `av == 0`, `@tsv`
       renders null as an empty field, `IFS=$'\t' read` collapses the adjacent
       tabs (tab is IFS whitespace) shifting `winner` into `pct`, and
       `printf '%+.1f%%'` then fails under `set -e`. Emit the literal string
       `"null"` from jq (matching the existing guard) or a placeholder that
       can't collapse
-- [ ] `macOS/benchmarks/stress-test.sh:91` — throttle methodology is
+- [x] `macOS/benchmarks/stress-test.sh:91` — throttle methodology is
       self-defeating: baseline is one openssl thread on an idle machine
       (single-core boost, P-core) but each sample contends with NCPU stressors,
       so a healthy Mac reads ~0.5–0.7 and flags THROTTLE. Rework: e.g. take the
       baseline as the first sample *under* load, or track the sample trend
       instead of an idle-vs-loaded ratio
-- [ ] `macOS/benchmarks/stress-test.sh:105-114` — powermetrics parse patterns
+- [x] `macOS/benchmarks/stress-test.sh:105-114` — powermetrics parse patterns
       are Intel-era and never match Apple Silicon output: frequency lines are
       `... HW active frequency: N MHz` (lowercase f) and power is
       `CPU Power: N mW` (not `Package power:`); also convert mW → W. As shipped,
       the whole sudo path is dead weight on every target Mac (all M-series)
-- [ ] `macOS/benchmarks/benchmark.sh:124` — memory-bandwidth awk `/stream/`
+- [x] `macOS/benchmarks/benchmark.sh:124` — memory-bandwidth awk `/stream/`
       matches stress-ng's `dispatching hogs: 1 stream` info line before the
       metrics row, printing 0 every run. Anchor on the metrics row
       (e.g. `/metrc.*stream/`)
-- [ ] `macOS/benchmarks/omlx-bench.sh:159` — `fire_one` converts failed
+- [x] `macOS/benchmarks/omlx-bench.sh:159` — `fire_one` converts failed
       requests (curl error, 429/5xx) into `{}`: token totals silently shrink
       while wall time still includes the failure, corrupting aggregate_tps,
       peak_aggregate_tps, and batching_speedup. Count failures per level,
       surface the count in the result JSON, and warn (or fail the level) when
       any request failed
-- [ ] `macOS/benchmarks/standardized.sh:142` — Blender's benchmark-launcher-cli
+- [x] `macOS/benchmarks/standardized.sh:142` — Blender's benchmark-launcher-cli
       does not auto-download the runtime/scenes; run `blender download <ver>`
       and `scenes download -b <ver>` first (or die with instructions), else
       blender_benchmark is null on every fresh install
-- [ ] `macOS/benchmarks/standardized.sh:111-118` — single-core Cinebench parse
+- [x] `macOS/benchmarks/standardized.sh:111-118` — single-core Cinebench parse
       greps the combined raw file (multi wrote first, single appended, failures
       `|| true`-swallowed), so a failed single run silently records the
       multi-core score as cpu_single. Use a separate raw file per run
-- [ ] `macOS/benchmarks/compare.sh:38-75` — no `stress` case: comparing two
+- [x] `macOS/benchmarks/compare.sh:38-75` — no `stress` case: comparing two
       stress results dies `unknown suite: stress` while the README advertises
       it. Add a stress table (or drop the README claim); also fix the header
       comment, which omits the supported `omlx` suite
-- [ ] `lib/verify.sh:92` + the new cinebench/omlx `packages.json` entries —
+- [x] `lib/verify.sh:92` + the new cinebench/omlx `packages.json` entries —
       the macOS custom probe only tries `brew list --formula` / `command -v`,
       so GUI-only .app installs can never verify. Add an app-store-style
       `[[ -d /Applications/<App>.app ]]` probe for custom entries (opt-in via
       a field, or probe the app name)
-- [ ] `macOS/benchmarks/README.md:85` — the compare example embeds two real
+- [x] `macOS/benchmarks/README.md:85` — the compare example embeds two real
       machine short-hostnames in this public repo (privacy rule: placeholders
       only) and uses a `results/` path that doesn't resolve from the repo root
       the other commands assume. Use `<hostname-a>`/`<hostname-b>` placeholders
@@ -194,7 +194,7 @@ the result JSON has no unexpected nulls before trusting numbers.
 
 ### P1 — moderate correctness
 
-- [ ] `macOS/benchmarks/standardized.sh:116` — `--cpu-only` must not skip the
+- [x] `macOS/benchmarks/standardized.sh:116` — `--cpu-only` must not skip the
       single-core Cinebench run: it is a CPU test; only Blender/GPU belongs
       behind that flag
 - [ ] `macOS/benchmarks/llm-bench.sh:99-101` — the PP/TG/MEM parse pipelines

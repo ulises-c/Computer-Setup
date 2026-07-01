@@ -59,18 +59,27 @@ brew_cask_install_tier() {
 }
 
 mac_custom_install_tier() {
-  local priority="$1"
-  # shellcheck disable=SC2016
-  jq -r --arg plat "$PLATFORM" --arg pr "$priority" \
-     --arg w "$INCLUDE_WORK" --arg p "$INCLUDE_PERSONAL" \
-    "$CORE_JQ_DEFS"'.[] | select(
-        .package_manager[$plat] == "custom" and prfor($plat) == $pr and
-        envok($plat; $w; $p) and (icfor($plat) != null) and (.handled_by_setup == true)
-        and .name != "nvm" and tagok($plat)
-      ) | icfor($plat)' "$PACKAGES_JSON" |
+  local priority="$1" cmd
+  # Collect failures like the brew tiers (#31) — one failed installer must not
+  # abort the rest of the run under set -e. Process substitution (not a pipe)
+  # keeps BREW_FAILURES in this shell.
   while read -r cmd; do
-    run_eval "$cmd"
-  done
+    [[ -z "$cmd" ]] && continue
+    [[ "$DRY_RUN" == false ]] && BREW_TOTAL=$((BREW_TOTAL + 1))
+    if ! run_eval "$cmd"; then
+      BREW_FAILURES+=("custom: $cmd")
+      printf '  [FAIL] %s\n' "$cmd"
+    fi
+  done < <(
+    # shellcheck disable=SC2016
+    jq -r --arg plat "$PLATFORM" --arg pr "$priority" \
+       --arg w "$INCLUDE_WORK" --arg p "$INCLUDE_PERSONAL" \
+      "$CORE_JQ_DEFS"'.[] | select(
+          .package_manager[$plat] == "custom" and prfor($plat) == $pr and
+          envok($plat; $w; $p) and (icfor($plat) != null) and (.handled_by_setup == true)
+          and .name != "nvm" and tagok($plat)
+        ) | icfor($plat)' "$PACKAGES_JSON"
+  )
 }
 
 mac_pipx_install_tier() {

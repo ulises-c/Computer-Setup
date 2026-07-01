@@ -46,6 +46,7 @@ if $QUICK; then
 fi
 
 check_dep_required jq
+check_dep_required curl
 ensure_results_dir
 
 HAS_MLX=false;   check_dep mlx_lm.generate && HAS_MLX=true
@@ -132,25 +133,52 @@ fi
 LLAMA_JSON="null"
 if $RUN_LLAMA; then
   header "llama.cpp runtime (${GGUF_REPO}:${GGUF_QUANT})"
-  info "Running llama-bench (-p ${N_PROMPT} -n ${N_GEN} -r ${REPS})..."
-  if LB_OUT=$(llama-bench \
-      --hf-repo "${GGUF_REPO}:${GGUF_QUANT}" \
-      -p "$N_PROMPT" -n "$N_GEN" -r "$REPS" \
-      -o json 2>/dev/null) && [[ -n "$LB_OUT" ]]; then
 
-    # pp test has n_prompt>0,n_gen==0; tg test has n_gen>0,n_prompt==0
-    PP_TPS=$(jq '[.[] | select((.n_prompt|tonumber) > 0 and (.n_gen|tonumber) == 0) | .avg_ts | tonumber?] | if length>0 then add/length else null end' <<< "$LB_OUT")
-    TG_TPS=$(jq '[.[] | select((.n_gen|tonumber) > 0 and (.n_prompt|tonumber) == 0) | .avg_ts | tonumber?] | if length>0 then add/length else null end' <<< "$LB_OUT")
-
-    LLAMA_JSON=$(jq -n \
-      --arg     repo "${GGUF_REPO}:${GGUF_QUANT}" \
-      --argjson pp   "${PP_TPS:-null}" \
-      --argjson tg   "${TG_TPS:-null}" \
-      '{ runtime: "llama.cpp", model: $repo, pp_tps_avg: $pp, tg_tps_avg: $tg }')
-    ok "llama.cpp avg: prompt=$(jq -r '.pp_tps_avg // "n/a"' <<< "$LLAMA_JSON") tok/s  generation=$(jq -r '.tg_tps_avg // "n/a"' <<< "$LLAMA_JSON") tok/s"
-  else
-    warn "llama-bench failed — verify GGUF repo exists: ${GGUF_REPO}:${GGUF_QUANT}"
+  # llama-bench only takes local model paths (--hf-repo belongs to
+  # llama-cli/llama-server), so resolve the quant's .gguf filename via the HF
+  # API and download it once to a local cache.
+  GGUF_PATH=""
+  GGUF_FILE=$(curl -fsS "https://huggingface.co/api/models/${GGUF_REPO}" 2>/dev/null \
+    | jq -r --arg q "$GGUF_QUANT" \
+        '[.siblings[].rfilename | select(test("(?i)" + $q + "\\.gguf$"))] | first // empty' \
+    || true)
+  if [[ -z "$GGUF_FILE" ]]; then
+    warn "no single-file ${GGUF_QUANT}.gguf found in ${GGUF_REPO} — skipping llama.cpp"
     warn "Override with: GGUF_REPO=<user/repo> GGUF_QUANT=<Q8_0|Q4_K_M> bash llm-bench.sh"
+  else
+    GGUF_CACHE="${GGUF_CACHE:-$HOME/.cache/llama.cpp}"
+    mkdir -p "$GGUF_CACHE"
+    GGUF_PATH="$GGUF_CACHE/${GGUF_FILE##*/}"
+    if [[ ! -f "$GGUF_PATH" ]]; then
+      info "Downloading ${GGUF_REPO}/${GGUF_FILE} to ${GGUF_CACHE}..."
+      curl -fL --progress-bar -o "$GGUF_PATH" \
+        "https://huggingface.co/${GGUF_REPO}/resolve/main/${GGUF_FILE}" \
+        || { rm -f "$GGUF_PATH"; GGUF_PATH=""; warn "GGUF download failed — skipping llama.cpp"; }
+    fi
+  fi
+
+  if [[ -n "$GGUF_PATH" ]]; then
+    info "Running llama-bench (-p ${N_PROMPT} -n ${N_GEN} -r ${REPS})..."
+    LB_ERR=$(mktemp)
+    if LB_OUT=$(llama-bench -m "$GGUF_PATH" \
+        -p "$N_PROMPT" -n "$N_GEN" -r "$REPS" \
+        -o json 2>"$LB_ERR") && [[ -n "$LB_OUT" ]]; then
+
+      # pp test has n_prompt>0,n_gen==0; tg test has n_gen>0,n_prompt==0
+      PP_TPS=$(jq '[.[] | select((.n_prompt|tonumber) > 0 and (.n_gen|tonumber) == 0) | .avg_ts | tonumber?] | if length>0 then add/length else null end' <<< "$LB_OUT")
+      TG_TPS=$(jq '[.[] | select((.n_gen|tonumber) > 0 and (.n_prompt|tonumber) == 0) | .avg_ts | tonumber?] | if length>0 then add/length else null end' <<< "$LB_OUT")
+
+      LLAMA_JSON=$(jq -n \
+        --arg     repo "${GGUF_REPO}:${GGUF_QUANT}" \
+        --argjson pp   "${PP_TPS:-null}" \
+        --argjson tg   "${TG_TPS:-null}" \
+        '{ runtime: "llama.cpp", model: $repo, pp_tps_avg: $pp, tg_tps_avg: $tg }')
+      ok "llama.cpp avg: prompt=$(jq -r '.pp_tps_avg // "n/a"' <<< "$LLAMA_JSON") tok/s  generation=$(jq -r '.tg_tps_avg // "n/a"' <<< "$LLAMA_JSON") tok/s"
+    else
+      warn "llama-bench failed — last stderr lines:"
+      tail -5 "$LB_ERR" >&2 || true
+    fi
+    rm -f "$LB_ERR"
   fi
 fi
 

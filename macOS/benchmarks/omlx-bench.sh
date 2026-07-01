@@ -152,16 +152,20 @@ jq -n --arg model "$MODEL" --argjson n "$N_GEN" \
   }' > "$BODY"
 
 fire_one() {
-  # $1 = output file for this request's JSON response
-  curl -fsS -X POST "${BASE_URL}/v1/chat/completions" \
+  # $1 = output file for this request's JSON response; returns curl's status
+  # so callers can count failures instead of silently scoring them as 0 tokens
+  if ! curl -fsS -X POST "${BASE_URL}/v1/chat/completions" \
     -H "Content-Type: application/json" \
     --data @"$BODY" \
-    -o "$1" 2>/dev/null || printf '{}' > "$1"
+    -o "$1" 2>/dev/null; then
+    printf '{"error":"request failed"}' > "$1"
+    return 1
+  fi
 }
 
 # Warmup (loads weights into the hot cache, primes the scheduler)
 header "Warmup"
-fire_one "$WORKDIR/warmup.json"
+fire_one "$WORKDIR/warmup.json" || true
 WU_TOKENS=$(jq '.usage.completion_tokens // 0' "$WORKDIR/warmup.json")
 [[ "$WU_TOKENS" -gt 0 ]] || warn "warmup returned no tokens — check $WORKDIR/warmup.json"
 ok "Warmup complete (${WU_TOKENS} tokens)"
@@ -181,7 +185,8 @@ for C in $CONCURRENCY; do
     fire_one "$WORKDIR/resp_${C}_${i}.json" &
     PIDS+=("$!")
   done
-  for p in "${PIDS[@]}"; do wait "$p"; done
+  FAILED=0
+  for p in "${PIDS[@]}"; do wait "$p" || FAILED=$(( FAILED + 1 )); done
   T1=$(now_s)
 
   WALL=$(jq -n "$T1 - $T0")
@@ -194,33 +199,41 @@ for C in $CONCURRENCY; do
 
   printf '  %-12s %-14s %-18s %-14s\n' \
     "$C" "$(printf '%.2f' "$WALL")" "$TOTAL_TOK" "$(printf '%.1f' "$AGG_TPS")"
+  (( FAILED > 0 )) && warn "concurrency ${C}: ${FAILED}/${C} requests failed — level excluded from peak/speedup"
 
   SWEEP_JSON=$(jq \
     --argjson c "$C" --argjson wall "$WALL" \
     --argjson tok "$TOTAL_TOK" --argjson tps "$AGG_TPS" \
-    '. + [{concurrency: $c, wall_s: $wall, total_completion_tokens: $tok, aggregate_tps: $tps}]' \
+    --argjson failed "$FAILED" \
+    '. + [{concurrency: $c, wall_s: $wall, total_completion_tokens: $tok, aggregate_tps: $tps, failed_requests: $failed}]' \
     <<< "$SWEEP_JSON")
 done
 
 # ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
-SINGLE_TPS=$(jq '[.[] | select(.concurrency == 1) | .aggregate_tps] | first // null' <<< "$SWEEP_JSON")
-PEAK=$(jq 'max_by(.aggregate_tps)' <<< "$SWEEP_JSON")
-PEAK_TPS=$(jq '.aggregate_tps' <<< "$PEAK")
-PEAK_CONC=$(jq '.concurrency' <<< "$PEAK")
+# Levels with failed requests understate throughput — keep them out of the
+# headline numbers
+SINGLE_TPS=$(jq '[.[] | select(.concurrency == 1 and .failed_requests == 0) | .aggregate_tps] | first // null' <<< "$SWEEP_JSON")
+PEAK=$(jq '[.[] | select(.failed_requests == 0)] | if length > 0 then max_by(.aggregate_tps) else null end' <<< "$SWEEP_JSON")
+PEAK_TPS=$(jq '.aggregate_tps // null' <<< "$PEAK")
+PEAK_CONC=$(jq '.concurrency // null' <<< "$PEAK")
 SPEEDUP="null"
-if [[ "$SINGLE_TPS" != "null" ]]; then
+if [[ "$SINGLE_TPS" != "null" && "$PEAK_TPS" != "null" ]]; then
   SPEEDUP=$(jq -n "if $SINGLE_TPS > 0 then $PEAK_TPS / $SINGLE_TPS else null end")
 fi
 
 header "Summary"
 if [[ "$SINGLE_TPS" == "null" ]]; then
-  ok "Single-stream:   n/a (no concurrency=1 sample)"
+  ok "Single-stream:   n/a (no clean concurrency=1 sample)"
 else
   ok "Single-stream:   $(printf '%.1f' "$SINGLE_TPS") tok/s"
 fi
-ok "Peak aggregate:  $(printf '%.1f' "$PEAK_TPS") tok/s @ concurrency ${PEAK_CONC}"
+if [[ "$PEAK_TPS" == "null" ]]; then
+  warn "every sweep level had failed requests — peak/speedup not recorded"
+else
+  ok "Peak aggregate:  $(printf '%.1f' "$PEAK_TPS") tok/s @ concurrency ${PEAK_CONC}"
+fi
 [[ "$SPEEDUP" != "null" ]] && ok "Batching speedup: $(printf '%.2fx' "$SPEEDUP")"
 
 # ---------------------------------------------------------------------------
