@@ -107,6 +107,166 @@ Folded into #37 once the root engine owned all deploys.
       `command -v` every migrated tool to catch shadowed binaries
 - [ ] Later: consider base + per-platform overlay for zshrc (desktop vs server vs macOS)
 
+## macOS benchmark suite — review fixes (feat/packages-macos-benchmarks)
+
+Findings from the 2026-07 max-effort review of this branch (10 finder angles,
+per-finding verification, gap sweep). Ordered by severity — fix top-down.
+Most failures are silent (`|| true` / `2>/dev/null` degrade to `null` fields),
+so after the P0/P1 fixes, re-run every suite end-to-end on one Mac and check
+the result JSON has no unexpected nulls before trusting numbers.
+
+### P0 — measurement paths broken, data corruption, or setup aborts
+
+- [ ] `macOS/benchmarks/benchmark.sh:56` (also `stress-test.sh:59,91`) —
+      `openssl speed -seconds` is not supported by stock macOS LibreSSL, and the
+      unguarded `$( )` under `set -e` kills the script silently right after the
+      section header. Resolve a `-seconds`-capable openssl at startup (brew
+      `openssl@3` is keg-only — probe `$(brew --prefix openssl@3)/bin/openssl`)
+      or die with a clear install hint; never let the substitution abort silently
+- [ ] `macOS/benchmarks/llm-bench.sh:137` — `llama-bench` does not accept
+      `--hf-repo` (that flag belongs to llama-cli/llama-server), so the whole
+      llama.cpp half fails arg parsing with stderr discarded. Pre-download the
+      GGUF and pass `-m <path>`; stop discarding llama-bench stderr
+- [ ] `macOS/benchmarks/benchmark.sh:250-253` — GPU llama-bench parse always
+      null: the `grep -v "^\["` filter strips the JSON array's opening bracket,
+      and `jq -s '.[0].avg_ts'` double-wraps the array (and `[0]` would be the
+      pp row, not tg). Either parse like llm-bench.sh does
+      (`jq '[.[] | select(...)]'`) or drop the GPU section and defer to
+      llm-bench.sh — it duplicates that suite with a nondeterministic
+      pick-any-gguf heuristic anyway (`benchmark.sh:234`)
+- [ ] `macOS/benchmarks/standardized.sh:105` — Cinebench detection uses
+      `-maxdepth 3` but the binary sits at depth 4
+      (`/Applications/Cinebench.app/Contents/MacOS/Cinebench`); Cinebench is
+      never detected even after our own installer runs. Use `-maxdepth 4`
+- [ ] `platforms/macos.sh:72` — one failing custom installer (e.g. the Cinebench
+      DMG URL 404s) aborts the entire remaining setup run under `set -e`.
+      Collect failures and continue, like `BREW_FAILURES` (#31 pattern)
+- [ ] `macOS/benchmarks/compare.sh:117` — a metric missing on machine A crashes
+      the comparison mid-table: `pct()` yields null when `av == 0`, `@tsv`
+      renders null as an empty field, `IFS=$'\t' read` collapses the adjacent
+      tabs (tab is IFS whitespace) shifting `winner` into `pct`, and
+      `printf '%+.1f%%'` then fails under `set -e`. Emit the literal string
+      `"null"` from jq (matching the existing guard) or a placeholder that
+      can't collapse
+- [ ] `macOS/benchmarks/stress-test.sh:91` — throttle methodology is
+      self-defeating: baseline is one openssl thread on an idle machine
+      (single-core boost, P-core) but each sample contends with NCPU stressors,
+      so a healthy Mac reads ~0.5–0.7 and flags THROTTLE. Rework: e.g. take the
+      baseline as the first sample *under* load, or track the sample trend
+      instead of an idle-vs-loaded ratio
+- [ ] `macOS/benchmarks/stress-test.sh:105-114` — powermetrics parse patterns
+      are Intel-era and never match Apple Silicon output: frequency lines are
+      `... HW active frequency: N MHz` (lowercase f) and power is
+      `CPU Power: N mW` (not `Package power:`); also convert mW → W. As shipped,
+      the whole sudo path is dead weight on every target Mac (all M-series)
+- [ ] `macOS/benchmarks/benchmark.sh:124` — memory-bandwidth awk `/stream/`
+      matches stress-ng's `dispatching hogs: 1 stream` info line before the
+      metrics row, printing 0 every run. Anchor on the metrics row
+      (e.g. `/metrc.*stream/`)
+- [ ] `macOS/benchmarks/omlx-bench.sh:159` — `fire_one` converts failed
+      requests (curl error, 429/5xx) into `{}`: token totals silently shrink
+      while wall time still includes the failure, corrupting aggregate_tps,
+      peak_aggregate_tps, and batching_speedup. Count failures per level,
+      surface the count in the result JSON, and warn (or fail the level) when
+      any request failed
+- [ ] `macOS/benchmarks/standardized.sh:142` — Blender's benchmark-launcher-cli
+      does not auto-download the runtime/scenes; run `blender download <ver>`
+      and `scenes download -b <ver>` first (or die with instructions), else
+      blender_benchmark is null on every fresh install
+- [ ] `macOS/benchmarks/standardized.sh:111-118` — single-core Cinebench parse
+      greps the combined raw file (multi wrote first, single appended, failures
+      `|| true`-swallowed), so a failed single run silently records the
+      multi-core score as cpu_single. Use a separate raw file per run
+- [ ] `macOS/benchmarks/compare.sh:38-75` — no `stress` case: comparing two
+      stress results dies `unknown suite: stress` while the README advertises
+      it. Add a stress table (or drop the README claim); also fix the header
+      comment, which omits the supported `omlx` suite
+- [ ] `lib/verify.sh:92` + the new cinebench/omlx `packages.json` entries —
+      the macOS custom probe only tries `brew list --formula` / `command -v`,
+      so GUI-only .app installs can never verify. Add an app-store-style
+      `[[ -d /Applications/<App>.app ]]` probe for custom entries (opt-in via
+      a field, or probe the app name)
+- [ ] `macOS/benchmarks/README.md:85` — the compare example embeds two real
+      machine short-hostnames in this public repo (privacy rule: placeholders
+      only) and uses a `results/` path that doesn't resolve from the repo root
+      the other commands assume. Use `<hostname-a>`/`<hostname-b>` placeholders
+      and the `macOS/benchmarks/results/` path
+
+### P1 — moderate correctness
+
+- [ ] `macOS/benchmarks/standardized.sh:116` — `--cpu-only` must not skip the
+      single-core Cinebench run: it is a CPU test; only Blender/GPU belongs
+      behind that flag
+- [ ] `macOS/benchmarks/llm-bench.sh:99-101` — the PP/TG/MEM parse pipelines
+      have no `|| true`; under pipefail a non-matching grep kills the run
+      (empirically confirmed) instead of reaching the intended
+      `[[ -z ... ]] && ...=null` fallbacks
+- [ ] `macOS/benchmarks/stress-test.sh:39` / `omlx-bench.sh:74` — INT/TERM
+      traps don't `exit`; a plain `kill` mid-run stops the load but the sample
+      loop continues on an idle machine and writes a bogus `throttled:false`
+      result (empirically confirmed). End the handlers with `exit`
+- [ ] `macOS/benchmarks/omlx-bench.sh:100` — `OMLX_PORT` builds BASE_URL but is
+      never passed to `omlx serve`, so overriding the port polls an address the
+      spawned server never binds. Pass the port flag (or reject the override)
+- [ ] `macOS/benchmarks/stress-test.sh` + README `sudo` instructions — a first
+      run under sudo creates root-owned `results/`; later non-sudo suites
+      finish their full run then die at the final `> "$OUTFILE"`. Create/chown
+      results as `$SUDO_USER` when running under sudo
+- [ ] `macOS/benchmarks/compare.sh:113,131` — a metric present on only one
+      machine renders as 0-vs-real and counts as a win, skewing the summary;
+      skip or mark rows where either side is missing
+- [ ] `macOS/benchmarks/compare.sh:61` — standardized.sh never emits
+      `.geekbench_ai.score` (only result_url/mode/note), so the row is dead;
+      parse a score or drop the row
+- [ ] `macOS/benchmarks/benchmark.sh:107` — `scaling_factor` is passed with
+      `--arg`, landing as a JSON string (or the literal string `"null"`); use
+      `--argjson`/`tonumber` like the `$gbs` field already does
+
+### P2 — minor / latent
+
+- [ ] `platforms/macos.sh:68` — macOS never calls `custom_reminders_section`,
+      so any future custom entry without `handled_by_setup: true` is silently
+      dropped (install branch filters it out, nothing surfaces it). Wire the
+      reminder section into `platform_main` like linux_main
+- [ ] `scripts/validate-packages.sh` — validate `handled_by_setup` is a real
+      boolean and custom entries carry an `install_command` (a string `"true"`
+      or missing command currently passes validation and degrades silently)
+- [ ] `macOS/lib-dmg-install.sh:30` — handle hdiutil's already-attached reuse
+      (image mounted via Finder → `-mountpoint` ignored, empty mount dir,
+      misleading `no .app found` death, pre-existing mount left attached)
+- [ ] `platforms/macos.sh` dry-run fidelity — gate the pipx `[i/N]` progress
+      line on DRY_RUN (:86), print a `[dry-run] sudo -v` line in
+      `mac_prime_sudo` (:96), include `--adopt` in the cask progress/FAIL
+      lines (:50, :56)
+- [ ] `platforms/macos.sh:99` — sudo keepalive inherits `set -e` (one failed
+      `sudo -n true` silently kills it) and holds stdout so a piped run hangs
+      up to 60s after exit; add `|| true` and redirect stdout
+- [ ] `macOS/benchmarks/standardized.sh:59` — grep the already-captured
+      `$GB_RAW` for the Geekbench result URL before re-running the whole CPU
+      benchmark (the fallback also truncates the first run's output)
+- [ ] `macOS/benchmarks/omlx-bench.sh:127` — when `OMLX_MODEL` is set, don't
+      die on an empty `/v1/models` list (lazy-loading servers list nothing
+      until the first request)
+
+### P3 — cleanup (dedupe within the new code)
+
+- [ ] `macOS/benchmarks/lib.sh` — add a `bench_init <suite>` helper for the
+      SYSINFO/HOSTNAME_SHORT/OUTFILE/banner prologue (now copy-pasted ×5) and
+      a single `SUITE_VERSION` constant (literal `"1.0.0"` now ×5)
+- [ ] `macOS/benchmarks/lib.sh` — extract the openssl-speed sha256 run+parse
+      into one helper (now ×4 across benchmark.sh / stress-test.sh); pairs
+      with the P0 LibreSSL fix
+- [ ] `platforms/macos.sh` — factor the `[i/N]` progress-counter plumbing
+      shared by the brew/cask/pipx tiers (now ×3)
+- [ ] `macOS/lib-dmg-install.sh` — move the curl/hdiutil dep checks, the
+      already-installed guard, and the success message into the lib; drop its
+      duplicate `info`/`die` (identical copies in `benchmarks/lib.sh`)
+- [ ] `platforms/macos.sh:285` — drive the codeburn menubar reminder from
+      `packages.json` instead of a hardcoded package-name check in
+      `platform_main`
+- [ ] `macOS/install-cinebench.sh:12` — make `DMG_URL` env-overridable; it pins
+      a versioned filename while the comment claims a rolling stable URL
+
 ## OpenCode local models
 
 Config uses `mlx_lm.server` with Qwen 3.5 9B (4bit, MLX) on the Mac Mini M4.
