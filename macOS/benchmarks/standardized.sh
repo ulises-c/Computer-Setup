@@ -25,8 +25,9 @@ ensure_results_dir
 
 SYSINFO=$("$BENCH_DIR/collect-sysinfo.sh")
 HOSTNAME_SHORT=$(printf '%s' "$SYSINFO" | jq -r '.hostname')
-OUTFILE="$RESULTS_DIR/standardized_${HOSTNAME_SHORT}_$(ts_file).json"
-RAWDIR="$RESULTS_DIR/standardized_${HOSTNAME_SHORT}_$(ts_file)_raw"
+STAMP=$(ts_file)
+OUTFILE="$RESULTS_DIR/standardized_${HOSTNAME_SHORT}_${STAMP}.json"
+RAWDIR="$RESULTS_DIR/standardized_${HOSTNAME_SHORT}_${STAMP}_raw"
 
 printf '\n'
 ok "System: $(printf '%s' "$SYSINFO" | jq -r '.chip') | $(printf '%s' "$SYSINFO" | jq -r '.memory_gb')GB"
@@ -131,7 +132,7 @@ fi
 BLENDER_JSON="null"
 BB_BIN=$(find "/Applications/Blender Benchmark.app" -name 'benchmark-launcher-cli' -type f 2>/dev/null | head -1 || true)
 
-if [[ -n "$BB_BIN" && ! $CPU_ONLY ]]; then
+if [[ -n "$BB_BIN" ]] && ! $CPU_ONLY; then
   header "Blender Benchmark (Metal GPU)"
   BB_RAW="$RAWDIR/blender.json"
   # Resolve latest available Blender version, then run the standard scenes on Metal

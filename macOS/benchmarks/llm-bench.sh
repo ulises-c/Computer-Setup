@@ -139,8 +139,8 @@ if $RUN_LLAMA; then
       -o json 2>/dev/null) && [[ -n "$LB_OUT" ]]; then
 
     # pp test has n_prompt>0,n_gen==0; tg test has n_gen>0,n_prompt==0
-    PP_TPS=$(jq '[.[] | select((.n_prompt|tonumber) > 0 and (.n_gen|tonumber) == 0) | .avg_ts | tonumber] | if length>0 then add/length else null end' <<< "$LB_OUT")
-    TG_TPS=$(jq '[.[] | select((.n_gen|tonumber) > 0 and (.n_prompt|tonumber) == 0) | .avg_ts | tonumber] | if length>0 then add/length else null end' <<< "$LB_OUT")
+    PP_TPS=$(jq '[.[] | select((.n_prompt|tonumber) > 0 and (.n_gen|tonumber) == 0) | .avg_ts | tonumber?] | if length>0 then add/length else null end' <<< "$LB_OUT")
+    TG_TPS=$(jq '[.[] | select((.n_gen|tonumber) > 0 and (.n_prompt|tonumber) == 0) | .avg_ts | tonumber?] | if length>0 then add/length else null end' <<< "$LB_OUT")
 
     LLAMA_JSON=$(jq -n \
       --arg     repo "${GGUF_REPO}:${GGUF_QUANT}" \

@@ -59,6 +59,9 @@ header "Baseline throughput (5s, idle)"
 BASELINE_RAW=$(openssl speed -elapsed -seconds 5 sha256 2>&1)
 BASELINE_KBS=$(printf '%s\n' "$BASELINE_RAW" \
   | awk '/^sha256/{gsub(/k$/,"",$7); printf "%.0f", $7+0}')
+if [[ -z "$BASELINE_KBS" || "$BASELINE_KBS" == 0 ]]; then
+  die "could not establish a baseline sha256 throughput (openssl parse failed) — cannot compute throttle ratios"
+fi
 ok "Baseline sha256: ${BASELINE_KBS} KB/s"
 
 # ---------------------------------------------------------------------------
@@ -78,6 +81,7 @@ printf '  %-8s %-20s %-8s %-14s %-14s\n' "Elapsed" "sha256 KB/s" "Ratio" "CPU MH
 printf '  %s\n' "--------------------------------------------------------------"
 
 SAMPLE_COUNT=$(( DURATION / INTERVAL ))
+if (( SAMPLE_COUNT < 1 )); then SAMPLE_COUNT=1; fi
 for (( i = 1; i <= SAMPLE_COUNT; i++ )); do
   sleep "$INTERVAL"
 
@@ -87,6 +91,7 @@ for (( i = 1; i <= SAMPLE_COUNT; i++ )); do
   CUR_RAW=$(openssl speed -elapsed -seconds 1 sha256 2>&1)
   CUR_KBS=$(printf '%s\n' "$CUR_RAW" \
     | awk '/^sha256/{gsub(/k$/,"",$7); printf "%.0f", $7+0}')
+  [[ -z "$CUR_KBS" ]] && CUR_KBS=0
 
   RATIO=$(jq -n "${CUR_KBS} / ${BASELINE_KBS}")
   THROTTLE_FLAG=""

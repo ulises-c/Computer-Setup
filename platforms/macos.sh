@@ -65,7 +65,8 @@ mac_custom_install_tier() {
      --arg w "$INCLUDE_WORK" --arg p "$INCLUDE_PERSONAL" \
     "$CORE_JQ_DEFS"'.[] | select(
         .package_manager[$plat] == "custom" and prfor($plat) == $pr and
-        envok($plat; $w; $p) and (icfor($plat) != null) and .name != "nvm" and tagok($plat)
+        envok($plat; $w; $p) and (icfor($plat) != null) and (.handled_by_setup == true)
+        and .name != "nvm" and tagok($plat)
       ) | icfor($plat)' "$PACKAGES_JSON" |
   while read -r cmd; do
     run_eval "$cmd"

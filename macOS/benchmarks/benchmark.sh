@@ -56,6 +56,7 @@ header "CPU — single-core (openssl sha256, ${SSL_SECS}s)"
 SINGLE_RAW=$(openssl speed -elapsed -seconds "$SSL_SECS" sha256 2>&1)
 SINGLE_16K_KBS=$(printf '%s\n' "$SINGLE_RAW" \
   | awk '/^sha256/{gsub(/k$/,"",$7); printf "%.0f", $7+0}')
+[[ -z "$SINGLE_16K_KBS" ]] && { warn "could not parse openssl sha256 throughput (single-core) — recording 0"; SINGLE_16K_KBS=0; }
 ok "sha256 throughput (16k blocks): ${SINGLE_16K_KBS} KB/s"
 
 SINGLE_MEAN_MS="null"
@@ -92,6 +93,7 @@ header "CPU — multi-core (openssl sha256 x${NCPU}, ${SSL_SECS}s)"
 MULTI_RAW=$(openssl speed -elapsed -seconds "$SSL_SECS" -multi "$NCPU" sha256 2>&1)
 MULTI_16K_KBS=$(printf '%s\n' "$MULTI_RAW" \
   | awk '/^sha256/{gsub(/k$/,"",$7); printf "%.0f", $7+0}')
+[[ -z "$MULTI_16K_KBS" ]] && { warn "could not parse openssl sha256 throughput (multi-core) — recording 0"; MULTI_16K_KBS=0; }
 ok "sha256 aggregate throughput (${NCPU} cores): ${MULTI_16K_KBS} KB/s"
 
 MULTI_SCALE="null"
@@ -141,7 +143,7 @@ STORAGE_JSON="null"
 if $HAS_FIO; then
   header "Storage I/O (fio)"
   SCRATCH=$(mktemp -d)
-  trap 'rm -rf "$SCRATCH"' RETURN
+  trap 'rm -rf "$SCRATCH"' EXIT
 
   FIO_SIZE="4g"
   RAND_SIZE="1g"

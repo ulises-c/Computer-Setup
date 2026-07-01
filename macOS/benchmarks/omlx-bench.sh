@@ -74,7 +74,13 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # perl gives sub-second wall-clock timing portably (bash 3.2 has no EPOCHREALTIME)
-now_s() { perl -MTime::HiRes=time -e 'printf "%.4f\n", time'; }
+now_s() {
+  if command -v perl >/dev/null 2>&1; then
+    perl -MTime::HiRes=time -e 'printf "%.4f\n", time'
+  else
+    date +%s
+  fi
+}
 
 printf '\n'
 ok "System: $(printf '%s' "$SYSINFO" | jq -r '.chip') | $(printf '%s' "$SYSINFO" | jq -r '.memory_gb')GB"
@@ -209,7 +215,11 @@ if [[ "$SINGLE_TPS" != "null" ]]; then
 fi
 
 header "Summary"
-ok "Single-stream:   $(printf '%.1f' "$SINGLE_TPS") tok/s"
+if [[ "$SINGLE_TPS" == "null" ]]; then
+  ok "Single-stream:   n/a (no concurrency=1 sample)"
+else
+  ok "Single-stream:   $(printf '%.1f' "$SINGLE_TPS") tok/s"
+fi
 ok "Peak aggregate:  $(printf '%.1f' "$PEAK_TPS") tok/s @ concurrency ${PEAK_CONC}"
 [[ "$SPEEDUP" != "null" ]] && ok "Batching speedup: $(printf '%.2fx' "$SPEEDUP")"
 

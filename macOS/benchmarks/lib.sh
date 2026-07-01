@@ -14,12 +14,6 @@ header() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 
 check_dep()          { command -v "$1" >/dev/null 2>&1; }
 check_dep_required() { check_dep "$1" || die "required: $1 — install with: brew install $1"; }
-check_dep_optional() {
-  if ! check_dep "$1"; then
-    warn "optional dep missing: $1 (brew install $1) — skipping that section"
-    return 1
-  fi
-}
 
 ts_iso()  { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
 ts_file() { date +"%Y%m%d_%H%M%S"; }
