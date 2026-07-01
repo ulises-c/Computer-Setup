@@ -224,27 +224,27 @@ the result JSON has no unexpected nulls before trusting numbers.
 
 ### P2 — minor / latent
 
-- [ ] `platforms/macos.sh:68` — macOS never calls `custom_reminders_section`,
+- [x] `platforms/macos.sh:68` — macOS never calls `custom_reminders_section`,
       so any future custom entry without `handled_by_setup: true` is silently
       dropped (install branch filters it out, nothing surfaces it). Wire the
       reminder section into `platform_main` like linux_main
-- [ ] `scripts/validate-packages.sh` — validate `handled_by_setup` is a real
+- [x] `scripts/validate-packages.sh` — validate `handled_by_setup` is a real
       boolean and custom entries carry an `install_command` (a string `"true"`
       or missing command currently passes validation and degrades silently)
-- [ ] `macOS/lib-dmg-install.sh:30` — handle hdiutil's already-attached reuse
+- [x] `macOS/lib-dmg-install.sh:30` — handle hdiutil's already-attached reuse
       (image mounted via Finder → `-mountpoint` ignored, empty mount dir,
       misleading `no .app found` death, pre-existing mount left attached)
-- [ ] `platforms/macos.sh` dry-run fidelity — gate the pipx `[i/N]` progress
+- [x] `platforms/macos.sh` dry-run fidelity — gate the pipx `[i/N]` progress
       line on DRY_RUN (:86), print a `[dry-run] sudo -v` line in
       `mac_prime_sudo` (:96), include `--adopt` in the cask progress/FAIL
       lines (:50, :56)
-- [ ] `platforms/macos.sh:99` — sudo keepalive inherits `set -e` (one failed
+- [x] `platforms/macos.sh:99` — sudo keepalive inherits `set -e` (one failed
       `sudo -n true` silently kills it) and holds stdout so a piped run hangs
       up to 60s after exit; add `|| true` and redirect stdout
-- [ ] `macOS/benchmarks/standardized.sh:59` — grep the already-captured
+- [x] `macOS/benchmarks/standardized.sh:59` — grep the already-captured
       `$GB_RAW` for the Geekbench result URL before re-running the whole CPU
       benchmark (the fallback also truncates the first run's output)
-- [ ] `macOS/benchmarks/omlx-bench.sh:127` — when `OMLX_MODEL` is set, don't
+- [x] `macOS/benchmarks/omlx-bench.sh:127` — when `OMLX_MODEL` is set, don't
       die on an empty `/v1/models` list (lazy-loading servers list nothing
       until the first request)
 

@@ -12,7 +12,7 @@ die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
 # /Applications, and cleans up on exit. Dies on any failure.
 install_app_from_dmg() {
   local dmg_url="$1"
-  local workdir mnt dmg app
+  local workdir mnt dmg app attach_out actual_mnt
   workdir=$(mktemp -d)
   mnt="$workdir/mnt"
   dmg="$workdir/image.dmg"
@@ -27,8 +27,16 @@ install_app_from_dmg() {
 
   info "Mounting disk image..."
   mkdir -p "$mnt"
-  hdiutil attach "$dmg" -nobrowse -noverify -mountpoint "$mnt" >/dev/null \
+  attach_out=$(hdiutil attach "$dmg" -nobrowse -noverify -mountpoint "$mnt") \
     || die "failed to mount $dmg"
+  # hdiutil silently reuses an existing mount (ignoring -mountpoint) when the
+  # image is already attached, e.g. previously opened in Finder — trust the
+  # mount point it reports (tab-separated last column) over the one requested
+  actual_mnt=$(printf '%s\n' "$attach_out" | awk -F'\t' '$NF ~ /^\// {mp=$NF} END {print mp}')
+  [[ -n "$actual_mnt" && -d "$actual_mnt" ]] && mnt="$actual_mnt"
+  # re-register so cleanup detaches the mount actually used
+  # shellcheck disable=SC2064
+  trap "hdiutil detach '$mnt' >/dev/null 2>&1 || true; rm -rf '$workdir'" EXIT
 
   app=$(find "$mnt" -maxdepth 1 -name '*.app' -print -quit 2>/dev/null || true)
   [[ -n "$app" ]] || die "no .app found inside the disk image"

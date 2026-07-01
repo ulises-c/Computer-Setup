@@ -47,13 +47,13 @@ brew_cask_install_tier() {
       printf '  [dry-run] [%d/%d] brew install --cask --adopt %s\n' "$i" "$total" "$name"
       continue
     fi
-    printf '  [%d/%d] brew install --cask %s...\n' "$i" "$total" "$name"
+    printf '  [%d/%d] brew install --cask --adopt %s...\n' "$i" "$total" "$name"
     BREW_TOTAL=$((BREW_TOTAL + 1))
     if ! err=$(brew install --cask --adopt "$name" 2>&1); then
       reason=$(printf '%s\n' "$err" | grep -m1 'Error:' | sed 's/^Error: //')
       [[ -z "$reason" ]] && reason=$(printf '%s\n' "$err" | tail -1)
       BREW_FAILURES+=("cask/$name: $reason")
-      printf '  [FAIL] brew install --cask %s — %s\n' "$name" "$reason"
+      printf '  [FAIL] brew install --cask --adopt %s — %s\n' "$name" "$reason"
     fi
   done
 }
@@ -92,6 +92,10 @@ mac_pipx_install_tier() {
   i=0
   for name in "${list[@]}"; do
     i=$((i + 1))
+    if [[ "$DRY_RUN" == true ]]; then
+      printf '  [dry-run] [%d/%d] pipx install %s\n' "$i" "$total" "$name"
+      continue
+    fi
     printf '  [%d/%d] pipx install %s...\n' "$i" "$total" "$name"
     run pipx install "$name"
   done
@@ -102,10 +106,17 @@ mac_pipx_install_tier() {
 # times. Prime the timestamp once, then refresh it in the background until this
 # script exits so every later sudo call reuses it silently.
 mac_prime_sudo() {
-  [[ "$DRY_RUN" == true ]] && return 0
+  if [[ "$DRY_RUN" == true ]]; then
+    printf '  [dry-run] sudo -v (cache credentials + background keepalive)\n'
+    return 0
+  fi
   printf '==> Caching credentials (you may be prompted for your password once)...\n'
   sudo -v || return 0
-  ( while true; do sudo -n true; sleep 60; kill -0 "$$" 2>/dev/null || exit; done ) 2>/dev/null &
+  # || true: the subshell inherits set -e, and one failed refresh (timestamp
+  # revoked mid-run) must not silently kill the keepalive. stdout is redirected
+  # so a piped run (setup.sh | tee) sees EOF at exit instead of hanging on the
+  # fd this subshell holds for up to 60s.
+  ( while true; do sudo -n true || true; sleep 60; kill -0 "$$" 2>/dev/null || exit; done ) >/dev/null 2>&1 &
 }
 
 print_app_store_reminders() {
@@ -290,6 +301,10 @@ platform_main() {
   print_app_store_reminders medium
   print_app_store_reminders none
   [[ "$INCLUDE_OPTIONAL" == true ]] && print_app_store_reminders low
+
+  # Custom entries the engine does not run (handled_by_setup != true) —
+  # without this they are neither installed nor surfaced (linux_main has it)
+  custom_reminders_section
 
   if pkg_selected codeburn; then
     printf '\n'

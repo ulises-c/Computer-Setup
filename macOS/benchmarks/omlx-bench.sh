@@ -115,6 +115,7 @@ fi
 # ---------------------------------------------------------------------------
 info "Waiting for model load (timeout ${READY_TIMEOUT}s)..."
 DISCOVERED=""
+READY=false
 for (( t = 0; t < READY_TIMEOUT; t += 3 )); do
   if $STARTED_SERVER && ! kill -0 "$SERVER_PID" 2>/dev/null; then
     warn "Server exited early — last log lines:"
@@ -124,16 +125,18 @@ for (( t = 0; t < READY_TIMEOUT; t += 3 )); do
   MODELS=$(curl -fsS "${BASE_URL}/v1/models" 2>/dev/null || true)
   if [[ -n "$MODELS" ]]; then
     DISCOVERED=$(printf '%s' "$MODELS" | jq -r '.data[0].id // empty' 2>/dev/null || true)
-    [[ -n "$DISCOVERED" ]] && break
+    # With an explicit OMLX_MODEL a responding API is enough — a lazy-loading
+    # server lists nothing until the first request
+    if [[ -n "$DISCOVERED" || -n "$OMLX_MODEL" ]]; then READY=true; break; fi
   fi
   sleep 3
 done
-if [[ -z "$DISCOVERED" ]]; then
+if ! $READY; then
   if $STARTED_SERVER; then
     tail -20 "$SERVER_LOG" >&2 || true
     die "no model available after ${READY_TIMEOUT}s — check $SERVER_LOG and that MLX models live under $OMLX_MODEL_DIR"
   else
-    die "reused server on ${BASE_URL} lists no models — load a model in the oMLX app first"
+    die "reused server on ${BASE_URL} lists no models — load a model in the oMLX app first, or set OMLX_MODEL"
   fi
 fi
 

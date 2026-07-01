@@ -55,9 +55,15 @@ if [[ -n "$GB_BIN" ]]; then
       '{ single_core: $s, multi_core: $m, mode: "pro-json" }')
     ok "Geekbench CPU: single=${GB_SINGLE} multi=${GB_MULTI}"
   else
-    # Free tier: parse the result URL from stdout
-    "$GB_BIN" --cpu >"$GB_RAW" 2>&1 || true
+    # Free tier: the first invocation may have completed the full run and
+    # printed the browser URL before the Pro-only export failed — reuse it
+    # instead of paying a second multi-minute benchmark (and append on the
+    # re-run so the first run's output survives for audit)
     GB_URL=$(grep -oE 'https://browser\.geekbench\.com/[^ ]+' "$GB_RAW" | head -1 || true)
+    if [[ -z "$GB_URL" ]]; then
+      "$GB_BIN" --cpu >>"$GB_RAW" 2>&1 || true
+      GB_URL=$(grep -oE 'https://browser\.geekbench\.com/[^ ]+' "$GB_RAW" | head -1 || true)
+    fi
     if [[ -n "$GB_URL" ]]; then
       GEEKBENCH_JSON=$(jq -n --arg url "$GB_URL" '{ result_url: $url, mode: "free-upload", note: "scores in the Geekbench Browser" }')
       ok "Geekbench result: $GB_URL"
