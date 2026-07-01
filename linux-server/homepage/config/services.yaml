@@ -55,7 +55,7 @@
               format: bytes
     - ups:
         icon: mdi-battery-charging-high
-        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:8097/
+        href: https://{{HOMEPAGE_VAR_PEANUT_DOMAIN}}/
         description: NUT · CyberPower 1500VA
         server: my-docker
         container: peanut

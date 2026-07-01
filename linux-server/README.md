@@ -350,7 +350,7 @@ In NPM admin (`http://<server-ip>:81`):
        upsc cyberpower ups.status   # expect: OL
        docker compose up -d         # PeaNUT dashboard + homepage widget
        ```
-    3. Dashboard (charge/load/runtime graphs) at `http://<server-ip>:8097`; the homepage **ups** card reads it via the `peanut` widget
+    3. Dashboard (charge/load/runtime graphs) at `https://peanut.<tailnet>.ts.net/` (set `TS_AUTHKEY` in `ups/.env` for the sidecar); the homepage **ups** card reads it via the `peanut` widget on localhost
     4. Set BIOS **Restore on AC Power Loss → Power On** so the server boots unattended after an outage
 
 20. pi-hole | [GitHub](https://github.com/pi-hole/pi-hole) | [Docs](https://docs.pi-hole.net)

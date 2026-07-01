@@ -63,13 +63,16 @@ wall power returns.
 ## Dashboard (PeaNUT)
 
 [PeaNUT](https://github.com/Brandawg93/PeaNUT) serves a web dashboard with
-charge/load/runtime graphs at `http://<server-ip>:8097` and feeds the homepage
-**ups** card (`type: peanut` widget). Host-networked so it can reach the
-loopback-only `upsd`; auth is disabled (read-only stats on a trusted LAN, same
-posture as glances). Its runtime settings dir (`peanut-config/`) is gitignored.
+charge/load/runtime graphs at `https://peanut.<tailnet>.ts.net/` (Tailscale
+sidecar per [`../HTTPS.md`](../HTTPS.md), host-networked variant like glances —
+PeaNUT itself must stay on the host network to reach the loopback-only `upsd`)
+and feeds the homepage **ups** card (`type: peanut` widget via localhost).
+Auth is disabled (read-only stats on a trusted network, same posture as
+glances). Its runtime settings dir (`peanut-config/`) is gitignored.
 
 ```sh
 cd linux-server/ups
+# set TS_AUTHKEY in .env (same OAuth client secret as the other sidecars)
 docker compose up -d
 ```
 

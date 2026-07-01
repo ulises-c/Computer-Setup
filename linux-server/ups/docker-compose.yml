@@ -1,7 +1,35 @@
 services:
+  # Tailscale sidecar — joins the tailnet as `peanut`, terminating HTTPS for
+  # https://peanut.<tailnet>.ts.net. Host-networked variant per ../HTTPS.md:
+  # peanut stays on the host network (it must reach the loopback-only upsd),
+  # so the sidecar runs in its own netns and proxies back to the host's :8097
+  # via host.docker.internal.
+  peanut-ts:
+    image: tailscale/tailscale:latest
+    container_name: peanut-ts
+    hostname: peanut
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SERVE_CONFIG=/config/serve.json
+      # Requires TS_AUTHKEY to be allowed to apply tag:container (OAuth client, or
+      # a tag-scoped auth key). Drop this line if using an untagged personal key.
+      - TS_EXTRA_ARGS=--advertise-tags=tag:container
+    volumes:
+      - ./ts-state:/var/lib/tailscale
+      - ./ts-serve.json:/config/serve.json:ro
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
   # NUT web dashboard (charge/load/runtime graphs) — also feeds the homepage
   # "ups" card's peanut widget. Host-networked because upsd listens on
-  # loopback only; the web UI binds 0.0.0.0:8097 so it's reachable on the LAN.
+  # loopback only; the web UI binds 0.0.0.0:8097 so both the sidecar (via the
+  # docker bridge gateway) and the LAN can reach it.
   peanut:
     image: brandawg93/peanut:latest
     container_name: peanut
