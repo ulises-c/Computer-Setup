@@ -7,20 +7,12 @@
 # and skips the checksum, which is the only reliable unattended install.
 #
 # Usage: bash macOS/install-cinebench.sh
+#   Override the DMG when Maxon ships a new major version:
+#   CINEBENCH_DMG_URL=https://.../Cinebench20XX_macOS.dmg bash macOS/install-cinebench.sh
 set -euo pipefail
 
-DMG_URL="https://mx-app-blob-prod.maxon.net/mx-package-production/website/macos/maxon/cinebench/Cinebench2026_macOS.dmg"
+DMG_URL="${CINEBENCH_DMG_URL:-https://mx-app-blob-prod.maxon.net/mx-package-production/website/macos/maxon/cinebench/Cinebench2026_macOS.dmg}"
 
 source "$(dirname "${BASH_SOURCE[0]:-$0}")/lib-dmg-install.sh"
 
-command -v curl    >/dev/null || die "curl is required"
-command -v hdiutil >/dev/null || die "hdiutil is required (macOS only)"
-
-if [[ -d "/Applications/Cinebench.app" ]]; then
-  info "Cinebench.app already in /Applications — skipping download"
-  exit 0
-fi
-
-install_app_from_dmg "$DMG_URL"
-
-printf '\033[32m✓\033[0m Cinebench installed. Launch it from /Applications (Gatekeeper may prompt on first run).\n'
+install_app_from_dmg Cinebench "$DMG_URL"

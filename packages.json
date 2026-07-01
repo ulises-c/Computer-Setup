@@ -584,6 +584,16 @@
     "description": "Track AI coding token usage by task, tool, model, and project"
   },
   {
+    "name": "codeburn-menubar",
+    "tags": ["development", "ai-coding"],
+    "package_manager": { "macos": "custom" },
+    "handled_by_setup": false,
+    "install_command": "codeburn menubar",
+    "priority": "none",
+    "optional": false,
+    "description": "codeburn menu-bar companion app — currently buggy upstream, run only if you want it (needs the codeburn pnpm package)"
+  },
+  {
     "name": "mac-mouse-fix",
     "tags": ["desktop-utility"],
     "package_manager": { "macos": "brew-cask" },

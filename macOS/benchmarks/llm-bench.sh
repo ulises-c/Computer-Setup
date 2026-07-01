@@ -47,7 +47,6 @@ fi
 
 check_dep_required jq
 check_dep_required curl
-ensure_results_dir
 
 HAS_MLX=false;   check_dep mlx_lm.generate && HAS_MLX=true
 HAS_LLAMA=false; check_dep llama-bench    && HAS_LLAMA=true
@@ -57,12 +56,7 @@ $RUN_LLAMA && ! $HAS_LLAMA && { warn "llama-bench not found (brew install llama.
 
 $RUN_MLX || $RUN_LLAMA || die "neither MLX nor llama.cpp available — nothing to benchmark"
 
-SYSINFO=$("$BENCH_DIR/collect-sysinfo.sh")
-HOSTNAME_SHORT=$(printf '%s' "$SYSINFO" | jq -r '.hostname')
-OUTFILE="$RESULTS_DIR/llm_${HOSTNAME_SHORT}_$(ts_file).json"
-
-printf '\n'
-ok "System: $(printf '%s' "$SYSINFO" | jq -r '.chip') | $(printf '%s' "$SYSINFO" | jq -r '.memory_gb')GB"
+bench_init llm
 ok "Config: prompt=${N_PROMPT} gen=${N_GEN} reps=${REPS}"
 $RUN_MLX   && info "MLX model:       $MLX_MODEL"
 $RUN_LLAMA && info "llama.cpp model: ${GGUF_REPO}:${GGUF_QUANT}"
@@ -199,8 +193,9 @@ jq -n \
   --argjson reps    "$REPS" \
   --arg     ts      "$(ts_iso)" \
   --argjson dur     "$DURATION_S" \
+  --arg     sv      "$SUITE_VERSION" \
   '{
-    metadata: { suite: "llm", timestamp: $ts, duration_s: $dur, suite_version: "1.0.0" },
+    metadata: { suite: "llm", timestamp: $ts, duration_s: $dur, suite_version: $sv },
     sysinfo: $sysinfo,
     config: { n_prompt: $nprompt, n_gen: $ngen, reps: $reps },
     mlx: $mlx,

@@ -18,13 +18,10 @@ THROTTLE_THRESHOLD="0.90"
 
 check_dep_required jq
 check_dep_required stress-ng
+# shellcheck disable=SC2034  # consumed by openssl_sha256_kbs in lib.sh
 OPENSSL_BIN=$(resolve_openssl)
 
-ensure_results_dir
-
-SYSINFO=$("$BENCH_DIR/collect-sysinfo.sh")
-HOSTNAME_SHORT=$(printf '%s' "$SYSINFO" | jq -r '.hostname')
-OUTFILE="$RESULTS_DIR/stress_${HOSTNAME_SHORT}_$(ts_file).json"
+bench_init stress
 NCPU=$(sysctl -n hw.logicalcpu)
 
 STRESS_PID=""
@@ -51,10 +48,7 @@ else
   warn "Run 'sudo bash stress-test.sh' for power/frequency data"
 fi
 
-printf '\n'
-ok "System: $(printf '%s' "$SYSINFO" | jq -r '.chip') | $(printf '%s' "$SYSINFO" | jq -r '.memory_gb')GB"
 ok "Duration: ${DURATION}s | Sample interval: ${INTERVAL}s | Cores: ${NCPU}"
-info "Results will be written to: $OUTFILE"
 
 # ---------------------------------------------------------------------------
 # Start stress load
@@ -77,9 +71,7 @@ info "Stress PID: $STRESS_PID"
 # throttling then shows up as a decline relative to this early-load figure.
 header "Baseline throughput (5s, under load)"
 sleep 10
-BASELINE_RAW=$("$OPENSSL_BIN" speed -elapsed -seconds 5 sha256 2>&1 || true)
-BASELINE_KBS=$(printf '%s\n' "$BASELINE_RAW" \
-  | awk '/^sha256/{gsub(/k$/,"",$7); printf "%.0f", $7+0}')
+BASELINE_KBS=$(openssl_sha256_kbs 5)
 if [[ -z "$BASELINE_KBS" || "$BASELINE_KBS" == 0 ]]; then
   die "could not establish a baseline sha256 throughput (openssl parse failed) — cannot compute throttle ratios"
 fi
@@ -100,9 +92,7 @@ for (( i = 1; i <= SAMPLE_COUNT; i++ )); do
   ELAPSED=$(( i * INTERVAL ))
 
   # 1-second throughput measurement (brief window, parallel to stress load)
-  CUR_RAW=$("$OPENSSL_BIN" speed -elapsed -seconds 1 sha256 2>&1 || true)
-  CUR_KBS=$(printf '%s\n' "$CUR_RAW" \
-    | awk '/^sha256/{gsub(/k$/,"",$7); printf "%.0f", $7+0}')
+  CUR_KBS=$(openssl_sha256_kbs 1)
   [[ -z "$CUR_KBS" ]] && CUR_KBS=0
 
   RATIO=$(jq -n "${CUR_KBS} / ${BASELINE_KBS}")
@@ -191,8 +181,9 @@ jq -n \
   --arg     threshold  "$THROTTLE_THRESHOLD" \
   --argjson samples    "$SAMPLES_JSON" \
   --arg     timestamp  "$(ts_iso)" \
+  --arg     sv         "$SUITE_VERSION" \
   '{
-    metadata: { suite: "stress", timestamp: $timestamp, suite_version: "1.0.0" },
+    metadata: { suite: "stress", timestamp: $timestamp, suite_version: $sv },
     sysinfo: $sysinfo,
     config: { duration_s: $duration, interval_s: $interval, num_cores: $ncpu },
     baseline_sha256_kbs: $baseline,

@@ -27,12 +27,8 @@ HAS_FIO=false;       check_dep fio         && HAS_FIO=true         || warn "fio 
 # ---------------------------------------------------------------------------
 # Setup
 # ---------------------------------------------------------------------------
-ensure_results_dir
-
+bench_init benchmark
 START_S=$SECONDS
-SYSINFO=$("$BENCH_DIR/collect-sysinfo.sh")
-HOSTNAME_SHORT=$(printf '%s' "$SYSINFO" | jq -r '.hostname')
-OUTFILE="$RESULTS_DIR/benchmark_${HOSTNAME_SHORT}_$(ts_file).json"
 
 NCPU=$(sysctl -n hw.logicalcpu)
 SSL_SECS=10
@@ -44,18 +40,12 @@ if $QUICK; then
   HF_RUNS=3
 fi
 
-printf '\n'
-ok "System: $(printf '%s' "$SYSINFO" | jq -r '.chip') | $(printf '%s' "$SYSINFO" | jq -r '.memory_gb')GB | macOS $(printf '%s' "$SYSINFO" | jq -r '.macos_version')"
-info "Results will be written to: $OUTFILE"
-
 # ---------------------------------------------------------------------------
 # CPU single-core
 # ---------------------------------------------------------------------------
 header "CPU — single-core (openssl sha256, ${SSL_SECS}s)"
 
-SINGLE_RAW=$("$OPENSSL_BIN" speed -elapsed -seconds "$SSL_SECS" sha256 2>&1 || true)
-SINGLE_16K_KBS=$(printf '%s\n' "$SINGLE_RAW" \
-  | awk '/^sha256/{gsub(/k$/,"",$7); printf "%.0f", $7+0}')
+SINGLE_16K_KBS=$(openssl_sha256_kbs "$SSL_SECS")
 [[ -z "$SINGLE_16K_KBS" ]] && { warn "could not parse openssl sha256 throughput (single-core) — recording 0"; SINGLE_16K_KBS=0; }
 ok "sha256 throughput (16k blocks): ${SINGLE_16K_KBS} KB/s"
 
@@ -90,9 +80,7 @@ CPU_SINGLE_JSON=$(jq -n \
 # ---------------------------------------------------------------------------
 header "CPU — multi-core (openssl sha256 x${NCPU}, ${SSL_SECS}s)"
 
-MULTI_RAW=$("$OPENSSL_BIN" speed -elapsed -seconds "$SSL_SECS" -multi "$NCPU" sha256 2>&1 || true)
-MULTI_16K_KBS=$(printf '%s\n' "$MULTI_RAW" \
-  | awk '/^sha256/{gsub(/k$/,"",$7); printf "%.0f", $7+0}')
+MULTI_16K_KBS=$(openssl_sha256_kbs "$SSL_SECS" "$NCPU")
 [[ -z "$MULTI_16K_KBS" ]] && { warn "could not parse openssl sha256 throughput (multi-core) — recording 0"; MULTI_16K_KBS=0; }
 ok "sha256 aggregate throughput (${NCPU} cores): ${MULTI_16K_KBS} KB/s"
 
@@ -232,8 +220,9 @@ jq -n \
   --argjson storage    "$STORAGE_JSON" \
   --arg     timestamp  "$(ts_iso)" \
   --argjson duration_s "$DURATION_S" \
+  --arg     sv         "$SUITE_VERSION" \
   '{
-    metadata:   { suite: "benchmark", timestamp: $timestamp, duration_s: $duration_s, suite_version: "1.0.0" },
+    metadata:   { suite: "benchmark", timestamp: $timestamp, duration_s: $duration_s, suite_version: $sv },
     sysinfo:    $sysinfo,
     cpu_single: $cpu_single,
     cpu_multi:  $cpu_multi,

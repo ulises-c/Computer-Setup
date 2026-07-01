@@ -38,7 +38,6 @@ fi
 
 check_dep_required jq
 check_dep_required curl
-ensure_results_dir
 
 # Resolve the omlx CLI: PATH first, then the menu-bar app's shim. May be empty
 # if only the app is installed and already serving — we reuse that server then.
@@ -53,9 +52,7 @@ BASE_URL="http://localhost:${OMLX_PORT}"
 # max_concurrent_requests must cover the highest sweep level
 MAXCONC=$(printf '%s\n' $CONCURRENCY | sort -n | tail -1)
 
-SYSINFO=$("$BENCH_DIR/collect-sysinfo.sh")
-HOSTNAME_SHORT=$(printf '%s' "$SYSINFO" | jq -r '.hostname')
-OUTFILE="$RESULTS_DIR/omlx_${HOSTNAME_SHORT}_$(ts_file).json"
+bench_init omlx
 
 WORKDIR=$(mktemp -d)
 SERVER_PID=""
@@ -85,8 +82,6 @@ now_s() {
   fi
 }
 
-printf '\n'
-ok "System: $(printf '%s' "$SYSINFO" | jq -r '.chip') | $(printf '%s' "$SYSINFO" | jq -r '.memory_gb')GB"
 ok "Sweep: concurrency [${CONCURRENCY}]  gen=${N_GEN} tok/req  max_concurrent=${MAXCONC}"
 
 # ---------------------------------------------------------------------------
@@ -257,8 +252,9 @@ jq -n \
   --argjson speedup "${SPEEDUP:-null}" \
   --argjson sweep   "$SWEEP_JSON" \
   --arg     ts      "$(ts_iso)" \
+  --arg     sv      "$SUITE_VERSION" \
   '{
-    metadata: { suite: "omlx", timestamp: $ts, suite_version: "1.0.0" },
+    metadata: { suite: "omlx", timestamp: $ts, suite_version: $sv },
     sysinfo: $sysinfo,
     config: { model: $model, max_concurrent_requests: $maxc, n_gen: $ngen },
     single_stream_tps: $single,

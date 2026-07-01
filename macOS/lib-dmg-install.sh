@@ -2,17 +2,29 @@
 # Shared helper for installing a macOS app from a .dmg. Sourced (not executed)
 # by install-omlx-app.sh and install-cinebench.sh. Each caller resolves the .dmg
 # URL its own way (GitHub Releases API + OS-version selection vs a fixed vendor
-# URL); this just does the common download → mount → copy → cleanup.
+# URL); this owns the common guard → deps → download → mount → copy → cleanup.
 
 info() { printf '  %s\n' "$*"; }
 die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
 
-# install_app_from_dmg <dmg_url>
-# Downloads the DMG, mounts it, copies the first *.app at the image root into
-# /Applications, and cleans up on exit. Dies on any failure.
+# app_installed <AppName> — the .app bundle is already in /Applications
+app_installed() { [[ -d "/Applications/$1.app" ]]; }
+
+# install_app_from_dmg <AppName> <dmg_url>
+# Skips if /Applications/<AppName>.app exists. Downloads the DMG, mounts it,
+# copies the first *.app at the image root into /Applications, prints the
+# success line, and cleans up on exit. Dies on any failure.
 install_app_from_dmg() {
-  local dmg_url="$1"
+  local app_name="$1" dmg_url="$2"
   local workdir mnt dmg app attach_out actual_mnt
+
+  if app_installed "$app_name"; then
+    info "${app_name}.app already in /Applications — skipping download"
+    return 0
+  fi
+  command -v curl    >/dev/null || die "curl is required"
+  command -v hdiutil >/dev/null || die "hdiutil is required (macOS only)"
+
   workdir=$(mktemp -d)
   mnt="$workdir/mnt"
   dmg="$workdir/image.dmg"
@@ -45,4 +57,6 @@ install_app_from_dmg() {
   if ! cp -R "$app" /Applications/ 2>/dev/null; then
     die "could not copy to /Applications — drag $(basename "$app") there manually from $dmg_url"
   fi
+
+  printf '\033[32m✓\033[0m %s installed. Launch it from /Applications (Gatekeeper may prompt on first run).\n' "$app_name"
 }

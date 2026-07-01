@@ -21,16 +21,9 @@ CPU_ONLY=false
 [[ "${1:-}" == "--cpu-only" ]] && CPU_ONLY=true
 
 check_dep_required jq
-ensure_results_dir
 
-SYSINFO=$("$BENCH_DIR/collect-sysinfo.sh")
-HOSTNAME_SHORT=$(printf '%s' "$SYSINFO" | jq -r '.hostname')
-STAMP=$(ts_file)
-OUTFILE="$RESULTS_DIR/standardized_${HOSTNAME_SHORT}_${STAMP}.json"
+bench_init standardized
 RAWDIR="$RESULTS_DIR/standardized_${HOSTNAME_SHORT}_${STAMP}_raw"
-
-printf '\n'
-ok "System: $(printf '%s' "$SYSINFO" | jq -r '.chip') | $(printf '%s' "$SYSINFO" | jq -r '.memory_gb')GB"
 info "Raw CLI output saved to: $RAWDIR"
 mkdir -p "$RAWDIR"
 
@@ -186,8 +179,9 @@ jq -n \
   --argjson blender     "$BLENDER_JSON" \
   --arg     ts          "$(ts_iso)" \
   --argjson dur         "$DURATION_S" \
+  --arg     sv          "$SUITE_VERSION" \
   '{
-    metadata: { suite: "standardized", timestamp: $ts, duration_s: $dur, suite_version: "1.0.0" },
+    metadata: { suite: "standardized", timestamp: $ts, duration_s: $dur, suite_version: $sv },
     sysinfo: $sysinfo,
     geekbench6: $geekbench,
     geekbench_ai: $geekbenchai,

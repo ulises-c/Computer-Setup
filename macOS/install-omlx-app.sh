@@ -12,10 +12,9 @@ API="https://api.github.com/repos/${REPO}/releases/latest"
 
 source "$(dirname "${BASH_SOURCE[0]:-$0}")/lib-dmg-install.sh"
 
-command -v curl    >/dev/null || die "curl is required"
-command -v hdiutil >/dev/null || die "hdiutil is required (macOS only)"
-
-if [[ -d "/Applications/oMLX.app" ]]; then
+# Guard before install_app_from_dmg's own check: skip the GitHub API call
+# (rate-limited) on idempotent re-runs
+if app_installed oMLX; then
   info "oMLX.app already in /Applications — it self-updates in-app; skipping download"
   exit 0
 fi
@@ -46,6 +45,4 @@ done <<< "$dmg_urls"
 [[ -n "$dmg_url" ]] || dmg_url=$(head -1 <<< "$dmg_urls")
 info "Selected DMG for macOS $os_major: $(basename "$dmg_url")"
 
-install_app_from_dmg "$dmg_url"
-
-printf '\033[32m✓\033[0m oMLX app installed. Launch it from /Applications (Gatekeeper may prompt on first run).\n'
+install_app_from_dmg oMLX "$dmg_url"

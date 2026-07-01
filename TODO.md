@@ -250,22 +250,26 @@ the result JSON has no unexpected nulls before trusting numbers.
 
 ### P3 — cleanup (dedupe within the new code)
 
-- [ ] `macOS/benchmarks/lib.sh` — add a `bench_init <suite>` helper for the
+- [x] `macOS/benchmarks/lib.sh` — add a `bench_init <suite>` helper for the
       SYSINFO/HOSTNAME_SHORT/OUTFILE/banner prologue (now copy-pasted ×5) and
       a single `SUITE_VERSION` constant (literal `"1.0.0"` now ×5)
-- [ ] `macOS/benchmarks/lib.sh` — extract the openssl-speed sha256 run+parse
+- [x] `macOS/benchmarks/lib.sh` — extract the openssl-speed sha256 run+parse
       into one helper (now ×4 across benchmark.sh / stress-test.sh); pairs
       with the P0 LibreSSL fix
-- [ ] `platforms/macos.sh` — factor the `[i/N]` progress-counter plumbing
-      shared by the brew/cask/pipx tiers (now ×3)
-- [ ] `macOS/lib-dmg-install.sh` — move the curl/hdiutil dep checks, the
-      already-installed guard, and the success message into the lib; drop its
-      duplicate `info`/`die` (identical copies in `benchmarks/lib.sh`)
-- [ ] `platforms/macos.sh:285` — drive the codeburn menubar reminder from
+- [x] `platforms/macos.sh` — factor the `[i/N]` progress-counter plumbing
+      shared by the brew/cask/pipx tiers (now ×3) — `mac_install_list`; pipx
+      failures now also collect into the summary instead of aborting the run
+- [x] `macOS/lib-dmg-install.sh` — move the curl/hdiutil dep checks, the
+      already-installed guard, and the success message into the lib; kept its
+      own two-line `info`/`die` — sourcing `benchmarks/lib.sh` would couple
+      the standalone installers to the benchmark suite's internals
+- [x] `platforms/macos.sh:285` — drive the codeburn menubar reminder from
       `packages.json` instead of a hardcoded package-name check in
-      `platform_main`
-- [ ] `macOS/install-cinebench.sh:12` — make `DMG_URL` env-overridable; it pins
-      a versioned filename while the comment claims a rolling stable URL
+      `platform_main` — new `codeburn-menubar` custom entry (priority none,
+      handled_by_setup false) rendered by `custom_reminders_section`
+- [x] `macOS/install-cinebench.sh:12` — make `DMG_URL` env-overridable
+      (`CINEBENCH_DMG_URL`); it pins a versioned filename while the comment
+      claims a rolling stable URL
 
 ## OpenCode local models
 

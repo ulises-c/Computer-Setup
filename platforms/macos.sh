@@ -2,14 +2,18 @@
 # macOS quirks: Homebrew bootstrap, brew/brew-cask/custom installs,
 # expat-pinned pyenv build (Tahoe fix), App Store reminders.
 
-# Populated by brew_install_tier / brew_cask_install_tier; printed at the end.
+# Populated by mac_install_list / mac_custom_install_tier; printed at the end.
 BREW_FAILURES=()
 BREW_TOTAL=0
 
-brew_install_tier() {
-  local priority="$1" names name err reason i total
-  local -a list
-  names=$(pkg_names brew "$priority")
+# mac_install_list <names> <cmd...> — shared [i/N] install loop: prints
+# progress, runs "<cmd...> <name>" per package, collects failures into
+# BREW_FAILURES instead of aborting the tier.
+mac_install_list() {
+  local names="$1" name err reason i total label
+  shift
+  local -a cmd=("$@") list
+  label="${cmd[*]}"
   [[ -z "$names" ]] && return 0
   read -ra list <<< "$names"
   total=${#list[@]}
@@ -17,46 +21,25 @@ brew_install_tier() {
   for name in "${list[@]}"; do
     i=$((i + 1))
     if [[ "$DRY_RUN" == true ]]; then
-      printf '  [dry-run] [%d/%d] brew install %s\n' "$i" "$total" "$name"
+      printf '  [dry-run] [%d/%d] %s %s\n' "$i" "$total" "$label" "$name"
       continue
     fi
-    printf '  [%d/%d] brew install %s...\n' "$i" "$total" "$name"
+    printf '  [%d/%d] %s %s...\n' "$i" "$total" "$label" "$name"
     BREW_TOTAL=$((BREW_TOTAL + 1))
-    if ! err=$(brew install "$name" 2>&1); then
+    if ! err=$("${cmd[@]}" "$name" 2>&1); then
       reason=$(printf '%s\n' "$err" | grep -m1 'Error:' | sed 's/^Error: //')
       [[ -z "$reason" ]] && reason=$(printf '%s\n' "$err" | tail -1)
-      BREW_FAILURES+=("brew/$name: $reason")
-      printf '  [FAIL] brew install %s — %s\n' "$name" "$reason"
+      BREW_FAILURES+=("$label $name: $reason")
+      printf '  [FAIL] %s %s — %s\n' "$label" "$name" "$reason"
     fi
   done
 }
 
-brew_cask_install_tier() {
-  local priority="$1" names name err reason i total
-  local -a list
-  names=$(pkg_names brew-cask "$priority")
-  [[ -z "$names" ]] && return 0
-  read -ra list <<< "$names"
-  total=${#list[@]}
-  i=0
-  # --adopt: take ownership of apps already in /Applications (manual installs)
-  # instead of hard-failing the whole tier (#31)
-  for name in "${list[@]}"; do
-    i=$((i + 1))
-    if [[ "$DRY_RUN" == true ]]; then
-      printf '  [dry-run] [%d/%d] brew install --cask --adopt %s\n' "$i" "$total" "$name"
-      continue
-    fi
-    printf '  [%d/%d] brew install --cask --adopt %s...\n' "$i" "$total" "$name"
-    BREW_TOTAL=$((BREW_TOTAL + 1))
-    if ! err=$(brew install --cask --adopt "$name" 2>&1); then
-      reason=$(printf '%s\n' "$err" | grep -m1 'Error:' | sed 's/^Error: //')
-      [[ -z "$reason" ]] && reason=$(printf '%s\n' "$err" | tail -1)
-      BREW_FAILURES+=("cask/$name: $reason")
-      printf '  [FAIL] brew install --cask --adopt %s — %s\n' "$name" "$reason"
-    fi
-  done
-}
+brew_install_tier() { mac_install_list "$(pkg_names brew "$1")" brew install; }
+
+# --adopt: take ownership of apps already in /Applications (manual installs)
+# instead of hard-failing the whole tier (#31)
+brew_cask_install_tier() { mac_install_list "$(pkg_names brew-cask "$1")" brew install --cask --adopt; }
 
 mac_custom_install_tier() {
   local priority="$1" cmd
@@ -82,24 +65,7 @@ mac_custom_install_tier() {
   )
 }
 
-mac_pipx_install_tier() {
-  local priority="$1" names name i total
-  local -a list
-  names=$(pkg_names pipx "$priority")
-  [[ -z "$names" ]] && return 0
-  read -ra list <<< "$names"
-  total=${#list[@]}
-  i=0
-  for name in "${list[@]}"; do
-    i=$((i + 1))
-    if [[ "$DRY_RUN" == true ]]; then
-      printf '  [dry-run] [%d/%d] pipx install %s\n' "$i" "$total" "$name"
-      continue
-    fi
-    printf '  [%d/%d] pipx install %s...\n' "$i" "$total" "$name"
-    run pipx install "$name"
-  done
-}
+mac_pipx_install_tier() { mac_install_list "$(pkg_names pipx "$1")" pipx install; }
 
 # Cache sudo credentials once up front. Homebrew's cask/pkg installers each shell
 # out to `sudo`, so without this a fresh install prompts for the password ~6
@@ -275,7 +241,8 @@ platform_main() {
   if [[ "$DRY_RUN" == true ]] || command -v pnpm &>/dev/null; then
     pnpm_install_tier medium
     # codeburn's menu-bar app is buggy upstream, so it is NOT installed
-    # automatically — it is printed as a manual post-install step below.
+    # automatically — the codeburn-menubar packages.json entry surfaces it
+    # as a manual reminder instead.
   else
     printf '  pnpm not found — skipping (run corepack enable)\n'
   fi
@@ -305,12 +272,6 @@ platform_main() {
   # Custom entries the engine does not run (handled_by_setup != true) —
   # without this they are neither installed nor surfaced (linux_main has it)
   custom_reminders_section
-
-  if pkg_selected codeburn; then
-    printf '\n'
-    printf 'Manual post-install steps:\n'
-    printf '  - codeburn menubar    # installs the menu-bar app (currently buggy upstream — run only if you want it)\n'
-  fi
 
   printf '\n'
   printf 'Optional — run these from the repo root as needed:\n'
