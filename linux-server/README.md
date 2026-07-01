@@ -348,8 +348,10 @@ In NPM admin (`http://<server-ip>:81`):
        cp .env.example .env   # set UPSMON_PASSWORD (openssl rand -hex 16) + ntfy
        sudo bash setup.sh
        upsc cyberpower ups.status   # expect: OL
+       docker compose up -d         # PeaNUT dashboard + homepage widget
        ```
-    3. Set BIOS **Restore on AC Power Loss → Power On** so the server boots unattended after an outage
+    3. Dashboard (charge/load/runtime graphs) at `http://<server-ip>:8097`; the homepage **ups** card reads it via the `peanut` widget
+    4. Set BIOS **Restore on AC Power Loss → Power On** so the server boots unattended after an outage
 
 20. pi-hole | [GitHub](https://github.com/pi-hole/pi-hole) | [Docs](https://docs.pi-hole.net)
     1. Network-wide DNS ad blocker — alternative to AdGuard Home

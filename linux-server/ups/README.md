@@ -59,8 +59,19 @@ wall power returns.
 - Brief blips send an ONBATT + ONLINE alert pair. If that gets noisy,
   `upssched` can debounce (only alert after N seconds on battery) — not wired
   up; layer it in later if needed.
-- Possible follow-up: a homepage status card fed from `upsc` output, like the
-  backup status card (`backup/docker-compose.yml` is the pattern).
+
+## Dashboard (PeaNUT)
+
+[PeaNUT](https://github.com/Brandawg93/PeaNUT) serves a web dashboard with
+charge/load/runtime graphs at `http://<server-ip>:8097` and feeds the homepage
+**ups** card (`type: peanut` widget). Host-networked so it can reach the
+loopback-only `upsd`; auth is disabled (read-only stats on a trusted LAN, same
+posture as glances). Its runtime settings dir (`peanut-config/`) is gitignored.
+
+```sh
+cd linux-server/ups
+docker compose up -d
+```
 
 ## Files
 

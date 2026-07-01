@@ -1,0 +1,18 @@
+services:
+  # NUT web dashboard (charge/load/runtime graphs) — also feeds the homepage
+  # "ups" card's peanut widget. Host-networked because upsd listens on
+  # loopback only; the web UI binds 0.0.0.0:8097 so it's reachable on the LAN.
+  peanut:
+    image: brandawg93/peanut:latest
+    container_name: peanut
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - NUT_HOST=127.0.0.1
+      - NUT_PORT=3493
+      - WEB_HOST=0.0.0.0
+      - WEB_PORT=8097
+      # Read-only UPS stats on a trusted LAN — same posture as glances.
+      - AUTH_DISABLED=true
+    volumes:
+      - ./peanut-config:/config

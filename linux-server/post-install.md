@@ -264,6 +264,8 @@ cleanly on low battery. Full runbook in [`ups/README.md`](ups/README.md).
   sudo bash setup.sh
   ```
 - [ ] Verify: `upsc cyberpower ups.status` prints `OL`
+- [ ] Start the PeaNUT dashboard (`docker compose up -d`) — graphs at
+      `http://<server-ip>:8097`, and the homepage **ups** card goes live
 - [ ] Subscribe to the `server-ups` ntfy topic on your phone
 - [ ] Set BIOS **Restore on AC Power Loss → Power On**
 
@@ -285,6 +287,7 @@ cleanly on low battery. Full runbook in [`ups/README.md`](ups/README.md).
 | Syncthing | http://\<server-ip\>:8384 | |
 | AdGuard Home | http://\<server-ip\>:8083 | Run setup wizard at :3003 first |
 | Cockpit | https://\<server-ip\>:9090 | |
+| PeaNUT (UPS) | http://\<server-ip\>:8097 | Homepage ups card reads it via localhost |
 | Tailscale Web UI | http://localhost:8088 | After `tailscale up` |
 | Tailscale proxy | http://localhost:8089 | Internal — used by Homepage widget |
 | Forgejo | https://forgejo.\<tailnet\>.ts.net/ | Tailscale sidecar (HTTPS via serve); Git over SSH on port 22 |

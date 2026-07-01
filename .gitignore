@@ -45,3 +45,6 @@ linux-server/backup/status/
 
 # Forgejo runner status JSON + last-state written at runtime (homepage card)
 linux-server/forgejo/runner-status/
+
+# PeaNUT runtime settings written by its UI
+linux-server/ups/peanut-config/

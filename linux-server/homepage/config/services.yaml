@@ -53,6 +53,18 @@
             - field: repo_size_bytes
               label: Repo size
               format: bytes
+    - ups:
+        icon: mdi-battery-charging-high
+        href: http://{{HOMEPAGE_VAR_SERVER_IP}}:8097/
+        description: NUT · CyberPower 1500VA
+        server: my-docker
+        container: peanut
+        widget:
+          type: peanut
+          # peanut is host-networked (upsd is loopback-only); homepage is too,
+          # so localhost reaches it.
+          url: http://localhost:8097
+          key: cyberpower
     - glances:
         icon: si-glances
         href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
