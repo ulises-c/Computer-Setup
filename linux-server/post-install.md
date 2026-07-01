@@ -252,6 +252,21 @@ git remote set-url origin ssh://git@forgejo.<tailnet>.ts.net:22/<username>/<repo
   ```
 - [ ] Get API key: Actions → Settings → API Key — add to `homepage/.env` as `HOMEPAGE_VAR_SYNCTHING_KEY`
 
+### UPS (NUT) — host service, no UI
+
+Monitors the CyberPower UPS over USB; alerts via ntfy and shuts the server down
+cleanly on low battery. Full runbook in [`ups/README.md`](ups/README.md).
+
+- [ ] Configure and deploy:
+  ```sh
+  cd linux-server/ups
+  cp .env.example .env   # set UPSMON_PASSWORD (openssl rand -hex 16) + ntfy
+  sudo bash setup.sh
+  ```
+- [ ] Verify: `upsc cyberpower ups.status` prints `OL`
+- [ ] Subscribe to the `server-ups` ntfy topic on your phone
+- [ ] Set BIOS **Restore on AC Power Loss → Power On**
+
 ---
 
 ## 8. Service reference

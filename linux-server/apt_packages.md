@@ -64,7 +64,10 @@ Tested on Ubuntu Server LTS. Most packages work on other Debian-based distros.
     1. Web-based server admin UI — system metrics, journal logs, network config, storage, and service management
     2. Enabled automatically via systemd socket activation on install; access at `https://<server-ip>:9090`
     3. Login with your Linux username and password
-19. sshpass | [apt](https://packages.ubuntu.com/search?keywords=sshpass) | [Homepage](https://sourceforge.net/projects/sshpass/)
+19. nut | [apt](https://packages.ubuntu.com/search?keywords=nut) | [Homepage](https://networkupstools.org/)
+    1. Network UPS Tools — monitors the CyberPower PR1500LCDRT2U over USB; ntfy alerts + clean shutdown on low battery
+    2. Needs one-time config after install: `sudo bash linux-server/ups/setup.sh` (see [`ups/README.md`](ups/README.md))
+20. sshpass | [apt](https://packages.ubuntu.com/search?keywords=sshpass) | [Homepage](https://sourceforge.net/projects/sshpass/)
     1. Non-interactive SSH password authentication — used by `SSH_and_GPG/add_remote_host.sh`
 
 ## Optional

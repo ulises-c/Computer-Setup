@@ -339,18 +339,30 @@ In NPM admin (`http://<server-ip>:81`):
        ```
     3. The status card on Homepage shows last-run time, status, and repo size; failures push to ntfy
 
-19. pi-hole | [GitHub](https://github.com/pi-hole/pi-hole) | [Docs](https://docs.pi-hole.net)
+19. UPS | [NUT](https://networkupstools.org/) | [Docs](https://networkupstools.org/docs/man/)
+    1. Battery-backup monitoring for the CyberPower PR1500LCDRT2U over USB — ntfy alerts on power events, clean shutdown on low battery, auto-restart when wall power returns. Full runbook in [`ups/README.md`](ups/README.md)
+    2. Deploy:
+       ```sh
+       sudo apt install nut   # or rerun the root setup.sh --profile server
+       cd linux-server/ups
+       cp .env.example .env   # set UPSMON_PASSWORD (openssl rand -hex 16) + ntfy
+       sudo bash setup.sh
+       upsc cyberpower ups.status   # expect: OL
+       ```
+    3. Set BIOS **Restore on AC Power Loss → Power On** so the server boots unattended after an outage
+
+20. pi-hole | [GitHub](https://github.com/pi-hole/pi-hole) | [Docs](https://docs.pi-hole.net)
     1. Network-wide DNS ad blocker — alternative to AdGuard Home
     2. Not yet configured
 
-20. Immich | [GitHub](https://github.com/immich-app/immich) | [Docs](https://immich.app/docs)
+21. Immich | [GitHub](https://github.com/immich-app/immich) | [Docs](https://immich.app/docs)
     1. Self-hosted photo and video backup — Google Photos alternative with mobile apps, face recognition, and timeline view
     2. Not yet configured
 
-21. Jellyfin | [GitHub](https://github.com/jellyfin/jellyfin) | [Docs](https://jellyfin.org/docs/)
+22. Jellyfin | [GitHub](https://github.com/jellyfin/jellyfin) | [Docs](https://jellyfin.org/docs/)
     1. Self-hosted media server — stream your own movies, TV shows, and music to any device
     2. Not yet configured
 
-22. Home Assistant | [GitHub](https://github.com/home-assistant/core) | [Docs](https://www.home-assistant.io/docs/)
+23. Home Assistant | [GitHub](https://github.com/home-assistant/core) | [Docs](https://www.home-assistant.io/docs/)
     1. Open source smart home hub — integrates with thousands of devices and services
     2. Not yet configured
