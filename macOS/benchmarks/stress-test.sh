@@ -36,7 +36,11 @@ cleanup() {
     wait "$STRESS_PID" 2>/dev/null || true
   fi
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+# A non-exiting INT/TERM handler would kill the load but let the sample loop
+# keep running on an idle machine and write a bogus throttled:false result;
+# exiting here routes cleanup through the EXIT trap exactly once
+trap 'exit 130' INT TERM
 
 HAS_SUDO_N=false
 if sudo -n true 2>/dev/null; then

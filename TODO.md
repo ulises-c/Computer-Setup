@@ -197,28 +197,28 @@ the result JSON has no unexpected nulls before trusting numbers.
 - [x] `macOS/benchmarks/standardized.sh:116` — `--cpu-only` must not skip the
       single-core Cinebench run: it is a CPU test; only Blender/GPU belongs
       behind that flag
-- [ ] `macOS/benchmarks/llm-bench.sh:99-101` — the PP/TG/MEM parse pipelines
+- [x] `macOS/benchmarks/llm-bench.sh:99-101` — the PP/TG/MEM parse pipelines
       have no `|| true`; under pipefail a non-matching grep kills the run
       (empirically confirmed) instead of reaching the intended
       `[[ -z ... ]] && ...=null` fallbacks
-- [ ] `macOS/benchmarks/stress-test.sh:39` / `omlx-bench.sh:74` — INT/TERM
+- [x] `macOS/benchmarks/stress-test.sh:39` / `omlx-bench.sh:74` — INT/TERM
       traps don't `exit`; a plain `kill` mid-run stops the load but the sample
       loop continues on an idle machine and writes a bogus `throttled:false`
       result (empirically confirmed). End the handlers with `exit`
-- [ ] `macOS/benchmarks/omlx-bench.sh:100` — `OMLX_PORT` builds BASE_URL but is
+- [x] `macOS/benchmarks/omlx-bench.sh:100` — `OMLX_PORT` builds BASE_URL but is
       never passed to `omlx serve`, so overriding the port polls an address the
       spawned server never binds. Pass the port flag (or reject the override)
-- [ ] `macOS/benchmarks/stress-test.sh` + README `sudo` instructions — a first
+- [x] `macOS/benchmarks/stress-test.sh` + README `sudo` instructions — a first
       run under sudo creates root-owned `results/`; later non-sudo suites
       finish their full run then die at the final `> "$OUTFILE"`. Create/chown
       results as `$SUDO_USER` when running under sudo
-- [ ] `macOS/benchmarks/compare.sh:113,131` — a metric present on only one
+- [x] `macOS/benchmarks/compare.sh:113,131` — a metric present on only one
       machine renders as 0-vs-real and counts as a win, skewing the summary;
       skip or mark rows where either side is missing
-- [ ] `macOS/benchmarks/compare.sh:61` — standardized.sh never emits
+- [x] `macOS/benchmarks/compare.sh:61` — standardized.sh never emits
       `.geekbench_ai.score` (only result_url/mode/note), so the row is dead;
       parse a score or drop the row
-- [ ] `macOS/benchmarks/benchmark.sh:107` — `scaling_factor` is passed with
+- [x] `macOS/benchmarks/benchmark.sh:107` — `scaling_factor` is passed with
       `--arg`, landing as a JSON string (or the literal string `"null"`); use
       `--argjson`/`tonumber` like the `$gbs` field already does
 

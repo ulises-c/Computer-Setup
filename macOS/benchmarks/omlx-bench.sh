@@ -71,7 +71,10 @@ cleanup() {
   fi
   rm -rf "$WORKDIR"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+# exit so the sweep can't resume against the deleted WORKDIR after Ctrl-C;
+# cleanup runs exactly once via the EXIT trap
+trap 'exit 130' INT TERM
 
 # perl gives sub-second wall-clock timing portably (bash 3.2 has no EPOCHREALTIME)
 now_s() {
@@ -99,6 +102,7 @@ else
   header "Starting oMLX server"
   "$OMLX_BIN" serve \
     --model-dir "$OMLX_MODEL_DIR" \
+    --port "$OMLX_PORT" \
     --max-concurrent-requests "$MAXCONC" \
     >"$SERVER_LOG" 2>&1 &
   SERVER_PID=$!

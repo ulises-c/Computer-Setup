@@ -97,9 +97,11 @@ if $RUN_MLX; then
       --max-tokens "$N_GEN" \
       2>&1) || { warn "mlx_lm.generate failed — check model id / network"; MLX_OK=false; break; }
 
-    PP=$(printf '%s\n' "$OUT" | grep -E '^Prompt:'     | grep -oE '[0-9.]+ tokens-per-sec' | grep -oE '[0-9.]+' | head -1)
-    TG=$(printf '%s\n' "$OUT" | grep -E '^Generation:' | grep -oE '[0-9.]+ tokens-per-sec' | grep -oE '[0-9.]+' | head -1)
-    MEM=$(printf '%s\n' "$OUT" | grep -E 'Peak memory:' | grep -oE '[0-9.]+ GB' | grep -oE '[0-9.]+' | head -1)
+    # || true: a non-matching grep must record null below, not kill the run
+    # via pipefail (mlx-lm stats format drifts between versions)
+    PP=$(printf '%s\n' "$OUT" | grep -E '^Prompt:'     | grep -oE '[0-9.]+ tokens-per-sec' | grep -oE '[0-9.]+' | head -1 || true)
+    TG=$(printf '%s\n' "$OUT" | grep -E '^Generation:' | grep -oE '[0-9.]+ tokens-per-sec' | grep -oE '[0-9.]+' | head -1 || true)
+    MEM=$(printf '%s\n' "$OUT" | grep -E 'Peak memory:' | grep -oE '[0-9.]+ GB' | grep -oE '[0-9.]+' | head -1 || true)
 
     [[ -z "$PP"  ]] && PP="null"
     [[ -z "$TG"  ]] && TG="null"

@@ -104,7 +104,7 @@ fi
 CPU_MULTI_JSON=$(jq -n \
   --argjson kbs   "$MULTI_16K_KBS" \
   --argjson ncpu  "$NCPU" \
-  --arg     scale "$MULTI_SCALE" \
+  --argjson scale "$MULTI_SCALE" \
   '{ sha256_16k_kbs: $kbs, num_cores: $ncpu, scaling_factor: $scale }')
 
 # ---------------------------------------------------------------------------

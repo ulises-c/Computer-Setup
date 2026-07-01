@@ -61,7 +61,6 @@ rows_for_suite() {
       jq -n --slurpfile a "$FILE_A" --slurpfile b "$FILE_B" "$common"'
       [ row("Geekbench single";   safenum($a[0].geekbench6.single_core);            safenum($b[0].geekbench6.single_core);            true; ""),
         row("Geekbench multi";    safenum($a[0].geekbench6.multi_core);             safenum($b[0].geekbench6.multi_core);             true; ""),
-        row("Geekbench AI score"; safenum($a[0].geekbench_ai.score);                safenum($b[0].geekbench_ai.score);                true; ""),
         row("Cinebench single";   safenum($a[0].cinebench.cpu_single);              safenum($b[0].cinebench.cpu_single);              true; ""),
         row("Cinebench multi";    safenum($a[0].cinebench.cpu_multi);               safenum($b[0].cinebench.cpu_multi);               true; ""),
         row("Blender (samp/min)"; safenum($a[0].blender_benchmark.total_samples_per_minute); safenum($b[0].blender_benchmark.total_samples_per_minute); true; "s/min") ]'
@@ -130,6 +129,8 @@ printf '%s\n' "$ROWS" | jq -r '.[] | [.label, .a, .b, .delta, .pct, .winner, .un
     B)   WIN_MARK="\033[32mB\033[0m" ;;
     *)   WIN_MARK="tie" ;;
   esac
+  # A metric measured on only one machine is missing data, not a win
+  [[ "$av" == "0" || "$bv" == "0" ]] && WIN_MARK="n/a"
 
   U=""; [[ -n "$unit" ]] && U=" $unit"
   printf "%-${COL_W}s %${VAL_W}s %${VAL_W}s %10s %9s  %b\n" \
@@ -137,7 +138,9 @@ printf '%s\n' "$ROWS" | jq -r '.[] | [.label, .a, .b, .delta, .pct, .winner, .un
 done
 
 printf '\n'
-WINS_A=$(jq '[.[] | select(.winner=="A" and (.a!=0 or .b!=0))] | length' <<< "$ROWS")
-WINS_B=$(jq '[.[] | select(.winner=="B" and (.a!=0 or .b!=0))] | length' <<< "$ROWS")
-TIES=$(jq   '[.[] | select(.winner=="tie" and (.a!=0 or .b!=0))] | length' <<< "$ROWS")
+# Rows where either side is 0 (metric missing on one machine) are incomparable
+# and stay out of the tally
+WINS_A=$(jq '[.[] | select(.winner=="A" and .a!=0 and .b!=0)] | length' <<< "$ROWS")
+WINS_B=$(jq '[.[] | select(.winner=="B" and .a!=0 and .b!=0)] | length' <<< "$ROWS")
+TIES=$(jq   '[.[] | select(.winner=="tie" and .a!=0 and .b!=0)] | length' <<< "$ROWS")
 printf 'A wins: %s   B wins: %s   Ties: %s\n\n' "$WINS_A" "$WINS_B" "$TIES"

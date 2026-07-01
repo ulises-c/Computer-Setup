@@ -29,4 +29,11 @@ resolve_openssl() {
   die "no OpenSSL with 'speed -seconds' support found (stock macOS ships LibreSSL) — brew install openssl@3"
 }
 
-ensure_results_dir() { mkdir -p "$RESULTS_DIR"; }
+ensure_results_dir() {
+  mkdir -p "$RESULTS_DIR"
+  # A sudo run (stress-test.sh, for powermetrics) must not leave results/
+  # root-owned — later non-sudo suites would finish their whole run and then
+  # die writing the result file
+  [[ -n "${SUDO_USER:-}" ]] && chown "$SUDO_USER" "$RESULTS_DIR"
+  return 0
+}
