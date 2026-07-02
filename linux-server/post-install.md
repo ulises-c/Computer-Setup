@@ -254,7 +254,32 @@ git remote set-url origin ssh://git@forgejo.<tailnet>.ts.net:22/<username>/<repo
 
 ---
 
-## 8. Service reference
+## 8. DAS drives (Thunderbolt enclosure)
+
+Three drives are attached via a TerraMas Thunderbolt DAS enclosure:
+
+| Label | Mount | Size | Use |
+|-------|-------|------|-----|
+| `Seagate_4TB` | `/mnt/seagate4tb` | 3.6 TB | General storage |
+| `WD_1TB` | `/mnt/wd1tb` | 931 GB | Backup target (restic) |
+| `WD14TB` | `/mnt/wd14tb` | 12.7 TB | Media, torrents, bulk data |
+
+- **fstab** entries use `nofail,x-systemd.device-timeout=10` — if the DAS is
+  disconnected at boot, the system continues without them.
+- **Glances disk renaming** — kernel device names (`sda`/`sdb`/`sdc`) can shuffle
+  when the enclosure is reconnected. The Glances entrypoint
+  (`glances/entrypoint.sh`) reads `/dev/disk/by-label/` at startup and
+  monkey-patches the diskio plugin so Homepage widgets see persistent label-based
+  names instead. See `glances/rename_disks.py`.
+- **Homepage widgets** — the capacity widgets use `fs:/mnt/<path>` (stable mount
+  points); the R/W speed widgets use `disk:<label>` resolved by the Glances
+  patch above.
+- **If drives are disconnected and reconnected**: mount them with `sudo mount -a`,
+  then restart Glances and any dependent containers (qBittorrent, etc.).
+
+---
+
+## 9. Service reference
 
 | Service | URL | Notes |
 |---|---|---|

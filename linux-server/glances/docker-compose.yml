@@ -46,3 +46,11 @@ services:
       # Block-device I/O already works via pid:host; filesystem usage needs the
       # mounts visible inside the container.
       - /mnt:/mnt:ro
+      # Stable disk aliasing: entrypoint reads /dev/disk/by-label/ to map
+      # filesystem labels (Seagate_4TB, WD_1TB, WD14TB) to the current kernel
+      # device name and monkey-patches Glances' diskio plugin, so Homepage
+      # disk I/O widgets use persistent label names across reboots.
+      - ./entrypoint.sh:/entrypoint.sh:ro
+      - ./rename_disks.py:/rename_disks.py:ro
+      - /dev/disk/by-label:/dev/disk/by-label:ro
+    command: /bin/sh /entrypoint.sh
