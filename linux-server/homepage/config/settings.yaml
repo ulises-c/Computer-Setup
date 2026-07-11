@@ -7,6 +7,8 @@ hideVersion: true
 layout:
   Management:
     style: column
+  Secondary Server (Pi):
+    style: row
   Network:
     style: column
   Storage:
