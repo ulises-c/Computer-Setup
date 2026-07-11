@@ -12,13 +12,16 @@
         icon: mdi-cctv
         href: https://{{HOMEPAGE_VAR_MOTIONEYE_DOMAIN}}/
         description: Security cameras
-        widget:
-          type: siteMonitor
-          url: https://{{HOMEPAGE_VAR_MOTIONEYE_DOMAIN}}
+        siteMonitor: https://{{HOMEPAGE_VAR_MOTIONEYE_DOMAIN}}
     - cups:
         icon: mdi-printer
         href: https://{{HOMEPAGE_VAR_CUPS_DOMAIN}}/
         description: Print server
-        widget:
-          type: siteMonitor
-          url: https://{{HOMEPAGE_VAR_CUPS_DOMAIN}}
+        siteMonitor: https://{{HOMEPAGE_VAR_CUPS_DOMAIN}}
+
+- Main Server:
+    - server dashboard:
+        icon: mdi-server
+        href: https://{{HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN}}/
+        description: ollie-server — primary home server
+        siteMonitor: https://{{HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN}}

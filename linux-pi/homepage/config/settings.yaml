@@ -7,3 +7,5 @@ hideVersion: true
 layout:
   Pi Services:
     style: column
+  Main Server:
+    style: row
