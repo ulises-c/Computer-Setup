@@ -223,8 +223,9 @@
           type: glances
           url: http://localhost:61208
           version: 4
-          # USB enclosure: kernel names (sda/sdb/sdc) can reorder across reboots.
-          metric: disk:sdb
+          # Persistent by-label disk names from the Glances rename patch
+          # (linux-server/glances); raw sd[abc] reorder across reboots.
+          metric: disk:WD14TB
     - wd 14tb usage:
         icon: mdi-harddisk
         href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
@@ -246,7 +247,7 @@
           type: glances
           url: http://localhost:61208
           version: 4
-          metric: disk:sdc
+          metric: disk:Seagate_4TB
     - seagate 4tb usage:
         icon: mdi-harddisk
         href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
@@ -268,7 +269,7 @@
           type: glances
           url: http://localhost:61208
           version: 4
-          metric: disk:sda
+          metric: disk:WD_1TB
     - wd 1tb usage:
         icon: mdi-harddisk
         href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
