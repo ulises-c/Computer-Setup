@@ -32,6 +32,43 @@ services) into this replica on a cron, so the two stay in lockstep. DHCP sync is
 disabled. Because the syncer runs here, the Pi re-pulls the latest config on
 start; if the primary is down, the replica simply keeps its last-good config.
 
+## `homepage/`, `motioneye/`, `cups/` — Pi dashboard + service front doors
+
+The Pi is a *secondary server* (security cameras via MotionEye, printing via CUPS,
+plus the backup AdGuard). These stacks surface it:
+
+- `homepage/` — a homepage dashboard for the Pi (host-networked on `:3000`) with a
+  decoupled `homepage-pi-ts` sidecar → `https://homepage-pi.<tailnet>.ts.net`. Its
+  cards link to the Pi services, and it shows the Pi's own CPU/mem/disk/temp (the
+  `resources` widget works because homepage runs on the Pi host).
+- `motioneye/`, `cups/` — decoupled sidecars **only** (the services themselves
+  already run on the Pi host, on `:8765` and `:631`). They add HTTPS front doors at
+  `https://motioneye-pi.<tailnet>.ts.net` and `https://cups-pi.<tailnet>.ts.net`.
+
+The **main server's** homepage links to the Pi dashboard and pings it (a
+`siteMonitor` "Secondary Server (Pi)" card), driven by
+`HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN` in `linux-server/homepage/.env`.
+
+### Sidecar → host hop (required for every Pi HTTPS front door)
+
+Each sidecar proxies `:443 → host.docker.internal:<port>` from its own netns to the
+host-networked service. This pattern works on the main server. If a Pi sidecar's
+HTTPS URL times out **while the service answers on its host port**, that hop is the
+culprit — usually an old Docker without `host-gateway` support, or `ufw` dropping
+the docker-bridge→host path. Diagnose on the Pi:
+
+```bash
+docker exec <svc>-ts tailscale serve status
+docker exec <svc>-ts sh -c 'getent hosts host.docker.internal; \
+  wget -qO- -T5 http://host.docker.internal:<port>/ >/dev/null && echo OK || echo UNREACHABLE'
+docker version --format '{{.Server.Version}}'
+sudo ufw status
+```
+
+Fix it once (allow bridge→host / enable `host-gateway`) and every sidecar works.
+CUPS additionally validates the `Host` header — if its admin pages 400 through the
+proxy, add `ServerAlias *` to `cupsd.conf` and restart cups.
+
 ## Deploy runbook (on the Pi)
 
 Prerequisites: Docker + compose plugin (`setup.sh --profile server` covers the
@@ -59,6 +96,13 @@ base, or install manually).
 4. **Wire failover on the router (`192.168.1.1`):** in its DHCP settings, set the
    DNS servers to `[<server-ip>, <pi-ip>]` (primary = server, secondary = Pi).
    Renew a client lease to pick it up.
+5. **Bring up the Pi dashboard + service front doors:** for each of `homepage`,
+   `motioneye`, `cups`: `cp .env.example .env`, set `TS_AUTHKEY` (and, for
+   `homepage`, the `HOMEPAGE_VAR_*` domains + AdGuard creds), then
+   `docker compose up -d`. The Pi dashboard is then at
+   `https://homepage-pi.<tailnet>.ts.net`, and the main server's homepage shows a
+   "Secondary Server (Pi)" card linking to it. (All Pi HTTPS front doors depend on
+   the sidecar→host hop above.)
 
 ## Verification
 
