@@ -5,14 +5,20 @@ headerStyle: clean
 hideVersion: true
 
 layout:
-  Management:
-    style: column
   Secondary Server (Pi):
     style: row
-  Network:
-    style: column
-  Storage:
-    style: column
+  # Management | Network | Storage side-by-side in one row (nested groups under a
+  # header-less parent; homepage lays the child groups out horizontally).
+  Core:
+    style: row
+    columns: 3
+    header: false
+    Management:
+      style: column
+    Network:
+      style: column
+    Storage:
+      style: column
   NAS:
     style: row
     columns: 2

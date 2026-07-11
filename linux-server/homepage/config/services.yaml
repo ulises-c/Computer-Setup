@@ -1,72 +1,3 @@
-- Management:
-    - homepage:
-        icon: mdi-view-dashboard
-        href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}/
-        description: Server dashboard
-        server: my-docker
-        container: homepage
-    - portainer:
-        icon: si-portainer
-        href: https://{{HOMEPAGE_VAR_PORTAINER_DOMAIN}}/
-        description: Docker manager
-        server: my-docker
-        container: portainer
-    - watchtower:
-        icon: mdi-autorenew
-        description: Automatic container updates
-        server: my-docker
-        container: watchtower
-    - cockpit:
-        icon: mdi-monitor-dashboard
-        href: https://{{HOMEPAGE_VAR_COCKPIT_DOMAIN}}/
-        description: Server admin UI
-        # cockpit stays a host service on :9090, so the local ping still works
-        ping: https://localhost:9090
-    - uptime kuma:
-        icon: si-uptimekuma
-        href: https://{{HOMEPAGE_VAR_UPTIMEKUMA_DOMAIN}}/
-        description: Uptime monitor
-        server: my-docker
-        container: uptime-kuma
-        widget:
-          type: uptimekuma
-          url: https://{{HOMEPAGE_VAR_UPTIMEKUMA_DOMAIN}}
-          slug: default
-    - backups:
-        icon: mdi-backup-restore
-        description: restic → wd1tb (+wd14tb copy)
-        server: my-docker
-        container: backup-status
-        widget:
-          type: customapi
-          # backup.sh writes this JSON; the loopback nginx in linux-server/backup
-          # serves it. homepage is host-networked, so localhost reaches it.
-          url: http://localhost:8099/backup-status.json
-          refreshInterval: 600000
-          mappings:
-            - field: status
-              label: Status
-              format: text
-            - field: last_run
-              label: Last run
-              format: relativeDate
-            - field: repo_size_bytes
-              label: Repo size
-              format: bytes
-    - glances:
-        icon: si-glances
-        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
-        description: System monitor
-        server: my-docker
-        container: glances
-        widget:
-          type: glances
-          # glances keeps network_mode: host, so :61208 stays on the host and the
-          # widget reaches it via localhost (no need to route through the tailnet).
-          url: http://localhost:61208
-          version: 4
-          metric: cpu
-
 - Secondary Server (Pi):
     - pi dashboard:
         icon: mdi-raspberry-pi
@@ -74,142 +5,212 @@
         description: ollie-pi4 — motioneye, cups, backup DNS
         siteMonitor: https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}
 
-- Network:
-    - nginx proxy manager:
-        icon: si-nginxproxymanager
-        href: https://{{HOMEPAGE_VAR_NPM_DOMAIN}}/
-        description: Reverse proxy + SSL
-        server: my-docker
-        container: nginx-proxy-manager
-    - adguard home:
-        icon: si-adguard
-        href: https://{{HOMEPAGE_VAR_ADGUARD_DOMAIN}}/
-        description: DNS ad blocker
-        server: my-docker
-        container: adguardhome
-        widget:
-          type: adguard
-          url: https://{{HOMEPAGE_VAR_ADGUARD_DOMAIN}}
-          username: "{{HOMEPAGE_VAR_ADGUARD_USER}}"
-          password: "{{HOMEPAGE_VAR_ADGUARD_PASS}}"
-    - tailscale:
-        icon: si-tailscale
-        href: https://{{HOMEPAGE_VAR_TAILSCALE_WEB_DOMAIN}}/
-        description: Zero-config VPN
-        widget:
-          type: customapi
-          url: http://localhost:8089
-          mappings:
-            - field: addresses.0
-              label: Address
-              format: text
-            - field: lastSeen
-              label: Last Seen
-              format: relativeDate
-            - field: expires
-              label: Key Expires
-              format: relativeDate
-    - speedtest tracker:
-        icon: mdi-speedometer
-        href: https://{{HOMEPAGE_VAR_SPEEDTEST_DOMAIN}}/
-        description: ISP speed monitor
-        server: my-docker
-        container: speedtest-tracker
-        widget:
-          type: speedtest
-          url: https://{{HOMEPAGE_VAR_SPEEDTEST_DOMAIN}}
-    - lan speedtest:
-        icon: mdi-speedometer-medium
-        href: https://{{HOMEPAGE_VAR_OPENSPEEDTEST_DOMAIN}}/
-        # Tailnet HTTPS to match the other cards. Run actual LAN tests against the
-        # LAN IP (http://<server-ip>:3030) so you measure the local network, not
-        # the tailnet path.
-        description: LAN speed test
-        server: my-docker
-        container: openspeedtest
-    - ntfy:
-        icon: si-ntfy
-        href: https://{{HOMEPAGE_VAR_NTFY_DOMAIN}}/
-        description: Push notifications
-        server: my-docker
-        container: ntfy
+- Core:
+    - Management:
+        - homepage:
+            icon: mdi-view-dashboard
+            href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}/
+            description: Server dashboard
+            server: my-docker
+            container: homepage
+        - portainer:
+            icon: si-portainer
+            href: https://{{HOMEPAGE_VAR_PORTAINER_DOMAIN}}/
+            description: Docker manager
+            server: my-docker
+            container: portainer
+        - watchtower:
+            icon: mdi-autorenew
+            description: Automatic container updates
+            server: my-docker
+            container: watchtower
+        - cockpit:
+            icon: mdi-monitor-dashboard
+            href: https://{{HOMEPAGE_VAR_COCKPIT_DOMAIN}}/
+            description: Server admin UI
+            # cockpit stays a host service on :9090, so the local ping still works
+            ping: https://localhost:9090
+        - uptime kuma:
+            icon: si-uptimekuma
+            href: https://{{HOMEPAGE_VAR_UPTIMEKUMA_DOMAIN}}/
+            description: Uptime monitor
+            server: my-docker
+            container: uptime-kuma
+            widget:
+              type: uptimekuma
+              url: https://{{HOMEPAGE_VAR_UPTIMEKUMA_DOMAIN}}
+              slug: default
+        - backups:
+            icon: mdi-backup-restore
+            description: restic → wd1tb (+wd14tb copy)
+            server: my-docker
+            container: backup-status
+            widget:
+              type: customapi
+              # backup.sh writes this JSON; the loopback nginx in linux-server/backup
+              # serves it. homepage is host-networked, so localhost reaches it.
+              url: http://localhost:8099/backup-status.json
+              refreshInterval: 600000
+              mappings:
+                - field: status
+                  label: Status
+                  format: text
+                - field: last_run
+                  label: Last run
+                  format: relativeDate
+                - field: repo_size_bytes
+                  label: Repo size
+                  format: bytes
+        - glances:
+            icon: si-glances
+            href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+            description: System monitor
+            server: my-docker
+            container: glances
+            widget:
+              type: glances
+              # glances keeps network_mode: host, so :61208 stays on the host and the
+              # widget reaches it via localhost (no need to route through the tailnet).
+              url: http://localhost:61208
+              version: 4
+              metric: cpu
 
-- Storage:
-    - forgejo:
-        icon: si-forgejo
-        href: https://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}/
-        description: Self-hosted git
-        server: my-docker
-        container: forgejo
-        widget:
-          type: gitea
-          url: https://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}
-          key: "{{HOMEPAGE_VAR_FORGEJO_TOKEN}}"
-    - forgejo-runner:
-        icon: mdi-robot
-        description: Mac mini CI runner
-        server: my-docker
-        container: forgejo-runner-status
-        widget:
-          type: customapi
-          # runner-status.sh writes this JSON; the loopback nginx in
-          # linux-server/forgejo serves it. homepage is host-networked.
-          url: http://localhost:8098/runner-status.json
-          refreshInterval: 60000
-          mappings:
-            - field: state
-              label: Runner
-              format: text
-            - field: status
-              label: Status
-              format: text
-            - field: checked
-              label: Checked
-              format: relativeDate
-    - syncthing:
-        icon: si-syncthing
-        href: https://{{HOMEPAGE_VAR_SYNCTHING_DOMAIN}}/
-        description: File sync
-        server: my-docker
-        container: syncthing
-        widget:
-          type: customapi
-          url: https://{{HOMEPAGE_VAR_SYNCTHING_DOMAIN}}/rest/system/status
-          headers:
-            X-API-Key: "{{HOMEPAGE_VAR_SYNCTHING_KEY}}"
-          mappings:
-            - field: uptime
-              label: Uptime
-              format: duration
-            - field: cpuPercent
-              label: CPU
-              format: percent
-            - field: alloc
-              label: Memory
-              format: bytes
-    - filebrowser:
-        icon: mdi-folder-network
-        href: https://{{HOMEPAGE_VAR_FILEBROWSER_DOMAIN}}/
-        description: Web file manager
-        server: my-docker
-        container: filebrowser
-    - atvloadly:
-        icon: mdi-television-play
-        href: https://{{HOMEPAGE_VAR_ATVLOADLY_DOMAIN}}/
-        description: Apple TV IPA sideloader
-        server: my-docker
-        container: atvloadly
-    - qbittorrent:
-        icon: si-qbittorrent
-        href: https://{{HOMEPAGE_VAR_QBITTORRENT_DOMAIN}}/
-        description: BitTorrent client
-        server: my-docker
-        container: qbittorrent
-        widget:
-          type: qbittorrent
-          url: https://{{HOMEPAGE_VAR_QBITTORRENT_DOMAIN}}
-          username: "{{HOMEPAGE_VAR_QBITTORRENT_USERNAME}}"
-          password: "{{HOMEPAGE_VAR_QBITTORRENT_PASSWORD}}"
+    - Network:
+        - nginx proxy manager:
+            icon: si-nginxproxymanager
+            href: https://{{HOMEPAGE_VAR_NPM_DOMAIN}}/
+            description: Reverse proxy + SSL
+            server: my-docker
+            container: nginx-proxy-manager
+        - adguard home:
+            icon: si-adguard
+            href: https://{{HOMEPAGE_VAR_ADGUARD_DOMAIN}}/
+            description: DNS ad blocker
+            server: my-docker
+            container: adguardhome
+            widget:
+              type: adguard
+              url: https://{{HOMEPAGE_VAR_ADGUARD_DOMAIN}}
+              username: "{{HOMEPAGE_VAR_ADGUARD_USER}}"
+              password: "{{HOMEPAGE_VAR_ADGUARD_PASS}}"
+        - tailscale:
+            icon: si-tailscale
+            href: https://{{HOMEPAGE_VAR_TAILSCALE_WEB_DOMAIN}}/
+            description: Zero-config VPN
+            widget:
+              type: customapi
+              url: http://localhost:8089
+              mappings:
+                - field: addresses.0
+                  label: Address
+                  format: text
+                - field: lastSeen
+                  label: Last Seen
+                  format: relativeDate
+                - field: expires
+                  label: Key Expires
+                  format: relativeDate
+        - speedtest tracker:
+            icon: mdi-speedometer
+            href: https://{{HOMEPAGE_VAR_SPEEDTEST_DOMAIN}}/
+            description: ISP speed monitor
+            server: my-docker
+            container: speedtest-tracker
+            widget:
+              type: speedtest
+              url: https://{{HOMEPAGE_VAR_SPEEDTEST_DOMAIN}}
+        - lan speedtest:
+            icon: mdi-speedometer-medium
+            href: https://{{HOMEPAGE_VAR_OPENSPEEDTEST_DOMAIN}}/
+            # Tailnet HTTPS to match the other cards. Run actual LAN tests against the
+            # LAN IP (http://<server-ip>:3030) so you measure the local network, not
+            # the tailnet path.
+            description: LAN speed test
+            server: my-docker
+            container: openspeedtest
+        - ntfy:
+            icon: si-ntfy
+            href: https://{{HOMEPAGE_VAR_NTFY_DOMAIN}}/
+            description: Push notifications
+            server: my-docker
+            container: ntfy
+
+    - Storage:
+        - forgejo:
+            icon: si-forgejo
+            href: https://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}/
+            description: Self-hosted git
+            server: my-docker
+            container: forgejo
+            widget:
+              type: gitea
+              url: https://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}
+              key: "{{HOMEPAGE_VAR_FORGEJO_TOKEN}}"
+        - forgejo-runner:
+            icon: mdi-robot
+            description: Mac mini CI runner
+            server: my-docker
+            container: forgejo-runner-status
+            widget:
+              type: customapi
+              # runner-status.sh writes this JSON; the loopback nginx in
+              # linux-server/forgejo serves it. homepage is host-networked.
+              url: http://localhost:8098/runner-status.json
+              refreshInterval: 60000
+              mappings:
+                - field: state
+                  label: Runner
+                  format: text
+                - field: status
+                  label: Status
+                  format: text
+                - field: checked
+                  label: Checked
+                  format: relativeDate
+        - syncthing:
+            icon: si-syncthing
+            href: https://{{HOMEPAGE_VAR_SYNCTHING_DOMAIN}}/
+            description: File sync
+            server: my-docker
+            container: syncthing
+            widget:
+              type: customapi
+              url: https://{{HOMEPAGE_VAR_SYNCTHING_DOMAIN}}/rest/system/status
+              headers:
+                X-API-Key: "{{HOMEPAGE_VAR_SYNCTHING_KEY}}"
+              mappings:
+                - field: uptime
+                  label: Uptime
+                  format: duration
+                - field: cpuPercent
+                  label: CPU
+                  format: percent
+                - field: alloc
+                  label: Memory
+                  format: bytes
+        - filebrowser:
+            icon: mdi-folder-network
+            href: https://{{HOMEPAGE_VAR_FILEBROWSER_DOMAIN}}/
+            description: Web file manager
+            server: my-docker
+            container: filebrowser
+        - atvloadly:
+            icon: mdi-television-play
+            href: https://{{HOMEPAGE_VAR_ATVLOADLY_DOMAIN}}/
+            description: Apple TV IPA sideloader
+            server: my-docker
+            container: atvloadly
+        - qbittorrent:
+            icon: si-qbittorrent
+            href: https://{{HOMEPAGE_VAR_QBITTORRENT_DOMAIN}}/
+            description: BitTorrent client
+            server: my-docker
+            container: qbittorrent
+            widget:
+              type: qbittorrent
+              url: https://{{HOMEPAGE_VAR_QBITTORRENT_DOMAIN}}
+              username: "{{HOMEPAGE_VAR_QBITTORRENT_USERNAME}}"
+              password: "{{HOMEPAGE_VAR_QBITTORRENT_PASSWORD}}"
 
 - NAS:
     - wd 14tb r/w:
