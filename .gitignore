@@ -45,3 +45,8 @@ linux-server/backup/status/
 
 # Forgejo runner status JSON + last-state written at runtime (homepage card)
 linux-server/forgejo/runner-status/
+
+# Raspberry Pi node (linux-pi) — AdGuard runtime data + sidecar node state
+linux-pi/adguard/work/
+linux-pi/adguard/conf/
+linux-pi/*/ts-state/

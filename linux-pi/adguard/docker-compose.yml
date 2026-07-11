@@ -1,0 +1,47 @@
+services:
+  # Secondary AdGuard Home on ollie-pi4 — a backup resolver mirroring the primary
+  # (linux-server/adguard) via adguardhome-sync. DELIBERATELY host-networked and
+  # independent of Tailscale: :53 must keep serving LAN clients even when the
+  # tailnet or internet is down. The primary rides its sidecar's netns; that
+  # coupling caused a bootstrap deadlock (see the primary's compose) — NOT here.
+  adguardhome:
+    image: adguard/adguardhome:latest
+    container_name: adguardhome
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./work:/opt/adguardhome/work
+      - ./conf:/opt/adguardhome/conf
+
+  # Decoupled Tailscale sidecar — HTTPS admin UI only, at
+  # https://adguard-pi.<tailnet>.ts.net. Runs in its OWN netns (NOT shared with
+  # AdGuard) and proxies :443 -> the host's AdGuard UI on :80 via
+  # host.docker.internal. DNS never depends on this container. Pattern mirrors
+  # linux-server/homepage/homepage-ts.
+  adguard-pi-ts:
+    image: tailscale/tailscale:latest
+    container_name: adguard-pi-ts
+    hostname: adguard-pi
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SERVE_CONFIG=/config/serve.json
+      # Requires TS_AUTHKEY allowed to apply tag:container (OAuth client, or a
+      # tag-scoped auth key). Drop this line if using an untagged personal key.
+      - TS_EXTRA_ARGS=--advertise-tags=tag:container
+    volumes:
+      - ./ts-state:/var/lib/tailscale
+      - ./ts-serve.json:/config/serve.json:ro
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Static public resolvers so this sidecar's OAuth bootstrap can resolve
+    # api.tailscale.com without depending on any AdGuard instance — the same
+    # deadlock guard applied to the primary's adguard-ts.
+    dns:
+      - 9.9.9.10
+      - 1.1.1.1
+    restart: unless-stopped
