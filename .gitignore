@@ -50,3 +50,12 @@ linux-server/forgejo/runner-status/
 linux-pi/adguard/work/
 linux-pi/adguard/conf/
 linux-pi/*/ts-state/
+
+# Pi homepage — logs + files homepage auto-generates on first run
+linux-pi/homepage/config/logs/
+linux-pi/homepage/config/custom.css
+linux-pi/homepage/config/custom.js
+linux-pi/homepage/config/docker.yaml
+linux-pi/homepage/config/bookmarks.yaml
+linux-pi/homepage/config/kubernetes.yaml
+linux-pi/homepage/config/proxmox.yaml

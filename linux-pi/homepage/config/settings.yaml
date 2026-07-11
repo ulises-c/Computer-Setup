@@ -1,0 +1,9 @@
+title: Pi — Secondary Server
+theme: dark
+color: slate
+headerStyle: clean
+hideVersion: true
+
+layout:
+  Pi Services:
+    style: column

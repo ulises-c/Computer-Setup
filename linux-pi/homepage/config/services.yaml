@@ -1,0 +1,24 @@
+- Pi Services:
+    - adguard (backup dns):
+        icon: si-adguard
+        href: https://{{HOMEPAGE_VAR_ADGUARD_PI_DOMAIN}}/
+        description: Backup DNS resolver
+        widget:
+          type: adguard
+          url: https://{{HOMEPAGE_VAR_ADGUARD_PI_DOMAIN}}
+          username: "{{HOMEPAGE_VAR_ADGUARD_USER}}"
+          password: "{{HOMEPAGE_VAR_ADGUARD_PASS}}"
+    - motioneye:
+        icon: mdi-cctv
+        href: https://{{HOMEPAGE_VAR_MOTIONEYE_DOMAIN}}/
+        description: Security cameras
+        widget:
+          type: siteMonitor
+          url: https://{{HOMEPAGE_VAR_MOTIONEYE_DOMAIN}}
+    - cups:
+        icon: mdi-printer
+        href: https://{{HOMEPAGE_VAR_CUPS_DOMAIN}}/
+        description: Print server
+        widget:
+          type: siteMonitor
+          url: https://{{HOMEPAGE_VAR_CUPS_DOMAIN}}
