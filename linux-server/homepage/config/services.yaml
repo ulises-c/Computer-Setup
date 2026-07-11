@@ -72,9 +72,7 @@
         icon: mdi-raspberry-pi
         href: https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}/
         description: ollie-pi4 — motioneye, cups, backup DNS
-        widget:
-          type: siteMonitor
-          url: https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}
+        siteMonitor: https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}
 
 - Network:
     - nginx proxy manager:
