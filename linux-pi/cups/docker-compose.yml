@@ -1,0 +1,30 @@
+services:
+  # HTTPS front door for the Pi's CUPS print server (host service on :631).
+  # Decoupled sidecar, proxying :443 -> host.docker.internal:631.
+  # https://cups-pi.<tailnet>.ts.net.
+  #
+  # NOTE: CUPS validates the Host header. If the admin pages 400/"Bad Request"
+  # through the proxy, add `ServerAlias *` (or the cups-pi hostname) to cupsd.conf
+  # on the Pi and restart cups. Read-only pages usually work without it.
+  cups-ts:
+    image: tailscale/tailscale:latest
+    container_name: cups-ts
+    hostname: cups-pi
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SERVE_CONFIG=/config/serve.json
+      - TS_EXTRA_ARGS=--advertise-tags=tag:container
+    volumes:
+      - ./ts-state:/var/lib/tailscale
+      - ./ts-serve.json:/config/serve.json:ro
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    dns:
+      - 9.9.9.10
+      - 1.1.1.1
+    restart: unless-stopped
