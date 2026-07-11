@@ -69,6 +69,28 @@ Fix it once (allow bridge→host / enable `host-gateway`) and every sidecar work
 CUPS additionally validates the `Host` header — if its admin pages 400 through the
 proxy, add `ServerAlias *` to `cupsd.conf` and restart cups.
 
+### First HTTPS request provisions a cert (may hang once)
+
+The **first** hit to a sidecar's `https://<svc>-pi.<tailnet>.ts.net` URL triggers
+`tailscale serve` to provision a Let's Encrypt cert for that node. Until it finishes
+(seconds up to ~a minute) the TLS handshake hangs and clients time out — this is
+**not** a misconfiguration. Wait and retry; confirm with:
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' https://<svc>-pi.<tailnet>.ts.net/
+```
+
+A `200`/`302` (instead of a timeout) means the cert is ready and the front door works.
+
+### Note: sidecar connections bootstrap via DERP, then go direct
+
+A `*-ts` sidecar runs Tailscale inside a bridge-networked container, so a *fresh*
+connection starts relayed through a DERP server and upgrades to a direct path once
+hole-punching completes (observed: a same-LAN peer settled to ~5 ms direct via the
+Pi's LAN IP after a few packets). Expect the first requests to look slow/relayed —
+that's normal, not a fault. If a sidecar *stays* DERP-only, check the Pi's UDP/NAT
+(`tailscale netcheck` — want `UDP: true` and `MappingVariesByDestIP: false`).
+
 ## Deploy runbook (on the Pi)
 
 Prerequisites: Docker + compose plugin (`setup.sh --profile server` covers the
