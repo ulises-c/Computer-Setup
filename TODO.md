@@ -271,6 +271,24 @@ logs, not metrics. Build it up in layers:
       `*.home.ulises-c.me` NPM setup, since services like filebrowser/glances have
       weak/no auth once exposed off-tailnet.
 
+### DNS resilience (from the 2026-07 outage)
+
+The scheduled-maintenance outage took the whole LAN's DNS down and it couldn't
+self-heal — the server ran the only resolver, and a latent bootstrap deadlock
+kept the primary AdGuard from recovering.
+
+- [x] **Fix the bootstrap deadlock.** The primary AdGuard rides its Tailscale
+      sidecar's netns, and the sidecar's OAuth bootstrap needs DNS — so a cold
+      start deadlocked (sidecar needs DNS → DNS needs the sidecar). Pinned static
+      resolvers on `adguard-ts` (`dns: [9.9.9.10, 1.1.1.1]`) so bootstrap never
+      depends on AdGuard — `linux-server/adguard`.
+- [ ] **Secondary DNS on the Pi.** Kill the single point of failure: a backup
+      AdGuard on `ollie-pi4`, host-networked (independent of Tailscale) and
+      config-synced from the primary, handed out as secondary DNS by the router —
+      `linux-pi/adguard` + `linux-pi/adguardhome-sync`.
+- [ ] **Secondary DHCP.** DHCP is still single-homed on the server; a server
+      outage means no new leases. Add a secondary scope (Pi/router) or long leases.
+
 ## qBittorrent — VPN routing
 
 `linux-server/qbittorrent` currently runs without a VPN (fine for academic/legal
