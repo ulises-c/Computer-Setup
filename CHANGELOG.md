@@ -22,7 +22,8 @@ in [UNIFICATION.md](docs/UNIFICATION.md).
   `packages.json`; app-store-style `.app` verify probe for GUI-only custom entries.
 
 ### Fixed
-- Resolved 30 findings from a max-effort review of the suite:
+- Resolved 30 findings from a max-effort review of the suite (full record:
+  [docs/macos-benchmark-review.md](docs/macos-benchmark-review.md)):
   - **P0** — broken measurement paths and silent data corruption: LibreSSL
     `openssl speed -seconds` unsupported, `llama-bench --hf-repo` arg failure,
     null GPU/Cinebench/Blender parses, throttle-methodology and Apple-Silicon
