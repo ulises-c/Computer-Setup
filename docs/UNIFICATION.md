@@ -1,8 +1,12 @@
-# Setup-script unification plan
+# Setup-script unification — design doc
 
-Status: **planned — not yet implemented.** This document is the spec for a future
-PR. It is intentionally detailed so it can be picked up cold without re-deriving the
-analysis below.
+Status: **implemented.** Shipped across [#37](https://github.com/ulises-c/Computer-Setup/pull/37)
+(Phases 1–7); see [CHANGELOG.md](../CHANGELOG.md) for what landed and
+[CLAUDE.md](../CLAUDE.md) for the current architecture. This document is retained
+as the design record — the rationale for collapsing the three diverged stacks into
+one engine, the schema decisions, and the phased migration that got us there. The
+open questions below are resolved inline. Read it to understand *why* the layout is
+shaped this way, not as a to-do list.
 
 ## Goal
 
@@ -153,7 +157,13 @@ One array of package objects. Field-by-field:
 7. **App-store** stays a macOS-only `package_manager.macos: "app-store"` → printed as a
    manual reminder, never auto-installed.
 
-### "server" modeling — OPEN DECISION (resolve in implementation PR)
+### "server" modeling — RESOLVED: server as a platform key (option A)
+
+**Decision:** server is a 4th `package_manager` platform key (option A below).
+Locked in Phase 1 and unchanged since — it honored the agreed schema and kept the
+engine simple. Option B (server-as-profile) was left on the table but not needed.
+GUI/desktop exclusion is handled by the `--profile server` filter plus per-package
+gating, not by collapsing server into the debian/apt platform. Original analysis:
 
 The chosen schema lists `server` as a 4th `package_manager` key, but the Pi is
 Debian/apt — same manager as `ubuntu`. Two viable models:
@@ -184,8 +194,9 @@ ubuntu/debian/mint/pop and arch/cachyos/manjaro/endeavouros/garuda/arcolinux, wi
 
 ## Phased work breakdown
 
-Each phase is independently committable and gated by a verification step. Phases 1–5
-are the future PR(s); Phase 0 is this document.
+Each phase was independently committable and gated by a verification step. All
+phases shipped (see [CHANGELOG.md](../CHANGELOG.md)); the breakdown is kept below as
+the migration record.
 
 - **Phase 0 — Plan (this PR).** Add `UNIFICATION.md` + TODO items. No behavior change.
 
@@ -247,12 +258,13 @@ are the future PR(s); Phase 0 is this document.
 - **App-store packages are reminders only** — must never end up in an auto-install list.
 - **Spark Mail** installs via App Store, not brew (commit 48d03ac) — preserve.
 
-## Open questions (decide during implementation)
+## Open questions — RESOLVED
 
-1. server-as-platform vs server-as-profile (see above) — recommend platform key (A).
-2. `install_command` string vs per-platform object — support **both** (string = all
-   custom platforms; object = per-platform).
-3. Keep the `priority: "none"` tier, or fold into `low + optional`? (Currently macOS
-   uses `none` for octave/qemu/mongodb/Pixelmator/Amphetamine.)
-4. Single root `packages.json` vs `packages/` split by domain if the file grows
-   unwieldy (>150 entries). Start single; revisit only if needed.
+1. server-as-platform vs server-as-profile — **platform key (A)** (see above).
+2. `install_command` string vs per-platform object — **support both** (string = all
+   custom platforms; object = per-platform), via the `icfor` jq def in `lib/core.sh`.
+3. Keep the `priority: "none"` tier, or fold into `low + optional`? — **kept** as a
+   reminder / `--all`-only tier that never auto-installs (macOS still uses it for
+   octave/qemu/mongodb/Pixelmator/Amphetamine).
+4. Single root `packages.json` vs `packages/` split by domain — **kept single**; the
+   file has stayed manageable (revisit only past ~150 entries).

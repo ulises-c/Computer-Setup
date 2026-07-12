@@ -68,8 +68,8 @@ folding it into the `setup.sh` base provisioning is still tracked in TODO.md.
 - `scripts/dryrun-smoke.sh` — runs `setup.sh --dry-run` for every platform and
   asserts it exits clean with install actions; also run in CI.
 
-`UNIFICATION.md` is the design doc for this layout; `TODO.md` tracks remaining
-phases.
+`docs/UNIFICATION.md` is the design doc for this layout; `CHANGELOG.md` records
+what shipped and `TODO.md` tracks remaining work.
 
 ## Conventions
 
@@ -80,7 +80,7 @@ phases.
   valid priority tier and a boolean optional). All three also run in CI.
 - Probe semantics in `lib/verify.sh` are platform-faithful ports — macOS has no
   `command -v` fallback for casks/pipx/app-store, Linux falls back everywhere.
-  Don't "fix" the asymmetry without checking `UNIFICATION.md` history.
+  Don't "fix" the asymmetry without checking `docs/UNIFICATION.md` history.
 - `--dry-run` must print every command without executing anything; it is the
   primary cross-platform test mechanism (only one platform can run live).
 - App-store packages and `priority: "none"` entries are reminders only — never
