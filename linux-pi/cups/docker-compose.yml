@@ -3,9 +3,8 @@ services:
   # Decoupled sidecar, proxying :443 -> host.docker.internal:631.
   # https://cups-pi.<tailnet>.ts.net.
   #
-  # NOTE: CUPS validates the Host header. If the admin pages 400/"Bad Request"
-  # through the proxy, add `ServerAlias *` (or the cups-pi hostname) to cupsd.conf
-  # on the Pi and restart cups. Read-only pages usually work without it.
+  # cupsd must listen on the Docker bridge and allow its subnet; see ../README.md.
+  # Keep the exact cups-pi tailnet name in ServerAlias rather than using `*`.
   cups-ts:
     image: tailscale/tailscale:latest
     container_name: cups-ts

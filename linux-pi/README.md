@@ -37,7 +37,7 @@ start; if the primary is down, the replica simply keeps its last-good config.
 The Pi is a *secondary server* (security cameras via MotionEye, printing via CUPS,
 plus the backup AdGuard). These stacks surface it:
 
-- `homepage/` — a homepage dashboard for the Pi (host-networked on `:3000`) with a
+- `homepage/` — a homepage dashboard for the Pi (host-networked on `:3001`) with a
   decoupled `homepage-pi-ts` sidecar → `https://homepage-pi.<tailnet>.ts.net`. Its
   cards link to the Pi services, and it shows the Pi's own CPU/mem/disk/temp (the
   `resources` widget works because homepage runs on the Pi host).
@@ -66,8 +66,28 @@ sudo ufw status
 ```
 
 Fix it once (allow bridge→host / enable `host-gateway`) and every sidecar works.
-CUPS additionally validates the `Host` header — if its admin pages 400 through the
-proxy, add `ServerAlias *` to `cupsd.conf` and restart cups.
+
+For CUPS, replace `Listen localhost:631` with `Port 631` in `/etc/cups/cupsd.conf`,
+add `Allow from <docker-bridge-cidr>` to the existing `<Location />`,
+`<Location /admin>`, and `<Location /admin/conf>` blocks without removing their
+authentication rules, and set `ServerAlias cups-pi.<tailnet>.ts.net`. Find the bridge
+CIDR after creating the sidecar with:
+
+```bash
+cd linux-pi/cups
+docker compose create
+network="$(docker inspect cups-ts --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}')"
+docker network inspect "$network" --format '{{(index .IPAM.Config 0).Subnet}}'
+```
+
+Do not use `Allow all` or `ServerAlias *`. On socket-activated Debian installs, run:
+
+```bash
+sudo systemctl disable --now cups.socket
+sudo systemctl enable --now cups.service
+sudo systemctl restart cups.service
+docker exec cups-ts wget -qO- -T5 http://host.docker.internal:631/ >/dev/null
+```
 
 ### First HTTPS request provisions a cert (may hang once)
 
@@ -93,8 +113,9 @@ that's normal, not a fault. If a sidecar *stays* DERP-only, check the Pi's UDP/N
 
 ## Deploy runbook (on the Pi)
 
-Prerequisites: Docker + compose plugin (`setup.sh --profile server` covers the
-base, or install manually).
+Prerequisites: Raspberry Pi OS/Debian with Git, Docker Engine, and the Compose
+plugin installed manually. The root `setup.sh --profile server` targets Ubuntu
+Server and is not supported on the Pi yet.
 
 1. **Free port 53.** Debian's `systemd-resolved` stub may hold `:53`. Set
    `DNSStubListener=no` in resolved's config and restart it (or bind AdGuard to
@@ -115,13 +136,14 @@ base, or install manually).
    docker compose up -d
    ```
    The Pi's filters/rewrites/upstreams should now match the primary.
-4. **Wire failover on the router (`192.168.1.1`):** in its DHCP settings, set the
+4. **Wire failover on the router (`<router-ip>`):** in its DHCP settings, set the
    DNS servers to `[<server-ip>, <pi-ip>]` (primary = server, secondary = Pi).
    Renew a client lease to pick it up.
 5. **Bring up the Pi dashboard + service front doors:** for each of `homepage`,
    `motioneye`, `cups`: `cp .env.example .env`, set `TS_AUTHKEY` (and, for
-   `homepage`, the `HOMEPAGE_VAR_*` domains + AdGuard creds), then
-   `docker compose up -d`. The Pi dashboard is then at
+   `homepage`, the `HOMEPAGE_VAR_*` domains, LAN identity, and AdGuard creds), then
+   `docker compose up -d`. The Pi dashboard is available on the LAN at
+   `http://<pi-lan-ip>:3001` and at
    `https://homepage-pi.<tailnet>.ts.net`, and the main server's homepage shows a
    "Secondary Server (Pi)" card linking to it. (All Pi HTTPS front doors depend on
    the sidecar→host hop above.)

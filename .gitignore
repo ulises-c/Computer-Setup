@@ -58,7 +58,6 @@ linux-pi/*/ts-state/
 linux-pi/homepage/config/logs/
 linux-pi/homepage/config/custom.css
 linux-pi/homepage/config/custom.js
-linux-pi/homepage/config/docker.yaml
 linux-pi/homepage/config/kubernetes.yaml
 linux-pi/homepage/config/proxmox.yaml
 
