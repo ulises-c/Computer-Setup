@@ -39,12 +39,13 @@ errors=$(jq -r '
   def PLATFORMS: ["macos","ubuntu","arch","server"];
   def TIERS: ["high","medium","low","none"];
   def ENVS: ["work","personal"];
-  def TAGS: ["ai-coding","browser","cloud-storage","communication","containers",
-             "database","desktop-utility","development","entertainment","local-llm",
-             "media","networking","photos","productivity","science","security",
-             "system-monitoring","terminal"];
+  def TAGS: ["ai-coding","benchmarking","browser","cloud-storage","communication",
+             "containers","database","desktop-utility","development","entertainment",
+             "local-llm","media","networking","photos","productivity","science",
+             "security","system-monitoring","terminal"];
   def prfor($p): (.priority | if type == "object" then .[$p] else . end);
   def optfor($p): (.optional | if type == "object" then .[$p] else . end);
+  def icfor($p): (.install_command | if type == "object" then .[$p] else . end);
 
   ( group_by(.name)[] | select(length > 1)
       | "duplicate name \"\(.[0].name // "(unnamed)")\" — \(length) entries" ),
@@ -84,6 +85,17 @@ errors=$(jq -r '
                 (optfor($p) as $o
                   | if ($o | type) != "boolean"
                     then "\($nm): optional for \"\($p)\" is \($o | tojson) — must be boolean" else empty end))
+        else empty end),
+
+      (.handled_by_setup as $h
+        | if $h == null or ($h | type) == "boolean" then empty
+          else "\($nm): handled_by_setup is \($h | tojson) — must be boolean (the engine tests == true)" end),
+
+      (if (.package_manager | type) == "object"
+        then ((.package_manager | to_entries[]) as $kv
+              | if $kv.value == "custom" and (icfor($kv.key) | type) != "string"
+                then "\($nm): custom on \"\($kv.key)\" needs a string install_command (got \(icfor($kv.key) | tojson))"
+                else empty end)
         else empty end),
 
       (.environment as $env

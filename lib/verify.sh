@@ -90,6 +90,12 @@ probe_pkg() {
         *)
           if [[ "$PLATFORM" == "macos" ]]; then
             { brew list --formula "$rname" || command -v "$rname"; } &>/dev/null && INSTALLED=true
+            # GUI-only custom installs (cinebench, omlx) ship an .app bundle
+            # and no CLI/formula; APFS is case-insensitive by default, so the
+            # package name matches the bundle name (omlx -> oMLX.app)
+            if [[ "$INSTALLED" == false ]]; then
+              [[ -d "/Applications/${rname}.app" || -d "$HOME/Applications/${rname}.app" ]] && INSTALLED=true
+            fi
           else
             { command -v "$name" || pacman -Qq "$rname"; } &>/dev/null && INSTALLED=true
           fi ;;

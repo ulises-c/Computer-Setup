@@ -134,6 +134,18 @@
             description: Push notifications
             server: my-docker
             container: ntfy
+        - ups:
+            icon: mdi-battery-charging-high
+            href: https://{{HOMEPAGE_VAR_PEANUT_DOMAIN}}/
+            description: NUT · CyberPower 1500VA
+            server: my-docker
+            container: peanut
+            widget:
+              type: peanut
+              # peanut is host-networked (upsd is loopback-only); homepage is too,
+              # so localhost reaches it.
+              url: http://localhost:8097
+              key: cyberpower
 
     - Storage:
         - forgejo:

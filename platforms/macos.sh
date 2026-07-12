@@ -2,71 +2,87 @@
 # macOS quirks: Homebrew bootstrap, brew/brew-cask/custom installs,
 # expat-pinned pyenv build (Tahoe fix), App Store reminders.
 
-# Populated by brew_install_tier / brew_cask_install_tier; printed at the end.
+# Populated by mac_install_list / mac_custom_install_tier; printed at the end.
 BREW_FAILURES=()
 BREW_TOTAL=0
 
-brew_install_tier() {
-  local priority="$1" names name err reason
-  names=$(pkg_names brew "$priority")
+# mac_install_list <names> <cmd...> — shared [i/N] install loop: prints
+# progress, runs "<cmd...> <name>" per package, collects failures into
+# BREW_FAILURES instead of aborting the tier.
+mac_install_list() {
+  local names="$1" name err reason i total label
+  shift
+  local -a cmd=("$@") list
+  label="${cmd[*]}"
   [[ -z "$names" ]] && return 0
-  for name in $names; do
+  read -ra list <<< "$names"
+  total=${#list[@]}
+  i=0
+  for name in "${list[@]}"; do
+    i=$((i + 1))
     if [[ "$DRY_RUN" == true ]]; then
-      printf '  [dry-run] brew install %s\n' "$name"
+      printf '  [dry-run] [%d/%d] %s %s\n' "$i" "$total" "$label" "$name"
       continue
     fi
+    printf '  [%d/%d] %s %s...\n' "$i" "$total" "$label" "$name"
     BREW_TOTAL=$((BREW_TOTAL + 1))
-    if ! err=$(brew install "$name" 2>&1); then
+    if ! err=$("${cmd[@]}" "$name" 2>&1); then
       reason=$(printf '%s\n' "$err" | grep -m1 'Error:' | sed 's/^Error: //')
       [[ -z "$reason" ]] && reason=$(printf '%s\n' "$err" | tail -1)
-      BREW_FAILURES+=("brew/$name: $reason")
-      printf '  [FAIL] brew install %s — %s\n' "$name" "$reason"
+      BREW_FAILURES+=("$label $name: $reason")
+      printf '  [FAIL] %s %s — %s\n' "$label" "$name" "$reason"
     fi
   done
 }
 
-brew_cask_install_tier() {
-  local priority="$1" names name err reason
-  names=$(pkg_names brew-cask "$priority")
-  [[ -z "$names" ]] && return 0
-  # --adopt: take ownership of apps already in /Applications (manual installs)
-  # instead of hard-failing the whole tier (#31)
-  for name in $names; do
-    if [[ "$DRY_RUN" == true ]]; then
-      printf '  [dry-run] brew install --cask --adopt %s\n' "$name"
-      continue
-    fi
-    BREW_TOTAL=$((BREW_TOTAL + 1))
-    if ! err=$(brew install --cask --adopt "$name" 2>&1); then
-      reason=$(printf '%s\n' "$err" | grep -m1 'Error:' | sed 's/^Error: //')
-      [[ -z "$reason" ]] && reason=$(printf '%s\n' "$err" | tail -1)
-      BREW_FAILURES+=("cask/$name: $reason")
-      printf '  [FAIL] brew install --cask %s — %s\n' "$name" "$reason"
-    fi
-  done
-}
+brew_install_tier() { mac_install_list "$(pkg_names brew "$1")" brew install; }
+
+# --adopt: take ownership of apps already in /Applications (manual installs)
+# instead of hard-failing the whole tier (#31)
+brew_cask_install_tier() { mac_install_list "$(pkg_names brew-cask "$1")" brew install --cask --adopt; }
 
 mac_custom_install_tier() {
-  local priority="$1"
-  # shellcheck disable=SC2016
-  jq -r --arg plat "$PLATFORM" --arg pr "$priority" \
-     --arg w "$INCLUDE_WORK" --arg p "$INCLUDE_PERSONAL" \
-    "$CORE_JQ_DEFS"'.[] | select(
-        .package_manager[$plat] == "custom" and prfor($plat) == $pr and
-        envok($plat; $w; $p) and (icfor($plat) != null) and .name != "nvm" and tagok($plat)
-      ) | icfor($plat)' "$PACKAGES_JSON" |
+  local priority="$1" cmd
+  # Collect failures like the brew tiers (#31) — one failed installer must not
+  # abort the rest of the run under set -e. Process substitution (not a pipe)
+  # keeps BREW_FAILURES in this shell.
   while read -r cmd; do
-    run_eval "$cmd"
-  done
+    [[ -z "$cmd" ]] && continue
+    [[ "$DRY_RUN" == false ]] && BREW_TOTAL=$((BREW_TOTAL + 1))
+    if ! run_eval "$cmd"; then
+      BREW_FAILURES+=("custom: $cmd")
+      printf '  [FAIL] %s\n' "$cmd"
+    fi
+  done < <(
+    # shellcheck disable=SC2016
+    jq -r --arg plat "$PLATFORM" --arg pr "$priority" \
+       --arg w "$INCLUDE_WORK" --arg p "$INCLUDE_PERSONAL" \
+      "$CORE_JQ_DEFS"'.[] | select(
+          .package_manager[$plat] == "custom" and prfor($plat) == $pr and
+          envok($plat; $w; $p) and (icfor($plat) != null) and (.handled_by_setup == true)
+          and .name != "nvm" and tagok($plat)
+        ) | icfor($plat)' "$PACKAGES_JSON"
+  )
 }
 
-mac_pipx_install_tier() {
-  local priority="$1" names name
-  names=$(pkg_names pipx "$priority")
-  [[ -z "$names" ]] && return 0
-  for name in $names; do
-    run pipx install "$name"
-  done
+mac_pipx_install_tier() { mac_install_list "$(pkg_names pipx "$1")" pipx install; }
+
+# Cache sudo credentials once up front. Homebrew's cask/pkg installers each shell
+# out to `sudo`, so without this a fresh install prompts for the password ~6
+# times. Prime the timestamp once, then refresh it in the background until this
+# script exits so every later sudo call reuses it silently.
+mac_prime_sudo() {
+  if [[ "$DRY_RUN" == true ]]; then
+    printf '  [dry-run] sudo -v (cache credentials + background keepalive)\n'
+    return 0
+  fi
+  printf '==> Caching credentials (you may be prompted for your password once)...\n'
+  sudo -v || return 0
+  # || true: the subshell inherits set -e, and one failed refresh (timestamp
+  # revoked mid-run) must not silently kill the keepalive. stdout is redirected
+  # so a piped run (setup.sh | tee) sees EOF at exit instead of hanging on the
+  # fd this subshell holds for up to 60s.
+  ( while true; do sudo -n true || true; sleep 60; kill -0 "$$" 2>/dev/null || exit; done ) >/dev/null 2>&1 &
 }
 
 print_app_store_reminders() {
@@ -84,6 +100,10 @@ print_app_store_reminders() {
 platform_main() {
   # shellcheck disable=SC2034  # consumed by deploy_zshrc in lib/core.sh
   CONFIG_SRC_DIR="$SETUP_ROOT/macOS"
+
+  # ── sudo priming ──────────────────────────────────────────────────────────────
+  mac_prime_sudo
+
   # ── Homebrew ────────────────────────────────────────────────────────────────
   if ! command -v brew &>/dev/null; then
     printf '==> Installing Homebrew...\n'
@@ -220,9 +240,9 @@ platform_main() {
   export PATH="$PNPM_HOME/bin:$PATH"
   if [[ "$DRY_RUN" == true ]] || command -v pnpm &>/dev/null; then
     pnpm_install_tier medium
-
-    # Post-install: codeburn menubar (macOS native Swift app)
-    run codeburn menubar || printf 'warning: codeburn menubar failed (non-fatal)\n' >&2
+    # codeburn's menu-bar app is buggy upstream, so it is NOT installed
+    # automatically — the codeburn-menubar packages.json entry surfaces it
+    # as a manual reminder instead.
   else
     printf '  pnpm not found — skipping (run corepack enable)\n'
   fi
@@ -248,6 +268,10 @@ platform_main() {
   print_app_store_reminders medium
   print_app_store_reminders none
   [[ "$INCLUDE_OPTIONAL" == true ]] && print_app_store_reminders low
+
+  # Custom entries the engine does not run (handled_by_setup != true) —
+  # without this they are neither installed nor surfaced (linux_main has it)
+  custom_reminders_section
 
   printf '\n'
   printf 'Optional — run these from the repo root as needed:\n'
