@@ -1,0 +1,7 @@
+[Unit]
+Description=Alert on Pi backup failure
+
+[Service]
+Type=oneshot
+EnvironmentFile=-@BACKUP_ENV@
+ExecStart=/usr/bin/env bash @BACKUP_SCRIPT@ notify-failure
