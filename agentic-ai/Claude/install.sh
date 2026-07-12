@@ -10,6 +10,11 @@ CLAUDE_DIR="$HOME/.claude"
 HOOKS_DIR="$CLAUDE_DIR/hooks"
 SETTINGS="$CLAUDE_DIR/settings.json"
 
+if [[ -d "$CLAUDE_DIR/docs" && ! -L "$CLAUDE_DIR/docs" ]]; then
+  printf 'error: %s is a directory; move or remove it before installing\n' "$CLAUDE_DIR/docs" >&2
+  exit 1
+fi
+
 printf 'Installing from: %s\n' "$REPO_DIR"
 
 # settings.json is COPIED, not symlinked: Claude Code rewrites its user

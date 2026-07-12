@@ -26,9 +26,20 @@ check_symlink() {
   fi
 }
 
-# ── Symlinks ──────────────────────────────────────────────────────────────────
-section "Symlinks"
-check_symlink "$CLAUDE_DIR/settings.json" "$REPO_DIR/settings.json"
+check_regular_file() {
+  local file="$1"
+  if [[ -f "$file" && ! -L "$file" ]]; then
+    pass "$file is a regular file"
+  elif [[ -L "$file" ]]; then
+    fail "$file is a symlink (expected a copied file)"
+  else
+    fail "$file is missing or not a regular file"
+  fi
+}
+
+# ── Installed files ───────────────────────────────────────────────────────────
+section "Installed files"
+check_regular_file "$CLAUDE_DIR/settings.json"
 check_symlink "$CLAUDE_DIR/CLAUDE.md"     "$REPO_DIR/CLAUDE.md"
 check_symlink "$CLAUDE_DIR/rules"         "$REPO_DIR/rules"
 check_symlink "$CLAUDE_DIR/docs"          "$REPO_DIR/docs"
