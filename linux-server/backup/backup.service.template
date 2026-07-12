@@ -1,0 +1,12 @@
+[Unit]
+Description=Server backup (restic → external drive)
+RequiresMountsFor=/mnt/wd1tb
+After=network-online.target docker.service
+OnFailure=backup-failure.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env bash @BACKUP_SCRIPT@
+Environment=HOME=/root
+Nice=10
+IOSchedulingClass=idle

@@ -38,6 +38,7 @@ gets a ~1s `docker stop`/`start` around a volume copy — the one brief exceptio
    cd linux-server/backup
    cp .env.example .env
    # set RESTIC_PASSWORD (and SAVE IT IN BITWARDEN), NTFY_URL/topic
+   chmod 600 .env
    ```
 4. Initialize the repo (the script also does this on first run):
    ```sh
@@ -48,12 +49,10 @@ gets a ~1s `docker stop`/`start` around a volume copy — the one brief exceptio
    ```sh
    docker compose up -d
    ```
-6. Install + enable the timer (system units; adjust the path in the unit files if
-   the repo isn't at `/home/ulises/github/Computer-Setup`):
+6. Render, install, and enable the system timer from the current checkout path:
    ```sh
-   sudo cp backup.service backup.timer backup-failure.service /etc/systemd/system/
-   sudo systemctl daemon-reload
-   sudo systemctl enable --now backup.timer
+   bash setup.sh --dry-run
+   sudo bash setup.sh
    ```
 7. Dry run + verify:
    ```sh
