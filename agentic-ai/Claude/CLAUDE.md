@@ -2,9 +2,6 @@
 @rules/common/agents.md
 @rules/common/railguard.md
 @rules/bash/style.md
-# graphify
-- **graphify** (`~/.claude/skills/graphify/SKILL.md`) - any input to knowledge graph. Trigger: `/graphify`
-When the user types `/graphify`, invoke the Skill tool with `skill: "graphify"` before doing anything else.
 
 <!-- railguard:start -->
 # Railguard — Active Guardrails
