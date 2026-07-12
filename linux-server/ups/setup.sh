@@ -87,7 +87,7 @@ deploy "$tmp/ups-notify.env"  /etc/nut/ups-notify.env  640
 deploy "$tmp/ups-notify.sh"   /etc/nut/ups-notify.sh   750
 
 log "Enabling NUT services..."
-run systemctl enable --now nut-server.service nut-monitor.service
+run systemctl enable --now nut-driver@cyberpower.service nut-server.service nut-monitor.service
 
 if [[ "$changed" == true ]]; then
   log "Configs changed — restarting NUT..."
