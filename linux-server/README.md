@@ -312,7 +312,7 @@ In NPM admin (`http://<server-ip>:81`):
     3. Access at `https://qbittorrent.<tailnet>.ts.net/`
     4. On first run, the LinuxServer image generates a temporary admin password — find it with `docker compose logs qbittorrent | grep -i password`, log in as `admin`, then change it in **Options → Web UI** (and add the new login to `HOMEPAGE_VAR_QBITTORRENT_PASSWORD` in `linux-server/homepage/.env` for the widget)
     5. In **Options → Web UI**, set the "IP address" to `127.0.0.1` so the UI is reachable only through the HTTPS sidecar, not the raw tailnet port
-    6. BitTorrent `:6881` (tcp/udp) is published on the sidecar. **Not routed through a VPN** — fine for academic/legal torrents; see [`../TODO.md`](../TODO.md) for the planned Gluetun VPN sidecar before any other use
+    6. BitTorrent `:6881` (tcp/udp) is published on the sidecar. **Not routed through a VPN** — fine for academic/legal torrents; see [`../docs/TODO.md`](../docs/TODO.md) for the planned Gluetun VPN sidecar before any other use
 
 17. OpenSpeedTest | [GitHub](https://github.com/openspeedtest/Speed-Test) | [Docs](https://openspeedtest.com/selfhosted-speedtest)
     1. Self-hosted browser speed test for the **LAN** (the local-network counterpart to speedtest-tracker's ISP test) — any device opens it in a browser and measures its throughput to the server. Fronted by its own Tailscale HTTPS sidecar (see [`HTTPS.md`](HTTPS.md)), like the other services

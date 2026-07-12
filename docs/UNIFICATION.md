@@ -1,7 +1,7 @@
 # Setup-script unification — design doc
 
 Status: **implemented.** Shipped across [#37](https://github.com/ulises-c/Computer-Setup/pull/37)
-(Phases 1–7); see [CHANGELOG.md](../CHANGELOG.md) for what landed and
+(Phases 1–7); see [CHANGELOG.md](CHANGELOG.md) for what landed and
 [CLAUDE.md](../CLAUDE.md) for the current architecture. This document is retained
 as the design record — the rationale for collapsing the three diverged stacks into
 one engine, the schema decisions, and the phased migration that got us there. The
@@ -195,7 +195,7 @@ ubuntu/debian/mint/pop and arch/cachyos/manjaro/endeavouros/garuda/arcolinux, wi
 ## Phased work breakdown
 
 Each phase was independently committable and gated by a verification step. All
-phases shipped (see [CHANGELOG.md](../CHANGELOG.md)); the breakdown is kept below as
+phases shipped (see [CHANGELOG.md](CHANGELOG.md)); the breakdown is kept below as
 the migration record.
 
 - **Phase 0 — Plan (this PR).** Add `UNIFICATION.md` + TODO items. No behavior change.

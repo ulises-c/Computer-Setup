@@ -3,7 +3,7 @@
 Personal machine-provisioning repo: one unified installer for macOS, Linux
 desktop (Ubuntu/Arch), and an Ubuntu Server LTS home server, plus per-platform
 configs and docs. (A Raspberry Pi — Debian proper — is a future target,
-tracked in TODO.md.)
+tracked in docs/TODO.md.)
 
 This file is the shared instruction set for **every** coding agent working in
 this repo (Claude Code, opencode, Codex, …). `CLAUDE.md` imports it and adds
@@ -50,8 +50,8 @@ Claude-Code-only notes on top; keep cross-agent guidance here, not there.
 - `scripts/dryrun-smoke.sh` — runs `setup.sh --dry-run` for every platform and
   asserts it exits clean with install actions; also run in CI.
 
-`docs/UNIFICATION.md` is the design doc for this layout; `CHANGELOG.md` records
-what shipped and `TODO.md` tracks remaining work.
+`docs/UNIFICATION.md` is the design doc for this layout; `docs/CHANGELOG.md` records
+what shipped and `docs/TODO.md` tracks remaining work.
 
 ## Conventions
 

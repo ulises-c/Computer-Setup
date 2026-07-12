@@ -1,7 +1,7 @@
 # TODO
 
 Open work only. Completed work is recorded in [CHANGELOG.md](CHANGELOG.md); the
-unified-layout design rationale is in [docs/UNIFICATION.md](docs/UNIFICATION.md).
+unified-layout design rationale is in [UNIFICATION.md](UNIFICATION.md).
 
 ## Live-run cleanup & follow-ups (unification / dotfiles)
 
@@ -54,7 +54,7 @@ Core Arch/CachyOS support shipped in PR #18 (see CHANGELOG). Remaining:
 
 Every tailnet-facing service is converted (see CHANGELOG); the non-tailnet edge
 is what's left. Pattern and full rollout table in
-[linux-server/HTTPS.md](linux-server/HTTPS.md).
+[../linux-server/HTTPS.md](../linux-server/HTTPS.md).
 
 - [ ] Set up the NPM trusted-HTTPS edge (domain `ulises-c.me`, already owned):
       NPM wildcard Let's Encrypt cert for `*.home.ulises-c.me` via DNS-01, AdGuard
