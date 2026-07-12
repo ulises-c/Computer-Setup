@@ -5,6 +5,7 @@
 # graphify
 - **graphify** (`~/.claude/skills/graphify/SKILL.md`) - any input to knowledge graph. Trigger: `/graphify`
 When the user types `/graphify`, invoke the Skill tool with `skill: "graphify"` before doing anything else.
+
 <!-- railguard:start -->
 # Railguard — Active Guardrails
 
@@ -16,6 +17,10 @@ Railguard is monitoring this session. Every tool call (Bash, Write, Edit, Read) 
 - **Some commands require human approval.** If you see an "ask" response, the human will be prompted to approve or deny.
 - **File writes are snapshotted.** Every Write/Edit you make is backed up before execution. The human can rollback any change.
 - **Everything is logged.** All tool calls and decisions are recorded in `.railguard/traces/`.
+
+## Writing files
+
+Prefer `Write`/`Edit` over Bash redirects (`cat <<EOF >`, `echo >`, `printf >`). Tool writes are snapshotted and skip the Bash path-fence scan, which matches fenced-path *strings* in command text — so a command merely mentioning a fenced path (heredoc, issue body) is blocked even if it never touches it. Switching a fence-blocked heredoc to `Write` is intended remediation, not evasion.
 
 ## If something goes wrong
 
@@ -47,6 +52,13 @@ You **can** help the user customize their Railguard policy. This is encouraged:
 - **Run `railguard status`** to show the current protection state.
 All changes to Railguard policy require explicit human approval. You generate the change, the user reviews and accepts or rejects it. Changes take effect on the next tool call — no restart needed.
 
+### Policy layers
+
+- **Global** `railguard.yaml` / `~/.railguard.yaml` (resolved upward from cwd) — base rules; edits gated to **ask**.
+- **Per-project** `.railguard.local.yaml` (project root) — additive `fence.allowed_paths` only; cannot weaken `denied_paths` or disable the fence. Honored only if global sets `fence.allow_local_overrides: true`; the project cannot opt itself in.
+
+Out-of-project path keeps prompting and the human wants it for this project only → add it to `.railguard.local.yaml`, not the global policy. Override ignored = global `allow_local_overrides: true` missing. Gitignore it unless the exception is shared. Details: `docs/per-project-allowlist.md`.
+
 ## Do NOT attempt to
 
 - Run `railguard uninstall` — it will be blocked.
@@ -55,3 +67,41 @@ All changes to Railguard policy require explicit human approval. You generate th
 - Access `~/.ssh`, `~/.aws`, `~/.gnupg`, `/etc`, or other fenced paths (if path fencing is enabled).
 
 <!-- railguard:end -->
+
+# Railguard — known bugs & false positives (WIP)
+
+Railguard is in active development, so it still throws **false positives** — blocking
+or `ask`-gating commands that are actually safe. Track them here as they're hit: what
+triggers the misfire, how to work around it in-session, and whether the real fix
+belongs upstream in the railguard repo. When an agent keeps hitting the same misfire
+because of *how* it works by default (e.g. reaching for a Bash redirect instead of the
+`Write` tool), promote the lesson into working guidance (`AGENTS.md` for all agents,
+the `CLAUDE.md` overlay for Claude, or these global rules) so it stops recurring.
+
+> This section is **outside** the `railguard:start/end` block on purpose — that block
+> is auto-generated, so edits inside it get overwritten. Keep bug notes here.
+
+## Known false positives
+
+- **Leading-slash tokens in Bash command text.** A command whose text contains a
+  `/word` token — a git commit message mentioning `/security-review` or `/verify`, any
+  slash-command name — trips the path fence, which reads the token as a filesystem path
+  outside the allowed roots and prompts/blocks, even though the command never touches
+  such a path.
+  - *Workaround:* keep slash-prefixed skill/command names out of Bash command text —
+    reword, or put the content in a file via `Write` and pass it by `--body-file`/path.
+  - *Real fix (railguard repo):* the fence should only match tokens that parse as real
+    path arguments, not arbitrary `/word` substrings inside quoted strings.
+
+- **Fenced-path *strings* in command text (heredocs, issue/PR bodies).** A command that
+  merely *mentions* a fenced path (in a heredoc, `--body`, install docs) is blocked even
+  when it never accesses that path.
+  - *Workaround (intended remediation):* author the content with `Write`/`Edit` — tool
+    writes are snapshotted and skip the Bash fence scan — and pass it by path. This is
+    the "Writing files" guidance in the managed block above.
+
+## Feedback loop → AGENTS/CLAUDE
+
+When a false positive is caused by an agent's default habit rather than the task, add a
+one-line "do X, not Y" to the appropriate instructions file so the next run avoids it.
+Example already applied: *prefer `Write`/`Edit` over `cat <<EOF >` redirects.*
