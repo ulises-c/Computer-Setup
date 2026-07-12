@@ -252,6 +252,24 @@ git remote set-url origin ssh://git@forgejo.<tailnet>.ts.net:22/<username>/<repo
   ```
 - [ ] Get API key: Actions → Settings → API Key — add to `homepage/.env` as `HOMEPAGE_VAR_SYNCTHING_KEY`
 
+### UPS (NUT) — host service, no UI
+
+Monitors the CyberPower UPS over USB; alerts via ntfy and shuts the server down
+cleanly on low battery. Full runbook in [`ups/README.md`](ups/README.md).
+
+- [ ] Configure and deploy:
+  ```sh
+  cd linux-server/ups
+  cp .env.example .env   # set UPSMON_PASSWORD (openssl rand -hex 16) + ntfy
+  sudo bash setup.sh
+  ```
+- [ ] Verify: `upsc cyberpower ups.status` prints `OL`
+- [ ] Start the PeaNUT dashboard (`docker compose up -d`, needs `TS_AUTHKEY` in
+      `.env`) — graphs at `https://peanut.<tailnet>.ts.net/`, and the homepage
+      **ups** card goes live
+- [ ] Subscribe to the `server-ups` ntfy topic on your phone
+- [ ] Set BIOS **Restore on AC Power Loss → Power On**
+
 ---
 
 ## 8. Service reference
@@ -270,6 +288,7 @@ git remote set-url origin ssh://git@forgejo.<tailnet>.ts.net:22/<username>/<repo
 | Syncthing | http://\<server-ip\>:8384 | |
 | AdGuard Home | http://\<server-ip\>:8083 | Run setup wizard at :3003 first |
 | Cockpit | https://\<server-ip\>:9090 | |
+| PeaNUT (UPS) | https://peanut.\<tailnet\>.ts.net/ | Tailscale sidecar; homepage ups card reads it via localhost :8097 |
 | Tailscale Web UI | http://localhost:8088 | After `tailscale up` |
 | Tailscale proxy | http://localhost:8089 | Internal — used by Homepage widget |
 | Forgejo | https://forgejo.\<tailnet\>.ts.net/ | Tailscale sidecar (HTTPS via serve); Git over SSH on port 22 |

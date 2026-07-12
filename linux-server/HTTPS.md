@@ -224,6 +224,7 @@ side of the `ports:` mapping (`host:container`), not the host side.
 | filebrowser       | 80    | ✅ done       | none — works at root; proxy to container :80, **not** the old 8080 host map |
 | syncthing         | 8384  | ✅ done       | set `STGUIADDRESS=127.0.0.1:8384` (disables Syncthing's Host-header check, else `Host check error`); publish sync `:22000`/`:21027` on the **sidecar** (raw TCP/UDP, not via serve) |
 | glances           | 61208 | ✅ done       | **host-networked variant** — keep `network_mode: host`, sidecar proxies via `host.docker.internal`; widget url stays localhost |
+| peanut (UPS)      | 8097  | ✅ done       | host-networked variant like glances — PeaNUT must reach the loopback-only `upsd:3493`, sidecar proxies via `host.docker.internal`; widget url stays localhost |
 | adguard           | 80    | ✅ done       | UI at container :80 (not the 8083 host map); publish DNS `:53` tcp+udp on the **sidecar** (raw DNS, not via serve); no :443 so no DoH/serve conflict |
 | atvloadly         | 80    | ✅ done       | no `hostname:` on the app container — conflicts with `network_mode: service:...`; Apple TV discovery is unaffected by the shared netns since it goes through the host's avahi-daemon via bind-mounted sockets, not this container's own network |
 | nginx-proxy-mgr   | 81    | ✅ done       | host edge (binds `:80/:443/:81`); its **admin UI** is fronted by a host-gateway sidecar at `npm.<tailnet>`, while NPM itself stays the non-tailnet trusted-cert edge (see section below) |

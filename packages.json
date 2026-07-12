@@ -410,6 +410,14 @@
     "description": "Web-based server admin UI — system metrics, journal logs, network config, storage, and service management; access at https://<server-ip>:9090"
   },
   {
+    "name": "nut",
+    "tags": ["system-monitoring"],
+    "package_manager": { "server": "apt" },
+    "priority": "medium",
+    "optional": false,
+    "description": "Network UPS Tools — monitors the CyberPower PR1500LCDRT2U over USB (usbhid-ups, standalone); graceful shutdown on low battery; configure via linux-server/ups/setup.sh"
+  },
+  {
     "name": "tailscale",
     "tags": ["networking"],
     "package_manager": { "macos": "app-store", "ubuntu": "custom", "arch": "yay", "server": "custom" },
