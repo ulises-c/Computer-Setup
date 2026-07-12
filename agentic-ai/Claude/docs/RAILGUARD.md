@@ -13,8 +13,9 @@ Two repos share responsibility:
   there.
 - **Computer-Setup `agentic-ai/Claude/`** (this repo) — the deployed
   configuration: the `railguard.yaml` policy, the slim rule, and this doc.
-  `install.sh` symlinks everything into `~/.claude`, so from any repo this doc
-  is addressable as `~/.claude/docs/RAILGUARD.md`.
+  `install.sh` copies `settings.json`, links the remaining Claude config, and
+  links the global policy separately. After installation, this doc is
+  addressable as `~/.claude/docs/RAILGUARD.md`.
 
 ## Expected behavior
 
@@ -46,7 +47,7 @@ Hitting these is Railguard working as intended, not a bug (defaults plus the
 - **Network/exfiltration (ask or block):** `curl | sh`, encoded payloads,
   outbound `curl -X POST`, `wget`, `ssh`/`scp`/`rsync`, `env` dumps.
 - **Path fence:** `~/.ssh`, `~/.aws`, `~/.config/gcloud`, `/etc` are denied;
-  allowed roots are `~/.claude`, `/tmp`, `~/github`, `~/Bitbucket`.
+  allowed roots are `~/.claude`, `/tmp`, `~/github`, `~/Github`, `~/Bitbucket`.
   `~/.gnupg`/`~/.config/gh` stay readable for GPG signing and `gh`.
 
 ### The fence scans command text
@@ -79,7 +80,9 @@ a slash token, benign flags that look like obfuscation). Anything under
 1. **Work around it in-session** without evasion — usually: author with
    `Write`/`Edit` and pass by path, or reword the command text.
 2. **Log it below** under Known false positives: what triggers the misfire and
-   the workaround.
+   the workaround. Because `~/.claude/docs` links into the Computer-Setup
+   checkout, commit and sync that entry there. If you are working in another
+   repo and cannot do that, file the upstream issue first and defer the local log.
 3. **Take it upstream.** Check `gh issue list --repo ulises-c/railguard` for an
    existing issue; file one if it's new, and link it from the log entry. The
    same goes for non-bug improvement ideas — upstream issue, no log entry
