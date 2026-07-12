@@ -17,8 +17,8 @@ Claude-Code-only notes on top; keep cross-agent guidance here, not there.
   The server platform is never auto-detected (`--profile server` or `--platform server` required).
   `--base` installs only the high-priority base set; `--tags development,terminal`
   installs base + those `packages.json` tag categories; a bare TTY run with no
-  selection flag prompts interactively. Selection mechanics and the custom-step
-  gating: `docs/PACKAGES.md`.
+  selection flag prompts interactively except on the server profile. Selection
+  mechanics and the custom-step gating: `docs/PACKAGES.md`.
 - `verify.sh` — read-only health check mirroring `setup.sh`'s selection logic.
   Flags: `--optional --work --personal --all --platform <macos|ubuntu|arch>`
   (no `--dry-run`; `--platform server`/`--profile server` is rejected — nothing
@@ -30,9 +30,10 @@ Claude-Code-only notes on top; keep cross-agent guidance here, not there.
   by platform (`{macos, ubuntu, arch, server}`); `<platform>_name` overrides the
   install token; `environment` gates on `--work`/`--personal`; `custom` managers
   carry an `install_command` (auto-run when `handled_by_setup`, else a reminder);
-  `tags` is a required category array. Every field can be a scalar or a per-platform
-  object. **Full schema, per-platform resolution, the `environment` caveat, and the
-  tag filter live in `docs/PACKAGES.md` — read it before editing `packages.json`.**
+  `tags` is a required category array. The tier/gating fields `priority`, `optional`,
+  `environment`, and `install_command` can be a scalar or a per-platform object.
+  **Full schema, per-platform resolution, the `environment` caveat, and the tag
+  filter live in `docs/PACKAGES.md` — read it before editing `packages.json`.**
 - `lib/core.sh` — shared engine: arg parsing, platform detection, env filter,
   jq selection, install loops, config deploys. `lib/verify.sh` — check engine.
 - `platforms/<platform>.sh` — per-platform quirks only (bootstrap, manager
@@ -67,8 +68,11 @@ what shipped and `docs/TODO.md` tracks remaining work.
 - Probe semantics in `lib/verify.sh` are platform-faithful ports — macOS has no
   `command -v` fallback for casks/pipx/app-store, Linux falls back everywhere.
   Don't "fix" the asymmetry without checking `docs/UNIFICATION.md` history.
-- `--dry-run` must print every command without executing anything; it is the
-  primary cross-platform test mechanism (only one platform can run live).
+- `--dry-run` must print every command without executing anything. Before committing
+  changes to `setup.sh`, `lib/`, `platforms/`, or `packages.json`, exercise it across
+  all four platforms; only one platform can run live.
+- Before committing changes to `.env` handling, `custom` `install_command` shell
+  execution, or path/network code, perform a security review.
 - App-store packages and `priority: "none"` entries are reminders only — never
   auto-installed.
 
