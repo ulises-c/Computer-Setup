@@ -30,7 +30,7 @@ services:
     restart: unless-stopped
 
   glances:
-    image: nicolargo/glances:latest-full
+    image: nicolargo/glances:4.5.4-full
     container_name: glances
     restart: unless-stopped
     pid: host
@@ -38,6 +38,7 @@ services:
     network_mode: host
     environment:
       - GLANCES_OPT=-w
+      - GLANCES_ALLOWED_HOSTS=${GLANCES_ALLOWED_HOSTS}
       - TZ=America/Los_Angeles
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -53,4 +54,5 @@ services:
       - ./entrypoint.sh:/entrypoint.sh:ro
       - ./rename_disks.py:/rename_disks.py:ro
       - /dev/disk/by-label:/dev/disk/by-label:ro
+      - /sys/class/block:/sys/class/block:ro
     command: /bin/sh /entrypoint.sh

@@ -43,6 +43,20 @@ jobs:
       - name: Validate packages.json schema
         run: bash scripts/validate-packages.sh
 
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Python syntax
+        run: |
+          mapfile -d '' files < <(find . -name '*.py' -not -path './.git/*' -print0)
+          bash scripts/check-python-syntax.sh "${files[@]}"
+
+      - name: Test Glances disk aliases
+        working-directory: linux-server/glances
+        run: python3 -m unittest -v test_rename_disks.py
+
   dryrun-smoke:
     runs-on: ubuntu-latest
     steps:
