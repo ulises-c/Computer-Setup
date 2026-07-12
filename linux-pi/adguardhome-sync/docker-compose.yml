@@ -1,0 +1,11 @@
+services:
+  # Keeps the Pi's secondary AdGuard in lockstep with the primary
+  # (linux-server/adguard). Runs on the Pi, pulling origin -> local replica on a
+  # cron. All URLs/credentials/toggles come from .env (gitignored). See ../README.md.
+  adguardhome-sync:
+    image: ghcr.io/bakito/adguardhome-sync:latest
+    container_name: adguardhome-sync
+    command: run
+    env_file:
+      - .env
+    restart: unless-stopped

@@ -2,8 +2,9 @@
 
 Personal machine-provisioning repo: one unified installer for macOS, Linux
 desktop (Ubuntu/Arch), and an Ubuntu Server LTS home server, plus per-platform
-configs and docs. (A Raspberry Pi — Debian proper — is a future target,
-tracked in TODO.md.)
+configs and docs. A Raspberry Pi (`ollie-pi4`, Debian) node lives in `linux-pi/`
+— currently its own Docker Compose service stacks (a secondary AdGuard resolver);
+folding it into the `setup.sh` base provisioning is still tracked in TODO.md.
 
 ## Entrypoints
 
@@ -60,7 +61,10 @@ tracked in TODO.md.)
   (`deploy_zshrc`) still lets a platform folder ship its own `zshrc.example` to
   win over the base, but no platform currently does.
 - `macOS/`, `linux-desktop/`, `linux-server/` — platform-specific configs,
-  docs, and thin shim scripts that exec the root entrypoints.
+  docs, and thin shim scripts that exec the root entrypoints. `linux-pi/` holds
+  the Raspberry Pi node's Docker Compose service stacks (same
+  `<service>/{docker-compose.yml,.env.example,ts-serve.json}` layout as
+  `linux-server/`), not yet wired into `setup.sh`.
 - `scripts/dryrun-smoke.sh` — runs `setup.sh --dry-run` for every platform and
   asserts it exits clean with install actions; also run in CI.
 
