@@ -18,6 +18,25 @@
         href: https://{{HOMEPAGE_VAR_CUPS_DOMAIN}}/
         description: Print server
         siteMonitor: https://{{HOMEPAGE_VAR_CUPS_DOMAIN}}
+    - backups:
+        icon: mdi-backup-restore
+        description: restic → main server (wd1tb + wd14tb)
+        server: my-docker
+        container: pi-backup-status
+        widget:
+          type: customapi
+          url: http://localhost:8099/backup-status.json
+          refreshInterval: 600000
+          mappings:
+            - field: status
+              label: Status
+              format: text
+            - field: last_run
+              label: Last run
+              format: relativeDate
+            - field: repo_size_bytes
+              label: Repo size
+              format: bytes
 
 - Main Server:
     - server dashboard:

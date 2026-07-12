@@ -1,0 +1,13 @@
+[Unit]
+Description=Pi backup (restic → main server over SSH)
+After=network-online.target docker.service
+OnFailure=pi-backup-failure.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/ollie/github/Computer-Setup/linux-pi/backup/backup.sh
+# Runs as root to read all service data dirs and drive docker.
+# Give restic a HOME so it can use its local cache (root has none under systemd).
+Environment=HOME=/root
+Nice=10
+IOSchedulingClass=idle

@@ -446,7 +446,7 @@ kept the primary AdGuard from recovering.
       start deadlocked (sidecar needs DNS → DNS needs the sidecar). Pinned static
       resolvers on `adguard-ts` (`dns: [9.9.9.10, 1.1.1.1]`) so bootstrap never
       depends on AdGuard — `linux-server/adguard`.
-- [ ] **Secondary DNS on the Pi.** Kill the single point of failure: a backup
+- [x] **Secondary DNS on the Pi.** Kill the single point of failure: a backup
       AdGuard on `ollie-pi4`, host-networked (independent of Tailscale) and
       config-synced from the primary, handed out as secondary DNS by the router —
       `linux-pi/adguard` + `linux-pi/adguardhome-sync`.
