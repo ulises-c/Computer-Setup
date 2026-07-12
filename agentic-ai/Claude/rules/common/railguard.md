@@ -1,28 +1,8 @@
 # Working Under Railguard
 
-[Railguard](https://github.com/ulises-c/railguard) intercepts every tool call (Bash, Read, Write, Edit, Memory) and decides to **allow**, **ask**, or **block** it. Rollback recipes and the self-protection list live in the auto-managed `# Railguard — Active Guardrails` block of `CLAUDE.md`; this file covers how to *work* under it.
+[Railguard](https://github.com/ulises-c/railguard) intercepts every tool call and decides **allow**, **ask**, or **block**. Session mechanics (rollback, policy layers, self-protection) are in the auto-managed `# Railguard — Active Guardrails` block of `CLAUDE.md`.
 
-## Reading the response
-
-- **allowed** — proceeds; you won't usually notice.
-- **ask** — the human approves or denies. Wait for the decision; don't route around it.
-- **blocked / denied** — refused. **Never retry the same command** — re-issuing it with cosmetic changes (new flags, base64, `eval`, a wrapper) trips behavioral-evasion detection and escalates toward a session kill. Find a genuinely different, safer approach, or ask the human. If the safer approach is legitimately different (e.g. pushing a *new* branch instead of force-pushing one), say so explicitly so the human can approve past any evasion flag.
-
-## Rules it enforces
-
-These are blocked or gated here (Railguard defaults + the `validate-bash.sh`/`validate-write.sh` hooks). Don't burn turns hitting them:
-
-- **History/data loss (ask or block):** `git push --force` (force-push to `main`/`master` is hard-blocked), `git reset --hard`, `git clean -f`, `rm -rf` on `/` `~` `$HOME`, `terraform destroy`, `DROP TABLE`.
-- **Escalation/staging (block):** `sudo` — run escalations yourself; `git add -A` / `--all` / `.` — stage paths explicitly so secrets aren't swept in.
-- **Network/exfiltration (ask or block):** `curl | sh`, encoded payloads, outbound `curl -X POST`, `wget`, `ssh`/`scp`/`rsync`, `env` dumps.
-- **Path fence:** `~/.ssh`, `~/.aws`, `~/.config/gcloud`, `/etc` are denied; allowed roots are `~/.claude`, `/tmp`, `~/github`, `~/Bitbucket`. `~/.gnupg`/`~/.config/gh` stay readable for GPG signing and `gh`.
-
-## The path fence scans command text
-
-The Bash fence matches fenced path **strings** in the command, so a command that merely *mentions* a fenced path — in a heredoc, an issue body, install docs — gets blocked even though it never touches that path.
-
-- Author file content with the `Write`/`Edit` tools, not `cat <<EOF >`, `echo >`, or `printf >` redirects. Tool-based writes are snapshotted and their content is not scanned by the Bash fence.
-- Don't embed fenced path literals in Bash command text. If content must reference them, put it in a file via `Write` and pass it by path (`--body-file`, `--file`, stdin redirect).
-- If a Bash command is fence-blocked because its *content* quoted a fenced path, switching to the `Write` tool is the **intended remediation** — do it without hesitation. It is not evasion.
-- If a command is blocked because it actually *accesses* a fenced path, do not retry it in any form — find a different approach or ask the user.
-
+- **Blocked → never re-issue the command with cosmetic changes** (new flags, base64, `eval`, a wrapper) — that trips evasion detection and escalates toward a session kill. Take a genuinely different approach and say how it differs. **Ask** → wait for the human; don't route around it.
+- Gated by design — don't burn turns on: `git push --force`, `git reset --hard`, `git clean -f` (ask); `sudo`, `git add -A`/`.` (block — stage paths explicitly); `curl | sh`, outbound `curl -X POST`, `wget`, `ssh`/`scp`/`rsync` (ask/block). Fenced paths (`~/.ssh`, `~/.aws`, `/etc`) are denied; allowed roots: `~/.claude`, `/tmp`, `~/github`, `~/Bitbucket`.
+- The Bash fence scans command **text**: merely *mentioning* a fenced path or a `/slash-command` token can block a command that never touches it. Author content with `Write`/`Edit` and pass it by path (`--body-file`), not heredocs/redirects — that switch is intended remediation, not evasion.
+- Unexpected block/ask that looks like a false positive, or an improvement idea → read `~/.claude/docs/RAILGUARD.md` (expected behavior + bug reporting protocol) and follow it.
