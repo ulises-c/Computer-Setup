@@ -20,9 +20,9 @@ Claude-Code-only notes on top; keep cross-agent guidance here, not there.
   selection flag prompts interactively except on the server profile. Selection
   mechanics and the custom-step gating: `docs/PACKAGES.md`.
 - `verify.sh` — read-only health check mirroring `setup.sh`'s selection logic.
-  Flags: `--optional --work --personal --all --platform <macos|ubuntu|arch>`
-  (no `--dry-run`; `--platform server`/`--profile server` is rejected — nothing
-  legacy existed to port). Unknown flags warn and are ignored, they don't abort.
+  Flags: `--optional --work --personal --all --platform <macos|ubuntu|arch|server>`
+  (no `--dry-run`). The server profile additionally checks NUT configuration and
+  services. Unknown flags warn and are ignored, they don't abort.
 
 ## Architecture
 

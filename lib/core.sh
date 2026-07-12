@@ -901,6 +901,7 @@ linux_main() {
       printf '\n==> Installing optional (low) packages...\n'
       platform_install_tier low
     fi
+    server_ups_step
     server_extras
     custom_reminders_section
     server_footer

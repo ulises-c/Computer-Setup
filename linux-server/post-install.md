@@ -264,6 +264,7 @@ cleanly on low battery. Full runbook in [`ups/README.md`](ups/README.md).
   sudo bash setup.sh
   ```
 - [ ] Verify: `upsc cyberpower ups.status` prints `OL`
+- [ ] Run `bash verify.sh --platform server` from the repo root
 - [ ] Start the PeaNUT dashboard (`docker compose up -d`, needs `TS_AUTHKEY` in
       `.env`) — graphs at `https://peanut.<tailnet>.ts.net/`, and the homepage
       **ups** card goes live

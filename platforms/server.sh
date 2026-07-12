@@ -18,6 +18,20 @@ server_preclone_antidote() {
     || printf 'warning: antidote pre-clone failed; plugins will clone on first login\n' >&2
 }
 
+server_ups_step() {
+  pkg_selected nut || return 0
+
+  local ups_dir="$CONFIG_SRC_DIR/ups"
+  printf '\n==> Configuring NUT UPS monitoring...\n'
+  if [[ -f "$ups_dir/.env" ]]; then
+    run sudo bash "$ups_dir/setup.sh"
+  else
+    printf '  NUT is installed but not configured. Run:\n'
+    printf '    cp %s/.env.example %s/.env\n' "$ups_dir" "$ups_dir"
+    printf '    sudo bash %s/setup.sh\n' "$ups_dir"
+  fi
+}
+
 # Server-only "step two": the headless service + dashboard layer that runs after
 # the shared base install (packages, shell, dotfiles, Tailscale, Docker engine).
 server_extras() {
