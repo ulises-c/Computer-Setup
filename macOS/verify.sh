@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Thin shim (UNIFICATION.md Phase 4): the check logic lives in the root
+# Thin shim (docs/UNIFICATION.md Phase 4): the check logic lives in the root
 # verify.sh + lib/verify.sh, driven by the root packages.json. All flags are
 # forwarded (see ../verify.sh); the trailing --platform pin wins over any
 # forwarded platform flag, so this entrypoint always checks the macOS set.

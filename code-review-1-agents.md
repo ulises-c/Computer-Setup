@@ -129,7 +129,7 @@ the always-loaded copy to categories + "policy: railguard.yaml".
   cross-agent tradeoff; consider a generation step or a "mirrors global rules" marker.
 - **FP-log protocol has no pruning step** — when railguard#17/#18 are fixed, the log
   entries and promoted habit lines persist forever (permanent workaround tax).
-- **`ollie-pi4` hostname in AGENTS.md** contradicts its own Privacy rule — but it's
+- **The Pi hostname in AGENTS.md** contradicts its own Privacy rule — but it's
   committed in 6 tracked files on main already; either carve out the rule or scrub
   repo-wide (decide once, not per-PR).
 - **Tool-list mismatch** (doc says Bash/Read/Write/Edit/Memory; managed block says 4) —

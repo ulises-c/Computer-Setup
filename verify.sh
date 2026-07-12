@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Unified read-only install verification (UNIFICATION.md Phase 3, issue #36).
+# Unified read-only install verification (docs/UNIFICATION.md Phase 3, issue #36).
 # Usage: bash verify.sh [--optional] [--work] [--personal] [--all]
 #                       [--platform <macos|ubuntu|arch|server>]
 #   --optional      also check low-priority optional packages

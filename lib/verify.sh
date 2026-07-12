@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared read-only verify engine for the unified root verify.sh (UNIFICATION.md
+# Shared read-only verify engine for the unified root verify.sh (docs/UNIFICATION.md
 # Phase 3, issue #36). Sourced by verify.sh after lib/core.sh — reuses
 # CORE_JQ_DEFS, PACKAGES_JSON, PLATFORM, INCLUDE_* and core_detect_platform.
 # Check semantics are ported from macOS/verify.sh and linux-desktop/verify.sh;

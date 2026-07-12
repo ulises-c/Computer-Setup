@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Unified setup entrypoint (UNIFICATION.md, issue #36).
+# Unified setup entrypoint (docs/UNIFICATION.md, issue #36).
 # Usage: bash setup.sh [--optional] [--work] [--personal] [--base] [--tags <csv>]
 #                      [--dry-run] [--platform <macos|ubuntu|arch|server>]
 #                      [--profile <desktop|server>]

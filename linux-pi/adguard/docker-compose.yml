@@ -1,5 +1,5 @@
 services:
-  # Secondary AdGuard Home on ollie-pi4 — a backup resolver mirroring the primary
+  # Secondary AdGuard Home on <pi-hostname> — a backup resolver mirroring the primary
   # (linux-server/adguard) via adguardhome-sync. DELIBERATELY host-networked and
   # independent of Tailscale: :53 must keep serving LAN clients even when the
   # tailnet or internet is down. The primary rides its sidecar's netns; that

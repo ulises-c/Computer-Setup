@@ -2,7 +2,7 @@
 
 Status: **implemented.** Shipped across [#37](https://github.com/ulises-c/Computer-Setup/pull/37)
 (Phases 1–7); see [CHANGELOG.md](CHANGELOG.md) for what landed and
-[CLAUDE.md](../CLAUDE.md) for the current architecture. This document is retained
+[AGENTS.md](../AGENTS.md) for the current architecture. This document is retained
 as the design record — the rationale for collapsing the three diverged stacks into
 one engine, the schema decisions, and the phased migration that got us there. The
 open questions below are resolved inline. Read it to understand *why* the layout is

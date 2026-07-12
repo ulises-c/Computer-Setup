@@ -4,7 +4,7 @@
 # apt/Tailscale/Docker hooks live in lib/core.sh. This module only carries the
 # server tier composition and the server-only "step two" infra: SSH/Tailscale
 # services, Docker dashboard stacks, cockpit, AdGuard.
-# (The Raspberry Pi — Debian proper, no snapd — is a future target; TODO.md.)
+# (The Raspberry Pi — Debian proper, no snapd — is a future target; docs/TODO.md.)
 
 platform_bootstrap() {
   apt_bootstrap

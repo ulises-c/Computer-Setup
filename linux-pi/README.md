@@ -1,4 +1,4 @@
-# linux-pi — Raspberry Pi (`ollie-pi4`) node
+# linux-pi — Raspberry Pi (`<pi-hostname>`) node
 
 Service stacks for the Raspberry Pi, deployed from this repo (clone + `docker
 compose up -d`). Mirrors the `linux-server/<service>/` layout: each folder is a

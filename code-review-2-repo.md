@@ -74,10 +74,11 @@ leaves the plaintext bundle persisting across reboots. Fix: staging dir under
 `/root` with 700, `PrivateTmp=yes`, or back up the paths directly without staging.
 
 ### 9. Privacy leaks: real username, home path, and server hostname committed — CONFIRMED
-`pi-backup.service:8` + `pi-backup-failure.service:8` (`/home/ollie/...` ExecStart),
-`linux-pi/homepage/config/services.yaml:45` (`ollie-server — primary home server`),
-`linux-pi/backup/LEARNINGS.md:50` (`` `ollie` ``), `linux-pi/README.md:118`
-(`192.168.1.1`). All contradict AGENTS.md's own privacy section in a public repo.
+`pi-backup.service:8` + `pi-backup-failure.service:8` (a personal absolute
+`ExecStart`), `linux-pi/homepage/config/services.yaml:45` (the real server
+hostname), `linux-pi/backup/LEARNINGS.md:50` (the real username), and
+`linux-pi/README.md:118` (the real router address). All contradict AGENTS.md's
+own privacy section in a public repo.
 The units also break on any other checkout path — ship them as templates rendered at
 install (the ups setup.sh sed pattern already exists in-repo).
 

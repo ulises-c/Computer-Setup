@@ -7,7 +7,7 @@ a non-standard port.
 
 ## Why subdomains require one Tailscale node per service
 
-A Tailscale node has exactly **one** MagicDNS name (`ollie-server.<tailnet>.ts.net`).
+A Tailscale node has exactly **one** MagicDNS name (`<server-hostname>.<tailnet>.ts.net`).
 You cannot mint arbitrary subdomains of it — `forgejo.<tailnet>.ts.net` only
 exists, resolves, and can get a TLS cert if there is a **node named `forgejo`**.
 
@@ -41,7 +41,7 @@ app generates correct HTTPS URLs.
 
 1. **Enable HTTPS** for the tailnet (DNS → "Enable HTTPS"), so `tailscale serve`
    can provision Let's Encrypt certs for `*.ts.net`.
-2. **MagicDNS** enabled (it is, since you resolve `ollie-server.<tailnet>.ts.net`).
+2. **MagicDNS** enabled (confirm `<server-hostname>.<tailnet>.ts.net` resolves).
 3. **An auth method for the sidecars — resolved: OAuth client + tag.** Reuses
    the existing Tailscale OAuth client (`linux-server/tailscale-proxy/.env`,
    originally created read-only for the device-status proxy):

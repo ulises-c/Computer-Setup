@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Post-unification smoke gate (UNIFICATION.md Phase 4): the root setup.sh must
+# Post-unification smoke gate (docs/UNIFICATION.md Phase 4): the root setup.sh must
 # complete a --dry-run on every platform and emit install actions. Replaces the
 # legacy-parity gates deleted in Phase 4 (the per-folder scripts are shims now,
 # so there is nothing left to compare against); catches engine and

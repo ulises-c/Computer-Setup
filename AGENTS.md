@@ -2,7 +2,7 @@
 
 Personal machine-provisioning repo: one unified installer for macOS, Linux
 desktop (Ubuntu/Arch), and an Ubuntu Server LTS home server, plus per-platform
-configs and docs. A Raspberry Pi (`ollie-pi4`, Debian) node lives in `linux-pi/`
+configs and docs. A Raspberry Pi (`<pi-hostname>`, Debian) node lives in `linux-pi/`
 — currently its own Docker Compose service stacks (a secondary AdGuard resolver);
 folding it into the `setup.sh` base provisioning is still tracked in docs/TODO.md.
 

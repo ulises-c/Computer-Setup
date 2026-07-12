@@ -2,7 +2,7 @@
     - pi dashboard:
         icon: mdi-raspberry-pi
         href: https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}/
-        description: ollie-pi4 — motioneye, cups, backup DNS
+        description: <pi-hostname> — motioneye, cups, backup DNS
         siteMonitor: https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}
 
 - Core:
