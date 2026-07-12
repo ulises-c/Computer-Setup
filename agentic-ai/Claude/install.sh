@@ -38,6 +38,12 @@ rm -f "$CLAUDE_DIR/rules"
 ln -sf "$REPO_DIR/rules" "$CLAUDE_DIR/rules"
 printf 'Linked: rules/\n'
 
+# Symlink docs directory (on-demand references pointed at by rules, e.g.
+# ~/.claude/docs/RAILGUARD.md — not @imported, read only when needed)
+rm -f "$CLAUDE_DIR/docs"
+ln -sf "$REPO_DIR/docs" "$CLAUDE_DIR/docs"
+printf 'Linked: docs/\n'
+
 # Symlink railguard policy (global: find_policy_file walks up from cwd)
 ln -sf "$REPO_DIR/railguard.yaml" "$HOME/.railguard.yaml"
 printf 'Linked: railguard.yaml → ~/.railguard.yaml\n'

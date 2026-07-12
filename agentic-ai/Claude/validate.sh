@@ -31,6 +31,7 @@ section "Symlinks"
 check_symlink "$CLAUDE_DIR/settings.json" "$REPO_DIR/settings.json"
 check_symlink "$CLAUDE_DIR/CLAUDE.md"     "$REPO_DIR/CLAUDE.md"
 check_symlink "$CLAUDE_DIR/rules"         "$REPO_DIR/rules"
+check_symlink "$CLAUDE_DIR/docs"          "$REPO_DIR/docs"
 check_symlink "$HOME/.railguard.yaml"     "$REPO_DIR/railguard.yaml"
 
 # ── Hooks ─────────────────────────────────────────────────────────────────────
