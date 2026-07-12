@@ -22,6 +22,13 @@ services:
       - /dev/net/tun:/dev/net/tun
     cap_add:
       - NET_ADMIN
+    # Static public resolvers for this sidecar only. Its OAuth bootstrap must
+    # resolve api.tailscale.com, but the only other DNS is AdGuard Home — which
+    # runs in THIS sidecar's netns. Without a fixed resolver, a cold start
+    # deadlocks (sidecar needs DNS → DNS needs the sidecar). See HTTPS.md.
+    dns:
+      - 9.9.9.10
+      - 1.1.1.1
     ports:
       - "53:53/tcp"   # DNS — must stay host-published for LAN clients
       - "53:53/udp"

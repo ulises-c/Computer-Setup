@@ -1,0 +1,11 @@
+# homepage runs host-networked on the Pi, so these reflect the Pi's own host.
+- resources:
+    cpu: true
+    memory: true
+    disk: /
+    cpuTemp: true
+    uptime: true
+- datetime:
+    format:
+      dateStyle: short
+      timeStyle: short

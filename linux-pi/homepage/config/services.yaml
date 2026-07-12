@@ -1,0 +1,46 @@
+- Pi Services:
+    - adguard (backup dns):
+        icon: si-adguard
+        href: https://{{HOMEPAGE_VAR_ADGUARD_PI_DOMAIN}}/
+        description: Backup DNS resolver
+        widget:
+          type: adguard
+          url: https://{{HOMEPAGE_VAR_ADGUARD_PI_DOMAIN}}
+          username: "{{HOMEPAGE_VAR_ADGUARD_USER}}"
+          password: "{{HOMEPAGE_VAR_ADGUARD_PASS}}"
+    - motioneye:
+        icon: mdi-cctv
+        href: https://{{HOMEPAGE_VAR_MOTIONEYE_DOMAIN}}/
+        description: Security cameras
+        siteMonitor: https://{{HOMEPAGE_VAR_MOTIONEYE_DOMAIN}}
+    - cups:
+        icon: mdi-printer
+        href: https://{{HOMEPAGE_VAR_CUPS_DOMAIN}}/
+        description: Print server
+        siteMonitor: https://{{HOMEPAGE_VAR_CUPS_DOMAIN}}
+    - backups:
+        icon: mdi-backup-restore
+        description: restic → main server (wd1tb + wd14tb)
+        server: my-docker
+        container: pi-backup-status
+        widget:
+          type: customapi
+          url: http://localhost:8099/backup-status.json
+          refreshInterval: 600000
+          mappings:
+            - field: status
+              label: Status
+              format: text
+            - field: last_run
+              label: Last run
+              format: relativeDate
+            - field: repo_size_bytes
+              label: Repo size
+              format: bytes
+
+- Main Server:
+    - server dashboard:
+        icon: mdi-server
+        href: https://{{HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN}}/
+        description: ollie-server — primary home server
+        siteMonitor: https://{{HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN}}
