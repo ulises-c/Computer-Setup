@@ -42,5 +42,5 @@
     - server dashboard:
         icon: mdi-server
         href: https://{{HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN}}/
-        description: <server-hostname> — primary home server
+        description: "{{HOMEPAGE_VAR_MAIN_HOSTNAME}} — primary home server"
         siteMonitor: https://{{HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN}}
