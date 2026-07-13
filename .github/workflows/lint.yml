@@ -65,6 +65,17 @@ jobs:
       - name: Root setup.sh dry-run on every platform
         run: bash scripts/dryrun-smoke.sh
 
+  shell-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test Pi backup failure status
+        run: bash linux-pi/backup/test-backup-failure.sh
+
+      - name: Test CUPS policy rendering
+        run: bash linux-pi/cups/test-setup.sh
+
   zsh-syntax:
     runs-on: ubuntu-latest
     steps:
