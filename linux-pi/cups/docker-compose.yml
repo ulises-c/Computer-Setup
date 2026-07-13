@@ -27,3 +27,11 @@ services:
       - 9.9.9.10
       - 1.1.1.1
     restart: unless-stopped
+
+# Pin the bridge subnet so the host cupsd.conf `Allow <cidr>` rule can never drift
+# if this network is recreated. Must match the subnet allowed in /etc/cups/cupsd.conf.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16
