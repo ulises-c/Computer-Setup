@@ -8,7 +8,7 @@ OnFailure=pi-backup-failure.service
 Type=oneshot
 ExecStart=/usr/bin/env bash @BACKUP_SCRIPT@
 Environment=HOME=/root
-RuntimeMaxSec=2h
+TimeoutStartSec=2h
 PrivateTmp=yes
 Nice=10
 IOSchedulingClass=idle
