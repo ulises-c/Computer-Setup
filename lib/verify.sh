@@ -265,19 +265,14 @@ verify_extras_server() {
     check "tailscaled service active" false
   fi
 
-  local nut_dir="${NUT_CONFIG_DIR:-/etc/nut}"
-  if grep -Eq '^[[:space:]]*MODE=standalone[[:space:]]*$' "$nut_dir/nut.conf" 2>/dev/null; then
-    check "NUT mode is standalone" true
-  else
-    check "NUT mode is standalone (run: sudo bash linux-server/ups/setup.sh)" false
-  fi
-
   local unit
   for unit in nut-driver@cyberpower.service nut-server.service nut-monitor.service; do
-    if command -v systemctl &>/dev/null && systemctl is-active --quiet "$unit" 2>/dev/null; then
-      check "$unit active" true
+    if command -v systemctl &>/dev/null \
+      && systemctl is-enabled --quiet "$unit" 2>/dev/null \
+      && systemctl is-active --quiet "$unit" 2>/dev/null; then
+      check "$unit enabled and active" true
     else
-      check "$unit active" false
+      check "$unit enabled and active" false
     fi
   done
 
