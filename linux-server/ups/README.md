@@ -1,7 +1,7 @@
 # UPS (NUT)
 
 [Network UPS Tools](https://networkupstools.org/) monitoring for the CyberPower
-PR1500LCDRT2U connected over USB (`usbhid-ups` driver, standalone mode). On
+CST135UC2 connected over USB (`usbhid-ups` driver, standalone mode). On
 power loss it pushes ntfy alerts; when the battery runs low it shuts the server
 down cleanly and tells the UPS to cut its outlets so everything restarts when
 wall power returns.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Deploys NUT (Network UPS Tools) config for the CyberPower PR1500LCDRT2U to
+# Deploys NUT (Network UPS Tools) config for the CyberPower CST135UC2 to
 # /etc/nut and enables the services. Idempotent — re-runs are no-ops unless a
 # config changed. Run as root: sudo bash setup.sh [--dry-run]
 

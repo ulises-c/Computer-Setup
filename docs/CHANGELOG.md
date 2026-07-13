@@ -9,7 +9,7 @@ in [UNIFICATION.md](UNIFICATION.md).
 ## 2026-07-11 — UPS monitoring, server ([#59](https://github.com/ulises-c/Computer-Setup/pull/59))
 
 ### Added
-- NUT support for the CyberPower PR1500LCDRT2U under `linux-server/ups/`.
+- NUT support for the CyberPower CST135UC2 under `linux-server/ups/`.
 - PeaNUT UPS dashboard, fronted by a Tailscale HTTPS sidecar
   (`https://peanut.<tailnet>.ts.net/`) with a homepage widget.
 

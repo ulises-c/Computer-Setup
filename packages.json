@@ -415,7 +415,7 @@
     "package_manager": { "server": "apt" },
     "priority": "medium",
     "optional": false,
-    "description": "Network UPS Tools — monitors the CyberPower PR1500LCDRT2U over USB (usbhid-ups, standalone); graceful shutdown on low battery; configure via linux-server/ups/setup.sh"
+    "description": "Network UPS Tools — monitors the CyberPower CST135UC2 over USB (usbhid-ups, standalone); graceful shutdown on low battery; configure via linux-server/ups/setup.sh"
   },
   {
     "name": "tailscale",

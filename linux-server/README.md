@@ -340,7 +340,7 @@ In NPM admin (`http://<server-ip>:81`):
     3. The status card on Homepage shows last-run time, status, and repo size; failures push to ntfy
 
 19. UPS | [NUT](https://networkupstools.org/) | [Docs](https://networkupstools.org/docs/man/)
-    1. Battery-backup monitoring for the CyberPower PR1500LCDRT2U over USB — ntfy alerts on power events, clean shutdown on low battery, auto-restart when wall power returns. Full runbook in [`ups/README.md`](ups/README.md)
+    1. Battery-backup monitoring for the CyberPower CST135UC2 over USB — ntfy alerts on power events, clean shutdown on low battery, auto-restart when wall power returns. Full runbook in [`ups/README.md`](ups/README.md)
     2. Deploy:
        ```sh
        sudo apt install nut   # or rerun the root setup.sh --profile server
