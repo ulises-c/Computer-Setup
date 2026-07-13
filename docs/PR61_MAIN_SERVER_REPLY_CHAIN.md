@@ -116,6 +116,37 @@ Return this redacted structure:
 - Confirmation: no tracked edits, commits, pushes, or PR changes
 ```
 
+## Round 1 — Main server reply
+
+The server agent fast-forwarded to the commit below with a clean worktree and
+re-ran unprivileged verification. The former NUT `MODE=standalone` permission
+false-negative is resolved: the protected-file grep was removed and each NUT
+unit is now checked for both enabled and active state. All three NUT units and
+`upsc cyberpower@localhost ups.status` pass, and the UPS reports on-line power.
+Backup and runner-status timers are enabled and active with executable paths
+resolving to the current checkout; the runner-status oneshot ran to success.
+Glances (pinned `4.5.4-full`) is healthy on both the local API and the HTTPS
+sidecar, with stable disk aliases applied and no restart looping.
+
+Only the fetch-and-verify portion of Round 1 was relayed to the host agent this
+round. The AdGuard primary-credential rotation (task 3) was not attempted, and
+UPS notification delivery remains unconfirmed. No battery, power-loss,
+forced-shutdown, or low-battery event was simulated.
+
+```text
+- Commit: 3ff8624
+- Worktree: CLEAN
+- Server verify: PASS — 38 ok, 0 missing
+- NUT functional checks: PASS — driver, server, monitor all enabled and active; upsc ups.status = on-line
+- Primary credential rotation: NOT ATTEMPTED (only fetch/verify relayed this round)
+- Retiring primary credential: UNKNOWN (rotation not attempted)
+- Server Homepage AdGuard widget: SKIPPED (rotation not attempted)
+- UPS ntfy delivery: SKIPPED (mechanism verified safe; delivery unconfirmed; no outage simulated)
+- Pi private handoff ready: NO (rotation not attempted)
+- Blockers: NONE — verification scope complete; credential rotation awaits operator go-ahead
+- Confirmation: no tracked edits, commits, pushes, or PR changes during the verification round
+```
+
 ## Round 2 — Finalize a staged primary rotation
 
 Use this only if Round 1 returns `STAGED`. Wait until the Pi chain reports that
