@@ -61,13 +61,16 @@ validate_url() {
   [[ -z "$value" || "$value" =~ ^https?://[^[:space:]]+$ ]] || die "$name must be an http(s) URL without whitespace"
 }
 
-validate_url NTFY_URL "${NTFY_URL:-}"
-validate_url KUMA_PUSH_URL "$KUMA_PUSH_URL"
-[[ "$NTFY_TOPIC" != *$'\n'* && "$NTFY_TOPIC" != *$'\r'* ]] || die "NTFY_TOPIC cannot contain a newline"
-[[ "${NTFY_TOKEN:-}" != *$'\n'* && "${NTFY_TOKEN:-}" != *$'\r'* ]] || die "NTFY_TOKEN cannot contain a newline"
+notification_config_valid() {
+  [[ -z "${NTFY_URL:-}" || "${NTFY_URL:-}" =~ ^https?://[^[:space:]]+$ ]] \
+    && [[ -z "$KUMA_PUSH_URL" || "$KUMA_PUSH_URL" =~ ^https?://[^[:space:]]+$ ]] \
+    && [[ "$NTFY_TOPIC" != *$'\n'* && "$NTFY_TOPIC" != *$'\r'* ]] \
+    && [[ "${NTFY_TOKEN:-}" != *$'\n'* && "${NTFY_TOKEN:-}" != *$'\r'* ]]
+}
 
 write_status() {
   local st="$1"
+  local notifier_pending="${2:-false}"
   mkdir -p "$(dirname "$STATUS_JSON")"
   jq -n \
     --arg status "$st" \
@@ -75,14 +78,32 @@ write_status() {
     --arg snapshot "${SNAPSHOT_ID:-}" \
     --argjson size "${SIZE_BYTES:-0}" \
     --argjson dur "${DURATION:-0}" \
-    '{status:$status, last_run:$last_run, snapshot:$snapshot, repo_size_bytes:$size, duration_seconds:$dur}' \
+    --argjson notifier_pending "$notifier_pending" \
+    '{status:$status, last_run:$last_run, snapshot:$snapshot, repo_size_bytes:$size, duration_seconds:$dur, notifier_pending:$notifier_pending}' \
     >"$STATUS_JSON"
 }
 
 # systemd OnFailure owns alerts so a failed run produces exactly one notification.
 if [[ "${1:-}" == "notify-failure" ]]; then
-  notify "Pi backup FAILED" urgent rotating_light "systemd OnFailure — see: journalctl -u pi-backup.service"
-  kuma_push down "systemd OnFailure — see journalctl -u pi-backup.service"
+  if command -v jq >/dev/null; then
+    if jq -e '.status == "failed" and .notifier_pending == true' "$STATUS_JSON" >/dev/null 2>&1; then
+      status_tmp="${STATUS_JSON}.tmp.$$"
+      if jq '.notifier_pending = false' "$STATUS_JSON" >"$status_tmp" \
+        && mv "$status_tmp" "$STATUS_JSON"; then
+        :
+      else
+        rm -f "$status_tmp"
+      fi
+    else
+      write_status failed || true
+    fi
+  fi
+  if notification_config_valid; then
+    notify "Pi backup FAILED" urgent rotating_light "systemd OnFailure — see: journalctl -u pi-backup.service"
+    kuma_push down "systemd OnFailure — see journalctl -u pi-backup.service"
+  else
+    printf 'warning: invalid notification configuration; failure status recorded without sending alerts\n' >&2
+  fi
   exit 0
 fi
 
@@ -90,17 +111,22 @@ STATUS=failed
 finish() {
   if [[ "$STATUS" != success ]]; then
     DURATION=$((SECONDS - START))
-    command -v jq >/dev/null && write_status failed || true
+    command -v jq >/dev/null && write_status failed true || true
   fi
   [[ "$STAGING_READY" == true ]] && rm -rf "$STAGING_DIR"
 }
 trap finish EXIT
 
 # --- guards -----------------------------------------------------------------
+command -v jq >/dev/null || die "jq not installed (apt install jq)"
+write_status running
+validate_url NTFY_URL "${NTFY_URL:-}"
+validate_url KUMA_PUSH_URL "$KUMA_PUSH_URL"
+[[ "$NTFY_TOPIC" != *$'\n'* && "$NTFY_TOPIC" != *$'\r'* ]] || die "NTFY_TOPIC cannot contain a newline"
+[[ "${NTFY_TOKEN:-}" != *$'\n'* && "${NTFY_TOKEN:-}" != *$'\r'* ]] || die "NTFY_TOKEN cannot contain a newline"
 [[ -n "${RESTIC_REPOSITORY:-}" ]] || die "set RESTIC_REPOSITORY in .env"
 [[ -n "${RESTIC_PASSWORD:-}" ]] || die "set RESTIC_PASSWORD in .env"
 command -v restic >/dev/null || die "restic not installed (apt install restic)"
-command -v jq >/dev/null || die "jq not installed (apt install jq)"
 export RESTIC_REPOSITORY RESTIC_PASSWORD
 export RESTIC_FROM_PASSWORD="$RESTIC_PASSWORD"
 

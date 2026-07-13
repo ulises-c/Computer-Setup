@@ -37,10 +37,12 @@ Restic's SFTP backend uses the system `ssh` command and honors SSH configuration
 Because the timer runs with `HOME=/root`, configure its host, identity, and known
 host under `/root/.ssh/`.
 
-The main script's EXIT trap records failure details and removes staging. Systemd's
-`OnFailure` unit sends the single external ntfy/Kuma alert without rewriting that
-status. The backup unit has a two-hour runtime limit so a hung SFTP operation cannot
-block every later timer run.
+The main script records a current-run marker; its EXIT trap writes detailed
+failure status and removes staging. Systemd's `OnFailure` unit preserves and
+acknowledges current detail, or replaces a missing, running, success, or stale
+failure record before sending the single external ntfy/Kuma alert. The backup
+unit has a two-hour runtime limit so a hung SFTP operation cannot block every
+later timer run.
 
 ## Prerequisites
 
