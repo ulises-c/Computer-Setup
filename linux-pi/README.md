@@ -60,34 +60,40 @@ the docker-bridge→host path. Diagnose on the Pi:
 ```bash
 docker exec <svc>-ts tailscale serve status
 docker exec <svc>-ts sh -c 'getent hosts host.docker.internal; \
-  wget -qO- -T5 http://host.docker.internal:<port>/ >/dev/null && echo OK || echo UNREACHABLE'
+  wget -qO- -T5 --header="Host: <approved-service-alias>" \
+  http://host.docker.internal:<port>/ >/dev/null && echo OK || echo UNREACHABLE'
 docker version --format '{{.Server.Version}}'
 sudo ufw status
 ```
 
 Fix it once (allow bridge→host / enable `host-gateway`) and every sidecar works.
 
-For CUPS, replace `Listen localhost:631` with `Port 631` in `/etc/cups/cupsd.conf`,
-add `Allow from <docker-bridge-cidr>` to the existing `<Location />`,
-`<Location /admin>`, and `<Location /admin/conf>` blocks without removing their
-authentication rules, and set `ServerAlias cups-pi.<tailnet>.ts.net`. Find the bridge
-CIDR after creating the sidecar with:
+For CUPS, use the reviewed policy installer. Family LAN/WLAN clients are allowed
+to print through the root location; administrative locations remain limited to
+localhost and the pinned sidecar subnet. Put the real aliases and canonical
+private LAN subnet only in the gitignored `.env`:
 
 ```bash
 cd linux-pi/cups
-docker compose create
-network="$(docker inspect cups-ts --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}')"
-docker network inspect "$network" --format '{{(index .IPAM.Config 0).Subnet}}'
+cp .env.example .env
+# edit .env privately
+chmod 600 .env
+bash test-setup.sh
+bash setup.sh --dry-run
+sudo bash setup.sh --prepare-review
 ```
 
-Do not use `Allow all` or `ServerAlias *`. On socket-activated Debian installs, run:
+Inspect the root-only candidate and diff from a separate trusted terminal as
+described in `cups/README.md`. After approving both printed hashes, apply exactly
+that candidate:
 
 ```bash
-sudo systemctl disable --now cups.socket
-sudo systemctl enable --now cups.service
-sudo systemctl restart cups.service
-docker exec cups-ts wget -qO- -T5 http://host.docker.internal:631/ >/dev/null
+sudo bash setup.sh --apply-reviewed <source-sha256> <candidate-sha256>
 ```
+
+The installer rejects broad access rules, validates with `cupsd`, handles
+socket activation, rolls back on restart or local-probe failure, and never emits
+the private aliases, CIDRs, candidate, or diff during its normal output.
 
 ### First HTTPS request provisions a cert (may hang once)
 
@@ -147,6 +153,10 @@ Server and is not supported on the Pi yet.
    `https://homepage-pi.<tailnet>.ts.net`, and the main server's homepage shows a
    "Secondary Server (Pi)" card linking to it. (All Pi HTTPS front doors depend on
    the sidecar→host hop above.)
+
+   When upgrading an existing checkout, add new keys from `.env.example` to the
+   gitignored Homepage `.env`; the main-server card requires
+   `HOMEPAGE_VAR_MAIN_HOSTNAME`.
 
 ## Verification
 

@@ -70,6 +70,7 @@ Start services in this order. Most just need `docker compose up -d`; exceptions 
 ```sh
 # Homepage — update .env with your server details first (see post-install.md)
 cd linux-server/homepage && cp .env.example .env
+# Existing .env: add new .env.example keys, including HOMEPAGE_VAR_PI_HOSTNAME.
 # edit .env, then:
 docker compose up -d
 # Access at http://<server-ip>:3000 (or https://<tailscale-hostname> after HTTPS setup)
@@ -334,8 +335,8 @@ In NPM admin (`http://<server-ip>:81`):
        cp .env.example .env   # set RESTIC_PASSWORD (save it in Bitwarden!) + ntfy
        sudo touch /mnt/wd1tb/.backup-target-ok
        docker compose up -d   # status-card server (loopback :8099)
-       sudo cp backup.service backup.timer backup-failure.service /etc/systemd/system/
-       sudo systemctl daemon-reload && sudo systemctl enable --now backup.timer
+       bash setup.sh --dry-run
+       sudo bash setup.sh
        ```
     3. The status card on Homepage shows last-run time, status, and repo size; failures push to ntfy
 

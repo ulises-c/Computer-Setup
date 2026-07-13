@@ -30,8 +30,8 @@ workstation agent, which updates this document and prepares the next round.
 3. Return the redacted result so the main server can invalidate an old primary
    credential if it used a staged migration.
 4. Keep the exact CUPS host-policy candidate and diff in root-only files for the
-   human to inspect from a separate non-LLM terminal, and return a separately
-   redacted copy here. Apply it only after the human reports approval.
+   human to inspect from a separate non-LLM terminal. Apply it only after the
+   human reports approval of both hashes printed by the prepare step.
 
 ## Round 0 — Pi report received
 
@@ -76,6 +76,9 @@ Tasks:
    - Confirm `pi-backup.timer` is enabled and active.
    - Use `systemctl show pi-backup.service -p Type -p TimeoutStartUSec` to confirm
      the oneshot start timeout is two hours.
+   - Run `bash linux-pi/backup/test-backup-failure.sh` and confirm the failure
+     notifier replaces missing, running, success, and stale failure records
+     while preserving current detailed failure data.
    - If the same primary/secondary backup preconditions remain healthy, run one
      backup and report only PASS/FAIL. Do not return snapshot IDs or repository
      locations.
@@ -83,6 +86,7 @@ Tasks:
 3. Correct the local Homepage identities in `linux-pi/homepage/.env`:
    - Set `HOMEPAGE_VAR_PI_HOSTNAME` to the current short hostname.
    - Set `HOMEPAGE_VAR_PI_LAN_IP` to the current primary LAN address.
+   - Set `HOMEPAGE_VAR_MAIN_HOSTNAME` to the main server's short display name.
    - Keep both real values local and never print them.
    - Recreate Homepage and verify the short hostname, `.local` hostname, current
      LAN address, and configured tailnet hostname are accepted while an unrelated
@@ -110,30 +114,33 @@ Tasks:
    - Confirm the old replica credential is rejected. Never disclose old
      or new values.
 
-5. Prepare, but do not yet apply, a minimal CUPS hardening diff:
-   - Determine the exact current Compose subnet and exact CUPS tailnet hostname
-     locally.
-   - Back up `/etc/cups/cupsd.conf` to a root-only local file.
-   - Preserve existing authentication directives.
-   - The proposal must use `Port 631`, replace every applicable `Allow all` with
-     localhost plus only the exact sidecar subnet in the existing `<Location />`,
-     `<Location /admin>`, and `<Location /admin/conf>` blocks, and replace
-     `ServerAlias *` with the exact CUPS tailnet hostname.
-   - Determine whether `cups.socket` must be disabled so `cups.service` owns the
-     configured listener.
-   - Never print the exact subnet, hostname, candidate, or diff in an LLM-visible
-     terminal. Keep the backup and candidate root-only. If inserting the real
-     values would expose them in a tool call or output, stop and ask the human to
-     edit the candidate with `sudoedit` from a separate non-LLM terminal.
-   - Tell the human to inspect the exact root-only diff from that separate
-     terminal. The human returns only `APPROVED` or `REJECTED` to this chain.
-   - Return a separate redacted diff using `<cups-sidecar-subnet>` and
-     `<cups-tailnet-hostname>` here. Stop before changing the live CUPS file.
+5. Prepare, but do not yet apply, the reviewed CUPS policy:
+   - Privately update `linux-pi/cups/.env` from `.env.example`. Set the explicit
+     LAN/Bonjour and tailnet aliases, the exact pinned sidecar CIDR, and the
+     canonical private family LAN/WLAN CIDR. Set the file to mode `0600`. Never
+     print these values.
+   - Run `bash linux-pi/cups/test-setup.sh`, followed by
+     `bash linux-pi/cups/setup.sh --dry-run`. The dry-run must report validation
+     without showing aliases, CIDRs, or a diff.
+   - Run `sudo bash linux-pi/cups/setup.sh --prepare-review`. Record the printed
+     source and candidate SHA-256 hashes; hashes are safe to return.
+   - Do not print or read the protected candidate or diff through an LLM-visible
+     tool. Tell the human to inspect both root-only artifacts from a separate
+     trusted terminal as documented in `linux-pi/cups/README.md`.
+   - The intended root print block allows localhost, the exact sidecar subnet,
+     and the exact family LAN/WLAN subnet. Every admin block allows only
+     localhost and the sidecar subnet and requires the exact system-user
+     authentication policy. The candidate must contain exactly one `Port 631`,
+     preserve Unix-socket listeners, and contain no broad `Allow` rule or
+     `ServerAlias *`.
+   - Stop before changing the live CUPS file. The human returns `APPROVED` or
+     `REJECTED` with the two hashes through this chain.
 
 Return this redacted structure:
 - Commit: <hash>
 - Worktree: CLEAN or BLOCKED
 - Backup timer timeout: PASS/FAIL
+- Backup failure-status regression: PASS/FAIL
 - Backup run: PASS/FAIL/SKIPPED
 - Homepage Host-header matrix: PASS/FAIL per identity class
 - Primary credential consumer update: COMPLETE/BLOCKED
@@ -141,24 +148,34 @@ Return this redacted structure:
 - Retiring replica credential: REJECTED/STILL ACTIVE/UNKNOWN
 - HTTPS-origin sync: PASS/FAIL/SKIPPED
 - Pi Homepage AdGuard widget: PASS/FAIL/SKIPPED
+- CUPS renderer regression and redacted dry-run: PASS/FAIL
 - CUPS root-only candidate ready for separate human review: YES/NO
-- CUPS proposed diff: redacted unified diff
-- cups.socket action needed: YES/NO
+- CUPS source hash: <sha256 or unavailable>
+- CUPS candidate hash: <sha256 or unavailable>
 - Blockers: redacted description or NONE
 - Confirmation: no tracked edits, commits, pushes, or PR changes
 ```
 
 ## Round 2 — Apply the approved CUPS policy
 
-The human must review the exact root-only diff from a separate non-LLM terminal,
-not merely the redacted transcript copy, and return `APPROVED` before sending
-this message.
+The human must review the exact root-only candidate and diff from a separate
+non-LLM terminal and return `APPROVED` with the two hashes before sending this
+message. Replace both placeholders with those exact hashes.
 
 ```text
-The human returned `APPROVED` after inspecting the exact root-only CUPS diff in a
-separate non-LLM terminal. Apply only that candidate to `/etc/cups/cupsd.conf`;
-do not broaden the subnet, add other aliases, or remove authentication
-directives.
+The human returned `APPROVED` after inspecting the exact root-only CUPS
+candidate and diff in a separate non-LLM terminal.
+
+Approved source hash: <source-sha256>
+Approved candidate hash: <candidate-sha256>
+
+Require both placeholders to be replaced by 64-character lowercase hashes, then
+run:
+
+`sudo bash linux-pi/cups/setup.sh --apply-reviewed <source-sha256> <candidate-sha256>`
+
+Do not manually edit or substitute another candidate. The script must reject a
+changed source, candidate, manifest, or unsafe artifact.
 
 Before restart, run the available CUPS configuration syntax check. If it fails,
 restore the root-only backup and stop. If valid, handle `cups.socket` exactly as
@@ -168,12 +185,15 @@ identified, restart CUPS, and verify:
 3. the tailnet HTTPS endpoint returns a successful response with certificate
    verification enabled;
 4. no `Allow all` or `ServerAlias *` remains;
-5. localhost plus only the exact sidecar subnet are allowed in the intended
-   Location blocks;
-6. a request from an available LAN peer outside the allowed Compose subnet is
-   denied; if no such peer is available, mark this check SKIPPED rather than
-   PASS;
-7. the repository worktree remains clean.
+5. localhost, the exact sidecar subnet, and the exact family LAN/WLAN subnet are
+   allowed for root printing;
+6. every admin block allows only localhost and the sidecar subnet and requires
+   the exact system-user authentication policy;
+7. a family device on LAN/WLAN can discover the printer and print a test page;
+8. an ordinary family LAN/WLAN client cannot access administrative routes;
+9. a client outside all approved networks is denied; if none is available, mark
+   this check SKIPPED rather than PASS;
+10. the repository worktree remains clean.
 
 Return PASS/FAIL for each check, whether rollback was required, and redacted
 blockers. Do not return the real subnet, hostname, or configuration file.
@@ -187,5 +207,6 @@ blockers. Do not return the real subnet, hostname, or configuration file.
 - The sync origin uses tailnet HTTPS with the replacement primary credential.
 - The replica and Pi Homepage use a replacement replica credential, and the old
   replica credential is rejected.
-- CUPS retains working sidecar and HTTPS access without `Allow all` or
+- CUPS supports family LAN/WLAN printing plus sidecar HTTPS access, keeps
+  administration off the family LAN, and contains no `Allow all` or
   `ServerAlias *`.

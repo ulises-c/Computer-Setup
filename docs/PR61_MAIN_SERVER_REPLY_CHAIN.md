@@ -147,9 +147,63 @@ forced-shutdown, or low-battery event was simulated.
 - Confirmation: no tracked edits, commits, pushes, or PR changes during the verification round
 ```
 
-## Round 2 — Finalize a staged primary rotation
+## Round 2 — Complete the deferred primary credential rotation
 
-Use this only if Round 1 returns `STAGED`. Wait until the Pi chain reports that
+After the workstation pushes, replace `<expected-commit>` with the exact branch
+HEAD. Send this round now; it does not require a prior `STAGED` result.
+
+```text
+Continue PR #61 remediation on the main Ubuntu server.
+
+Expected commit: <expected-commit>
+
+Safety and privacy:
+- Start with a clean-worktree check, safely fast-forward
+  `docs/agents-md-master`, and require HEAD to equal `<expected-commit>` exactly.
+- Do not edit tracked files, commit, push, reset, clean, stash, or modify the PR.
+- Never print credentials, password hashes, `.env` contents, configuration
+  backups, real hostnames/IPs/tailnet names, private URLs, or exact
+  secret-bearing diffs.
+- The human creates, stores, and enters replacement credentials privately; never
+  read them back into the transcript.
+
+Complete the primary AdGuard credential replacement that was skipped previously:
+
+1. Inventory local consumers by variable name only.
+2. Create a root-only local AdGuard recovery backup and identify a tested
+   host-local recovery command without printing either.
+3. Have the human privately enter the replacement credential using AdGuard's
+   supported credential-change path.
+4. Test the replacement directly against the local login/API. If it fails,
+   recover immediately and stop.
+5. After direct authentication succeeds, privately update
+   `linux-server/homepage/.env` keys `HOMEPAGE_VAR_ADGUARD_USER` and
+   `HOMEPAGE_VAR_ADGUARD_PASS`, recreate only Homepage as needed, and verify its
+   AdGuard widget.
+6. Reject the old credential now unless AdGuard requires a staged migration. If
+   it must remain briefly active, report `STAGED` and leave it only until the Pi
+   confirms HTTPS-origin sync with the replacement.
+7. Tell the human privately to enter the replacement primary credential on the
+   Pi as `ORIGIN_USERNAME` and `ORIGIN_PASSWORD`; do not transmit it yourself.
+8. Optionally send one ordinary UPS test notification without simulating any
+   power, battery, or shutdown event.
+
+Return only:
+- Commit: <hash>
+- Worktree: CLEAN/BLOCKED
+- Primary credential rotation: COMPLETE/STAGED/BLOCKED
+- Replacement direct authentication: PASS/FAIL
+- Retiring credential: REJECTED/STILL ACTIVE/UNKNOWN
+- Server Homepage AdGuard widget: PASS/FAIL/SKIPPED
+- Pi private handoff ready: YES/NO
+- UPS ntfy delivery: PASS/FAIL/SKIPPED
+- Blockers: redacted description or NONE
+- Confirmation: no tracked edits, commits, pushes, or PR changes
+```
+
+## Round 3 — Finalize a staged primary rotation
+
+Use this only if Round 2 returns `STAGED`. Wait until the Pi chain reports that
 the HTTPS origin authenticates and a sync succeeds with the replacement primary
 credential.
 
