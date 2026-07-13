@@ -11,10 +11,23 @@ trap 'exit 2' ERR
 
 git rev-parse --git-dir &>/dev/null || exit 0
 
+# .driftcheckignore at the repo root: one glob per line, matched against
+# the git-tracked path; blank lines and # comments skipped.
+ignore_patterns=()
+if [[ -f .driftcheckignore ]]; then
+  while IFS= read -r line; do
+    [[ -z "$line" || "$line" == '#'* ]] && continue
+    ignore_patterns+=("$line")
+  done < .driftcheckignore
+fi
+
 issues=()
 
 while IFS= read -r f; do
   [[ -f "$f" ]] || continue
+  for pat in "${ignore_patterns[@]}"; do
+    [[ "$f" == $pat ]] && continue 2
+  done
   read -r first_line < "$f" || first_line=""
   has_shebang=false; is_exec=false
   [[ "$first_line" == '#!'* ]] && has_shebang=true
