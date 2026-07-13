@@ -1,104 +1,110 @@
 # cups/ — Pi print server + HTTPS front door
 
-The Pi hosts a USB printer shared through CUPS (`cupsd` on the host, `:631`).
-This directory adds a **Tailscale sidecar** (`cups-ts`) that publishes an HTTPS
-front door at `https://cups-pi.<tailnet>.ts.net`, and a **`setup.sh`** that
-applies the host CUPS access policy from a gitignored `.env`.
+The Pi hosts a USB printer through host CUPS on port 631. Family devices print
+directly over the home LAN/WLAN, while the `cups-ts` sidecar provides the
+operator's remote HTTPS route over Tailscale.
 
-## Who prints, and how
+## Access policy
 
-There are two classes of client, and the config has to serve both:
+`setup.sh` renders three exact access blocks in `/etc/cups/cupsd.conf`:
 
-1. **Family devices on the home Wi‑Fi.** They are *not* on the tailnet. They
-   discover the printer over Bonjour/mDNS and print directly to the Pi on the
-   LAN (`:631`), addressing it by IP or by `<hostname>.local`.
-2. **The operator's own devices, remote.** They reach the printer through the
-   Tailscale sidecar: `:443` HTTPS → `host.docker.internal:631`, encrypted over
-   WireGuard, no LAN exposure required.
+- `<Location />` permits `localhost`, the pinned sidecar subnet, and the home
+  LAN/WLAN subnet. This supports family printing and the HTTPS sidecar.
+- `<Location /admin>` and every descendant admin location permit only
+  `localhost` and the sidecar subnet. Each is normalized to `AuthType Default`
+  with `Require user @SYSTEM`.
+- Sources outside those ranges are denied. The renderer rejects wildcard
+  aliases, open networks, non-private networks, non-canonical CIDRs, malformed
+  hostnames, duplicate aliases, and control-character injection.
 
-Because of (1), a "tailnet-only" lockdown is wrong here — it would silently stop
-the whole family from printing. The policy therefore allows the **home LAN** as
-well as the sidecar, while still refusing everything else.
+The renderer replaces all TCP `Listen` and `Port` directives with exactly one
+`Port 631`, while preserving Unix-socket listeners such as
+`Listen /run/cups/cups.sock`. It also replaces every active `ServerAlias` with
+the explicit hostnames from `.env`. `ServerAlias *`, `Allow all`, and
+internet-wide CIDRs are never accepted.
 
-## Why the host CUPS config is hardened (and not left at defaults)
+## Private configuration
 
-CUPS out of the box (and a drifted config) commonly ends up with two dangerous
-lines:
+Copy `.env.example` to the gitignored `.env` and set:
 
-- **`ServerAlias *`** — disables HTTP `Host` header validation. Any `Host` is
-  accepted, which opens a **DNS‑rebinding** path: a malicious web page the user
-  visits can script requests to the local print server. We replace `*` with the
-  explicit names the server legitimately answers to.
-- **`Allow all`** on the root `<Location />` — lets *any* host that can reach
-  `:631` browse the UI and submit jobs. We replace it with an explicit allow
-  list: `localhost`, the sidecar's Docker subnet, and the home LAN subnet.
+- `CUPS_SERVER_ALIAS`: lowercase canonical hostnames separated by single
+  spaces, including the exact Tailscale name and the LAN/Bonjour names.
+- `CUPS_SIDECAR_SUBNET`: the bridge CIDR pinned in `docker-compose.yml`. The
+  setup script requires the exact pin.
+- `CUPS_LAN_SUBNET`: the canonical private CIDR used by family LAN/WLAN
+  clients. It is allowed for printing but not administration.
 
-Net access after hardening: **localhost + home LAN + the Tailscale sidecar** —
-appropriate for a shared home printer, and never `*` / `all`. The Pi is not
-port‑forwarded, so it is not reachable from the internet regardless.
+Set `.env` to mode `0600`; the installer refuses to source a more broadly
+readable file because it also contains the sidecar credential.
 
-The `<Location /admin*>` blocks keep their `Require user @SYSTEM` authentication
-untouched — administering printers still needs a login.
+If upgrading from the old policy, replace `CUPS_ALLOW_FROM` with the two subnet
+variables above. No private hostname, tailnet name, or LAN address belongs in a
+tracked file or LLM transcript.
 
-## Why the values live in `.env`
+## Reviewed deployment
 
-This repo is public. The home LAN subnet, the Pi's hostname, and the tailnet
-name are all identifying, so they must not be committed. They live in a
-gitignored `.env`; `setup.sh` renders them into `/etc/cups/cupsd.conf`. The
-tracked files (`setup.sh`, `.env.example`, this README) carry only placeholders.
-
-- `CUPS_SERVER_ALIAS` → the `ServerAlias` line (tailnet name + `<hostname>` +
-  `<hostname>.local`).
-- `CUPS_ALLOW_FROM` → the `Allow` lines on the root `<Location />` (`localhost` +
-  sidecar subnet + LAN subnet).
-
-`setup.sh` refuses to write `ServerAlias *` or `Allow all`, so the safe posture
-can't be re-introduced by accident.
-
-## The sidecar subnet pin
-
-`CUPS_ALLOW_FROM` includes the `cups-ts` sidecar's Docker bridge subnet
-(`172.21.0.0/16`). Docker assigns bridge subnets dynamically, so that subnet is
-**pinned** in `docker-compose.yml` (`networks.default.ipam.config.subnet`). If it
-weren't, recreating the network could hand out a different subnet and silently
-break the HTTPS front door (the sidecar would no longer match the `Allow` rule).
-If you ever change the pin, update `CUPS_ALLOW_FROM` and re-run `setup.sh`.
-
-## Usage
+The ordinary dry-run is intentionally redacted:
 
 ```bash
 cd linux-pi/cups
-cp .env.example .env        # then fill in real values (see below)
-
-# find the sidecar's actual bridge subnet if you need to confirm it:
-docker compose create
-net="$(docker inspect cups-ts --format '{{range $n,$_ := .NetworkSettings.Networks}}{{$n}}{{end}}')"
-docker network inspect "$net" --format '{{(index .IPAM.Config 0).Subnet}}'
-
-bash setup.sh --dry-run     # show the exact cupsd.conf diff + validate, no writes
-sudo bash setup.sh          # apply, cupsd -t validate, restart cups.service
+chmod 600 .env
+bash setup.sh --dry-run
 ```
 
-`setup.sh` is idempotent — re-running only rewrites the `ServerAlias` line and
-the root `<Location />` allow rules to match `.env`, backs up the previous
-`cupsd.conf` to `cupsd.conf.bak.<epoch>`, and leaves everything else alone.
+It renders and runs `cupsd -t`, then reports only whether a change is pending.
+It never prints the rendered configuration, aliases, or CIDRs.
 
-### Note on macOS "Hold for authentication"
-
-If a Mac shows a job stuck on **"Hold for authentication"**, it usually means the
-server refused the request (a `403`/`400` from a too-tight allow list or
-`ServerAlias`), which macOS surfaces as an auth prompt even when no auth is
-actually required. Fix the policy (add the client's subnet / the Bonjour name),
-then **resume or re-print** the held job — macOS does not always retry it
-automatically.
-
-### Debian socket activation
-
-On socket‑activated installs, `cups.socket` can own `:631`. If config changes
-don't take effect, force the service to own the port:
+Prepare the exact candidate and diff as root-only artifacts:
 
 ```bash
-sudo systemctl disable --now cups.socket
-sudo systemctl enable --now cups.service
-sudo systemctl restart cups.service
+sudo bash setup.sh --prepare-review
 ```
+
+The command prints source and candidate hashes but no private values. From a
+separate trusted human terminal—not an LLM-controlled terminal—inspect:
+
+```bash
+sudo less /var/lib/cups-policy-review/pending.diff
+sudo less /var/lib/cups-policy-review/candidate.conf
+```
+
+Confirm that the print block contains localhost, the exact pinned sidecar
+subnet, and the exact family LAN/WLAN subnet; every admin block must contain
+only localhost and the sidecar subnet plus the exact system-user authentication
+policy. Confirm that no broad access rule survives.
+
+Apply exactly what was reviewed by passing both hashes printed by the prepare
+step:
+
+```bash
+sudo bash setup.sh --apply-reviewed <source-sha256> <candidate-sha256>
+```
+
+The apply step refuses stale or altered artifacts, validates the candidate
+again, backs up the current configuration, disables `cups.socket`, enables and
+restarts `cups.service`, and probes CUPS locally with a valid Host header. A
+socket, restart, or probe failure restores the previous configuration. Review
+artifacts use root ownership with directory mode `0700` and file mode `0600`;
+they are removed after a successful apply.
+
+## Live verification
+
+After applying, verify without printing private values into an LLM transcript:
+
+1. `cups.service` is enabled and active, and `cups.socket` is disabled.
+2. A family device on LAN/WLAN can discover and print a test page.
+3. An HTTP request from the `cups-ts` container to the host CUPS service works.
+4. The sidecar HTTPS endpoint works from an authorized tailnet client.
+5. A client outside both approved networks is denied.
+6. Administrative routes require authentication and are unavailable to an
+   ordinary LAN-only client.
+
+The sidecar bridge subnet is pinned in `docker-compose.yml`. If that pin ever
+changes, update `.env`, prepare a new review, and apply the newly reviewed
+candidate.
+
+### macOS “Hold for authentication”
+
+A Mac can display “Hold for authentication” when CUPS actually rejected the
+request because of a Host-header or source-network mismatch. Correct the policy
+and resume or recreate the job; macOS does not always retry it automatically.
