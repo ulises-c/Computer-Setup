@@ -23,7 +23,7 @@ Run a subset with `--only` / `--skip` (both scripts, comma-separated):
 | --- | --- | --- |
 | Geekbench 6 | CPU single/multi-core, GPU OpenCL + Vulkan compute | Free tier **requires internet and uploads every result** to browser.geekbench.com; the result URL is captured in the log. Offline/JSON export needs a Pro license. |
 | Blender Open Data | CPU and GPU render throughput (samples/minute) | Scenes: monster, junkshop, classroom. Fully headless, JSON output. |
-| Unigine Superposition | GPU graphics (OpenGL), 1080p medium windowed | Needs a desktop session (`DISPLAY`/`WAYLAND_DISPLAY`) — skipped over bare SSH. Free edition has no official batch mode; the run script drives the engine binary directly. |
+| Unigine Superposition | GPU graphics (OpenGL), 1080p medium fullscreen | Needs a desktop session (`DISPLAY`/`WAYLAND_DISPLAY`) — skipped over bare SSH. Fullscreen so the render is a true 1920×1080 on any display (windowed mode clamps to the usable desktop area and silently degrades the score); it takes over the screen for the duration. Free edition has no official batch mode; the run script drives the engine binary directly. |
 
 ## Manual benchmarks
 

@@ -162,11 +162,11 @@ run_superposition() {
     -engine_config ../data/superposition/unigine.cfg
     -system_script superposition/system_script.cpp
     -sound_app null -video_app opengl
-    -video_mode -1 -video_width 1920 -video_height 1080 -video_fullscreen 0
+    -video_mode -1 -video_width 1920 -video_height 1080 -video_fullscreen 1
     -shaders_quality 1 -textures_quality 1
     -console_command "config_readonly 1 && world_load superposition/superposition"
     -mode 2 -preset 0)
-  log_step "Unigine Superposition — 1080p medium, windowed"
+  log_step "Unigine Superposition — 1080p medium, fullscreen"
   if [[ "$DRY_RUN" == true ]]; then
     printf '  [dry-run] cd %s/bin && ./superposition %s\n' "$dir" "${args[*]}"
     return 0
