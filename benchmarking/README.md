@@ -8,6 +8,15 @@ machines. Two commands: install, run.
 ./run.sh       # runs everything, writes benchmarking/results/<host>-<timestamp>/
 ```
 
+Run a subset with `--only` / `--skip` (both scripts, comma-separated):
+
+```bash
+./run.sh --only superposition          # just one benchmark
+./run.sh --only geekbench,blender      # a subset
+./run.sh --skip superposition          # everything except one
+./install.sh --only geekbench          # install a single tool
+```
+
 ## What runs automatically
 
 | Benchmark | Measures | Notes |
@@ -27,11 +36,6 @@ Documented only — no automation is possible or licensed:
   <https://gwpg.spec.org/benchmarks/benchmark/specviewperf-2020v3-0-linux-edition/>.
   ~80 GB disk; viewsets install via its interactive utility; needs a large
   desktop display for valid runs.
-
-Phoronix Test Suite was evaluated as an all-in-one replacement and rejected:
-its `pts/workstation` suite is deprecated upstream and overlaps poorly with
-the GPU-focused list above. `phoronix-test-suite benchmark pts/unigine-super`
-remains a reasonable alternative wrapper for Superposition.
 
 ## GPU vendor notes
 
@@ -70,3 +74,11 @@ a `summary.md` with the headline numbers.
 `tools/` and `results/` are gitignored. **Never commit results**: they
 contain hostnames, hardware identifiers, and Geekbench result URLs, and this
 repo is public.
+
+## Future improvements
+
+- Phoronix Test Suite as an alternative harness — evaluated and left out for
+  now: its `pts/workstation` suite is deprecated upstream and overlaps poorly
+  with the GPU-focused list above, but individual profiles (e.g.
+  `pts/unigine-super`) could wrap some of these benchmarks later.
+- Cross-machine comparison report generated from two or more `results/` dirs.
