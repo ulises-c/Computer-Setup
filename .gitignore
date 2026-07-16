@@ -64,3 +64,7 @@ linux-pi/homepage/config/proxmox.yaml
 
 # PeaNUT runtime settings written by its UI
 linux-server/ups/peanut-config/
+
+# Benchmarking suite downloads and results (multi-GB; contain hostnames/hardware IDs)
+benchmarking/tools/
+benchmarking/results/

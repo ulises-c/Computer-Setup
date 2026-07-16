@@ -34,6 +34,9 @@ For OS-specific software and install instructions, see:
   - Tailscale web UI as a persistent systemd user service
 - [windows/README.md](windows/README.md)
 
+For the standardized workstation benchmark suite (Ubuntu 24.04), see
+[benchmarking/README.md](benchmarking/README.md).
+
 ---
 
 ## Utilities
