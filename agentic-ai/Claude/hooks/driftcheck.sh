@@ -6,15 +6,35 @@
 #   - has shebang but not executable → flag (meant to run but can't)
 #   - is executable but no shebang  → flag (can run but no interpreter declared)
 # Library/sourced files (no shebang, not executable) are intentionally skipped.
+# Repo-relative glob patterns in ~/.claude/hooks/driftcheck-ignore are exempt
+# (for repos whose documented convention conflicts, e.g. scripts that are
+# intentionally non-executable because a Dockerfile chmods its copies).
 set -euo pipefail
 trap 'exit 2' ERR
 
 git rev-parse --git-dir &>/dev/null || exit 0
 
+ignore_patterns=()
+ignore_file="$HOME/.claude/hooks/driftcheck-ignore"
+if [[ -f "$ignore_file" ]]; then
+  while IFS= read -r pat; do
+    [[ -n "$pat" && "$pat" != '#'* ]] && ignore_patterns+=("$pat")
+  done < "$ignore_file"
+fi
+
 issues=()
 
 while IFS= read -r f; do
   [[ -f "$f" ]] || continue
+  skipped=false
+  for pat in "${ignore_patterns[@]}"; do
+    # shellcheck disable=SC2053  # unquoted RHS is the point: patterns are globs
+    if [[ "$f" == $pat ]]; then
+      skipped=true
+      break
+    fi
+  done
+  "$skipped" && continue
   read -r first_line < "$f" || first_line=""
   has_shebang=false; is_exec=false
   [[ "$first_line" == '#!'* ]] && has_shebang=true
