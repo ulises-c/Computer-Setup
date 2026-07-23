@@ -26,6 +26,7 @@ issues=()
 while IFS= read -r f; do
   [[ -f "$f" ]] || continue
   for pat in "${ignore_patterns[@]}"; do
+    # shellcheck disable=SC2053  # unquoted RHS is the point: patterns are globs
     [[ "$f" == $pat ]] && continue 2
   done
   read -r first_line < "$f" || first_line=""
