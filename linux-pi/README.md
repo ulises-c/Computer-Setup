@@ -1,4 +1,4 @@
-# linux-pi — Raspberry Pi (`ollie-pi4`) node
+# linux-pi — Raspberry Pi (`<pi-hostname>`) node
 
 Service stacks for the Raspberry Pi, deployed from this repo (clone + `docker
 compose up -d`). Mirrors the `linux-server/<service>/` layout: each folder is a
@@ -37,7 +37,7 @@ start; if the primary is down, the replica simply keeps its last-good config.
 The Pi is a *secondary server* (security cameras via MotionEye, printing via CUPS,
 plus the backup AdGuard). These stacks surface it:
 
-- `homepage/` — a homepage dashboard for the Pi (host-networked on `:3000`) with a
+- `homepage/` — a homepage dashboard for the Pi (host-networked on `:3001`) with a
   decoupled `homepage-pi-ts` sidecar → `https://homepage-pi.<tailnet>.ts.net`. Its
   cards link to the Pi services, and it shows the Pi's own CPU/mem/disk/temp (the
   `resources` widget works because homepage runs on the Pi host).
@@ -60,14 +60,40 @@ the docker-bridge→host path. Diagnose on the Pi:
 ```bash
 docker exec <svc>-ts tailscale serve status
 docker exec <svc>-ts sh -c 'getent hosts host.docker.internal; \
-  wget -qO- -T5 http://host.docker.internal:<port>/ >/dev/null && echo OK || echo UNREACHABLE'
+  wget -qO- -T5 --header="Host: <approved-service-alias>" \
+  http://host.docker.internal:<port>/ >/dev/null && echo OK || echo UNREACHABLE'
 docker version --format '{{.Server.Version}}'
 sudo ufw status
 ```
 
 Fix it once (allow bridge→host / enable `host-gateway`) and every sidecar works.
-CUPS additionally validates the `Host` header — if its admin pages 400 through the
-proxy, add `ServerAlias *` to `cupsd.conf` and restart cups.
+
+For CUPS, use the reviewed policy installer. Family LAN/WLAN clients are allowed
+to print through the root location; administrative locations remain limited to
+localhost and the pinned sidecar subnet. Put the real aliases and canonical
+private LAN subnet only in the gitignored `.env`:
+
+```bash
+cd linux-pi/cups
+cp .env.example .env
+# edit .env privately
+chmod 600 .env
+bash test-setup.sh
+bash setup.sh --dry-run
+sudo bash setup.sh --prepare-review
+```
+
+Inspect the root-only candidate and diff from a separate trusted terminal as
+described in `cups/README.md`. After approving both printed hashes, apply exactly
+that candidate:
+
+```bash
+sudo bash setup.sh --apply-reviewed <source-sha256> <candidate-sha256>
+```
+
+The installer rejects broad access rules, validates with `cupsd`, handles
+socket activation, rolls back on restart or local-probe failure, and never emits
+the private aliases, CIDRs, candidate, or diff during its normal output.
 
 ### First HTTPS request provisions a cert (may hang once)
 
@@ -93,8 +119,9 @@ that's normal, not a fault. If a sidecar *stays* DERP-only, check the Pi's UDP/N
 
 ## Deploy runbook (on the Pi)
 
-Prerequisites: Docker + compose plugin (`setup.sh --profile server` covers the
-base, or install manually).
+Prerequisites: Raspberry Pi OS/Debian with Git, Docker Engine, and the Compose
+plugin installed manually. The root `setup.sh --profile server` targets Ubuntu
+Server and is not supported on the Pi yet.
 
 1. **Free port 53.** Debian's `systemd-resolved` stub may hold `:53`. Set
    `DNSStubListener=no` in resolved's config and restart it (or bind AdGuard to
@@ -115,16 +142,21 @@ base, or install manually).
    docker compose up -d
    ```
    The Pi's filters/rewrites/upstreams should now match the primary.
-4. **Wire failover on the router (`192.168.1.1`):** in its DHCP settings, set the
+4. **Wire failover on the router (`<router-ip>`):** in its DHCP settings, set the
    DNS servers to `[<server-ip>, <pi-ip>]` (primary = server, secondary = Pi).
    Renew a client lease to pick it up.
 5. **Bring up the Pi dashboard + service front doors:** for each of `homepage`,
    `motioneye`, `cups`: `cp .env.example .env`, set `TS_AUTHKEY` (and, for
-   `homepage`, the `HOMEPAGE_VAR_*` domains + AdGuard creds), then
-   `docker compose up -d`. The Pi dashboard is then at
+   `homepage`, the `HOMEPAGE_VAR_*` domains, LAN identity, and AdGuard creds), then
+   `docker compose up -d`. The Pi dashboard is available on the LAN at
+   `http://<pi-lan-ip>:3001` and at
    `https://homepage-pi.<tailnet>.ts.net`, and the main server's homepage shows a
    "Secondary Server (Pi)" card linking to it. (All Pi HTTPS front doors depend on
    the sidecar→host hop above.)
+
+   When upgrading an existing checkout, add new keys from `.env.example` to the
+   gitignored Homepage `.env`; the main-server card requires
+   `HOMEPAGE_VAR_MAIN_HOSTNAME`.
 
 ## Verification
 

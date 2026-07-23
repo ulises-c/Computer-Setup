@@ -1,7 +1,7 @@
 services:
   # Decoupled Tailscale sidecar for the Pi's homepage — HTTPS at
   # https://homepage-pi.<tailnet>.ts.net, proxying :443 -> the host's homepage on
-  # :3000 via host.docker.internal. Mirrors linux-server/homepage/homepage-ts.
+  # :3001 via host.docker.internal. Mirrors linux-server/homepage/homepage-ts.
   homepage-pi-ts:
     image: tailscale/tailscale:latest
     container_name: homepage-pi-ts
@@ -29,16 +29,13 @@ services:
     image: ghcr.io/gethomepage/homepage:latest
     container_name: homepage
     network_mode: host
-    depends_on:
-      - homepage-pi-ts
     volumes:
       - ./config:/app/config
       - /var/run/docker.sock:/var/run/docker.sock:ro
     env_file:
       - .env
     environment:
-      # The proxied hostname must be allow-listed or homepage rejects the request.
-      HOMEPAGE_ALLOWED_HOSTS: "localhost,${HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}"
+      HOMEPAGE_ALLOWED_HOSTS: "localhost,127.0.0.1,${HOMEPAGE_VAR_PI_HOSTNAME},${HOMEPAGE_VAR_PI_HOSTNAME}.local,${HOMEPAGE_VAR_PI_LAN_IP},${HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}"
       HOSTNAME: "0.0.0.0"
-      PORT: "3000"
+      PORT: "3001"
     restart: unless-stopped

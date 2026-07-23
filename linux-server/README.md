@@ -70,6 +70,7 @@ Start services in this order. Most just need `docker compose up -d`; exceptions 
 ```sh
 # Homepage — update .env with your server details first (see post-install.md)
 cd linux-server/homepage && cp .env.example .env
+# Existing .env: add new .env.example keys, including HOMEPAGE_VAR_PI_HOSTNAME.
 # edit .env, then:
 docker compose up -d
 # Access at http://<server-ip>:3000 (or https://<tailscale-hostname> after HTTPS setup)
@@ -312,7 +313,7 @@ In NPM admin (`http://<server-ip>:81`):
     3. Access at `https://qbittorrent.<tailnet>.ts.net/`
     4. On first run, the LinuxServer image generates a temporary admin password — find it with `docker compose logs qbittorrent | grep -i password`, log in as `admin`, then change it in **Options → Web UI** (and add the new login to `HOMEPAGE_VAR_QBITTORRENT_PASSWORD` in `linux-server/homepage/.env` for the widget)
     5. In **Options → Web UI**, set the "IP address" to `127.0.0.1` so the UI is reachable only through the HTTPS sidecar, not the raw tailnet port
-    6. BitTorrent `:6881` (tcp/udp) is published on the sidecar. **Not routed through a VPN** — fine for academic/legal torrents; see [`../TODO.md`](../TODO.md) for the planned Gluetun VPN sidecar before any other use
+    6. BitTorrent `:6881` (tcp/udp) is published on the sidecar. **Not routed through a VPN** — fine for academic/legal torrents; see [`../docs/TODO.md`](../docs/TODO.md) for the planned Gluetun VPN sidecar before any other use
 
 17. OpenSpeedTest | [GitHub](https://github.com/openspeedtest/Speed-Test) | [Docs](https://openspeedtest.com/selfhosted-speedtest)
     1. Self-hosted browser speed test for the **LAN** (the local-network counterpart to speedtest-tracker's ISP test) — any device opens it in a browser and measures its throughput to the server. Fronted by its own Tailscale HTTPS sidecar (see [`HTTPS.md`](HTTPS.md)), like the other services
@@ -334,13 +335,13 @@ In NPM admin (`http://<server-ip>:81`):
        cp .env.example .env   # set RESTIC_PASSWORD (save it in Bitwarden!) + ntfy
        sudo touch /mnt/wd1tb/.backup-target-ok
        docker compose up -d   # status-card server (loopback :8099)
-       sudo cp backup.service backup.timer backup-failure.service /etc/systemd/system/
-       sudo systemctl daemon-reload && sudo systemctl enable --now backup.timer
+       bash setup.sh --dry-run
+       sudo bash setup.sh
        ```
     3. The status card on Homepage shows last-run time, status, and repo size; failures push to ntfy
 
 19. UPS | [NUT](https://networkupstools.org/) | [Docs](https://networkupstools.org/docs/man/)
-    1. Battery-backup monitoring for the CyberPower PR1500LCDRT2U over USB — ntfy alerts on power events, clean shutdown on low battery, auto-restart when wall power returns. Full runbook in [`ups/README.md`](ups/README.md)
+    1. Battery-backup monitoring for the CyberPower CST135UC2 over USB — ntfy alerts on power events, clean shutdown on low battery, auto-restart when wall power returns. Full runbook in [`ups/README.md`](ups/README.md)
     2. Deploy:
        ```sh
        sudo apt install nut   # or rerun the root setup.sh --profile server

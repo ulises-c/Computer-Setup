@@ -5,7 +5,7 @@
         description: Backup DNS resolver
         widget:
           type: adguard
-          url: https://{{HOMEPAGE_VAR_ADGUARD_PI_DOMAIN}}
+          url: http://localhost:80
           username: "{{HOMEPAGE_VAR_ADGUARD_USER}}"
           password: "{{HOMEPAGE_VAR_ADGUARD_PASS}}"
     - motioneye:
@@ -42,5 +42,5 @@
     - server dashboard:
         icon: mdi-server
         href: https://{{HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN}}/
-        description: ollie-server — primary home server
+        description: "{{HOMEPAGE_VAR_MAIN_HOSTNAME}} — primary home server"
         siteMonitor: https://{{HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN}}

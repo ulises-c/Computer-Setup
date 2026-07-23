@@ -7,7 +7,7 @@ a non-standard port.
 
 ## Why subdomains require one Tailscale node per service
 
-A Tailscale node has exactly **one** MagicDNS name (`ollie-server.<tailnet>.ts.net`).
+A Tailscale node has exactly **one** MagicDNS name (`<server-hostname>.<tailnet>.ts.net`).
 You cannot mint arbitrary subdomains of it — `forgejo.<tailnet>.ts.net` only
 exists, resolves, and can get a TLS cert if there is a **node named `forgejo`**.
 
@@ -41,7 +41,7 @@ app generates correct HTTPS URLs.
 
 1. **Enable HTTPS** for the tailnet (DNS → "Enable HTTPS"), so `tailscale serve`
    can provision Let's Encrypt certs for `*.ts.net`.
-2. **MagicDNS** enabled (it is, since you resolve `ollie-server.<tailnet>.ts.net`).
+2. **MagicDNS** enabled (confirm `<server-hostname>.<tailnet>.ts.net` resolves).
 3. **An auth method for the sidecars — resolved: OAuth client + tag.** Reuses
    the existing Tailscale OAuth client (`linux-server/tailscale-proxy/.env`,
    originally created read-only for the device-status proxy):
@@ -232,7 +232,7 @@ side of the `ports:` mapping (`host:container`), not the host side.
 | cockpit           | 9090  | ✅ done       | host systemd service — **sidecar-only** stack proxies `https+insecure://host.docker.internal:9090`; `cockpit.conf.example`'s `Origins` line turned out to be unnecessary in practice — see Gotchas |
 | tailscale-web     | 8088  | ✅ done       | not in the original rollout — added because the homepage Tailscale tile linked plain HTTP. `tailscale web` is a host **systemd user unit**, not a container; `ExecStart` needs `--listen 0.0.0.0:8088 --origin https://tailscale-web.<tailnet>.ts.net` so it's reachable via `host.docker.internal` and knows it's reverse-proxied. Don't use port `:5252` — see Gotchas |
 | watchtower        | 8080  | ✅ done       | **no UI** — the sidecar fronts only watchtower's token-gated `/v1/metrics` HTTP API (enable `WATCHTOWER_HTTP_API_METRICS=true` + `WATCHTOWER_HTTP_API_TOKEN`); no homepage `href`. Monitor it in Uptime Kuma — see below |
-| qbittorrent       | 8080  | ✅ done       | web UI at container :8080 (`WEBUI_PORT=8080`); works at root (relative URLs). After first login set WebUI "IP address" to `127.0.0.1` (Options → Web UI) so it's reachable only via the serve proxy — the analog of Syncthing's loopback bind; the linuxserver image has no env for it. `Server domains` defaults to `*`, so the proxied Host passes host-header validation. Publish BitTorrent `:6881` tcp+udp on the **sidecar** (raw, not via serve). **Not VPN-routed** — see TODO.md |
+| qbittorrent       | 8080  | ✅ done       | web UI at container :8080 (`WEBUI_PORT=8080`); works at root (relative URLs). After first login set WebUI "IP address" to `127.0.0.1` (Options → Web UI) so it's reachable only via the serve proxy — the analog of Syncthing's loopback bind; the linuxserver image has no env for it. `Server domains` defaults to `*`, so the proxied Host passes host-header validation. Publish BitTorrent `:6881` tcp+udp on the **sidecar** (raw, not via serve). **Not VPN-routed** — see ../docs/TODO.md |
 
 Services that also expose **non-HTTP** ports the LAN/tailnet needs (AdGuard DNS
 `:53`, Syncthing sync `:22000`, Forgejo SSH `:22`) keep those as direct

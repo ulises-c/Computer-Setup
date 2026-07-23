@@ -64,7 +64,7 @@ Creates an Ed25519 SSH key for a remote machine (e.g. a home server or Tailscale
 ```bash
 bash add_remote_host.sh
 # or pre-fill inputs via env vars:
-HOST_ALIAS="homepc" REMOTE_HOST="192.168.1.100" REMOTE_USER="jane" PORT="22" bash add_remote_host.sh
+HOST_ALIAS="homepc" REMOTE_HOST="<server-ip>" REMOTE_USER="<username>" PORT="22" bash add_remote_host.sh
 ```
 
 ---

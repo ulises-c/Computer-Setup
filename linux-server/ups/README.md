@@ -1,7 +1,7 @@
 # UPS (NUT)
 
 [Network UPS Tools](https://networkupstools.org/) monitoring for the CyberPower
-PR1500LCDRT2U connected over USB (`usbhid-ups` driver, standalone mode). On
+CST135UC2 connected over USB (`usbhid-ups` driver, standalone mode). On
 power loss it pushes ntfy alerts; when the battery runs low it shuts the server
 down cleanly and tells the UPS to cut its outlets so everything restarts when
 wall power returns.
@@ -21,12 +21,14 @@ wall power returns.
    ```
 3. Deploy configs to `/etc/nut` and enable the services:
    ```sh
-   sudo bash setup.sh          # add --dry-run to preview
+   bash setup.sh --dry-run     # works before .env exists
+   sudo bash setup.sh
    ```
 4. Verify:
    ```sh
    upsc cyberpower ups.status   # expect: OL (on line power)
    upsc cyberpower               # full variable dump — charge, runtime, load
+   bash ../../verify.sh --platform server
    journalctl -u nut-monitor -f
    ```
 5. Test a notification (safe — no shutdown involved):
@@ -54,11 +56,16 @@ wall power returns.
   override.battery.charge.low = 25      # shut down at 25% charge
   override.battery.runtime.low = 300    # or at 5 minutes runtime left
   ```
+  `setup.sh` restarts `nut-driver@cyberpower` when `ups.conf` changes, so the
+  new threshold is active immediately without a reboot.
 - Poll/timing knobs (`POLLFREQ`, `HOSTSYNC`, `DEADTIME`, `FINALDELAY`) are at
   conventional values in `upsmon.conf.template`.
 - Brief blips send an ONBATT + ONLINE alert pair. If that gets noisy,
   `upssched` can debounce (only alert after N seconds on battery) — not wired
   up; layer it in later if needed.
+- Communication loss alerts fire on the `COMMBAD` transition and recovery on
+  `COMMOK`; recurring `NOCOMM` warnings stay in the system journal instead of
+  pushing every five minutes.
 
 ## Dashboard (PeaNUT)
 

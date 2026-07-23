@@ -1,6 +1,8 @@
 # Claude Code Config
 
-Version-controlled source of truth for `~/.claude/` settings, hooks, and rules. Running `install.sh` wires everything up via symlinks so changes here take effect immediately.
+Version-controlled source of truth for `~/.claude/` settings, hooks, rules, and
+on-demand docs. Running `install.sh` copies the settings template and links the
+rest of the configuration.
 
 ## Activation
 
@@ -10,12 +12,16 @@ bash agentic-ai/Claude/install.sh
 ```
 
 This will:
-- Back up your existing `~/.claude/settings.json` (if not already a symlink)
-- Symlink `~/.claude/settings.json` → this `settings.json`
+- Back up your existing `~/.claude/settings.json` when it differs from the template
+- Copy this `settings.json` to `~/.claude/settings.json`
 - Symlink `~/.claude/CLAUDE.md` → this `CLAUDE.md`
 - Symlink `~/.claude/rules/` → this `rules/`
+- Symlink `~/.claude/docs/` → this `docs/`
+- Symlink this `railguard.yaml` → `~/.railguard.yaml`
 - Symlink each `hooks/*.sh` script into `~/.claude/hooks/`
-- Install `railguard` via `cargo install railguard` (requires Rust/cargo; skipped if already installed)
+- Install or update the Railguard fork with
+  `cargo install --git https://github.com/ulises-c/railguard` (requires
+  Rust/cargo; an existing binary is kept with a warning when cargo is unavailable)
 - Run `railguard install` to register it as a global PreToolUse hook
 
 Restart Claude Code after running.
@@ -34,9 +40,11 @@ The hooks below are the primary safety layer.
 
 ### PreToolUse: `railguard` (all tools)
 
-Runtime policy enforcer installed globally via `cargo install railguard`. Policy lives in `railguard.yaml`; custom blocklist/allowlist are left empty since `validate-bash.sh` owns those patterns.
+Runtime policy enforcer installed globally from the Railguard fork by `install.sh`.
+Policy lives in `railguard.yaml`; custom command blocklists are left empty because
+`validate-bash.sh` owns those patterns.
 
-- **Path fence**: denies access to `~/.ssh`, `~/.aws`, `~/.config/gcloud`, `/etc`; explicitly allows `~/.claude` and `/tmp`
+- **Path fence**: applies the denied and allowed roots declared in `railguard.yaml`
 - **Traces**: every tool call logged to `.railguard/traces/`
 - **Snapshots**: pre-edit state captured for Write/Edit to `.railguard/snapshots/`
 - **Memory integrity**: session-start warns on untracked memory files (`railguard memory verify`)
@@ -86,9 +94,12 @@ rules/
   common/
     general.md   — language-agnostic coding principles
     agents.md    — when to self-invoke Plan / Explore / review / verify
-    railguard.md — how to work under the Railguard guardrails (rules it enforces, path fence, rollback)
+    railguard.md — slim always-loaded Railguard behavior and reference routing
   bash/
     style.md     — bash scripting conventions
+docs/
+  RAILGUARD.md             — expected behavior and bug-reporting protocol
+  per-project-allowlist.md — local path-allowlist configuration
 ```
 
 Add a new language by creating `rules/<lang>/style.md` and adding an `@` line to `CLAUDE.md`.
@@ -117,11 +128,11 @@ echo '{"tool_input":{"command":"ls -la"}}' | bash agentic-ai/Claude/hooks/valida
 echo $?
 
 # Should exit 2 (blocked)
-echo '{"tool_input":{"file_path":"/Users/ulises/.ssh/authorized_keys"}}' | bash agentic-ai/Claude/hooks/validate-write.sh
+echo '{"tool_input":{"file_path":"/Users/<username>/.ssh/authorized_keys"}}' | bash agentic-ai/Claude/hooks/validate-write.sh
 echo $?
 
 # Should exit 0 (allowed)
-echo '{"tool_input":{"file_path":"/Users/ulises/github/project/main.py"}}' | bash agentic-ai/Claude/hooks/validate-write.sh
+echo '{"tool_input":{"file_path":"/Users/<username>/github/project/main.py"}}' | bash agentic-ai/Claude/hooks/validate-write.sh
 echo $?
 ```
 
@@ -137,4 +148,6 @@ The operative trust model: `bypassPermissions` + hooks is a guardrail against ac
 
 ## Adding settings
 
-All user-level Claude Code settings live here going forward. Edit `settings.json` directly — the symlink means changes are live immediately (no re-run of `install.sh` needed).
+All user-level Claude Code settings originate here. Edit the template, then re-run
+`install.sh` to copy it into place. Claude Code may rewrite the live copy with
+machine-specific state; `settings-drift.sh` reports meaningful differences.

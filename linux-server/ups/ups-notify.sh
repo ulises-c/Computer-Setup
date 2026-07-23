@@ -3,8 +3,9 @@
 # /etc/nut/ups-notify.sh by setup.sh; runs as the nut user with the event
 # message as $1 and the event type in $NOTIFYTYPE. Reads its ntfy settings
 # from /etc/nut/ups-notify.env (root:nut 640, rendered from ../.env).
-set -u
+set -euo pipefail
 
+# shellcheck disable=SC1091
 [[ -f /etc/nut/ups-notify.env ]] && source /etc/nut/ups-notify.env
 [[ -n "${NTFY_URL:-}" ]] || exit 0
 
@@ -21,6 +22,6 @@ case "${NOTIFYTYPE:-}" in
   *)        title="UPS event (${NOTIFYTYPE:-unknown})"; priority=default; tags=zap ;;
 esac
 
-args=(-fsS -H "Title: $title" -H "Priority: $priority" -H "Tags: $tags" -d "$msg")
+args=(-fsS --connect-timeout 5 --max-time 10 -H "Title: $title" -H "Priority: $priority" -H "Tags: $tags" -d "$msg")
 [[ -n "${NTFY_TOKEN:-}" ]] && args+=(-H "Authorization: Bearer $NTFY_TOKEN")
-curl "${args[@]}" "$NTFY_URL/${NTFY_TOPIC:-server-ups}" >/dev/null 2>&1 || true
+curl "${args[@]}" -- "$NTFY_URL/${NTFY_TOPIC:-server-ups}" >/dev/null 2>&1 || true

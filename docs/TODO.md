@@ -1,7 +1,7 @@
 # TODO
 
 Open work only. Completed work is recorded in [CHANGELOG.md](CHANGELOG.md); the
-unified-layout design rationale is in [docs/UNIFICATION.md](docs/UNIFICATION.md).
+unified-layout design rationale is in [UNIFICATION.md](UNIFICATION.md).
 
 ## Live-run cleanup & follow-ups (unification / dotfiles)
 
@@ -29,6 +29,13 @@ run leaves shadowed binaries to reconcile.
       `command -v` every migrated tool to catch shadowed binaries
 - [ ] Later: consider base + per-platform overlay for zshrc (desktop vs server vs macOS)
 
+## macOS benchmark verification
+
+- [ ] Re-run every benchmark suite end-to-end on one Mac and confirm the result
+      JSON has no unexpected `null` fields before treating the measurements as
+      validated. The review fixes landed, but no completed post-fix suite run is
+      recorded yet.
+
 ## OpenCode local models
 
 Config uses `mlx_lm.server` with Qwen 3.5 9B (4bit, MLX) on the Mac Mini M4.
@@ -54,7 +61,7 @@ Core Arch/CachyOS support shipped in PR #18 (see CHANGELOG). Remaining:
 
 Every tailnet-facing service is converted (see CHANGELOG); the non-tailnet edge
 is what's left. Pattern and full rollout table in
-[linux-server/HTTPS.md](linux-server/HTTPS.md).
+[../linux-server/HTTPS.md](../linux-server/HTTPS.md).
 
 - [ ] Set up the NPM trusted-HTTPS edge (domain `ulises-c.me`, already owned):
       NPM wildcard Let's Encrypt cert for `*.home.ulises-c.me` via DNS-01, AdGuard
@@ -93,15 +100,15 @@ logs, not metrics. Build it up in layers:
 
 ### Broader improvements (from the post-rollout review)
 
-- [ ] **Pin the Tailscale sidecar image.** All ~13 sidecars run
+- [ ] **Pin the Tailscale sidecar image.** All 22 sidecars run
       `tailscale/tailscale:latest` and watchtower auto-updates them — a bad release
       could drop every HTTPS front door at once. Pin a stable tag (bump
       deliberately) or exclude the sidecars from watchtower. Cheap, high-value.
-- [ ] **DRY the sidecar boilerplate.** ~13 near-identical `<svc>-ts` blocks +
+- [ ] **DRY the sidecar boilerplate.** 22 near-identical `<svc>-ts` blocks +
       `ts-serve.json` (differ only by hostname/port). Use Compose `extends` from a
       shared base so a global change (the image pin above, `TS_EXTRA_ARGS`) is one
       edit, not 13. Medium effort — touches all stacks, needs live re-verify.
-- [ ] **One shared `TS_AUTHKEY`.** The same OAuth secret is copied into ~13 `.env`
+- [ ] **One shared `TS_AUTHKEY`.** The same OAuth secret is copied into 22 `.env`
       files; rotation/rebuild means editing all of them. Share one env file.
 - [ ] **Validation script for the server stacks** (CI, like `dryrun-smoke.sh`):
       assert every `linux-server/*/` has matching compose + `ts-serve.json` +
@@ -125,7 +132,7 @@ kept the primary AdGuard from recovering.
       resolvers on `adguard-ts` (`dns: [9.9.9.10, 1.1.1.1]`) so bootstrap never
       depends on AdGuard — `linux-server/adguard`.
 - [x] **Secondary DNS on the Pi.** Kill the single point of failure: a backup
-      AdGuard on `ollie-pi4`, host-networked (independent of Tailscale) and
+      AdGuard on `<pi-hostname>`, host-networked (independent of Tailscale) and
       config-synced from the primary, handed out as secondary DNS by the router —
       `linux-pi/adguard` + `linux-pi/adguardhome-sync`.
 - [ ] **Secondary DHCP.** DHCP is still single-homed on the server; a server
@@ -141,14 +148,15 @@ torrents only). Before broader use, route all torrent traffic through a VPN.
 - [ ] Pick a provider — evaluate free Cloudflare WARP vs a paid WireGuard provider
 - [ ] Add the provider creds to `.env.example` / `.env`
 
-## linux-server — Raspberry Pi 4
+## linux-pi — Raspberry Pi 4
 
-Set up the Raspberry Pi 4 headless server config under `linux-server/`.
+Docker Compose service stacks now live under `linux-pi/`; base OS provisioning is
+still separate from the unified Ubuntu Server profile.
 
-- [ ] Audit existing linux-server/ files and update as needed
-- [ ] Create or update packages JSON for the Pi (arm64, Debian-based)
-- [ ] Create setup script for headless server (no GUI packages, no snap)
-- [ ] Zsh config (server variant — no Ghostty, no fastfetch on launch, no desktop notifications)
-- [ ] Tailscale, Docker, SSH hardening
-- [ ] Homepage dashboard config (already exists under linux-server/homepage/)
-- [ ] Test on Raspberry Pi 4
+- [x] Secondary AdGuard Home with config sync
+- [x] Pi Homepage dashboard and Tailscale front doors
+- [x] MotionEye, CUPS, and backup service configuration
+- [ ] Add a Debian/arm64 Pi platform to the root provisioning engine (no snap/PPA)
+- [ ] Add the shared headless zsh/Tailscale/Docker/SSH base without duplicating
+      `platforms/server.sh`
+- [ ] Run and record the complete provisioning and service verification on Pi hardware

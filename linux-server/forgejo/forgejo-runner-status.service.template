@@ -1,0 +1,8 @@
+[Unit]
+Description=Forgejo Actions runner status check
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env bash @RUNNER_STATUS_SCRIPT@

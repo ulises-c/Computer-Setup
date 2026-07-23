@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared read-only verify engine for the unified root verify.sh (UNIFICATION.md
+# Shared read-only verify engine for the unified root verify.sh (docs/UNIFICATION.md
 # Phase 3, issue #36). Sourced by verify.sh after lib/core.sh — reuses
 # CORE_JQ_DEFS, PACKAGES_JSON, PLATFORM, INCLUDE_* and core_detect_platform.
 # Check semantics are ported from macOS/verify.sh and linux-desktop/verify.sh;
@@ -17,7 +17,7 @@ verify_parse_args() {
       --all)      INCLUDE_OPTIONAL=true; INCLUDE_WORK=true; INCLUDE_PERSONAL=true; INCLUDE_NONE=true ;;
       --distro|--platform)
         if [[ -z "${2:-}" || "${2:-}" == -* ]]; then
-          printf 'ERROR: %s requires a value (macos|ubuntu|arch).\n' "$1" >&2
+          printf 'ERROR: %s requires a value (macos|ubuntu|arch|server).\n' "$1" >&2
           exit 1
         fi
         PLATFORM="$2"; shift ;;
@@ -252,6 +252,39 @@ verify_extras_linux() {
   fi
 }
 
+verify_extras_server() {
+  printf '\n── Server runtime & services ────────────────────────────────\n'
+
+  [[ -f "$HOME/.zshrc" ]]           && check "zshrc present (~/.zshrc)" true                  || check "zshrc present (~/.zshrc)" false
+  [[ -f "$HOME/.zsh_plugins.txt" ]] && check "antidote plugin list present (~/.zsh_plugins.txt)" true || check "antidote plugin list present (~/.zsh_plugins.txt)" false
+  [[ -f "$HOME/.tmux.conf" ]]       && check "tmux config present (~/.tmux.conf)" true            || check "tmux config present (~/.tmux.conf)" false
+
+  if command -v systemctl &>/dev/null && systemctl is-active --quiet tailscaled 2>/dev/null; then
+    check "tailscaled service active" true
+  else
+    check "tailscaled service active" false
+  fi
+
+  local unit
+  for unit in nut-driver@cyberpower.service nut-server.service nut-monitor.service; do
+    if command -v systemctl &>/dev/null \
+      && systemctl is-enabled --quiet "$unit" 2>/dev/null \
+      && systemctl is-active --quiet "$unit" 2>/dev/null; then
+      check "$unit enabled and active" true
+    else
+      check "$unit enabled and active" false
+    fi
+  done
+
+  local ups_status
+  ups_status="$(upsc cyberpower@localhost ups.status 2>/dev/null || true)"
+  if [[ -n "$ups_status" ]]; then
+    check "UPS reachable (status: $ups_status)" true
+  else
+    check "UPS reachable via upsc cyberpower@localhost" false
+  fi
+}
+
 # npm + pnpm supply-chain cooldown checks (issue #23) — identical on every platform.
 verify_npm_pnpm_cooldowns() {
   if grep -q '^min-release-age=' "$HOME/.npmrc" 2>/dev/null; then
@@ -279,16 +312,12 @@ verify_npm_pnpm_cooldowns() {
 }
 
 verify_main() {
-  if [[ "$PLATFORM" == "server" ]]; then
-    printf 'ERROR: no verify checks for the server profile yet (linux-server has no legacy verify.sh).\n' >&2
-    exit 1
-  fi
-
   printf '==> Verifying %s package installs against %s\n' "$PLATFORM" "$PACKAGES_JSON"
 
   case "$PLATFORM" in
     macos)       verify_extras_macos ;;
     ubuntu|arch) verify_extras_linux ;;
+    server)      verify_extras_server ;;
   esac
 
   verify_section "High priority"   "high"

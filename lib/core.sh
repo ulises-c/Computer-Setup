@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared engine for the unified root setup.sh (UNIFICATION.md, issue #36).
+# Shared engine for the unified root setup.sh (docs/UNIFICATION.md, issue #36).
 # Sourced by setup.sh after SETUP_ROOT is set. Platform modules in
 # platforms/<platform>.sh provide platform_main() plus the hooks used by
 # linux_main(): platform_bootstrap, platform_install_tier,
@@ -901,6 +901,7 @@ linux_main() {
       printf '\n==> Installing optional (low) packages...\n'
       platform_install_tier low
     fi
+    server_ups_step
     server_extras
     custom_reminders_section
     server_footer

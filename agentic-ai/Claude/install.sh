@@ -10,6 +10,11 @@ CLAUDE_DIR="$HOME/.claude"
 HOOKS_DIR="$CLAUDE_DIR/hooks"
 SETTINGS="$CLAUDE_DIR/settings.json"
 
+if [[ -d "$CLAUDE_DIR/docs" && ! -L "$CLAUDE_DIR/docs" ]]; then
+  printf 'error: %s is a directory; move or remove it before installing\n' "$CLAUDE_DIR/docs" >&2
+  exit 1
+fi
+
 printf 'Installing from: %s\n' "$REPO_DIR"
 
 # settings.json is COPIED, not symlinked: Claude Code rewrites its user
@@ -37,6 +42,12 @@ printf 'Linked: CLAUDE.md\n'
 rm -f "$CLAUDE_DIR/rules"
 ln -sf "$REPO_DIR/rules" "$CLAUDE_DIR/rules"
 printf 'Linked: rules/\n'
+
+# Symlink docs directory (on-demand references pointed at by rules, e.g.
+# ~/.claude/docs/RAILGUARD.md — not @imported, read only when needed)
+rm -f "$CLAUDE_DIR/docs"
+ln -sf "$REPO_DIR/docs" "$CLAUDE_DIR/docs"
+printf 'Linked: docs/\n'
 
 # Symlink railguard policy (global: find_policy_file walks up from cwd)
 ln -sf "$REPO_DIR/railguard.yaml" "$HOME/.railguard.yaml"

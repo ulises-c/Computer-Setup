@@ -4,12 +4,12 @@ Notable changes to this personal machine-provisioning repo. There are no tagged
 releases; entries are grouped by the date work merged to `main`, newest first.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com). Remaining
 work lives in [TODO.md](TODO.md); the design rationale for the unified layout is
-in [UNIFICATION.md](docs/UNIFICATION.md).
+in [UNIFICATION.md](UNIFICATION.md).
 
 ## 2026-07-11 — UPS monitoring, server ([#59](https://github.com/ulises-c/Computer-Setup/pull/59))
 
 ### Added
-- NUT support for the CyberPower PR1500LCDRT2U under `linux-server/ups/`.
+- NUT support for the CyberPower CST135UC2 under `linux-server/ups/`.
 - PeaNUT UPS dashboard, fronted by a Tailscale HTTPS sidecar
   (`https://peanut.<tailnet>.ts.net/`) with a homepage widget.
 
@@ -22,7 +22,8 @@ in [UNIFICATION.md](docs/UNIFICATION.md).
   `packages.json`; app-store-style `.app` verify probe for GUI-only custom entries.
 
 ### Fixed
-- Resolved 30 findings from a max-effort review of the suite:
+- Resolved 36 findings from a max-effort review of the suite (full record:
+  [macos-benchmark-review.md](macos-benchmark-review.md)):
   - **P0** — broken measurement paths and silent data corruption: LibreSSL
     `openssl speed -seconds` unsupported, `llama-bench --hf-repo` arg failure,
     null GPU/Cinebench/Blender parses, throttle-methodology and Apple-Silicon
@@ -58,7 +59,7 @@ in [UNIFICATION.md](docs/UNIFICATION.md).
   certs/configs, every `.env`) to a dedicated 1TB drive, encrypted/deduplicated/
   pruned, with ntfy alerts, a homepage status card, and a restore runbook.
   systemd timer at 03:30 (Persistent) with an OnFailure alert; `ts-state/`
-  deliberately excluded.
+  deliberately excluded. The optional second copy targets the separate 14TB drive.
 
 ## 2026-06-17 — Per-service HTTPS over Tailscale, server
 
@@ -77,7 +78,7 @@ in [UNIFICATION.md](docs/UNIFICATION.md).
 
 Collapsed the three diverged setup stacks (`macOS/`, `linux-desktop/`,
 `linux-server/`) into one root `setup.sh` + one `packages.json`. Full design and
-phased breakdown in [UNIFICATION.md](docs/UNIFICATION.md).
+phased breakdown in [UNIFICATION.md](UNIFICATION.md).
 
 ### Added
 - Root `setup.sh` / `verify.sh` dispatchers, a shared `lib/core.sh` engine and
@@ -116,6 +117,9 @@ phased breakdown in [UNIFICATION.md](docs/UNIFICATION.md).
   generalized into `lib/core.sh`.
 - The powerlevel10k theme is an antidote plugin on all desktops (the previous
   yay-only entry meant Ubuntu/macOS silently fell back to `vcs_info`).
+- Ubuntu desktop completed a live unified-setup run at `eb0fe49`: the shared
+  zsh/p10k/Ghostty configuration deployed successfully and `verify.sh --work`
+  was green except for intentionally manual packages.
 
 ## 2026-05-28 — CachyOS / Arch desktop support ([#18](https://github.com/ulises-c/Computer-Setup/pull/18))
 
@@ -135,3 +139,6 @@ phased breakdown in [UNIFICATION.md](docs/UNIFICATION.md).
 ### Fixed
 - pyenv init no longer aborts setup under `set -e`; hardened `yay` batch installs
   to skip already-satisfied build deps.
+- CachyOS verification covered antidote, zoxide, eza icons, and zsh-notify.
+  zsh-notify's "unsupported environment" over SSH is expected without a graphical
+  session; local desktop notifications work.

@@ -1,8 +1,0 @@
-[Unit]
-Description=Alert on Pi backup failure
-
-[Service]
-Type=oneshot
-# Fires via pi-backup.service's OnFailure= — records a failed status and pings
-# ntfy even if backup.sh died before its own error handler could run.
-ExecStart=/home/ollie/github/Computer-Setup/linux-pi/backup/backup.sh notify-failure

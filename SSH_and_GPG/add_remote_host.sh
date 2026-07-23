@@ -38,7 +38,7 @@ prompt() {
 }
 
 prompt HOST_ALIAS   "SSH alias (friendly name, e.g. homepc)"
-prompt REMOTE_HOST     "Remote hostname or IP (e.g. 192.168.1.100 or mypc.local)"
+prompt REMOTE_HOST     "Remote hostname or IP (e.g. <server-ip> or <hostname>.local)"
 prompt REMOTE_USER  "Remote username"
 prompt PORT         "SSH port" "22"
 prompt KEY_NAME     "Key file name (no path)" "$HOST_ALIAS"

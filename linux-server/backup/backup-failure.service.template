@@ -1,0 +1,6 @@
+[Unit]
+Description=Alert on server backup failure
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env bash @BACKUP_SCRIPT@ notify-failure

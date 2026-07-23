@@ -4,7 +4,7 @@
 # apt/Tailscale/Docker hooks live in lib/core.sh. This module only carries the
 # server tier composition and the server-only "step two" infra: SSH/Tailscale
 # services, Docker dashboard stacks, cockpit, AdGuard.
-# (The Raspberry Pi — Debian proper, no snapd — is a future target; TODO.md.)
+# (The Raspberry Pi — Debian proper, no snapd — is a future target; docs/TODO.md.)
 
 platform_bootstrap() {
   apt_bootstrap
@@ -16,6 +16,20 @@ server_preclone_antidote() {
   printf '\n==> Pre-cloning antidote plugins...\n'
   run zsh -c 'source /usr/share/zsh-antidote/antidote.zsh && antidote bundle <"$HOME/.zsh_plugins.txt" >/dev/null' \
     || printf 'warning: antidote pre-clone failed; plugins will clone on first login\n' >&2
+}
+
+server_ups_step() {
+  pkg_selected nut || return 0
+
+  local ups_dir="$CONFIG_SRC_DIR/ups"
+  printf '\n==> Configuring NUT UPS monitoring...\n'
+  if [[ -f "$ups_dir/.env" ]]; then
+    run sudo bash "$ups_dir/setup.sh"
+  else
+    printf '  NUT is installed but not configured. Run:\n'
+    printf '    cp %s/.env.example %s/.env\n' "$ups_dir" "$ups_dir"
+    printf '    sudo bash %s/setup.sh\n' "$ups_dir"
+  fi
 }
 
 # Server-only "step two": the headless service + dashboard layer that runs after

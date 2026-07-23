@@ -2,7 +2,7 @@
 Description=Nightly Pi backup
 
 [Timer]
-# 03:45 — 15 min after the main server's 03:30 backup to avoid contention.
+# 03:45 — offset from the main server's 03:30 start; long runs can still overlap.
 OnCalendar=*-*-* 03:45:00
 # Catch up if the machine was off at the scheduled time.
 Persistent=true

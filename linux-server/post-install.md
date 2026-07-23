@@ -174,7 +174,7 @@ Everything Forgejo needs to restore from scratch lives in `FORGEJO_DATA_PATH` (d
 #### Runner status monitor
 
 A host timer (`runner-status.sh`) asks Forgejo whether the Mac mini Actions
-runner (see [`../../macOS/forgejo-runner/`](../../macOS/forgejo-runner/)) is
+runner (see [`../macOS/forgejo-runner/`](../macOS/forgejo-runner/)) is
 connected, and surfaces it three ways: the homepage **forgejo-runner** card,
 an Uptime Kuma push monitor, and an ntfy alert when it drops (and recovers).
 Optional — skip if you aren't running CI.
@@ -190,9 +190,8 @@ Optional — skip if you aren't running CI.
   ```
 - [ ] Install the timer (polls every 2 minutes):
   ```sh
-  sudo cp forgejo-runner-status.service forgejo-runner-status.timer /etc/systemd/system/
-  sudo systemctl daemon-reload
-  sudo systemctl enable --now forgejo-runner-status.timer
+  bash setup-runner-status.sh --dry-run
+  sudo bash setup-runner-status.sh
   ```
 - [ ] Verify:
   ```sh
@@ -264,6 +263,7 @@ cleanly on low battery. Full runbook in [`ups/README.md`](ups/README.md).
   sudo bash setup.sh
   ```
 - [ ] Verify: `upsc cyberpower ups.status` prints `OL`
+- [ ] Run `bash verify.sh --platform server` from the repo root
 - [ ] Start the PeaNUT dashboard (`docker compose up -d`, needs `TS_AUTHKEY` in
       `.env`) — graphs at `https://peanut.<tailnet>.ts.net/`, and the homepage
       **ups** card goes live
@@ -285,15 +285,17 @@ Three drives are attached via a TerraMas Thunderbolt DAS enclosure:
 - **fstab** entries use `nofail,x-systemd.device-timeout=10` — if the DAS is
   disconnected at boot, the system continues without them.
 - **Glances disk renaming** — kernel device names (`sda`/`sdb`/`sdc`) can shuffle
-  when the enclosure is reconnected. The Glances entrypoint
-  (`glances/entrypoint.sh`) reads `/dev/disk/by-label/` at startup and
-  monkey-patches the diskio plugin so Homepage widgets see persistent label-based
-  names instead. See `glances/rename_disks.py`.
+  when the enclosure is reconnected. The Glances patch resolves
+  `/dev/disk/by-label/` through sysfs on every refresh, so Homepage widgets see
+  persistent label-based names even after a late mount or device reshuffle. Patch
+  installation or API failures are written to the container log. See
+  `glances/rename_disks.py`.
 - **Homepage widgets** — the capacity widgets use `fs:/mnt/<path>` (stable mount
   points); the R/W speed widgets use `disk:<label>` resolved by the Glances
   patch above.
-- **If drives are disconnected and reconnected**: mount them with `sudo mount -a`,
-  then restart Glances and any dependent containers (qBittorrent, etc.).
+- **If drives are disconnected and reconnected**: mount them with `sudo mount -a`;
+  Glances picks up the new device mapping on its next refresh. Restart only services
+  that require the mounts themselves, such as qBittorrent.
 
 ---
 

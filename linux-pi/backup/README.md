@@ -7,13 +7,14 @@ ntfy + a homepage card. Mirrors the server's own backup architecture
 
 ## What gets backed up
 
-- **AdGuard** `conf/` + `work/` — DNS settings, filter lists, rewrites, runtime state
+- **AdGuard** `conf/` — DNS settings, filter lists, rewrites, and restorable state
 - **Homepage** `config/` — dashboard widgets, services, bookmarks
 - **MotionEye** `/etc/motioneye/` — camera configs (recordings excluded — large/disposable)
 - **CUPS** `/etc/cups/` — printer configs, PPD files
 - Every service's gitignored **`.env`** (secrets needed to restore)
 
-Excluded as disposable/regenerable: MotionEye recordings, all `ts-state/`
+Excluded as disposable/regenerable: AdGuard query/statistics databases in `work/`,
+MotionEye recordings, all `ts-state/`
 (Tailscale node keys — re-auth with `TS_AUTHKEY` regenerates them), Docker
 images/containers.
 
@@ -29,12 +30,19 @@ Pi (restic) ──SFTP──> Main Server (restic-pi user)
 ```
 
 The second copy uses `restic copy --from-repo` (same pattern as the server's
-own backup). It's silently skipped if the SFTP connection to the second target
-fails.
+own backup). It must be initialized explicitly. An unavailable or incomplete
+second-repository operation is reported without failing the primary backup.
 
-**Important:** Restic's built-in SSH client doesn't read `~/.ssh/config`. The
-backup SSH key must be symlinked to `~/.ssh/id_ed25519` (the default path restic
-looks for). The setup steps below handle this.
+Restic's SFTP backend uses the system `ssh` command and honors SSH configuration.
+Because the timer runs with `HOME=/root`, configure its host, identity, and known
+host under `/root/.ssh/`.
+
+The main script records a current-run marker; its EXIT trap writes detailed
+failure status and removes staging. Systemd's `OnFailure` unit preserves and
+acknowledges current detail, or replaces a missing, running, success, or stale
+failure record before sending the single external ntfy/Kuma alert. The backup
+unit has a two-hour runtime limit so a hung SFTP operation cannot block every
+later timer run.
 
 ## Prerequisites
 
@@ -68,32 +76,31 @@ cat ~/.ssh/backup.pub
 # On the server, add the output to /home/restic-pi/.ssh/authorized_keys
 ```
 
-### 3. Symlink the key for restic
+### 3. Configure SSH for the root-run timer
 
-Restic's Go SSH client looks for `~/.ssh/id_ed25519` by default:
-
-```sh
-ln -sf ~/.ssh/backup ~/.ssh/id_ed25519
-ln -sf ~/.ssh/backup.pub ~/.ssh/id_ed25519.pub
-```
-
-### 4. Copy key/config/known_hosts to root
-
-The backup timer runs as **root**, so root needs the SSH setup:
+Copy the key and known-host entry to root, then configure the repository host:
 
 ```sh
 sudo mkdir -p /root/.ssh
 sudo cp ~/.ssh/backup /root/.ssh/backup
 sudo cp ~/.ssh/backup.pub /root/.ssh/backup.pub
-sudo ln -sf /root/.ssh/backup /root/.ssh/id_ed25519
-sudo ln -sf /root/.ssh/backup.pub /root/.ssh/id_ed25519.pub
 sudo chmod 700 /root/.ssh
-sudo chmod 600 /root/.ssh/backup /root/.ssh/id_ed25519
-sudo chmod 644 /root/.ssh/backup.pub /root/.ssh/id_ed25519.pub
+sudo chmod 600 /root/.ssh/backup
+sudo chmod 644 /root/.ssh/backup.pub
 sudo cp ~/.ssh/known_hosts /root/.ssh/known_hosts 2>/dev/null && sudo chmod 644 /root/.ssh/known_hosts || true
+sudoedit /root/.ssh/config
 ```
 
-### 5. Server-side setup
+```sshconfig
+Host pi-backup-target
+    HostName <server-ip>
+    User restic-pi
+    IdentityFile /root/.ssh/backup
+```
+
+Use `sftp:pi-backup-target:/mnt/...` for the repository URLs in `.env`.
+
+### 4. Server-side setup
 
 The main server needs a dedicated SFTP user for Pi backups. Create it manually
 or pass this to the server's LLM agent:
@@ -120,37 +127,43 @@ Match User restic-pi
     X11Forwarding no
 ```
 
-### 6. Configure
+### 5. Configure
 
 ```sh
 cd linux-pi/backup
 cp .env.example .env
 # set RESTIC_PASSWORD (and SAVE IT SECURELY), ntfy/Kuma URLs
+chmod 600 .env
 ```
 
-### 7. Initialize the repos (the script also does this on first run)
+### 6. Initialize both repositories
 
 ```sh
 set -a; source .env; set +a
 restic init
-# Also init the second copy repo if using it
+restic -r "$SECOND_RESTIC_REPOSITORY" init --copy-chunker-params --from-repo "$RESTIC_REPOSITORY"
 ```
 
-### 8. Status card server
+The script initializes the primary repository on first use. It never initializes the
+optional second repository automatically because an unreachable SFTP target and an
+uninitialized repository are not safely distinguishable.
+
+### 7. Status card server
 
 ```sh
 sudo docker compose up -d
 ```
 
-### 9. Install + enable the timer
+### 8. Install + enable the timer
 
 ```sh
-sudo cp pi-backup.service pi-backup.timer pi-backup-failure.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now pi-backup.timer
+sudo bash setup.sh
 ```
 
-### 10. Dry run + verify
+`setup.sh` renders the service units with the current checkout path, installs them,
+and enables the timer. Re-run it after moving the checkout.
+
+### 9. Run + verify
 
 ```sh
 sudo systemctl start pi-backup.service
@@ -180,7 +193,10 @@ Then put state back per service:
 ## Warnings
 
 - **Losing `RESTIC_PASSWORD` = unrecoverable backups.** Keep it secure.
-- The second copy is silently skipped if the target SFTP connection fails —
+- The second copy is reported as incomplete if its target or an operation fails —
   don't rely on it as your only backup.
+- Staged `.env` copies live under `/root/pi-backup-staging` with mode `0700` and
+  are removed on normal exit. A forced kill can leave that root-only directory for
+  the next run to replace.
 - The script skips missing source paths, so it's safe to enable before every
   service is deployed; coverage grows automatically as data dirs appear.

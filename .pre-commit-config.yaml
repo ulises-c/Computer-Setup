@@ -21,6 +21,12 @@ repos:
         files: ^packages\.json$
         pass_filenames: false
 
+      - id: python-syntax-check
+        name: python syntax check
+        language: system
+        entry: bash scripts/check-python-syntax.sh
+        types: [python]
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
