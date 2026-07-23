@@ -6,21 +6,25 @@
 #   - has shebang but not executable → flag (meant to run but can't)
 #   - is executable but no shebang  → flag (can run but no interpreter declared)
 # Library/sourced files (no shebang, not executable) are intentionally skipped.
-# Repo-relative glob patterns in ~/.claude/hooks/driftcheck-ignore are exempt
-# (for repos whose documented convention conflicts, e.g. scripts that are
-# intentionally non-executable because a Dockerfile chmods its copies).
+# Repo-root-relative glob patterns in ~/.claude/hooks/driftcheck-ignore
+# (global) and <repo-root>/.driftcheckignore (per-repo) are exempt (for repos
+# whose documented convention conflicts, e.g. scripts that are intentionally
+# non-executable because a Dockerfile chmods its copies). The hook runs from
+# the repo root regardless of where the session started, so patterns always
+# match against repo-root-relative paths.
 set -euo pipefail
 trap 'exit 2' ERR
 
 git rev-parse --git-dir &>/dev/null || exit 0
+cd "$(git rev-parse --show-toplevel)"
 
 ignore_patterns=()
-ignore_file="$HOME/.claude/hooks/driftcheck-ignore"
-if [[ -f "$ignore_file" ]]; then
+for ignore_file in "$HOME/.claude/hooks/driftcheck-ignore" .driftcheckignore; do
+  [[ -f "$ignore_file" ]] || continue
   while IFS= read -r pat; do
     [[ -n "$pat" && "$pat" != '#'* ]] && ignore_patterns+=("$pat")
   done < "$ignore_file"
-fi
+done
 
 issues=()
 
