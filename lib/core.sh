@@ -20,6 +20,7 @@ INCLUDE_OPTIONAL=false
 INCLUDE_WORK=false
 INCLUDE_PERSONAL=false
 DRY_RUN=false
+DOTFILES_ONLY=false
 
 # Category selection. When TAG_FILTER_ACTIVE is "true" the engine installs only
 # the base set (high-priority foundational packages), enabled work/personal
@@ -34,6 +35,7 @@ export TAG_FILTER_ACTIVE SELECTED_TAGS
 
 core_parse_args() {
   while [[ $# -gt 0 ]]; do
+    # shellcheck disable=SC2034  # DOTFILES_ONLY is consumed by setup.sh
     case "$1" in
       --optional) INCLUDE_OPTIONAL=true; SELECTION_EXPLICIT=true ;;
       --work)     INCLUDE_WORK=true; SELECTION_EXPLICIT=true ;;
@@ -50,6 +52,7 @@ core_parse_args() {
           printf 'WARNING: --tags resolved to no categories — installing base only.\n' >&2
         TAG_FILTER_ACTIVE=true; SELECTION_EXPLICIT=true; shift ;;
       --dry-run)  DRY_RUN=true ;;
+      --dotfiles) DOTFILES_ONLY=true ;;
       --distro|--platform)
         if [[ -z "${2:-}" || "${2:-}" == -* ]]; then
           printf 'ERROR: %s requires a value (macos|ubuntu|arch|server).\n' "$1" >&2
@@ -412,8 +415,9 @@ pnpm_install_tier() {
 # ── Shared post-install steps ─────────────────────────────────────────────────
 
 # Deploy ~/.zshrc from the shared dotfiles base unless the platform folder
-# ships its own zshrc.example override (linux-server does — headless, so its
-# zshrc drops Ghostty/fastfetch/notification hooks).
+# ships its own zshrc.example override. No platform currently does — the base
+# zshrc self-disables its desktop-only bits headless — but the hook stays so a
+# platform can diverge without touching the engine.
 deploy_zshrc() {
   local src="$SETUP_ROOT/dotfiles/zshrc.example" from="dotfiles/zshrc.example"
   if [[ -f "$CONFIG_SRC_DIR/zshrc.example" ]]; then
@@ -444,6 +448,28 @@ deploy_config() {
   else
     printf '==> %s already up to date\n' "$label"
   fi
+}
+
+# The shared dotfiles set — identical on every platform, and the entirety of a
+# --dotfiles run.
+deploy_dotfiles() {
+  # A --dotfiles run short-circuits before platform_main, so nothing has set
+  # CONFIG_SRC_DIR yet; resolve it here so deploy_zshrc's override lookup works
+  # on both paths.
+  if [[ -z "${CONFIG_SRC_DIR:-}" ]]; then
+    case "$PLATFORM" in
+      macos)  CONFIG_SRC_DIR="$SETUP_ROOT/macOS" ;;
+      server) CONFIG_SRC_DIR="$SETUP_ROOT/linux-server" ;;
+      *)      CONFIG_SRC_DIR="$SETUP_ROOT/linux-desktop" ;;
+    esac
+  fi
+  deploy_zshrc
+  printf '\n'
+  deploy_config "$SETUP_ROOT/dotfiles/tmux.conf" "$HOME/.tmux.conf" "tmux.conf" yes
+  printf '\n'
+  deploy_config "$SETUP_ROOT/dotfiles/zsh_plugins.txt" "$HOME/.zsh_plugins.txt" "" no
+  printf '\n'
+  deploy_config "$SETUP_ROOT/dotfiles/p10k.zsh.example" "$HOME/.p10k.zsh" "p10k.zsh.example" yes
 }
 
 # Use the real login shell from /etc/passwd — $SHELL can be an inherited
@@ -879,13 +905,7 @@ linux_main() {
 
   set_default_shell
   printf '\n'
-  deploy_zshrc
-  printf '\n'
-  deploy_config "$SETUP_ROOT/dotfiles/tmux.conf" "$HOME/.tmux.conf" "tmux.conf" yes
-  printf '\n'
-  deploy_config "$SETUP_ROOT/dotfiles/zsh_plugins.txt" "$HOME/.zsh_plugins.txt" "" no
-  printf '\n'
-  deploy_config "$SETUP_ROOT/dotfiles/p10k.zsh.example" "$HOME/.p10k.zsh" "p10k.zsh.example" yes
+  deploy_dotfiles
   if [[ "$SERVER_PROFILE" == true ]]; then
     # Plugins/prompt are the shared dotfiles set; pre-clone now while the
     # network is provably up rather than lazily on first interactive login.

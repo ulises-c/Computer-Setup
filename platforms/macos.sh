@@ -205,22 +205,12 @@ platform_main() {
     done
   fi
 
-  # ── tmux config ─────────────────────────────────────────────────────────────
-  # New with the dotfiles consolidation — the legacy macOS setup never deployed
-  # a tmux config, so Macs were stuck with the default green status bar.
-  printf '\n'
-  deploy_config "$SETUP_ROOT/dotfiles/tmux.conf" "$HOME/.tmux.conf" "tmux.conf" yes
-
-  # ── zshrc + antidote plugins ────────────────────────────────────────────────
+  # ── dotfiles: zshrc, tmux, antidote plugins, p10k ───────────────────────────
   # The shared dotfiles zshrc replaces the legacy append-lines approach; the
   # previous ~/.zshrc is backed up. macOS bits in it are guarded on
   # /opt/homebrew and $OSTYPE.
   printf '\n'
-  deploy_zshrc
-  printf '\n'
-  deploy_config "$SETUP_ROOT/dotfiles/zsh_plugins.txt" "$HOME/.zsh_plugins.txt" "" no
-  printf '\n'
-  deploy_config "$SETUP_ROOT/dotfiles/p10k.zsh.example" "$HOME/.p10k.zsh" "p10k.zsh.example" yes
+  deploy_dotfiles
   printf '\n'
 
   # ── Git: GPG signing ────────────────────────────────────────────────────────

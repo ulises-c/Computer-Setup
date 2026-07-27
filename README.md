@@ -13,6 +13,15 @@ bash setup.sh --profile server          # headless server (never auto-detected)
 bash setup.sh --platform <macos|ubuntu|arch|server>   # force platform
 ```
 
+Already provisioned and only want the shared configs refreshed? `--dotfiles`
+deploys `~/.zshrc`, `~/.tmux.conf`, `~/.zsh_plugins.txt`, and `~/.p10k.zsh`
+without installing any packages, backing up anything it changes:
+
+```bash
+bash setup.sh --dotfiles --dry-run      # preview
+bash setup.sh --dotfiles
+```
+
 Afterwards, check what's installed (read-only):
 
 ```bash

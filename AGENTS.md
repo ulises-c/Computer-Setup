@@ -13,12 +13,16 @@ Claude-Code-only notes on top; keep cross-agent guidance here, not there.
 ## Entrypoints
 
 - `setup.sh` — installs everything for the detected platform.
-  Flags: `--optional --work --personal --base --tags <csv> --dry-run --platform <macos|ubuntu|arch|server> --profile <desktop|server>`.
+  Flags: `--optional --work --personal --base --tags <csv> --dotfiles --dry-run --platform <macos|ubuntu|arch|server> --profile <desktop|server>`.
   The server platform is never auto-detected (`--profile server` or `--platform server` required).
   `--base` installs only the high-priority base set; `--tags development,terminal`
   installs base + those `packages.json` tag categories; a bare TTY run with no
   selection flag prompts interactively except on the server profile. Selection
   mechanics and the custom-step gating: `docs/PACKAGES.md`.
+  `--dotfiles` deploys only the shared dotfiles set and installs no packages — it
+  short-circuits in `setup.sh` before tag validation and the interactive prompt,
+  so it ignores every selection flag. `deploy_dotfiles()` in `lib/core.sh` is the
+  single owner of that set and is what both `platform_main`s call.
 - `verify.sh` — read-only health check mirroring `setup.sh`'s selection logic.
   Flags: `--optional --work --personal --all --platform <macos|ubuntu|arch|server>`
   (no `--dry-run`). The server profile additionally checks NUT configuration and

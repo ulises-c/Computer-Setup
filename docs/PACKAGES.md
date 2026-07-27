@@ -56,6 +56,27 @@ object-of-arrays.
   `pkg_selected` so they honor the selection too. The server profile keeps the filter
   inactive, so they install as before there.
 
+## Config-only runs (`--dotfiles`)
+
+`--dotfiles` bypasses package selection entirely: `setup.sh` calls
+`deploy_dotfiles()` and exits before `core_validate_tag_selection` and
+`core_maybe_prompt_selection`, so no tag/selection flag has any effect and
+nothing is installed. It deploys the four shared files:
+
+| Source | Destination | Backup on change |
+|---|---|---|
+| `dotfiles/zshrc.example` | `~/.zshrc` | yes |
+| `dotfiles/tmux.conf` | `~/.tmux.conf` | yes |
+| `dotfiles/zsh_plugins.txt` | `~/.zsh_plugins.txt` | no |
+| `dotfiles/p10k.zsh.example` | `~/.p10k.zsh` | yes |
+
+Identical files are skipped, and a changed one is saved to
+`<dst>.bak.YYYYmmdd_HHMMSS` first. Preview with `--dotfiles --dry-run`.
+
+`deploy_dotfiles()` resolves `CONFIG_SRC_DIR` itself when unset, because the
+short-circuit runs before any `platform_main` sets it — that keeps
+`deploy_zshrc`'s platform-override lookup working on both paths.
+
 ## Validation & reminder semantics
 
 - `scripts/validate-packages.sh` (pre-commit + CI) enforces the schema: platform
