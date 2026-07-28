@@ -37,6 +37,7 @@ core_detect_platform
 # --dotfiles deploys configs only, so it short-circuits ahead of tag validation
 # and the interactive category prompt — neither has anything to select.
 if [[ "$DOTFILES_ONLY" == true ]]; then
+  core_resolve_config_src_dir
   deploy_dotfiles
   exit 0
 fi

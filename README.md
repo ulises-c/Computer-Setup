@@ -15,7 +15,9 @@ bash setup.sh --platform <macos|ubuntu|arch|server>   # force platform
 
 Already provisioned and only want the shared configs refreshed? `--dotfiles`
 deploys `~/.zshrc`, `~/.tmux.conf`, `~/.zsh_plugins.txt`, and `~/.p10k.zsh`
-without installing any packages, backing up anything it changes:
+without installing any packages. A changed file is backed up first — except
+`~/.zsh_plugins.txt`, which is overwritten in place, so keep custom Antidote
+plugins somewhere else:
 
 ```bash
 bash setup.sh --dotfiles --dry-run      # preview

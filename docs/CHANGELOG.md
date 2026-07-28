@@ -20,7 +20,9 @@ in [UNIFICATION.md](UNIFICATION.md).
 ### Changed
 - The four dotfile deploys, previously duplicated between `platforms/macos.sh`
   and `linux_main()`, now live in one `deploy_dotfiles()` in `lib/core.sh`.
-  Verified behavior-preserving by diffing macOS dry-run output across the change.
+  macOS dry-run output is byte-identical across the change; the one real
+  difference is deploy order, which now matches Linux (zshrc before tmux rather
+  than after), so a mid-run `cp` failure aborts at a different file than before.
 
 ### Fixed
 - `driftcheck.sh` Stop hook aborted with `ignore_patterns[@]: unbound variable`

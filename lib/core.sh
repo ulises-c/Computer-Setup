@@ -450,19 +450,20 @@ deploy_config() {
   fi
 }
 
+# Resolve the platform config dir the way each platform_main does, for the
+# --dotfiles path that exits before any of them run. Assigns unconditionally:
+# an inherited CONFIG_SRC_DIR must not decide which zshrc.example wins.
+core_resolve_config_src_dir() {
+  case "$PLATFORM" in
+    macos)  CONFIG_SRC_DIR="$SETUP_ROOT/macOS" ;;
+    server) CONFIG_SRC_DIR="$SETUP_ROOT/linux-server" ;;
+    *)      CONFIG_SRC_DIR="$SETUP_ROOT/linux-desktop" ;;
+  esac
+}
+
 # The shared dotfiles set — identical on every platform, and the entirety of a
 # --dotfiles run.
 deploy_dotfiles() {
-  # A --dotfiles run short-circuits before platform_main, so nothing has set
-  # CONFIG_SRC_DIR yet; resolve it here so deploy_zshrc's override lookup works
-  # on both paths.
-  if [[ -z "${CONFIG_SRC_DIR:-}" ]]; then
-    case "$PLATFORM" in
-      macos)  CONFIG_SRC_DIR="$SETUP_ROOT/macOS" ;;
-      server) CONFIG_SRC_DIR="$SETUP_ROOT/linux-server" ;;
-      *)      CONFIG_SRC_DIR="$SETUP_ROOT/linux-desktop" ;;
-    esac
-  fi
   deploy_zshrc
   printf '\n'
   deploy_config "$SETUP_ROOT/dotfiles/tmux.conf" "$HOME/.tmux.conf" "tmux.conf" yes
