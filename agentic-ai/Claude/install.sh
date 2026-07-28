@@ -6,6 +6,7 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AGENTIC_DIR="$(cd "$REPO_DIR/.." && pwd)"
 CLAUDE_DIR="$HOME/.claude"
 HOOKS_DIR="$CLAUDE_DIR/hooks"
 SETTINGS="$CLAUDE_DIR/settings.json"
@@ -37,11 +38,24 @@ printf 'Copied: settings.json\n'
 ln -sf "$REPO_DIR/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md"
 printf 'Linked: CLAUDE.md\n'
 
-# Symlink rules directory (used by @imports in CLAUDE.md)
-# rm -f first: ln -sf on an existing dir-symlink creates a nested link inside it
-rm -f "$CLAUDE_DIR/rules"
-ln -sf "$REPO_DIR/rules" "$CLAUDE_DIR/rules"
-printf 'Linked: rules/\n'
+# Deploy the shared cross-agent AGENTS.md + rules/ to every global location that
+# reads one. Claude Code resolves @-imports against the *deployed* directory of
+# the importing file and will not follow "../", so AGENTS.md and rules/ must sit
+# as siblings of each instruction file — ~/AGENTS.md alone would leave its
+# @rules/... imports pointing at a nonexistent ~/rules.
+for agents_dir in "$CLAUDE_DIR" "$HOME/.codex" "$HOME"; do
+  mkdir -p "$agents_dir"
+  agents_dst="$agents_dir/AGENTS.md"
+  if [[ -e "$agents_dst" && ! -L "$agents_dst" ]]; then
+    backup="$agents_dst.bak.$(date +%Y%m%d%H%M%S)"
+    printf 'Backing up existing %s → %s\n' "$agents_dst" "$backup"
+    mv "$agents_dst" "$backup"
+  fi
+  ln -sf "$AGENTIC_DIR/AGENTS.md" "$agents_dst"
+  rm -f "$agents_dir/rules"
+  ln -sf "$AGENTIC_DIR/rules" "$agents_dir/rules"
+  printf 'Linked: AGENTS.md + rules/ → %s\n' "$agents_dir"
+done
 
 # Symlink docs directory (on-demand references pointed at by rules, e.g.
 # ~/.claude/docs/RAILGUARD.md — not @imported, read only when needed)

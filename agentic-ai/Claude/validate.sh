@@ -6,6 +6,7 @@
 set -uo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AGENTIC_DIR="$(cd "$REPO_DIR/.." && pwd)"
 CLAUDE_DIR="$HOME/.claude"
 HOOKS_DIR="$CLAUDE_DIR/hooks"
 ERRORS=0
@@ -41,9 +42,16 @@ check_regular_file() {
 section "Installed files"
 check_regular_file "$CLAUDE_DIR/settings.json"
 check_symlink "$CLAUDE_DIR/CLAUDE.md"     "$REPO_DIR/CLAUDE.md"
-check_symlink "$CLAUDE_DIR/rules"         "$REPO_DIR/rules"
 check_symlink "$CLAUDE_DIR/docs"          "$REPO_DIR/docs"
 check_symlink "$HOME/.railguard.yaml"     "$REPO_DIR/railguard.yaml"
+
+# AGENTS.md and rules/ must be siblings at every location that reads an
+# instruction file: @-imports resolve against the deployed directory and don't
+# follow "..", so a missing sibling silently loads nothing.
+for agents_dir in "$CLAUDE_DIR" "$HOME/.codex" "$HOME"; do
+  check_symlink "$agents_dir/AGENTS.md" "$AGENTIC_DIR/AGENTS.md"
+  check_symlink "$agents_dir/rules"     "$AGENTIC_DIR/rules"
+done
 
 # ── Hooks ─────────────────────────────────────────────────────────────────────
 section "Hooks"
