@@ -31,7 +31,8 @@ issues=()
 while IFS= read -r f; do
   [[ -f "$f" ]] || continue
   skipped=false
-  for pat in "${ignore_patterns[@]}"; do
+  # macOS ships bash 3.2, where "${arr[@]}" on an empty array trips set -u.
+  for pat in ${ignore_patterns[@]+"${ignore_patterns[@]}"}; do
     # shellcheck disable=SC2053  # unquoted RHS is the point: patterns are globs
     if [[ "$f" == $pat ]]; then
       skipped=true

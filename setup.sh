@@ -9,6 +9,9 @@
 #   --base           install only the base essentials (no category packages)
 #   --tags <csv>     install base + only the named categories, e.g.
 #                    --tags development,terminal  (categories are packages.json tags)
+#   --dotfiles       deploy only the shared dotfiles (~/.zshrc, ~/.tmux.conf,
+#                    ~/.zsh_plugins.txt, ~/.p10k.zsh); installs no packages.
+#                    Ignores all selection flags; combine with --dry-run to preview.
 #   --dry-run        print all commands without executing anything
 #
 # Run bare on a terminal (no selection flags) and setup prompts you to pick
@@ -30,6 +33,15 @@ source "$SETUP_ROOT/lib/core.sh"
 
 core_parse_args "$@"
 core_detect_platform
+
+# --dotfiles deploys configs only, so it short-circuits ahead of tag validation
+# and the interactive category prompt — neither has anything to select.
+if [[ "$DOTFILES_ONLY" == true ]]; then
+  core_resolve_config_src_dir
+  deploy_dotfiles
+  exit 0
+fi
+
 core_validate_tag_selection
 core_maybe_prompt_selection
 
