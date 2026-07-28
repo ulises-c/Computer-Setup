@@ -15,7 +15,8 @@ This will:
 - Back up your existing `~/.claude/settings.json` when it differs from the template
 - Copy this `settings.json` to `~/.claude/settings.json`
 - Symlink `~/.claude/CLAUDE.md` → this `CLAUDE.md`
-- Symlink `~/.claude/rules/` → this `rules/`
+- Symlink `AGENTS.md` + `rules/` → `../AGENTS.md` and `../rules/` in
+  `~/.claude/`, `~/.codex/`, and `~/` (the shared cross-agent set)
 - Symlink `~/.claude/docs/` → this `docs/`
 - Symlink this `railguard.yaml` → `~/.railguard.yaml`
 - Symlink each `hooks/*.sh` script into `~/.claude/hooks/`
@@ -87,22 +88,43 @@ Hooks use **exit 2** to block — Claude receives the stderr message as the reas
 
 ## Rules (Tip 6 hierarchical structure)
 
-`CLAUDE.md` @-imports from `rules/` to keep principles modular:
+`CLAUDE.md` imports `@AGENTS.md`, which imports from `rules/` — both live one
+level up in `agentic-ai/`, shared with Codex and opencode:
 
 ```
-rules/
-  common/
-    general.md   — language-agnostic coding principles
-    agents.md    — when to self-invoke Plan / Explore / review / verify
-    railguard.md — slim always-loaded Railguard behavior and reference routing
-  bash/
-    style.md     — bash scripting conventions
-docs/
-  RAILGUARD.md             — expected behavior and bug-reporting protocol
-  per-project-allowlist.md — local path-allowlist configuration
+agentic-ai/
+  AGENTS.md        — shared cross-agent instruction set (imports the rules below)
+  rules/
+    common/
+      general.md   — language-agnostic coding principles
+      agents.md    — when to self-invoke Plan / Explore / review / verify
+      railguard.md — slim always-loaded Railguard behavior and reference routing
+    bash/
+      style.md     — bash scripting conventions
+  Claude/
+    CLAUDE.md      — imports @AGENTS.md, then Claude-Code-only notes
+    docs/
+      RAILGUARD.md             — expected behavior and bug-reporting protocol
+      per-project-allowlist.md — local path-allowlist configuration
 ```
 
-Add a new language by creating `rules/<lang>/style.md` and adding an `@` line to `CLAUDE.md`.
+Add a new language by creating `rules/<lang>/style.md` and adding an `@` line to
+`AGENTS.md` (cross-agent) or `CLAUDE.md` (Claude-only).
+
+### Why AGENTS.md and rules/ are symlinked into three places
+
+Claude Code resolves `@` imports against the **deployed** directory of the
+importing file, and does **not** follow `../`. Verified behavior:
+
+| Import form | Resolves? |
+|---|---|
+| `@rules/common/general.md` (at or below the file's dir) | yes |
+| `@../AGENTS.md` (parent) | **no** |
+| through a symlinked file | relative to the **symlink's** dir, not its target |
+
+So every location holding an instruction file needs `AGENTS.md` and `rules/`
+beside it. This is why the pre-existing untracked `~/AGENTS.md` was inert: its
+`@rules/common/*` lines pointed at a `~/rules/` that never existed.
 
 ## Testing the hooks
 

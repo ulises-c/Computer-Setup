@@ -6,16 +6,44 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com). Remaining
 work lives in [TODO.md](TODO.md); the design rationale for the unified layout is
 in [UNIFICATION.md](UNIFICATION.md).
 
-## Unreleased — config-only deploys
+## Unreleased — shared global AGENTS.md
+
+### Added
+- `agentic-ai/AGENTS.md`: the tracked cross-agent global instruction set, plus
+  `agentic-ai/rules/` (moved up from `agentic-ai/Claude/rules/`). `install.sh`
+  symlinks both into `~/.claude/`, `~/.codex/`, and `~/`.
+
+### Changed
+- `agentic-ai/Claude/CLAUDE.md` slimmed to `@AGENTS.md` + Claude-only notes,
+  mirroring the repo-root `AGENTS.md`/`CLAUDE.md` split adopted in `f9dbe01`.
+
+### Fixed
+- The global `~/AGENTS.md` was untracked, stale, and **inert**: created 9 Jul by
+  railguard's installer, it missed both 12 Jul changes (`f9dbe01` AGENTS.md-as-
+  master, `29a2675` graphify removal), still pointed at a `~/.Codex/skills/
+  graphify/` that no longer exists, and its four `@rules/common/*` imports
+  resolved against a `~/rules/` that never existed — so none of them ever loaded.
+  `~/.codex/AGENTS.md` was a byte-identical copy with the same defects.
+
+### Notes
+Claude Code `@`-import semantics, verified empirically rather than assumed:
+imports resolve against the **deployed** directory of the importing file, do
+**not** follow `../`, and for a symlinked file resolve relative to the symlink
+rather than its target. Hence `AGENTS.md` + `rules/` are symlinked as siblings at
+every location that holds an instruction file, and `validate.sh` now checks all
+six links.
+
+## 2026-07-28 — Config-only deploys ([#65](https://github.com/ulises-c/Computer-Setup/pull/65))
 
 ### Added
 - `setup.sh --dotfiles`: deploys only the shared dotfiles set (`~/.zshrc`,
   `~/.tmux.conf`, `~/.zsh_plugins.txt`, `~/.p10k.zsh`) and installs no packages.
   Short-circuits before tag validation and the interactive prompt, so selection
   flags don't apply. Combine with `--dry-run` to preview.
-- `fixterm` alias in `dotfiles/zshrc.example` — resets stuck mouse (1000/1002/
-  1003/1006/1015) and focus (1004) reporting after an app dies without cleanup,
-  a common sleep/wake symptom. Cheaper than `reset`, which also clears scrollback.
+- `fixterm` alias in `dotfiles/zshrc.example` — resets stuck mouse reporting
+  (modes 9/1000/1001/1002/1003/1005/1006/1015/1016) and focus reporting (1004)
+  after an app dies without cleanup, a common sleep/wake symptom. Cheaper than
+  `reset`, which also clears scrollback.
 
 ### Changed
 - The four dotfile deploys, previously duplicated between `platforms/macos.sh`
@@ -28,9 +56,14 @@ in [UNIFICATION.md](UNIFICATION.md).
 - `driftcheck.sh` Stop hook aborted with `ignore_patterns[@]: unbound variable`
   on every session end when neither ignore file existed — macOS bash 3.2 treats
   `"${arr[@]}"` on an empty array as unset under `set -u`. It exited 1 (generic
-  hook error) instead of the intended 2, masking real violations.
+  hook error) instead of the intended 2, masking real violations. Two further
+  exit-2 gaps found during review are tracked in
+  [#67](https://github.com/ulises-c/Computer-Setup/issues/67).
 - `benchmarking/lib/common.sh` was mode 644 with a shebang while its siblings
   `lib/core.sh` and `lib/verify.sh` are 755 — the violation the crash was hiding.
+- `CONFIG_SRC_DIR` is now assigned unconditionally on the `--dotfiles` path
+  (`core_resolve_config_src_dir`), so an inherited environment value can't decide
+  which `zshrc.example` wins.
 - Stale comment in `lib/core.sh` claiming `linux-server` ships a `zshrc.example`
   override; no platform does.
 
