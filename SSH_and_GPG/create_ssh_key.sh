@@ -102,6 +102,19 @@ if [[ -z "$SSH_PASSPHRASE" ]]; then
   esac
 fi
 
+# ---- Agent timeout (passphrase-protected keys only) ----
+AGENT_TIMEOUT="${AGENT_TIMEOUT:-}"
+if [[ -n "$SSH_PASSPHRASE" ]]; then
+  if [[ -z "$AGENT_TIMEOUT" ]]; then
+    read -r -p "Minutes ssh-agent keeps the key unlocked (0 = ask every time) [15]: " AGENT_TIMEOUT
+    AGENT_TIMEOUT="${AGENT_TIMEOUT:-15}"
+  fi
+  if [[ ! "$AGENT_TIMEOUT" =~ ^[0-9]+$ ]]; then
+    echo "Error: AGENT_TIMEOUT must be a whole number of minutes." >&2
+    exit 1
+  fi
+fi
+
 SSH_DIR="$HOME/.ssh"
 KEY_PATH="$SSH_DIR/$KEY_NAME"
 PUB_PATH="$KEY_PATH.pub"
@@ -139,7 +152,24 @@ if [[ -z "${SSH_AUTH_SOCK:-}" ]]; then
 fi
 
 # ---- Add key to agent ----
-ssh-add "$KEY_PATH"
+if [[ -n "$SSH_PASSPHRASE" && "$AGENT_TIMEOUT" == "0" ]]; then
+  echo "Not adding key to ssh-agent: passphrase will be asked on every use."
+elif [[ -n "$SSH_PASSPHRASE" ]]; then
+  ssh-add -t "${AGENT_TIMEOUT}m" "$KEY_PATH"
+else
+  ssh-add "$KEY_PATH"
+fi
+
+# AddKeysToAgent with a time interval needs OpenSSH 8.7+; without it, a key
+# re-added on first use would stay unlocked forever, defeating the timeout.
+ADD_KEYS_TO_AGENT="yes"
+if [[ -n "$SSH_PASSPHRASE" ]]; then
+  if [[ "$AGENT_TIMEOUT" == "0" ]]; then
+    ADD_KEYS_TO_AGENT="no"
+  else
+    ADD_KEYS_TO_AGENT="${AGENT_TIMEOUT}m"
+  fi
+fi
 
 # ---- Update ~/.ssh/config idempotently ----
 touch "$CFG_PATH"
@@ -164,14 +194,14 @@ if [[ -n "$IS_SELF_HOSTED" ]]; then
     # Port 22 is the SSH default — only emit the line for a non-standard port.
     [[ -n "$GIT_SSH_PORT" && "$GIT_SSH_PORT" != "22" ]] && echo "  Port $GIT_SSH_PORT"
     echo "  User git"
-    echo "  AddKeysToAgent yes"
+    echo "  AddKeysToAgent $ADD_KEYS_TO_AGENT"
     echo "  IdentityFile $KEY_PATH"
   } >> "$CFG_PATH"
 else
   {
     echo ""
     echo "Host $GIT_HOST"
-    echo "  AddKeysToAgent yes"
+    echo "  AddKeysToAgent $ADD_KEYS_TO_AGENT"
     # macOS keychain optional:
     # echo "  UseKeychain yes"
     echo "  IdentityFile $KEY_PATH"
