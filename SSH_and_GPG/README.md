@@ -32,6 +32,7 @@ Creates an Ed25519 SSH key for authenticating to a Git host (GitHub, GitLab, Bit
 
 **What it does:**
 - Prompts for an email (used as the key comment), Git host, key filename, and optional passphrase
+- For passphrase-protected keys: prompts for an agent timeout in minutes (default `15`) — `ssh-agent` keeps the key unlocked that long after each `ssh-add`, so you aren't re-typing the passphrase on every push; `0` disables caching entirely (passphrase asked on every use). The `Host` block gets a matching `AddKeysToAgent <N>m` (needs OpenSSH 8.7+) so keys re-added on first use expire too
 - Generates the key in `~/.ssh/` (skips generation if the key already exists, with an overwrite prompt)
 - Adds the key to `ssh-agent` and updates `~/.ssh/config` with a `Host` block (idempotent)
 - For self-hosted servers: prompts for an SSH port (default `22`) and writes an alias with `HostName`, `Port`, and `User git` so you can clone as `git clone <alias>:<user>/<repo>.git`
@@ -43,6 +44,8 @@ Creates an Ed25519 SSH key for authenticating to a Git host (GitHub, GitLab, Bit
 bash create_ssh_key.sh
 # or pre-fill inputs via env vars:
 EMAIL="jane@example.com" GIT_HOST="github.com" KEY_NAME="github" bash create_ssh_key.sh
+# Passphrase-protected key, cached in ssh-agent for 30 minutes:
+EMAIL="jane@example.com" GIT_HOST="github.com" KEY_NAME="github" SSH_PASSPHRASE="..." AGENT_TIMEOUT=30 bash create_ssh_key.sh
 # Self-hosted Git server:
 EMAIL="jane@example.com" IS_SELF_HOSTED=true GIT_HOSTNAME="hostname.ts.net" GIT_HOST="gitserver" GIT_SSH_PORT=22 bash create_ssh_key.sh
 ```

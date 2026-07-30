@@ -35,6 +35,11 @@ fence:
     - "/tmp"
     - "~/github"
     - "~/Github"
+    # Both cases: the fence matches literally and Linux paths are
+    # case-sensitive, so "~/Bitbucket" alone never matched the actual
+    # ~/bitbucket checkouts — which is why projects there had to enumerate
+    # every subpath by hand.
+    - "~/bitbucket"
     - "~/Bitbucket"
   denied_paths:
     - "~/.ssh"
