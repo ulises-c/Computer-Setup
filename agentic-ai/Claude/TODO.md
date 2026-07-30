@@ -11,7 +11,7 @@ After a fresh install, run each check to confirm hooks and railguard are wired c
 - [ ] `post-edit-shellcheck.sh` — fires after shell script edits and blocks on shellcheck errors
 - [ ] `post-test-runner.sh` — auto-detects test suite and runs after source edits; exits 2 on failure
   - **uv projects**: `.claude/test-cmd` must use `uv run --no-sync pytest`, not bare `uv run pytest`. Without `--no-sync`, every edit triggers `uv sync` which reverts out-of-band package installs (e.g. ROCm torch back to CUDA torch). Consider patching `post-test-runner.sh` to inject `--no-sync` when it detects `uv run` in the resolved test command.
-- [ ] `driftcheck.sh` — flags `.sh` files missing execute permission or shebang at session end
+- [ ] `driftcheck.sh` — flags `.sh` files missing execute permission or shebang at session end; nudges via `systemMessage` (exit 0), never blocks the stop
 
 ### Railguard
 

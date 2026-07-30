@@ -6,6 +6,37 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com). Remaining
 work lives in [TODO.md](TODO.md); the design rationale for the unified layout is
 in [UNIFICATION.md](UNIFICATION.md).
 
+## Unreleased — driftcheck as a nudge
+
+### Changed
+- `driftcheck.sh` no longer blocks the Stop hook ([#69](https://github.com/ulises-c/Computer-Setup/issues/69)).
+  Convention drift is now reported as hook JSON (`{"systemMessage": …}`) with
+  exit 0 instead of exit 2. Blocking a stop over a style check pressured the
+  agent into the mechanical fix (`chmod +x`), which for a repo whose paths had
+  drifted outside its `.driftcheckignore` globs was exactly the wrong action.
+  Exit 1 is now reserved for "the check could not run".
+
+### Fixed
+- Two silent-failure modes in `driftcheck.sh`, the follow-ups left out of scope
+  in [#65](https://github.com/ulises-c/Computer-Setup/pull/65) and tracked in
+  [#67](https://github.com/ulises-c/Computer-Setup/issues/67):
+  - A failing `git ls-files` was invisible. Feeding the loop from a process
+    substitution hid git's exit status from `set -e` and the `ERR` trap, so a
+    corrupt index produced zero lines and a clean "no violations" pass — a guard
+    reporting all-clear having checked nothing. The listing is now captured
+    before the loop and a failure exits 1 with a message.
+  - An unset `HOME` tripped `set -u` at expansion time, terminating before the
+    `ERR` trap with a bare `HOME: unbound variable`. It is now an explicit,
+    diagnosed exit 1.
+
+### Notes
+`validate.sh` grew four `driftcheck.sh` regression tests, all verified to fail
+against the pre-fix hook: it flags a shebang script missing its execute bit,
+honors `.driftcheckignore` (parsing that a revert dropped silently once
+already), fails loudly on a corrupt git index, and fails deliberately with
+`HOME` unset. The two silent-failure bugs are exactly the class that hides from
+a "run it and see" check, so each has a test that reproduces the original.
+
 ## Unreleased — shared global AGENTS.md
 
 ### Added
