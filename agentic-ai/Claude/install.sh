@@ -84,6 +84,12 @@ done
 RAILGUARD_BIN="${CARGO_HOME:-$HOME/.cargo}/bin/railguard"
 CARGO_BIN="$(command -v cargo 2>/dev/null || echo "${CARGO_HOME:-$HOME/.cargo}/bin/cargo")"
 if [[ -x "$CARGO_BIN" ]]; then
+  # rustup ships no toolchain: cargo is a proxy that errors until a default is
+  # picked, so an -x test passes on a machine that can't build anything.
+  if command -v rustup &>/dev/null && ! rustup show active-toolchain &>/dev/null; then
+    printf 'No default Rust toolchain; running rustup default stable...\n'
+    rustup default stable
+  fi
   printf 'Installing railguard from GitHub...\n'
   if ! "$CARGO_BIN" install --git https://github.com/ulises-c/railguard; then
     printf '\nerror: cargo install railguard failed — see output above.\n' >&2
