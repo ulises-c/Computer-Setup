@@ -78,13 +78,22 @@ After any source file edit, auto-detects and runs the project test suite. Detect
 Exits 2 on test failure (Claude sees the output) or timeout (60 s). Exits 0 silently on pass, printing timing to stderr.
 
 ### Stop: `driftcheck.sh`
-At session end, validates project conventions for all git-tracked `.sh` files:
+At session end, reports convention drift across all git-tracked `.sh` files:
 - Execute permission set
 - Shebang line present
 
-Exits 2 if violations found, injecting the list back into Claude's context.
+Drift is a **nudge, not a block**: findings go out as hook JSON
+(`{"systemMessage": …}`) with exit 0, so Claude is free to stop. A style check
+shouldn't be able to trap the agent into "fixing" a false positive — repos whose
+convention legitimately differs exempt paths via glob patterns in
+`~/.claude/hooks/driftcheck-ignore` (global) or `<repo-root>/.driftcheckignore`.
 
-Hooks use **exit 2** to block — Claude receives the stderr message as the reason.
+Exit 1 means the check itself couldn't run (`git ls-files` failed, `HOME`
+unset). That path is deliberately loud: a guard that reports "all clear" without
+having looked is worse than one that errors.
+
+The other hooks use **exit 2** to block — Claude receives the stderr message as
+the reason.
 
 ## Rules (Tip 6 hierarchical structure)
 

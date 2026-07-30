@@ -202,11 +202,55 @@ else
 fi
 rm -f "$_TMPSH"; trap - EXIT
 
-# driftcheck.sh: must pass on the current repo state
-if (cd "$REPO_DIR" && bash "$REPO_DIR/hooks/driftcheck.sh" &>/dev/null); then
-  pass "driftcheck.sh: no convention violations in repo"
+# driftcheck.sh: drift is a nudge (JSON on stdout, exit 0); non-zero means the
+# check could not run at all, which is the real failure.
+DRIFT_OUT=$(cd "$REPO_DIR" && bash "$REPO_DIR/hooks/driftcheck.sh" 2>/dev/null)
+DRIFT_RC=$?
+if [[ $DRIFT_RC -ne 0 ]]; then
+  fail "driftcheck.sh: could not run (exit $DRIFT_RC) — run hooks/driftcheck.sh directly for details"
+elif [[ -n "$DRIFT_OUT" ]]; then
+  warn "driftcheck.sh: convention drift reported — run hooks/driftcheck.sh directly for details"
 else
-  fail "driftcheck.sh: convention violations found — run hooks/driftcheck.sh directly for details"
+  pass "driftcheck.sh: no convention drift in repo"
+fi
+
+# The next three are regression tests for silent-failure modes: each one, when
+# broken, makes driftcheck.sh report "all clear" without having checked anything.
+_DRIFT_REPO=$(mktemp -d)
+trap 'rm -rf "$_DRIFT_REPO"' EXIT
+(
+  cd "$_DRIFT_REPO" || exit 1
+  git init --quiet .
+  printf '#!/usr/bin/env bash\ntrue\n' > drift.sh
+  git add drift.sh
+  git -c user.email=validate@local -c user.name=validate commit --quiet -m init
+) &>/dev/null
+
+if [[ "$(cd "$_DRIFT_REPO" && bash "$REPO_DIR/hooks/driftcheck.sh" 2>/dev/null)" == *drift.sh* ]]; then
+  pass "driftcheck.sh: flags a shebang script missing its execute bit"
+else
+  fail "driftcheck.sh: failed to flag a shebang script missing its execute bit"
+fi
+
+printf 'drift.sh\n' > "$_DRIFT_REPO/.driftcheckignore"
+if [[ -z "$(cd "$_DRIFT_REPO" && bash "$REPO_DIR/hooks/driftcheck.sh" 2>/dev/null)" ]]; then
+  pass "driftcheck.sh: honors .driftcheckignore patterns"
+else
+  fail "driftcheck.sh: .driftcheckignore patterns were not honored"
+fi
+
+printf 'CORRUPT' > "$_DRIFT_REPO/.git/index"
+if (cd "$_DRIFT_REPO" && bash "$REPO_DIR/hooks/driftcheck.sh") &>/dev/null; then
+  fail "driftcheck.sh: exits 0 when git ls-files fails (silent false negative)"
+else
+  pass "driftcheck.sh: fails loudly when git ls-files fails"
+fi
+rm -rf "$_DRIFT_REPO"; trap - EXIT
+
+if [[ "$( (cd "$REPO_DIR" && env -u HOME bash "$REPO_DIR/hooks/driftcheck.sh") 2>&1 )" == *'HOME is unset'* ]]; then
+  pass "driftcheck.sh: unset HOME fails deliberately"
+else
+  fail "driftcheck.sh: unset HOME does not fail deliberately (set -u crash?)"
 fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
