@@ -1,8 +1,8 @@
 # Claude Code Config
 
 Version-controlled source of truth for `~/.claude/` settings, hooks, rules, and
-on-demand docs. Running `install.sh` copies the settings template and links the
-rest of the configuration.
+on-demand docs, plus the hook scripts shared with Codex. Running `install.sh`
+copies the Claude settings template and links the shared configuration.
 
 ## Activation
 
@@ -19,17 +19,23 @@ This will:
   `~/.claude/`, `~/.codex/`, and `~/` (the shared cross-agent set)
 - Symlink `~/.claude/docs/` → this `docs/`
 - Symlink this `railguard.yaml` → `~/.railguard.yaml`
-- Symlink each `hooks/*.sh` script into `~/.claude/hooks/`
+- Symlink each `hooks/*.sh` script into both `~/.claude/hooks/` and
+  `~/.codex/hooks/`
 - Install or update the Railguard fork with
   `cargo install --git https://github.com/ulises-c/railguard` (requires
   Rust/cargo; an existing binary is kept with a warning when cargo is unavailable)
 - Run `railguard install` to register it as a global PreToolUse hook
 
-Restart Claude Code after running.
+Restart both Claude Code and Codex after running so each reloads its hook
+configuration.
 
 > **Note:** `settings.json` sets `bypassPermissions` at the user level, so it applies to **all projects**, not just this repo.
 
 ## What this configures
+
+The hook scripts below are deployed for both Claude Code and Codex. Claude hook
+registration lives in `settings.json`; Codex hook registration remains in
+`~/.codex/hooks.json`, which this installer does not rewrite.
 
 ### `bypassPermissions`
 Claude auto-approves all tool calls without prompting. The hooks below act as the safety gate.
