@@ -8,7 +8,7 @@ set -uo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENTIC_DIR="$(cd "$REPO_DIR/.." && pwd)"
 CLAUDE_DIR="$HOME/.claude"
-HOOKS_DIR="$CLAUDE_DIR/hooks"
+HOOKS_DIRS=("$CLAUDE_DIR/hooks" "$HOME/.codex/hooks")
 ERRORS=0
 
 pass() { printf '  [ OK ] %s\n'   "$1"; }
@@ -57,20 +57,19 @@ done
 section "Hooks"
 for hook in "$REPO_DIR/hooks/"*.sh; do
   name="$(basename "$hook")"
-  linked="$HOOKS_DIR/$name"
-  if ! [[ -L "$linked" && "$(readlink "$linked")" == "$hook" ]]; then
-    fail "hooks/$name: not linked in $HOOKS_DIR"
-    continue
-  fi
   if ! [[ -x "$hook" ]]; then
     fail "hooks/$name: not executable (run: chmod +x $hook)"
-    continue
+  else
+    pass "hooks/$name: source is executable"
   fi
   if ! bash -n "$hook" 2>/dev/null; then
     fail "hooks/$name: bash syntax error"
-    continue
+  else
+    pass "hooks/$name: source syntax"
   fi
-  pass "hooks/$name"
+  for hooks_dir in "${HOOKS_DIRS[@]}"; do
+    check_symlink "$hooks_dir/$name" "$hook"
+  done
 done
 
 # ── Required binaries ─────────────────────────────────────────────────────────

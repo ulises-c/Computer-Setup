@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Idempotent setup: deploys this repo's Claude config into ~/.claude/
-# (settings.json is copied, everything else symlinked).
+# Idempotent setup: deploys this repo's Claude config and shared Codex hooks.
+# Claude settings are copied; instructions, docs, policies, and hooks are symlinked.
 # Safe to re-run. Backs up any existing settings.json before replacing it.
 
 set -euo pipefail
@@ -8,7 +8,7 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENTIC_DIR="$(cd "$REPO_DIR/.." && pwd)"
 CLAUDE_DIR="$HOME/.claude"
-HOOKS_DIR="$CLAUDE_DIR/hooks"
+HOOKS_DIRS=("$CLAUDE_DIR/hooks" "$HOME/.codex/hooks")
 SETTINGS="$CLAUDE_DIR/settings.json"
 
 if [[ -d "$CLAUDE_DIR/docs" && ! -L "$CLAUDE_DIR/docs" ]]; then
@@ -67,14 +67,16 @@ printf 'Linked: docs/\n'
 ln -sf "$REPO_DIR/railguard.yaml" "$HOME/.railguard.yaml"
 printf 'Linked: railguard.yaml → ~/.railguard.yaml\n'
 
-# Create hooks dir if it doesn't exist
-mkdir -p "$HOOKS_DIR"
+# Create hook dirs if they don't exist
+mkdir -p "${HOOKS_DIRS[@]}"
 
 # Symlink each hook script and ensure it's executable
 for hook in "$REPO_DIR/hooks/"*.sh; do
   chmod +x "$hook"
-  ln -sf "$hook" "$HOOKS_DIR/$(basename "$hook")"
-  printf 'Linked: hooks/%s\n' "$(basename "$hook")"
+  for hooks_dir in "${HOOKS_DIRS[@]}"; do
+    ln -sf "$hook" "$hooks_dir/$(basename "$hook")"
+    printf 'Linked: %s/%s\n' "$hooks_dir" "$(basename "$hook")"
+  done
 done
 
 # Install (or migrate) the railguard binary from the GitHub source.
