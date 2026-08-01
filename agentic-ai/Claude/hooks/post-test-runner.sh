@@ -1,16 +1,34 @@
 #!/usr/bin/env bash
-# PostToolUse hook for Write/Edit/MultiEdit: runs the project test suite after source edits.
+# PostToolUse hook for Write/Edit/MultiEdit/apply_patch: runs the project test suite after source edits.
 # Exit 2 = Claude sees failure output (warn). Exit 0 = passed (timing shown) or no suite found.
 set -uo pipefail
 
 INPUT=$(cat) || exit 0
-FILE=$(jq -r '.tool_input.file_path // ""' <<< "$INPUT" 2>/dev/null) || exit 0
+CWD=$(jq -r '.cwd // ""' <<< "$INPUT" 2>/dev/null) || exit 0
+FILES=$(jq -r '
+  if (.tool_input.file_path // "") != "" then
+    .tool_input.file_path
+  else
+    (.tool_input.command // "")
+    | split("\n")[]
+    | select(test("^\\*\\*\\* (Add|Update|Delete) File: |^\\*\\*\\* Move to: "))
+    | sub("^\\*\\*\\* (Add|Update|Delete) File: "; "")
+    | sub("^\\*\\*\\* Move to: "; "")
+  end
+' <<< "$INPUT" 2>/dev/null) || exit 0
+FILE=""
+while IFS= read -r candidate; do
+  [[ -n "$candidate" ]] || continue
+  if [[ "$candidate" != /* && -n "$CWD" ]]; then
+    candidate="$CWD/$candidate"
+  fi
+  case "${candidate##*.}" in
+    md|txt|json|yaml|yml|toml|lock|rst|svg|png|jpg|jpeg|gif|pdf|ico) continue ;;
+  esac
+  FILE="$candidate"
+  break
+done <<< "$FILES"
 [[ -n "$FILE" ]] || exit 0
-
-# Skip non-source extensions
-case "${FILE##*.}" in
-  md|txt|json|yaml|yml|toml|lock|rst|svg|png|jpg|jpeg|gif|pdf|ico) exit 0 ;;
-esac
 
 # Resolve project root via git; no repo = no test suite
 ROOT=$(git -C "$(dirname "$FILE")" rev-parse --show-toplevel 2>/dev/null) || exit 0

@@ -72,6 +72,30 @@ for hook in "$REPO_DIR/hooks/"*.sh; do
   done
 done
 
+section "Codex hook registration"
+CODEX_HOOKS="$HOME/.codex/hooks.json"
+if ! jq empty "$CODEX_HOOKS" >/dev/null 2>&1; then
+  fail "$CODEX_HOOKS: missing or invalid JSON"
+else
+  for registration in \
+    "PreToolUse:validate-bash.sh" \
+    "PreToolUse:validate-write.sh" \
+    "PostToolUse:post-edit-shellcheck.sh" \
+    "PostToolUse:post-test-runner.sh" \
+    "Stop:driftcheck.sh"; do
+    event="${registration%%:*}"
+    name="${registration#*:}"
+    if jq -e --arg event "$event" --arg name "$name" '
+      [.hooks[$event][]?.hooks[]?.command // empty | select(contains("/" + $name))]
+      | length > 0
+    ' "$CODEX_HOOKS" >/dev/null 2>&1; then
+      pass "Codex $event hook registered: $name"
+    else
+      fail "Codex $event hook missing: $name"
+    fi
+  done
+fi
+
 # ── Required binaries ─────────────────────────────────────────────────────────
 section "Required binaries"
 check_bin() {
@@ -161,6 +185,18 @@ else
   fail "validate-bash.sh: incorrectly blocked a safe command"
 fi
 
+if run_hook validate-bash.sh '{"tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Add File: script.sh\n+sudo --version\n*** End Patch"}}'; then
+  pass "validate-bash.sh: ignores Codex patch contents"
+else
+  fail "validate-bash.sh: scanned Codex patch contents as shell commands"
+fi
+
+if run_hook validate-bash.sh '{"tool_name":"Bash","tool_input":{"command":"sudo --version"}}'; then
+  fail "validate-bash.sh: trusted a sudo Bash command"
+else
+  pass "validate-bash.sh: still blocks sudo Bash commands"
+fi
+
 # validate-write.sh: must block writes to sensitive paths
 if run_hook validate-write.sh '{"tool_input":{"file_path":"/etc/passwd"}}'; then
   fail "validate-write.sh: did not block write to /etc/passwd"
@@ -181,6 +217,12 @@ else
   fail "validate-write.sh: incorrectly blocked /tmp/test.txt"
 fi
 
+if run_hook validate-write.sh '{"cwd":"/tmp","tool_input":{"command":"*** Begin Patch\n*** Update File: /etc/passwd\n@@\n-old\n+new\n*** End Patch"}}'; then
+  fail "validate-write.sh: did not block a sensitive Codex patch"
+else
+  pass "validate-write.sh: blocks sensitive Codex patches"
+fi
+
 # post-edit-shellcheck.sh: must pass on a valid script
 if printf '{"tool_input":{"file_path":"%s"}}' "$REPO_DIR/hooks/validate-bash.sh" \
    | bash "$REPO_DIR/hooks/post-edit-shellcheck.sh" &>/dev/null; then
@@ -193,11 +235,11 @@ fi
 _TMPSH=$(mktemp /tmp/bad-XXXXXX.sh)
 trap 'rm -f "$_TMPSH"' EXIT
 printf '#!/usr/bin/env bash\nFOO=$(\n' > "$_TMPSH"
-if printf '{"tool_input":{"file_path":"%s"}}' "$_TMPSH" \
+if printf '{"cwd":"/tmp","tool_input":{"command":"*** Begin Patch\\n*** Update File: %s\\n@@\\n-old\\n+new\\n*** End Patch"}}' "$_TMPSH" \
    | bash "$REPO_DIR/hooks/post-edit-shellcheck.sh" &>/dev/null; then
-  fail "post-edit-shellcheck.sh: failed to catch a syntax error"
+  fail "post-edit-shellcheck.sh: failed to catch a Codex patch syntax error"
 else
-  pass "post-edit-shellcheck.sh: catches shell syntax errors"
+  pass "post-edit-shellcheck.sh: catches shell syntax errors from Codex patches"
 fi
 rm -f "$_TMPSH"; trap - EXIT
 
