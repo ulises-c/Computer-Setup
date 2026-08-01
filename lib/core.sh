@@ -819,8 +819,8 @@ ghostty_deploy_linux() {
 
 desktop_pipx_section() {
   printf '\n==> Installing pipx packages...\n'
-  if command -v pipx &>/dev/null; then
-    pipx ensurepath
+  if [[ "$DRY_RUN" == true ]] || command -v pipx &>/dev/null; then
+    [[ "$DRY_RUN" == false ]] && pipx ensurepath
     pipx_install_tier "medium"
   else
     printf '  pipx not found — skipping\n'
