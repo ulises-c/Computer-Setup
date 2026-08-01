@@ -6,6 +6,25 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com). Remaining
 work lives in [TODO.md](TODO.md); the design rationale for the unified layout is
 in [UNIFICATION.md](UNIFICATION.md).
 
+## Unreleased — Codex hook parity
+
+### Added
+- `agentic-ai/Claude/benchmark-codex-hooks.sh` provides a deterministic TAP
+  benchmark for the installed or development Railguard binary plus the shared
+  Codex hook payloads. Every case runs in disposable state and reports timing.
+- `install.sh` now deploys the shared hook scripts to `~/.codex/hooks/` and
+  idempotently merges their registrations into `~/.codex/hooks.json` without
+  replacing Railguard or unrelated user hooks. `validate.sh` checks the links,
+  registrations, and Codex-specific payload behavior.
+
+### Fixed
+- Write, ShellCheck, and test-runner hooks now extract every file from Codex
+  `apply_patch` payloads while retaining Claude's `file_path` behavior. The Bash
+  hook ignores patch content only when the tool identity is actually
+  `apply_patch`, so a patch-like shell command cannot bypass command checks.
+- Linux desktop dry-runs no longer execute `pipx ensurepath`; planned pipx
+  installs are still printed even when pipx is absent.
+
 ## Unreleased — driftcheck as a nudge
 
 ### Changed

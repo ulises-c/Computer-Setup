@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Idempotent setup: deploys this repo's Claude config into ~/.claude/
-# (settings.json is copied, everything else symlinked).
+# Idempotent setup: deploys this repo's Claude config and shared Codex hooks.
+# Claude settings are copied; instructions, docs, policies, and hooks are symlinked.
 # Safe to re-run. Backs up any existing settings.json before replacing it.
 
 set -euo pipefail
@@ -8,7 +8,7 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENTIC_DIR="$(cd "$REPO_DIR/.." && pwd)"
 CLAUDE_DIR="$HOME/.claude"
-HOOKS_DIR="$CLAUDE_DIR/hooks"
+HOOKS_DIRS=("$CLAUDE_DIR/hooks" "$HOME/.codex/hooks")
 SETTINGS="$CLAUDE_DIR/settings.json"
 
 if [[ -d "$CLAUDE_DIR/docs" && ! -L "$CLAUDE_DIR/docs" ]]; then
@@ -67,14 +67,16 @@ printf 'Linked: docs/\n'
 ln -sf "$REPO_DIR/railguard.yaml" "$HOME/.railguard.yaml"
 printf 'Linked: railguard.yaml → ~/.railguard.yaml\n'
 
-# Create hooks dir if it doesn't exist
-mkdir -p "$HOOKS_DIR"
+# Create hook dirs if they don't exist
+mkdir -p "${HOOKS_DIRS[@]}"
 
 # Symlink each hook script and ensure it's executable
 for hook in "$REPO_DIR/hooks/"*.sh; do
   chmod +x "$hook"
-  ln -sf "$hook" "$HOOKS_DIR/$(basename "$hook")"
-  printf 'Linked: hooks/%s\n' "$(basename "$hook")"
+  for hooks_dir in "${HOOKS_DIRS[@]}"; do
+    ln -sf "$hook" "$hooks_dir/$(basename "$hook")"
+    printf 'Linked: %s/%s\n' "$hooks_dir" "$(basename "$hook")"
+  done
 done
 
 # Install (or migrate) the railguard binary from the GitHub source.
@@ -110,6 +112,55 @@ fi
 # absolute paths; redeploy the template afterwards so portable ~ paths win.
 printf 'Configuring railguard...\n'
 "$RAILGUARD_BIN" install
+
+CODEX_HOOKS="$HOME/.codex/hooks.json"
+CODEX_HOOKS_TMP=$(mktemp "$HOME/.codex/hooks.json.tmp.XXXXXX")
+trap 'rm -f "$CODEX_HOOKS_TMP"' EXIT
+jq \
+  --arg managed '/(validate-bash|validate-write|post-edit-shellcheck|post-test-runner|driftcheck)\.sh' \
+  --arg validate_bash "bash \"$HOME/.codex/hooks/validate-bash.sh\"" \
+  --arg validate_write "bash \"$HOME/.codex/hooks/validate-write.sh\"" \
+  --arg post_shellcheck "bash \"$HOME/.codex/hooks/post-edit-shellcheck.sh\"" \
+  --arg post_test "bash \"$HOME/.codex/hooks/post-test-runner.sh\"" \
+  --arg driftcheck "bash \"$HOME/.codex/hooks/driftcheck.sh\"" '
+  def strip_managed:
+    map(
+      .hooks = [
+        (.hooks // [])[]
+        | select((((.command // "") | test($managed))) | not)
+      ]
+    )
+    | map(select((.hooks | length) > 0));
+  .hooks //= {} |
+  .hooks.PreToolUse = ((.hooks.PreToolUse // [] | strip_managed) + [{
+    "matcher": "",
+    "hooks": [
+      {"type": "command", "command": $validate_bash, "timeout": 5},
+      {"type": "command", "command": $validate_write, "timeout": 5}
+    ]
+  }]) |
+  .hooks.PostToolUse = ((.hooks.PostToolUse // [] | strip_managed) + [{
+    "matcher": "",
+    "hooks": [
+      {"type": "command", "command": $post_shellcheck, "timeout": 5},
+      {"type": "command", "command": $post_test, "timeout": 75}
+    ]
+  }]) |
+  .hooks.Stop = ((.hooks.Stop // [] | strip_managed) + [{
+    "matcher": "",
+    "hooks": [{"type": "command", "command": $driftcheck, "timeout": 5}]
+  }])
+' "$CODEX_HOOKS" > "$CODEX_HOOKS_TMP"
+if cmp -s "$CODEX_HOOKS" "$CODEX_HOOKS_TMP"; then
+  rm -f "$CODEX_HOOKS_TMP"
+  printf 'Codex custom hooks already registered\n'
+else
+  CODEX_HOOKS_BACKUP="$CODEX_HOOKS.bak.$(date +%Y%m%d%H%M%S)"
+  cp "$CODEX_HOOKS" "$CODEX_HOOKS_BACKUP"
+  mv "$CODEX_HOOKS_TMP" "$CODEX_HOOKS"
+  printf 'Registered Codex custom hooks (backup: %s)\n' "$CODEX_HOOKS_BACKUP"
+fi
+trap - EXIT
 cp "$REPO_DIR/settings.json" "$SETTINGS"
 
 # Warn on Ubuntu 24.04+ if the bwrap AppArmor profile isn't set up
@@ -119,4 +170,4 @@ if grep -qi 'ubuntu' /etc/os-release 2>/dev/null && ! [[ -f /etc/apparmor.d/bwra
   printf '   bash %s/setup-linux-sandbox.sh\n' "$REPO_DIR"
 fi
 
-printf '\nDone. Restart Claude Code for changes to take effect.\n'
+printf '\nDone. Restart Claude Code and Codex for changes to take effect.\n'

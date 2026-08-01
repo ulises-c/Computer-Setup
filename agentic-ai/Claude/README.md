@@ -1,8 +1,8 @@
 # Claude Code Config
 
 Version-controlled source of truth for `~/.claude/` settings, hooks, rules, and
-on-demand docs. Running `install.sh` copies the settings template and links the
-rest of the configuration.
+on-demand docs, plus the hook scripts shared with Codex. Running `install.sh`
+copies the Claude settings template and links the shared configuration.
 
 ## Activation
 
@@ -19,17 +19,26 @@ This will:
   `~/.claude/`, `~/.codex/`, and `~/` (the shared cross-agent set)
 - Symlink `~/.claude/docs/` → this `docs/`
 - Symlink this `railguard.yaml` → `~/.railguard.yaml`
-- Symlink each `hooks/*.sh` script into `~/.claude/hooks/`
+- Symlink each `hooks/*.sh` script into both `~/.claude/hooks/` and
+  `~/.codex/hooks/`
+- Merge the custom hook registrations into `~/.codex/hooks.json` while
+  preserving unrelated hooks
 - Install or update the Railguard fork with
   `cargo install --git https://github.com/ulises-c/railguard` (requires
   Rust/cargo; an existing binary is kept with a warning when cargo is unavailable)
 - Run `railguard install` to register it as a global PreToolUse hook
 
-Restart Claude Code after running.
+Restart both Claude Code and Codex after running so each reloads its hook
+configuration.
 
 > **Note:** `settings.json` sets `bypassPermissions` at the user level, so it applies to **all projects**, not just this repo.
 
 ## What this configures
+
+The hook scripts below are deployed for both Claude Code and Codex. Claude hook
+registration lives in `settings.json`; the installer idempotently merges the
+custom registrations into `~/.codex/hooks.json` after Railguard registers its
+own hooks, preserving unrelated entries.
 
 ### `bypassPermissions`
 Claude auto-approves all tool calls without prompting. The hooks below act as the safety gate.
@@ -61,17 +70,17 @@ Blocks dangerous or escalation-prone shell commands:
 - `sudo` (escalation must be explicit — run yourself)
 - `git add -A`, `git add --all`, `git add .` (bulk staging can silently include secrets)
 
-### PreToolUse: `validate-write.sh` (Write / Edit / MultiEdit)
+### PreToolUse: `validate-write.sh` (Write / Edit / MultiEdit / apply_patch)
 Blocks writes to sensitive file paths:
 - `~/.ssh/`, `~/.aws/`, `~/.gnupg/`, `~/.config/gh`
 - `/etc/`, `/usr/`, `/boot/`, `/sys/`, `/proc/`
 
-### PostToolUse: `post-edit-shellcheck.sh` (Write / Edit / MultiEdit)
+### PostToolUse: `post-edit-shellcheck.sh` (Write / Edit / MultiEdit / apply_patch)
 After any shell script edit, runs `shellcheck --severity=error`. Exits 2 if errors are found, forcing Claude to fix them before continuing.
 
 Skips gracefully if `shellcheck` is not installed.
 
-### PostToolUse: `post-test-runner.sh` (Write / Edit / MultiEdit)
+### PostToolUse: `post-test-runner.sh` (Write / Edit / MultiEdit / apply_patch)
 
 After any source file edit, auto-detects and runs the project test suite. Detection order: `.claude/test-cmd` override → `Cargo.toml` → `go.mod` → `pyproject.toml`/`pytest.ini` → `package.json` → `Makefile`. Skips non-source extensions (md, json, yaml, etc.) and projects with no recognized test suite.
 
@@ -136,6 +145,25 @@ beside it. This is why the pre-existing untracked `~/AGENTS.md` was inert: its
 `@rules/common/*` lines pointed at a `~/rules/` that never existed.
 
 ## Testing the hooks
+
+Run the repeatable Codex benchmark first. It exercises fixed Railguard and
+custom-hook protocol cases in a disposable Git repository, emits TAP with
+per-case timings, and exits nonzero on any regression. It does not execute the
+dangerous commands in its fixtures or modify live Codex configuration.
+
+```bash
+# Benchmark the installed binary
+bash agentic-ai/Claude/benchmark-codex-hooks.sh
+
+# Run the identical cases against a development build
+RAILGUARD_BIN=/path/to/railguard/target/debug/railguard \
+  bash agentic-ai/Claude/benchmark-codex-hooks.sh
+
+# Validate deployed hook links and registrations separately
+bash agentic-ai/Claude/validate.sh
+```
+
+The commands below remain useful for quick, individual hook probes:
 
 ```bash
 # Should exit 2 (blocked)
