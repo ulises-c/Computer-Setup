@@ -63,6 +63,26 @@ rm -f "$CLAUDE_DIR/docs"
 ln -sf "$REPO_DIR/docs" "$CLAUDE_DIR/docs"
 printf 'Linked: docs/\n'
 
+# Symlink each cross-agent skill into ~/.claude/skills/. Linked per-skill rather
+# than as a whole directory: ~/.claude/skills also receives skills from plugins
+# and hand-authored ones, and linking the parent would shadow all of them.
+# -n so a re-run replaces the existing link instead of nesting inside it.
+SKILLS_SRC="$AGENTIC_DIR/skills"
+if [[ -d "$SKILLS_SRC" ]]; then
+  mkdir -p "$CLAUDE_DIR/skills"
+  for skill in "$SKILLS_SRC"/*/; do
+    [[ -d "$skill" ]] || continue
+    skill_name="$(basename "$skill")"
+    skill_dst="$CLAUDE_DIR/skills/$skill_name"
+    if [[ -e "$skill_dst" && ! -L "$skill_dst" ]]; then
+      printf 'warning: %s exists and is not a symlink; skipping\n' "$skill_dst" >&2
+      continue
+    fi
+    ln -sfn "${skill%/}" "$skill_dst"
+    printf 'Linked: skills/%s\n' "$skill_name"
+  done
+fi
+
 # Symlink railguard policy (global: find_policy_file walks up from cwd)
 ln -sf "$REPO_DIR/railguard.yaml" "$HOME/.railguard.yaml"
 printf 'Linked: railguard.yaml → ~/.railguard.yaml\n'
