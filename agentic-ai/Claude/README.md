@@ -120,7 +120,10 @@ agentic-ai/
 Add a new language by creating `rules/<lang>/style.md` and adding an `@` line to
 `AGENTS.md` (cross-agent) or `CLAUDE.md` (Claude-only).
 
-### Why AGENTS.md and rules/ are symlinked into three places
+### Why AGENTS.md and rules/ are symlinked into several places
+
+`AGENTS.md` is linked into `~/.claude/`, `~/.codex/`, and `~/`; `rules/` follows
+it into `~/.claude/` and `~/` only.
 
 Claude Code resolves `@` imports against the **deployed** directory of the
 importing file, and does **not** follow `../`. Verified behavior:
@@ -131,9 +134,14 @@ importing file, and does **not** follow `../`. Verified behavior:
 | `@../AGENTS.md` (parent) | **no** |
 | through a symlinked file | relative to the **symlink's** dir, not its target |
 
-So every location holding an instruction file needs `AGENTS.md` and `rules/`
-beside it. This is why the pre-existing untracked `~/AGENTS.md` was inert: its
-`@rules/common/*` lines pointed at a `~/rules/` that never existed.
+So every location holding a Claude-read instruction file needs `AGENTS.md` and
+`rules/` beside it. This is why the pre-existing untracked `~/AGENTS.md` was
+inert: its `@rules/common/*` lines pointed at a `~/rules/` that never existed.
+
+`~/.codex/` is the exception: that path already belongs to Codex's own
+execpolicy directory (`~/.codex/rules/*.rules`), and Codex concatenates
+`AGENTS.md` rather than resolving `@` imports, so it gets the instruction file
+without the sibling `rules/`.
 
 ## Testing the hooks
 

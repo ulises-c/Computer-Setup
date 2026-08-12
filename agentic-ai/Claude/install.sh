@@ -52,8 +52,22 @@ for agents_dir in "$CLAUDE_DIR" "$HOME/.codex" "$HOME"; do
     mv "$agents_dst" "$backup"
   fi
   ln -sf "$AGENTIC_DIR/AGENTS.md" "$agents_dst"
-  rm -f "$agents_dir/rules"
-  ln -sf "$AGENTIC_DIR/rules" "$agents_dir/rules"
+
+  # ~/.codex/rules is Codex's own execpolicy directory (*.rules files); linking
+  # over it would drop that sandbox policy. Codex concatenates AGENTS.md instead
+  # of resolving @-imports, so it never needs the sibling rules/ anyway.
+  if [[ "$agents_dir" == "$HOME/.codex" ]]; then
+    printf 'Linked: AGENTS.md → %s (rules/ skipped: Codex execpolicy dir)\n' "$agents_dir"
+    continue
+  fi
+
+  rules_dst="$agents_dir/rules"
+  if [[ -e "$rules_dst" && ! -L "$rules_dst" ]]; then
+    backup="$rules_dst.bak.$(date +%Y%m%d%H%M%S)"
+    printf 'Backing up existing %s → %s\n' "$rules_dst" "$backup"
+    mv "$rules_dst" "$backup"
+  fi
+  ln -sfn "$AGENTIC_DIR/rules" "$rules_dst"
   printf 'Linked: AGENTS.md + rules/ → %s\n' "$agents_dir"
 done
 
