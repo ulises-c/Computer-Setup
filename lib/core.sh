@@ -237,6 +237,37 @@ run_eval() {
   fi
 }
 
+core_prime_sudo() {
+  if [[ "$DRY_RUN" == true ]]; then
+    printf '  [dry-run] sudo -v (cache credentials + background keepalive)\n'
+    return 0
+  fi
+  printf '==> Caching sudo credentials (you may be prompted once)...\n'
+  if ! sudo -v; then
+    printf 'error: sudo authentication is required for this setup.\n' >&2
+    printf '       Run it from an interactive terminal, or authenticate first with: sudo -v\n' >&2
+    return 1
+  fi
+  ( while true; do sudo -n true || true; sleep 60; kill -0 "$$" 2>/dev/null || exit; done ) >/dev/null 2>&1 &
+}
+
+prepare_nvm_environment() {
+  local npmrc="$HOME/.npmrc" backup tmp
+  unset NPM_CONFIG_PREFIX npm_config_prefix NPM_CONFIG_GLOBALCONFIG npm_config_globalconfig
+  [[ -f "$npmrc" ]] || return 0
+  if ! grep -Eq '^[[:space:]]*(prefix|globalconfig)[[:space:]]*=' "$npmrc"; then
+    return 0
+  fi
+  backup="${npmrc}.nvm-preflight.bak"
+  if [[ ! -e "$backup" ]]; then
+    cp "$npmrc" "$backup"
+  fi
+  tmp="$(mktemp)"
+  grep -Ev '^[[:space:]]*(prefix|globalconfig)[[:space:]]*=' "$npmrc" > "$tmp" || true
+  mv "$tmp" "$npmrc"
+  printf '  removed npm prefix settings incompatible with nvm (backup: %s)\n' "$backup"
+}
+
 # npm supply-chain cooldown: refuse to install package versions younger than
 # NPM_MIN_RELEASE_AGE days. Compromised releases of popular packages (e.g. the
 # axios RAT, Mar 2026) are typically caught and yanked within hours, so a short
@@ -743,6 +774,7 @@ linux_nvm_flow() {
     configure_pnpm
     return 0
   fi
+  prepare_nvm_environment
   if [ ! -d "$HOME/.nvm" ]; then
     printf '==> Installing nvm...\n'
     eval "$(custom_cmd nvm)"
@@ -829,8 +861,10 @@ desktop_pipx_section() {
 
 desktop_pnpm_section() {
   printf '\n==> Installing pnpm packages...\n'
-  export NVM_DIR="$HOME/.nvm"
-  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+  if [[ "$DRY_RUN" == false ]]; then
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+  fi
   export PNPM_HOME="$HOME/.local/share/pnpm"
   export PATH="$PNPM_HOME/bin:$PATH"
   if command -v pnpm &>/dev/null; then
@@ -879,6 +913,7 @@ linux_main() {
   else
     CONFIG_SRC_DIR="$SETUP_ROOT/linux-desktop"
   fi
+  core_prime_sudo
   platform_bootstrap
 
   printf '\n'
