@@ -40,13 +40,20 @@ BENCH_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/codex-hook-benchmark.XXXXXX")
 PROJECT_DIR="$BENCH_ROOT/project"
 OUTSIDE_DIR="$BENCH_ROOT/outside"
 RAILGUARD_STATE="$BENCH_ROOT/railguard-state"
+# Railguard's self-integrity check reads $HOME/.codex/hooks.json and denies
+# everything when hooks exist there without a railguard entry. Point HOME at a
+# bench-local copy registered the way `railguard install` leaves it, so results
+# never depend on the live machine's Codex configuration.
+BENCH_HOME="$BENCH_ROOT/home"
 
 cleanup() {
   rm -rf -- "$BENCH_ROOT"
 }
 trap cleanup EXIT
 
-mkdir -p "$PROJECT_DIR/.claude" "$PROJECT_DIR/src" "$OUTSIDE_DIR" "$RAILGUARD_STATE"
+mkdir -p "$PROJECT_DIR/.claude" "$PROJECT_DIR/src" "$OUTSIDE_DIR" "$RAILGUARD_STATE" "$BENCH_HOME/.codex"
+printf '{"hooks":{"PreToolUse":[{"matcher":"","hooks":[{"type":"command","command":"railguard hook --event PreToolUse"}]}]}}\n' \
+  > "$BENCH_HOME/.codex/hooks.json"
 git init --quiet "$PROJECT_DIR"
 printf 'true\n' > "$PROJECT_DIR/.claude/test-cmd"
 printf '#!/usr/bin/env bash\nprintf "benchmark\\n"\n' > "$PROJECT_DIR/valid.sh"
@@ -100,6 +107,7 @@ capture_railguard() {
     '{session_id: $session_id, cwd: $cwd, hook_event_name: "PreToolUse", tool_name: $tool_name, tool_input: $tool_input, tool_use_id: "benchmark"}')
 
   printf '%s\n' "$input" | env \
+    HOME="$BENCH_HOME" \
     RAILGUARD_HOME="$RAILGUARD_STATE" \
     RAILGUARD_NO_KILL=1 \
     "$RAILGUARD_BIN" hook --client codex --event PreToolUse \
