@@ -22,6 +22,11 @@ in [UNIFICATION.md](UNIFICATION.md).
   `apply_patch` payloads while retaining Claude's `file_path` behavior. The Bash
   hook ignores patch content only when the tool identity is actually
   `apply_patch`, so a patch-like shell command cannot bypass command checks.
+- `install.sh` seeds an empty `~/.codex/hooks.json` on machines where Codex has
+  never written one, instead of aborting before hook registration.
+- The Codex benchmark runs Railguard under a bench-local `$HOME`, so results no
+  longer depend on the live machine's `~/.codex/hooks.json` (Railguard's
+  self-integrity check denies everything when that file lacks its entry).
 - Linux desktop dry-runs no longer execute `pipx ensurepath`; planned pipx
   installs are still printed even when pipx is absent.
 
