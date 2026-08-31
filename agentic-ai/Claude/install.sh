@@ -185,6 +185,9 @@ printf 'Configuring railguard...\n'
 "$RAILGUARD_BIN" install
 
 CODEX_HOOKS="$HOME/.codex/hooks.json"
+# Codex only writes hooks.json once the user configures hooks; seed an empty
+# object so registration works on a fresh install instead of aborting the script.
+[[ -f "$CODEX_HOOKS" ]] || printf '{}\n' > "$CODEX_HOOKS"
 CODEX_HOOKS_TMP=$(mktemp "$HOME/.codex/hooks.json.tmp.XXXXXX")
 trap 'rm -f "$CODEX_HOOKS_TMP"' EXIT
 jq \
