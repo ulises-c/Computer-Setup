@@ -48,8 +48,24 @@ check_symlink "$HOME/.railguard.yaml"     "$REPO_DIR/railguard.yaml"
 # AGENTS.md and rules/ must be siblings at every location that reads an
 # instruction file: @-imports resolve against the deployed directory and don't
 # follow "..", so a missing sibling silently loads nothing.
+#
+# ~/.codex is the exception, and install.sh skips rules/ there on purpose:
+# ~/.codex/rules is Codex's own execpolicy directory (*.rules), and linking our
+# rules/ over it would drop that sandbox policy. Codex concatenates AGENTS.md
+# rather than resolving @-imports, so it never needed the sibling. Assert the
+# inverse there — that we have NOT hijacked Codex's directory.
 for agents_dir in "$CLAUDE_DIR" "$HOME/.codex" "$HOME"; do
   check_symlink "$agents_dir/AGENTS.md" "$AGENTIC_DIR/AGENTS.md"
+
+  if [[ "$agents_dir" == "$HOME/.codex" ]]; then
+    if [[ -L "$agents_dir/rules" ]]; then
+      fail "$agents_dir/rules is a symlink to $(readlink "$agents_dir/rules") — it must stay Codex's own execpolicy directory"
+    else
+      pass "$agents_dir/rules left alone (Codex execpolicy dir)"
+    fi
+    continue
+  fi
+
   check_symlink "$agents_dir/rules"     "$AGENTIC_DIR/rules"
 done
 
