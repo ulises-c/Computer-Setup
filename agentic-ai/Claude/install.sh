@@ -18,6 +18,8 @@ fi
 
 printf 'Installing from: %s\n' "$REPO_DIR"
 
+mkdir -p "$CLAUDE_DIR"
+
 # settings.json is COPIED, not symlinked: Claude Code rewrites its user
 # settings at runtime (model switches, plugin installs re-serialize the file),
 # and a symlink funnels that machine state into the repo as permanent dirt.
