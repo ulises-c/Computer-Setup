@@ -4,7 +4,10 @@
 set -euo pipefail
 trap 'exit 2' ERR
 
-COMMAND=$(jq -r '.tool_input.command // ""')
+INPUT=$(cat)
+TOOL_NAME=$(jq -r '.tool_name // ""' <<< "$INPUT")
+COMMAND=$(jq -r '.tool_input.command // ""' <<< "$INPUT")
+[[ "$TOOL_NAME" == "apply_patch" || "$TOOL_NAME" == "functions.apply_patch" ]] && exit 0
 # Heredoc bodies are message text, not executed code — policy checks use only the first line.
 FIRST_LINE=$(head -1 <<< "$COMMAND")
 
