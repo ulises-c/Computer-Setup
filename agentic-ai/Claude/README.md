@@ -18,6 +18,11 @@ This will:
 - Symlink `AGENTS.md` + `rules/` → `../AGENTS.md` and `../rules/` in
   `~/.claude/`, `~/.codex/`, and `~/` (the shared cross-agent set)
 - Symlink `~/.claude/docs/` → this `docs/`
+- Symlink each `skills/*/` into the global skill root of every harness present
+  (`~/.claude/skills/`, plus `~/.codex/skills/`, `~/.hermes/skills/`,
+  `~/.config/opencode/skills/`, `~/.cursor/skills/`, `~/.gemini/skills/` when
+  that harness's config dir exists)
+- Symlink each `Claude/output-styles/*.md` into `~/.claude/output-styles/`
 - Symlink this `railguard.yaml` → `~/.railguard.yaml`
 - Symlink each `hooks/*.sh` script into both `~/.claude/hooks/` and
   `~/.codex/hooks/`
@@ -129,7 +134,10 @@ agentic-ai/
 Add a new language by creating `rules/<lang>/style.md` and adding an `@` line to
 `AGENTS.md` (cross-agent) or `CLAUDE.md` (Claude-only).
 
-### Why AGENTS.md and rules/ are symlinked into three places
+### Why AGENTS.md and rules/ are symlinked into several places
+
+`AGENTS.md` is linked into `~/.claude/`, `~/.codex/`, and `~/`; `rules/` follows
+it into `~/.claude/` and `~/` only.
 
 Claude Code resolves `@` imports against the **deployed** directory of the
 importing file, and does **not** follow `../`. Verified behavior:
@@ -140,9 +148,33 @@ importing file, and does **not** follow `../`. Verified behavior:
 | `@../AGENTS.md` (parent) | **no** |
 | through a symlinked file | relative to the **symlink's** dir, not its target |
 
-So every location holding an instruction file needs `AGENTS.md` and `rules/`
-beside it. This is why the pre-existing untracked `~/AGENTS.md` was inert: its
-`@rules/common/*` lines pointed at a `~/rules/` that never existed.
+So every location holding a Claude-read instruction file needs `AGENTS.md` and
+`rules/` beside it. This is why the pre-existing untracked `~/AGENTS.md` was
+inert: its `@rules/common/*` lines pointed at a `~/rules/` that never existed.
+
+`~/.codex/` is the exception: that path already belongs to Codex's own
+execpolicy directory (`~/.codex/rules/*.rules`), and Codex concatenates
+`AGENTS.md` rather than resolving `@` imports, so it gets the instruction file
+without the sibling `rules/`.
+
+## Skills and output styles
+
+`install.sh` deploys two different mechanisms from this repo:
+
+| | Skills (`../skills/*/`) | Output styles (`output-styles/*.md`) |
+|---|---|---|
+| Trigger | On demand, when a task matches the skill description | Always on, every reply |
+| Scope | Every harness with a config dir present | Claude Code only |
+| Activation | Automatic once linked | Opt in: `/config` → Output style |
+
+Skills go to each harness's documented global skill root, so the same writing
+rules apply in Claude Code, Codex, Hermes, and opencode. A root is only
+populated when its parent config dir already exists — `install.sh` never
+fabricates a config tree for a harness you have not installed.
+
+Skills sourced from an external repo are vendored (plain file copies, no
+submodule) and their origin plus refresh steps are recorded in
+`../skills/VENDOR.md`.
 
 ## Testing the hooks
 

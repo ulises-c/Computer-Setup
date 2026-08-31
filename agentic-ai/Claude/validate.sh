@@ -48,8 +48,24 @@ check_symlink "$HOME/.railguard.yaml"     "$REPO_DIR/railguard.yaml"
 # AGENTS.md and rules/ must be siblings at every location that reads an
 # instruction file: @-imports resolve against the deployed directory and don't
 # follow "..", so a missing sibling silently loads nothing.
+#
+# ~/.codex is the exception, and install.sh skips rules/ there on purpose:
+# ~/.codex/rules is Codex's own execpolicy directory (*.rules), and linking our
+# rules/ over it would drop that sandbox policy. Codex concatenates AGENTS.md
+# rather than resolving @-imports, so it never needed the sibling. Assert the
+# inverse there — that we have NOT hijacked Codex's directory.
 for agents_dir in "$CLAUDE_DIR" "$HOME/.codex" "$HOME"; do
   check_symlink "$agents_dir/AGENTS.md" "$AGENTIC_DIR/AGENTS.md"
+
+  if [[ "$agents_dir" == "$HOME/.codex" ]]; then
+    if [[ -L "$agents_dir/rules" ]]; then
+      fail "$agents_dir/rules is a symlink to $(readlink "$agents_dir/rules") — it must stay Codex's own execpolicy directory"
+    else
+      pass "$agents_dir/rules left alone (Codex execpolicy dir)"
+    fi
+    continue
+  fi
+
   check_symlink "$agents_dir/rules"     "$AGENTIC_DIR/rules"
 done
 
@@ -94,6 +110,46 @@ else
       fail "Codex $event hook missing: $name"
     fi
   done
+fi
+
+# ── Skills and output styles ──────────────────────────────────────────────────
+# Each vendored skill must be linked into every installed harness's global skill
+# root, so a writing task gets the same instructions in Claude Code, Codex,
+# Hermes, and any other harness present. Roots for absent harnesses are skipped,
+# matching install.sh.
+section "Skills"
+SKILLS_SRC="$AGENTIC_DIR/skills"
+skill_roots=("$CLAUDE_DIR/skills")
+[[ -d "$HOME/.codex" ]]  && skill_roots+=("$HOME/.codex/skills")
+[[ -d "$HOME/.hermes" ]] && skill_roots+=("$HOME/.hermes/skills")
+[[ -d "${XDG_CONFIG_HOME:-$HOME/.config}/opencode" ]] \
+                         && skill_roots+=("${XDG_CONFIG_HOME:-$HOME/.config}/opencode/skills")
+[[ -d "$HOME/.cursor" ]] && skill_roots+=("$HOME/.cursor/skills")
+[[ -d "$HOME/.gemini" ]] && skill_roots+=("$HOME/.gemini/skills")
+
+if [[ -d "$SKILLS_SRC" ]]; then
+  for skill in "$SKILLS_SRC"/*/; do
+    [[ -d "$skill" ]] || continue
+    skill_name="$(basename "$skill")"
+    if [[ ! -f "$skill/SKILL.md" ]]; then
+      fail "skills/$skill_name: no SKILL.md (harnesses will not load it)"
+      continue
+    fi
+    for skill_root in "${skill_roots[@]}"; do
+      check_symlink "$skill_root/$skill_name" "${skill%/}"
+    done
+  done
+fi
+
+section "Output styles"
+STYLES_SRC="$REPO_DIR/output-styles"
+if [[ -d "$STYLES_SRC" ]]; then
+  for style in "$STYLES_SRC"/*.md; do
+    [[ -f "$style" ]] || continue
+    check_symlink "$CLAUDE_DIR/output-styles/$(basename "$style")" "$style"
+  done
+else
+  pass "no output-styles/ directory (nothing to link)"
 fi
 
 # ── Required binaries ─────────────────────────────────────────────────────────
