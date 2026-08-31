@@ -195,6 +195,15 @@ RAILGUARD_BIN=/path/to/railguard/target/debug/railguard \
 bash agentic-ai/Claude/validate.sh
 ```
 
+Registration alone does not make Codex run the hooks: Codex also requires
+per-hook trust, which it records in `config.toml` the first time an interactive
+session encounters each hook. Until then `codex exec` silently skips them (the
+`hooks` feature is on by default in current Codex; only an explicit
+`hooks = false` under `[features]` disables the engine outright). For
+non-interactive verification, `codex exec --dangerously-bypass-hook-trust`
+runs registered hooks without persisted trust — use it only for hooks you
+authored.
+
 The commands below remain useful for quick, individual hook probes:
 
 ```bash
