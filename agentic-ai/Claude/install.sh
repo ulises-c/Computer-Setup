@@ -77,23 +77,60 @@ rm -f "$CLAUDE_DIR/docs"
 ln -sf "$REPO_DIR/docs" "$CLAUDE_DIR/docs"
 printf 'Linked: docs/\n'
 
-# Symlink each cross-agent skill into ~/.claude/skills/. Linked per-skill rather
-# than as a whole directory: ~/.claude/skills also receives skills from plugins
-# and hand-authored ones, and linking the parent would shadow all of them.
-# -n so a re-run replaces the existing link instead of nesting inside it.
+# Symlink each cross-agent skill into every installed harness's global skill
+# root. Linked per-skill rather than as a whole directory: these roots also
+# receive skills from plugins and hand-authored ones, and linking the parent
+# would shadow all of them. -n so a re-run replaces the existing link instead
+# of nesting inside it.
+#
+# Roots are the documented global skill directories of each harness. A root is
+# only populated when its parent config dir already exists, so this never
+# creates a config tree for a harness that is not installed. ~/.claude is
+# unconditional: this script owns that directory.
 SKILLS_SRC="$AGENTIC_DIR/skills"
 if [[ -d "$SKILLS_SRC" ]]; then
-  mkdir -p "$CLAUDE_DIR/skills"
-  for skill in "$SKILLS_SRC"/*/; do
-    [[ -d "$skill" ]] || continue
-    skill_name="$(basename "$skill")"
-    skill_dst="$CLAUDE_DIR/skills/$skill_name"
-    if [[ -e "$skill_dst" && ! -L "$skill_dst" ]]; then
-      printf 'warning: %s exists and is not a symlink; skipping\n' "$skill_dst" >&2
+  skill_roots=("$CLAUDE_DIR/skills")
+  [[ -d "$HOME/.codex" ]]                    && skill_roots+=("$HOME/.codex/skills")
+  [[ -d "$HOME/.hermes" ]]                   && skill_roots+=("$HOME/.hermes/skills")
+  [[ -d "${XDG_CONFIG_HOME:-$HOME/.config}/opencode" ]] \
+                                             && skill_roots+=("${XDG_CONFIG_HOME:-$HOME/.config}/opencode/skills")
+  [[ -d "$HOME/.cursor" ]]                   && skill_roots+=("$HOME/.cursor/skills")
+  [[ -d "$HOME/.gemini" ]]                   && skill_roots+=("$HOME/.gemini/skills")
+
+  for skill_root in "${skill_roots[@]}"; do
+    mkdir -p "$skill_root"
+    for skill in "$SKILLS_SRC"/*/; do
+      [[ -d "$skill" ]] || continue
+      skill_name="$(basename "$skill")"
+      skill_dst="$skill_root/$skill_name"
+      if [[ -e "$skill_dst" && ! -L "$skill_dst" ]]; then
+        printf 'warning: %s exists and is not a symlink; skipping\n' "$skill_dst" >&2
+        continue
+      fi
+      ln -sfn "${skill%/}" "$skill_dst"
+      printf 'Linked: skills/%s → %s\n' "$skill_name" "$skill_root"
+    done
+  done
+fi
+
+# Symlink each output style into ~/.claude/output-styles/. Unlike a skill (which
+# loads only when a task matches), an output style applies to every reply, so it
+# stays opt-in: this only puts the file where Claude Code can find it. Turn one
+# on with /config → Output style. Claude-Code-only feature; no other harness
+# reads this directory.
+STYLES_SRC="$REPO_DIR/output-styles"
+if [[ -d "$STYLES_SRC" ]]; then
+  mkdir -p "$CLAUDE_DIR/output-styles"
+  for style in "$STYLES_SRC"/*.md; do
+    [[ -f "$style" ]] || continue
+    style_name="$(basename "$style")"
+    style_dst="$CLAUDE_DIR/output-styles/$style_name"
+    if [[ -e "$style_dst" && ! -L "$style_dst" ]]; then
+      printf 'warning: %s exists and is not a symlink; skipping\n' "$style_dst" >&2
       continue
     fi
-    ln -sfn "${skill%/}" "$skill_dst"
-    printf 'Linked: skills/%s\n' "$skill_name"
+    ln -sfn "$style" "$style_dst"
+    printf 'Linked: output-styles/%s\n' "$style_name"
   done
 fi
 

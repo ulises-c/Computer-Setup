@@ -73,6 +73,46 @@ for hook in "$REPO_DIR/hooks/"*.sh; do
   pass "hooks/$name"
 done
 
+# ── Skills and output styles ──────────────────────────────────────────────────
+# Each vendored skill must be linked into every installed harness's global skill
+# root, so a writing task gets the same instructions in Claude Code, Codex,
+# Hermes, and any other harness present. Roots for absent harnesses are skipped,
+# matching install.sh.
+section "Skills"
+SKILLS_SRC="$AGENTIC_DIR/skills"
+skill_roots=("$CLAUDE_DIR/skills")
+[[ -d "$HOME/.codex" ]]  && skill_roots+=("$HOME/.codex/skills")
+[[ -d "$HOME/.hermes" ]] && skill_roots+=("$HOME/.hermes/skills")
+[[ -d "${XDG_CONFIG_HOME:-$HOME/.config}/opencode" ]] \
+                         && skill_roots+=("${XDG_CONFIG_HOME:-$HOME/.config}/opencode/skills")
+[[ -d "$HOME/.cursor" ]] && skill_roots+=("$HOME/.cursor/skills")
+[[ -d "$HOME/.gemini" ]] && skill_roots+=("$HOME/.gemini/skills")
+
+if [[ -d "$SKILLS_SRC" ]]; then
+  for skill in "$SKILLS_SRC"/*/; do
+    [[ -d "$skill" ]] || continue
+    skill_name="$(basename "$skill")"
+    if [[ ! -f "$skill/SKILL.md" ]]; then
+      fail "skills/$skill_name: no SKILL.md (harnesses will not load it)"
+      continue
+    fi
+    for skill_root in "${skill_roots[@]}"; do
+      check_symlink "$skill_root/$skill_name" "${skill%/}"
+    done
+  done
+fi
+
+section "Output styles"
+STYLES_SRC="$REPO_DIR/output-styles"
+if [[ -d "$STYLES_SRC" ]]; then
+  for style in "$STYLES_SRC"/*.md; do
+    [[ -f "$style" ]] || continue
+    check_symlink "$CLAUDE_DIR/output-styles/$(basename "$style")" "$style"
+  done
+else
+  pass "no output-styles/ directory (nothing to link)"
+fi
+
 # ── Required binaries ─────────────────────────────────────────────────────────
 section "Required binaries"
 check_bin() {

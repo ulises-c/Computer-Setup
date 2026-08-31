@@ -18,6 +18,11 @@ This will:
 - Symlink `AGENTS.md` + `rules/` → `../AGENTS.md` and `../rules/` in
   `~/.claude/`, `~/.codex/`, and `~/` (the shared cross-agent set)
 - Symlink `~/.claude/docs/` → this `docs/`
+- Symlink each `skills/*/` into the global skill root of every harness present
+  (`~/.claude/skills/`, plus `~/.codex/skills/`, `~/.hermes/skills/`,
+  `~/.config/opencode/skills/`, `~/.cursor/skills/`, `~/.gemini/skills/` when
+  that harness's config dir exists)
+- Symlink each `Claude/output-styles/*.md` into `~/.claude/output-styles/`
 - Symlink this `railguard.yaml` → `~/.railguard.yaml`
 - Symlink each `hooks/*.sh` script into `~/.claude/hooks/`
 - Install or update the Railguard fork with
@@ -142,6 +147,25 @@ inert: its `@rules/common/*` lines pointed at a `~/rules/` that never existed.
 execpolicy directory (`~/.codex/rules/*.rules`), and Codex concatenates
 `AGENTS.md` rather than resolving `@` imports, so it gets the instruction file
 without the sibling `rules/`.
+
+## Skills and output styles
+
+`install.sh` deploys two different mechanisms from this repo:
+
+| | Skills (`../skills/*/`) | Output styles (`output-styles/*.md`) |
+|---|---|---|
+| Trigger | On demand, when a task matches the skill description | Always on, every reply |
+| Scope | Every harness with a config dir present | Claude Code only |
+| Activation | Automatic once linked | Opt in: `/config` → Output style |
+
+Skills go to each harness's documented global skill root, so the same writing
+rules apply in Claude Code, Codex, Hermes, and opencode. A root is only
+populated when its parent config dir already exists — `install.sh` never
+fabricates a config tree for a harness you have not installed.
+
+Skills sourced from an external repo are vendored (plain file copies, no
+submodule) and their origin plus refresh steps are recorded in
+`../skills/VENDOR.md`.
 
 ## Testing the hooks
 
