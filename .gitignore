@@ -1,6 +1,7 @@
 .env
 .DS_Store
 Thumbs.db
+__pycache__/
 
 # Railguard per-session traces and snapshots
 .railguard/
