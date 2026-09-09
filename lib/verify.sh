@@ -266,7 +266,7 @@ verify_extras_server() {
   fi
 
   local unit
-  for unit in nut-driver@cyberpower.service nut-server.service nut-monitor.service; do
+  for unit in nut-driver@cyberpower.service nut-driver@ecoflow.service nut-server.service nut-monitor.service; do
     if command -v systemctl &>/dev/null \
       && systemctl is-enabled --quiet "$unit" 2>/dev/null \
       && systemctl is-active --quiet "$unit" 2>/dev/null; then
@@ -277,12 +277,14 @@ verify_extras_server() {
   done
 
   local ups_status
-  ups_status="$(upsc cyberpower@localhost ups.status 2>/dev/null || true)"
-  if [[ -n "$ups_status" ]]; then
-    check "UPS reachable (status: $ups_status)" true
-  else
-    check "UPS reachable via upsc cyberpower@localhost" false
-  fi
+  for ups in cyberpower ecoflow; do
+    ups_status="$(upsc "$ups@localhost" ups.status 2>/dev/null || true)"
+    if [[ -n "$ups_status" ]]; then
+      check "$ups reachable (status: $ups_status)" true
+    else
+      check "$ups reachable via upsc $ups@localhost" false
+    fi
+  done
 }
 
 # npm + pnpm supply-chain cooldown checks (issue #23) — identical on every platform.
