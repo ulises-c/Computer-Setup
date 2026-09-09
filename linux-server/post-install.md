@@ -120,9 +120,9 @@ The Homepage Tailscale widget uses a local OAuth proxy to avoid 90-day key rotat
 - [ ] Install the ntfy app on your phone, add your server URL, subscribe to a topic (e.g. `alerts`)
 - [ ] Configure Uptime Kuma and Watchtower to send notifications via ntfy
 
-### AdGuard Home — http://\<server-ip\>:3003
-- [ ] Complete the setup wizard:
-  - Web UI port → `80` (maps to host port `8083`)
+### AdGuard Home — https://adguard.\<tailnet\>.ts.net
+- [ ] Complete the setup wizard (temporarily map `"3003:3000/tcp"` on `adguardhome` to reach it):
+  - Web UI port → `80` (unpublished — served via the HTTPS sidecar)
   - DNS port → `53`
   - Create admin credentials — then add them to `homepage/.env`
 - [ ] Point your router's DNS to `<server-ip>` for network-wide filtering
@@ -314,7 +314,7 @@ Three drives are attached via a TerraMas Thunderbolt DAS enclosure:
 | Nginx Proxy Manager | http://\<server-ip\>:81 | Default: admin@example.com / changeme |
 | ntfy | http://\<server-ip\>:5080 | |
 | Syncthing | http://\<server-ip\>:8384 | |
-| AdGuard Home | http://\<server-ip\>:8083 | Run setup wizard at :3003 first |
+| AdGuard Home | https://adguard.\<tailnet\>.ts.net/ | DNS published on host :53; no host web port |
 | Cockpit | https://\<server-ip\>:9090 | |
 | PeaNUT (UPS) | https://peanut.\<tailnet\>.ts.net/ | Tailscale sidecar; homepage ups card reads it via localhost :8097 |
 | Tailscale Web UI | http://localhost:8088 | After `tailscale up` |

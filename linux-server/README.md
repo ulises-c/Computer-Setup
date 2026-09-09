@@ -98,10 +98,12 @@ docker compose up -d
 # AdGuard Home — fix systemd-resolved conflict first
 sudo sed -i 's/#DNSStubListener=yes/DNSStubListener=no/' /etc/systemd/resolved.conf
 sudo systemctl restart systemd-resolved
-cd linux-server/adguard && docker compose up -d
-# Open http://<server-ip>:3001 for setup wizard
-# Set web UI port → 80, DNS port → 53, create admin account
-# After setup: http://<server-ip>:8083
+cd linux-server/adguard && cp .env.example .env
+# edit .env: set TS_AUTHKEY, then:
+docker compose up -d
+# UI at https://adguard.<tailnet>.ts.net/ (sidecar serve); DNS on host :53.
+# First-run only: temporarily add "3003:3000/tcp" to adguardhome's ports, browse
+# to http://<server-ip>:3003, set DNS port → 53 (UI stays :80), create admin.
 
 # qBittorrent — needs TS_AUTHKEY for its HTTPS sidecar (see HTTPS.md), like forgejo
 cd linux-server/qbittorrent && cp .env.example .env
@@ -272,16 +274,21 @@ In NPM admin (`http://<server-ip>:81`):
       sudo sed -i 's/#DNSStubListener=yes/DNSStubListener=no/' /etc/systemd/resolved.conf
       sudo systemctl restart systemd-resolved
       ```
-   3. Deploy:
+   3. Deploy (needs a `TS_AUTHKEY` in `.env`, like the other HTTPS sidecars):
       ```sh
       cd linux-server/adguard
+      cp .env.example .env
       docker compose up -d
       ```
-   4. Open `http://<server-ip>:3003` for the first-run setup wizard
-      - Set the web UI port to **80** (maps to host port 8083)
-      - Set the DNS port to **53**
-      - Create your admin username and password
-   5. After setup, access the web UI at `http://<server-ip>:8083`
+   4. First-run setup wizard (only if never configured): temporarily add
+      `"3003:3000/tcp"` to `adguardhome`'s `ports:` in `docker-compose.yml`, then
+      `docker compose up -d` and open `http://<server-ip>:3003`
+      - Set the DNS port to **53**; leave the web UI on **80** (unpublished — served
+        via the sidecar)
+      - Create your admin username and password, then remove the `3003` mapping and
+        `docker compose up -d` again
+   5. Access the web UI at `https://adguard.<tailnet>.ts.net/`; DNS is host-published
+      on `:53` via the bridge, so it keeps working even if the sidecar is down
    6. Point your router's DNS (or individual devices) to `<server-ip>` to start filtering
    7. Add credentials to `linux-server/homepage/.env` to enable the stats widget on Homepage
 

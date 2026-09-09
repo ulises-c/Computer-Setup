@@ -141,6 +141,33 @@ with `ts-serve.json` proxying to `http://host.docker.internal:<port>` instead of
 opposite of the netns-shared services. Trade-off: the host port stays open on the
 LAN/tailnet (plaintext) since the app still binds it directly.
 
+### Variant: decoupled sidecar on the bridge network (adguard)
+
+Some services must stay on a normal bridge network — e.g. AdGuard, whose IP
+ownership matters and whose DNS should not ride the sidecar's lifecycle. Decouple
+the sidecar entirely: it gets its **own** netns on the shared compose network and
+proxies to the app container by its Docker service name, instead of
+`127.0.0.1`/`host.docker.internal`. If the sidecar dies, the app and its ports
+(e.g. AdGuard DNS on `:53`) keep serving.
+
+```yaml
+  <svc>-ts:
+    # ... same sidecar as usual (no network_mode / no extra_hosts) ...
+    # both services share the compose default network implicitly
+
+  <svc>:
+    # stays on the default bridge network, publishes its own ports as needed
+    ports:
+      - "<port>:<port>"
+```
+
+with `ts-serve.json` proxying to `http://<svc>:<port>` (Docker DNS on the shared
+network) instead of `127.0.0.1:<port>`. Unlike the host-networked variant, the
+app's port is only as exposed as the `ports:` block you write — AdGuard keeps its
+web UI on container `:80` unpublished (no NPM `:80` clash) and publishes only
+`53:53` for LAN DNS. Trade-off: the app and sidecar must share a Docker network,
+so this only suits services that don't need `network_mode: host`.
+
 ## Applying the Forgejo change (the reference, already implemented)
 
 Forgejo is intentionally **not** in `setup.sh`'s auto-start loop — it needs the
@@ -225,7 +252,7 @@ side of the `ports:` mapping (`host:container`), not the host side.
 | syncthing         | 8384  | ✅ done       | set `STGUIADDRESS=127.0.0.1:8384` (disables Syncthing's Host-header check, else `Host check error`); publish sync `:22000`/`:21027` on the **sidecar** (raw TCP/UDP, not via serve) |
 | glances           | 61208 | ✅ done       | **host-networked variant** — keep `network_mode: host`, sidecar proxies via `host.docker.internal`; widget url stays localhost |
 | peanut (UPS)      | 8097  | ✅ done       | host-networked variant like glances — PeaNUT must reach the loopback-only `upsd:3493`, sidecar proxies via `host.docker.internal`; widget url stays localhost |
-| adguard           | 80    | ✅ done       | UI at container :80 (not the 8083 host map); publish DNS `:53` tcp+udp on the **sidecar** (raw DNS, not via serve); no :443 so no DoH/serve conflict |
+| adguard           | 80    | ✅ done       | **decoupled variant** — `adguardhome` on the bridge network publishes DNS `:53` tcp+udp for LAN clients; sidecar (its own netns) proxies `:443` → `http://adguardhome:80`. DNS survives a sidecar failure; no :443 so no DoH/serve conflict |
 | atvloadly         | 80    | ✅ done       | no `hostname:` on the app container — conflicts with `network_mode: service:...`; Apple TV discovery is unaffected by the shared netns since it goes through the host's avahi-daemon via bind-mounted sockets, not this container's own network |
 | nginx-proxy-mgr   | 81    | ✅ done       | host edge (binds `:80/:443/:81`); its **admin UI** is fronted by a host-gateway sidecar at `npm.<tailnet>`, while NPM itself stays the non-tailnet trusted-cert edge (see section below) |
 | homepage          | 3000  | ✅ done       | host-networked variant — keep `network_mode: host` (reaches localhost widgets), sidecar proxies via `host.docker.internal`; add the domain to `HOMEPAGE_ALLOWED_HOSTS` |
@@ -400,8 +427,8 @@ reachable both at `https://<svc>.<tailnet>.ts.net` (sidecar) and at
 `http://<server-lan-ip>:<port>` (host port) for devices not on the tailnet.
 
 Because a netns-shared app can't publish its own ports, add the `ports:` block to
-the **sidecar** (it owns the namespace), exactly as syncthing/adguard already do
-for their non-HTTP ports:
+the **sidecar** (it owns the namespace), exactly as syncthing already do for its
+non-HTTP ports:
 
 ```yaml
   <svc>-ts:
