@@ -12,8 +12,14 @@ in series:
 
 Wiring: `wall power -> EcoFlow -> CyberPower -> server`. The EcoFlow is on the
 wall frontier, so its `ups.status` is the early indicator of grid loss; the
-CyberPower steps in a moment later for the actual server supply. Recommend a
-recent NUT (2.8.4+) for reliable EcoFlow HID handling.
+CyberPower steps in a moment later for the actual server supply.
+
+The EcoFlow needs NUT **2.8.4+**, which ships the dedicated `EcoFlow HID` 
+subdriver. Do **not** set `explore = 1` for it — that forces the generic EXPLORE
+subdriver, which then reports only identity and a constant `OB` with no
+battery/input data. The stanza in `ups.conf` mirrors EcoFlow's own "Power
+Manager" config (`usb_hid_ep_in/out = 1`, `ignorelb`,
+`override.battery.runtime.low = -1`).
 
 ## Setup
 
