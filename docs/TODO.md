@@ -29,6 +29,103 @@ run leaves shadowed binaries to reconcile.
       `command -v` every migrated tool to catch shadowed binaries
 - [ ] Later: consider base + per-platform overlay for zshrc (desktop vs server vs macOS)
 
+## Server UPS — EcoFlow `ups.load` (NUT master build)
+
+`linux-server/ups/` monitors the EcoFlow River 3 Plus over NUT, but `ups.load`
+shows empty. Root cause: the EcoFlow firmware exposes **no load percentage over
+USB HID** (confirmed by the `EcoFlow HID` subdriver author and EcoFlow support —
+see NUT PR #2837). The fix is NUT's **CDC serial companion**
+(`ecoflow-hid-aux-cdc.c`), which derives `ups.load` from
+`output_power / rated_output_power`, plus per-outlet power, frequency,
+temperature, and AC input telemetry. It is enabled by `ecoflow_cdc_port` in
+`ups.conf`.
+
+**This is not available in any packaged NUT.** Ubuntu 26.04 ships 2.8.4, which
+the subdriver `driver.version.data: EcoFlow HID 0.01` reflects — it rejects the
+variable with `Fatal error: 'ecoflow_cdc_port' is not a valid variable name`.
+Even the latest stable **2.8.5 lacks it**; the CDC feature landed post-2.8.5 in
+**NUT master**. So the only way to get `ups.load` is to build NUT from git master.
+
+State before this was attempted (don't skip these notes):
+- `/dev/serial/by-id/usb-EcoFlow_EF-UPS_RIVER_3_Plus_...-if01` → `/dev/ttyACM0`
+  already exists (the unit exposes the CDC ACM interface; group `dialout`).
+- `ups.conf` intentionally does **not** carry `ecoflow_cdc_port` yet — adding it
+  to the 2.8.4 driver makes `nut-driver@ecoflow` die in a restart loop
+  (`result 'protocol'`). It must be added **after** the master build replaces the
+  driver.
+
+### Build + install (run as root on the server)
+
+```sh
+# 1. Build deps (autotools + libusb + ssl for the NUT build)
+apt install -y git build-essential autoconf automake libtool pkg-config \
+  libtool-bin libusb-1.0-0-dev libssl-dev
+
+# 2. Clone master (depth-1 is fine)
+git clone --depth 1 https://github.com/networkupstools/nut /usr/local/src/nut
+cd /usr/local/src/nut
+
+# 3. Generate configure + build flags tailored to the Ubuntu usrmerge layout
+./autogen.sh
+./configure \
+  --with-usb=yes \
+  --with-serial=yes \
+  --with-statepath=/run/nut \
+  --with-pidpath=/run/nut \
+  --with-altpidpath=/var/run/nut \
+  --prefix=/usr \
+  --sysconfdir=/etc \
+  --localstatedir=/var \
+  --with-drvpath=/usr/libexec/nut \
+  --with-cgipath=/usr/lib/cgi-bin/nut \
+  --with-udev-dir=/lib/udev \
+  --with-confdir=/etc/nut
+
+# 4. Build (parallel; -j to taste)
+make -j"$(nproc)"
+
+# 5. Back up the distro binaries in case apt re-packages later
+cp -a /usr/sbin/upsd{,,.distro} && cp -a /usr/sbin/upsdrvctl{,,.distro} \
+  && cp -a /usr/sbin/upsmon{,,.distro} && cp -a /usr/bin/upsc{,,.distro} \
+  && cp -a /usr/libexec/nut/usbhid-ups{,,.distro}
+
+# 6. Install (overwrites the distro binaries; configs stay in /etc/nut)
+make install
+ldconfig
+
+# 7. Confirm the new driver now understands the CDC variable
+upsdrvctl -h | grep -i cdc        # or: /usr/libexec/nut/usbhid-ups -h | grep cdc
+
+# 8. Add the CDC port to the ecoflow stanza in ups.conf, then redeploy
+#    (this deferred change is tracked right below)
+cd ~/github/Computer-Setup/linux-server/ups
+sudo bash setup.sh                  # restarts nut-driver@ecoflow
+upsc ecoflow ups.load               # expect a percentage, e.g. 0 - 100
+```
+
+Caveats:
+- Master is development code. If something's wrong, restore the `.distro`
+  binaries (`mv ...`.distro back into place) — `/etc/nut` configs are untouched
+  either way.
+- An `apt upgrade` of the `nut` package would overwrite the source build; the
+  `.distro` backups make the rollback obvious.
+- If the CDC poll fails, HID monitoring stays authoritative (by design); only
+  the enriched fields (`ups.load`, `input.*`, `outlet.*`, temperatures) go stale
+  — see `ecoflow-hid-aux-cdc.c` (`ecoflow_cdc_poll`).
+
+### Deferred ups.conf change (do this only after the master build is live)
+
+Add to the `[ecoflow]` stanza in `linux-server/ups/ups.conf` (substitute the
+actual serial suffix from your unit):
+
+```
+    ecoflow_cdc_port = /dev/serial/by-id/usb-EcoFlow_EF-UPS_RIVER_3_Plus_<serial>-if01
+```
+
+Use the persistent by-id path, not the transient `/dev/ttyACM0`. Then commit
+the `ups.conf` change. (Deliberately *not* committed yet: the 2.8.4 driver in
+current service rejects it and enters a restart loop.)
+
 ## macOS benchmark verification
 
 - [ ] Re-run every benchmark suite end-to-end on one Mac and confirm the result
