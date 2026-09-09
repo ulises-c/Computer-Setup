@@ -81,6 +81,11 @@ fi
 
 prompt KEY_NAME "Key file name (no path)" "${GIT_HOST%%.*}"
 
+if [[ "$KEY_NAME" == "." || "$KEY_NAME" == ".." || ! "$KEY_NAME" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+  echo "Error: KEY_NAME must be a simple key file name without a path, whitespace, or control characters." >&2
+  exit 1
+fi
+
 # ---- Optional passphrase ----
 SSH_PASSPHRASE="${SSH_PASSPHRASE:-}"
 if [[ -z "$SSH_PASSPHRASE" ]]; then
@@ -111,6 +116,33 @@ if [[ -n "$SSH_PASSPHRASE" ]]; then
   fi
   if [[ ! "$AGENT_TIMEOUT" =~ ^[0-9]+$ ]]; then
     echo "Error: AGENT_TIMEOUT must be a whole number of minutes." >&2
+    exit 1
+  fi
+fi
+
+validate_host_token() {
+  local value="$1" label="$2"
+  if [[ -z "$value" ]]; then
+    printf 'Error: %s cannot be empty.\n' "$label" >&2
+    exit 1
+  fi
+  if [[ "$value" == *://* || "$value" == *[[:space:][:cntrl:]]* || "$value" == -* || "$value" == *\** || "$value" == *\?* || "$value" == *\!* || "$value" == */* ]]; then
+    printf 'Error: %s must be one literal SSH host token, not a URL, wildcard, negated pattern, or value containing whitespace/control characters.\n' "$label" >&2
+    exit 1
+  fi
+}
+
+if [[ -n "$GIT_HOSTNAME" && -z "$IS_SELF_HOSTED" ]]; then
+  echo "Error: GIT_HOSTNAME requires IS_SELF_HOSTED=true." >&2
+  exit 1
+fi
+
+validate_host_token "$GIT_HOST" "GIT_HOST"
+if [[ -n "$IS_SELF_HOSTED" ]]; then
+  validate_host_token "$GIT_HOSTNAME" "GIT_HOSTNAME"
+  GIT_SSH_PORT="${GIT_SSH_PORT:-22}"
+  if [[ ! "$GIT_SSH_PORT" =~ ^[0-9]+$ ]] || (( GIT_SSH_PORT < 1 || GIT_SSH_PORT > 65535 )); then
+    echo "Error: GIT_SSH_PORT must be a number from 1 to 65535." >&2
     exit 1
   fi
 fi
@@ -175,38 +207,62 @@ fi
 touch "$CFG_PATH"
 chmod 600 "$CFG_PATH"
 
-# Remove any existing block for this host (simple, robust approach).
-# This deletes from line "Host <GIT_HOST>" up to the next "Host " line (or EOF).
-tmp_cfg="$(mktemp)"
-awk -v host="$GIT_HOST" '
-  BEGIN {skip=0}
-  $1=="Host" && $2==host {skip=1; next}
-  $1=="Host" && skip==1 {skip=0}
-  skip==0 {print}
+managed_begin="# BEGIN create_ssh_key.sh: $KEY_NAME"
+legacy_begin='# BEGIN create_ssh_key.sh'
+legacy_end='# END create_ssh_key.sh'
+managed_end="# END create_ssh_key.sh: $KEY_NAME"
+tmp_cfg="$(mktemp "$SSH_DIR/config.XXXXXX")"
+trap 'rm -f "$tmp_cfg"' EXIT
+awk -v begin="$managed_begin" -v legacy_begin="$legacy_begin" -v legacy_end="$legacy_end" -v end="$managed_end" '
+  function flush_block(    i) {
+    for (i = 1; i <= block_lines; i++) print block[i]
+    block_lines = 0
+  }
+  ($0 == begin || $0 == legacy_begin) {
+    in_block = 1
+    block_lines = 1
+    block[block_lines] = $0
+    next
+  }
+  in_block {
+    block[++block_lines] = $0
+    if ($0 == end || $0 == legacy_end) {
+      in_block = 0
+      block_lines = 0
+    }
+    next
+  }
+  {print}
+  END {
+    if (in_block) flush_block()
+  }
 ' "$CFG_PATH" > "$tmp_cfg"
-mv "$tmp_cfg" "$CFG_PATH"
 
-if [[ -n "$IS_SELF_HOSTED" ]]; then
-  {
-    echo ""
-    echo "Host $GIT_HOST"
-    echo "  HostName $GIT_HOSTNAME"
-    # Port 22 is the SSH default — only emit the line for a non-standard port.
-    [[ -n "$GIT_SSH_PORT" && "$GIT_SSH_PORT" != "22" ]] && echo "  Port $GIT_SSH_PORT"
-    echo "  User git"
-    echo "  AddKeysToAgent $ADD_KEYS_TO_AGENT"
-    echo "  IdentityFile $KEY_PATH"
-  } >> "$CFG_PATH"
-else
-  {
-    echo ""
-    echo "Host $GIT_HOST"
-    echo "  AddKeysToAgent $ADD_KEYS_TO_AGENT"
-    # macOS keychain optional:
-    # echo "  UseKeychain yes"
-    echo "  IdentityFile $KEY_PATH"
-  } >> "$CFG_PATH"
-fi
+managed_block="$(mktemp "$SSH_DIR/config-block.XXXXXX")"
+final_cfg="$(mktemp "$SSH_DIR/config.XXXXXX")"
+trap 'rm -f "$tmp_cfg" "$managed_block" "$final_cfg"' EXIT
+{
+  printf '%s\n' "$managed_begin"
+  if [[ -n "$IS_SELF_HOSTED" ]]; then
+    printf 'Host %s %s\n' "$GIT_HOST" "$GIT_HOSTNAME"
+    printf '  HostName %s\n' "$GIT_HOSTNAME"
+    [[ "$GIT_SSH_PORT" != "22" ]] && printf '  Port %s\n' "$GIT_SSH_PORT"
+    printf '  User git\n'
+  else
+    printf 'Host %s\n' "$GIT_HOST"
+  fi
+  printf '  AddKeysToAgent %s\n' "$ADD_KEYS_TO_AGENT"
+  printf '  IdentityFile %s\n' "$KEY_PATH"
+  printf '%s\n' "$managed_end"
+} > "$managed_block"
+
+{
+  cat "$managed_block"
+  cat "$tmp_cfg"
+} > "$final_cfg"
+mv "$final_cfg" "$CFG_PATH"
+rm -f "$tmp_cfg" "$managed_block"
+trap - EXIT
 
 # ---- Show public key ----
 echo ""
