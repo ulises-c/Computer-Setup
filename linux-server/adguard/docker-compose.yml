@@ -1,9 +1,11 @@
 services:
   # Tailscale sidecar — joins the tailnet as `adguard`, terminating HTTPS for the
   # web UI at https://adguard.<tailnet>.ts.net. See ../HTTPS.md.
-  # DNS (:53 tcp+udp) stays host-published HERE (the sidecar owns the network
-  # namespace) — it's raw DNS for LAN clients, not HTTP, and must not go through
-  # tailscale serve. AdGuard publishes no :443, so there's no DoH/serve conflict.
+  #
+  # Decoupled from AdGuard (its OWN netns, NOT network_mode: service: like the
+  # old layout): the sidecar proxies to adguardhome over the shared bridge
+  # network. A sidecar failure now costs only the HTTPS UI — DNS keeps serving
+  # LAN clients, which is the whole point of a home DNS server.
   adguard-ts:
     image: tailscale/tailscale:latest
     container_name: adguard-ts
@@ -22,29 +24,24 @@ services:
       - /dev/net/tun:/dev/net/tun
     cap_add:
       - NET_ADMIN
-    # Static public resolvers for this sidecar only. Its OAuth bootstrap must
-    # resolve api.tailscale.com, but the only other DNS is AdGuard Home — which
-    # runs in THIS sidecar's netns. Without a fixed resolver, a cold start
-    # deadlocks (sidecar needs DNS → DNS needs the sidecar). See HTTPS.md.
+    # Static public resolvers so this sidecar's OAuth bootstrap can resolve
+    # api.tailscale.com without depending on AdGuard — the same deadlock guard
+    # used by every sidecar. See HTTPS.md.
     dns:
       - 9.9.9.10
       - 1.1.1.1
-    ports:
-      - "53:53/tcp"   # DNS — must stay host-published for LAN clients
-      - "53:53/udp"
-      # First-run only: to re-run the setup wizard, temporarily add "3003:3000/tcp"
-      # here and browse to it; the configured UI lives on :80 (served via HTTPS).
     restart: unless-stopped
 
   adguardhome:
     image: adguard/adguardhome:latest
     container_name: adguardhome
-    # Share the sidecar's network namespace: tailscale serve proxies :443 to the
-    # configured web UI on 127.0.0.1:80 (8083 was only the old host mapping).
-    network_mode: service:adguard-ts
-    depends_on:
-      - adguard-ts
     restart: unless-stopped
+    ports:
+      - "53:53/tcp"   # DNS — host-published for LAN clients
+      - "53:53/udp"
+      # The web UI binds container :80 (unpublished — reached via the sidecar's
+      # serve proxy, so it never collides with NPM's host :80). First-run only:
+      # temporarily add "3003:3000/tcp" here to re-run the setup wizard.
     volumes:
       - ./work:/opt/adguardhome/work
       - ./conf:/opt/adguardhome/conf
