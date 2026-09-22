@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Installs the systemd units, ufw rules, and status container for the Dragonwilds
+# dedicated server. The game itself is installed separately by steamcmd — see
+# README.md.
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+DRY_RUN=false
+
+case "${1:-}" in
+  "") ;;
+  --dry-run) DRY_RUN=true ;;
+  *) printf 'error: unknown argument: %s\n' "$1" >&2; exit 1 ;;
+esac
+
+if [[ -f "$SCRIPT_DIR/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$SCRIPT_DIR/.env"
+  set +a
+fi
+
+readonly APPID=4019830
+readonly UNIT_DIR=/etc/systemd/system
+: "${SERVICE_USER:=${SUDO_USER:-$(id -un)}}"
+: "${STEAMCMD:=/usr/games/steamcmd}"
+: "${SERVER_PORT:=7777}"
+: "${LAN_CIDR:=}"
+
+# sed renders these into unit files, so a quoted path would break the templates.
+if ! [[ "$SCRIPT_DIR" =~ ^/[[:alnum:]_./-]+$ ]]; then
+  printf 'error: unsupported character in checkout path: %s\n' "$SCRIPT_DIR" >&2
+  exit 1
+fi
+
+if [[ "$DRY_RUN" == false && $EUID -ne 0 ]]; then
+  printf 'error: run with sudo: sudo bash %s\n' "$0" >&2
+  exit 1
+fi
+
+if ! id -u "$SERVICE_USER" >/dev/null 2>&1; then
+  printf 'error: no such user: %s\n' "$SERVICE_USER" >&2
+  exit 1
+fi
+SERVICE_GROUP="$(id -gn "$SERVICE_USER")"
+: "${DRAGONWILDS_INSTALL_DIR:=$(getent passwd "$SERVICE_USER" | cut -d: -f6)/games/dragonwilds}"
+
+if ! [[ "$DRAGONWILDS_INSTALL_DIR" =~ ^/[[:alnum:]_./-]+$ ]]; then
+  printf 'error: unsupported character in install path: %s\n' "$DRAGONWILDS_INSTALL_DIR" >&2
+  exit 1
+fi
+
+[[ -x "$STEAMCMD" ]] || \
+  printf 'warning: %s not found — install steamcmd first (apt install steamcmd)\n' "$STEAMCMD" >&2
+[[ -x "$DRAGONWILDS_INSTALL_DIR/RSDragonwildsServer.sh" ]] || \
+  printf 'warning: %s not installed yet — run the steamcmd app_update from README.md\n' "$DRAGONWILDS_INSTALL_DIR" >&2
+
+# The server boots without an OwnerId but then refuses to create a world, which
+# is easy to miss in the log.
+config="$DRAGONWILDS_INSTALL_DIR/RSDragonwilds/Saved/Config/LinuxServer/DedicatedServer.ini"
+if [[ -r "$config" ]] && ! grep -qE '^OwnerId=.+' "$config"; then
+  printf 'warning: OwnerId is empty in %s — set it before the server can host a world\n' "$config" >&2
+fi
+
+run() {
+  if [[ "$DRY_RUN" == true ]]; then printf '[dry-run] %s\n' "$*"; else "$@"; fi
+}
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
+render() {
+  local src="$1" dest="$2"
+  sed -e "s|@USER@|$SERVICE_USER|g" \
+      -e "s|@GROUP@|$SERVICE_GROUP|g" \
+      -e "s|@INSTALL_DIR@|$DRAGONWILDS_INSTALL_DIR|g" \
+      -e "s|@STEAMCMD@|$STEAMCMD|g" \
+      -e "s|@APPID@|$APPID|g" \
+      -e "s|@STATUS_SCRIPT@|$SCRIPT_DIR/dragonwilds-status.sh|g" \
+      -e "s|@STATUS_JSON@|$SCRIPT_DIR/status/dragonwilds-status.json|g" \
+      "$src" > "$tmp/$dest"
+}
+
+render "$SCRIPT_DIR/dragonwilds.service.template" dragonwilds.service
+render "$SCRIPT_DIR/dragonwilds-status.service.template" dragonwilds-status.service
+
+if command -v systemd-analyze >/dev/null; then
+  systemd-analyze verify "$tmp/dragonwilds.service" "$tmp/dragonwilds-status.service" \
+    "$SCRIPT_DIR/dragonwilds-status.timer"
+fi
+
+if [[ "$DRY_RUN" == true ]]; then
+  printf '[dry-run] install rendered units into %s/\n' "$UNIT_DIR"
+else
+  install -o root -g root -m 644 "$tmp/dragonwilds.service" "$UNIT_DIR/dragonwilds.service"
+  install -o root -g root -m 644 "$tmp/dragonwilds-status.service" "$UNIT_DIR/dragonwilds-status.service"
+  install -o root -g root -m 644 "$SCRIPT_DIR/dragonwilds-status.timer" "$UNIT_DIR/dragonwilds-status.timer"
+  install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 755 "$SCRIPT_DIR/status"
+  chmod 755 "$SCRIPT_DIR/dragonwilds-status.sh"
+fi
+
+run systemctl daemon-reload
+run systemctl enable --now dragonwilds.service
+run systemctl enable --now dragonwilds-status.timer
+
+# LAN and tailnet only — running this never implies a router port-forward.
+if [[ -z "$LAN_CIDR" ]]; then
+  default_iface="$(ip -4 route show default | awk '{print $5; exit}')"
+  [[ -n "$default_iface" ]] && \
+    LAN_CIDR="$(ip -4 route show dev "$default_iface" proto kernel scope link | awk '{print $1; exit}')"
+fi
+if [[ -n "$LAN_CIDR" ]]; then
+  run ufw allow proto udp from "$LAN_CIDR" to any port "$SERVER_PORT" comment 'dragonwilds (LAN)'
+else
+  printf 'warning: could not detect the LAN subnet — set LAN_CIDR in .env\n' >&2
+fi
+if ip link show tailscale0 >/dev/null 2>&1; then
+  run ufw allow in on tailscale0 proto udp to any port "$SERVER_PORT" comment 'dragonwilds (tailnet)'
+fi
+
+run docker compose -f "$SCRIPT_DIR/docker-compose.yml" up -d
+
+printf 'Installed. Status: systemctl status dragonwilds.service\n'
+printf 'Logs:      journalctl -u dragonwilds.service -f\n'

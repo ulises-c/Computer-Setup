@@ -1,0 +1,17 @@
+services:
+  # Tiny static server exposing the Dragonwilds status JSON to the homepage card,
+  # mirroring linux-server/backup. The game server itself is NOT containerised: it
+  # is an Unreal dedicated server binary installed by steamcmd and run by
+  # dragonwilds.service, so it keeps direct access to UDP 7777 with no NAT hop and
+  # no duplicated 5.5 GB game data. Only this ~5 MB nginx is a container.
+  #
+  # Bound to loopback only — homepage is host-networked and reads it via localhost.
+  # No Tailscale sidecar (host-local plumbing endpoint, not a user-facing service).
+  dragonwilds-status:
+    image: nginx:alpine
+    container_name: dragonwilds-status
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8096:80"
+    volumes:
+      - ./status:/usr/share/nginx/html:ro
