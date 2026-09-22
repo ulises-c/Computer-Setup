@@ -129,6 +129,8 @@ else
   install -o root -g root -m 644 "$tmp/dragonwilds-restart.rules" "$POLKIT_RULE"
   chmod 755 "$SCRIPT_DIR/dragonwilds-update-check.sh" "$SCRIPT_DIR/dragonwilds-auto-update.sh" \
     "$SCRIPT_DIR/dragonwilds-players.sh"
+  # Holds NTFY_TOKEN; a cp of .env.example lands world-readable.
+  [[ -f "$SCRIPT_DIR/.env" ]] && chmod 600 "$SCRIPT_DIR/.env"
   install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 755 "$SCRIPT_DIR/status"
   chmod 755 "$SCRIPT_DIR/dragonwilds-status.sh"
 fi
