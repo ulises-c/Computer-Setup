@@ -165,6 +165,34 @@ rather than claiming the server is up.
 
 ---
 
+## How players join
+
+Three routes, in rough order of reliability:
+
+1. **Invite code** — the server mints one per session and it is the only way in
+   for console players, who cannot enter an IP. It appears on the homepage card
+   and in the log:
+
+   ```bash
+   journalctl -u dragonwilds.service --since "$(systemctl show dragonwilds.service -p ActiveEnterTimestamp --value)" \
+     | grep JoinCode
+   ```
+
+   Format is `XXXX-XXXX`. Players enter it from the World Browser.
+
+2. **Direct connect** — multiplayer menu → Direct, then `<ip>:7777`. IP literal
+   only; see pain point 10.
+
+3. **Server browser** — Worlds → Public, search the exact `ServerName`
+   (case-sensitive).
+
+Steam invites are a known Jagex issue: they do not currently connect to a
+dedicated server. Use one of the above instead.
+
+The code is minted per session, so assume it changes whenever the service
+restarts — which is why the status card reads it from the current run's journal
+rather than caching it.
+
 ## Playing from outside the network
 
 The tailnet address works from anywhere — that is the whole point of the `100.x`

@@ -113,7 +113,15 @@ curl -s localhost:8096/dragonwilds-status.json | jq
 
 ## Connect
 
-Direct connect to an **IP literal**. The client does not resolve hostnames, so a
+Easiest: share the **invite code** (`XXXX-XXXX`), shown on the homepage card or:
+
+```bash
+curl -s localhost:8096/dragonwilds-status.json | jq -r .join_code
+```
+
+It changes when the service restarts. Console players can only join this way.
+
+Otherwise direct connect to an **IP literal**. The client does not resolve hostnames, so a
 MagicDNS name is rejected even though it resolves fine at the OS level.
 
 - LAN: `192.168.x.y:7777`
