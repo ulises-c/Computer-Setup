@@ -430,6 +430,13 @@ address on the host — on a box with 20-odd Docker bridges, "first" is almost
 never the one you can reach (pain point 11). `player_names` falls back to an em
 dash so an empty row reads as "nobody" rather than a broken widget.
 
+The document is assembled with `jq -n` (`--arg` for strings, `--argjson` for
+numbers and booleans) rather than a heredoc. `ServerName` and `DefaultWorldName`
+are operator-editable free text, and the hand-rolled escaper this replaced handled
+only `\` and `"` — a tab in `ServerName` was enough to emit invalid JSON and blank
+the card. jq is already a hard dependency of `../backup/backup.sh`, and starts
+faster than a Python interpreter for something running every minute.
+
 The card's Docker container field tracks only the status nginx — the game server
 is a host unit, so its real state is the `status` field.
 

@@ -23,6 +23,8 @@ fi
 : "${SERVER_PORT:=7777}"
 : "${LATEST_BUILD_FILE:=$SCRIPT_DIR/status/.latest-build}"
 
+command -v jq >/dev/null || { printf 'error: jq not installed (apt install jq)\n' >&2; exit 1; }
+
 readonly UNIT=dragonwilds.service
 readonly APPID=4019830
 config="$DRAGONWILDS_INSTALL_DIR/RSDragonwilds/Saved/Config/LinuxServer/DedicatedServer.ini"
@@ -34,8 +36,6 @@ ini_get() {
   [[ -r "$config" ]] || return 0
   sed -n "s/^$key=\(.*\)$/\1/p" "$config" | head -1 | tr -d '\r'
 }
-
-json_escape() { printf '%s' "${1-}" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 
 state="$(systemctl show -p ActiveState --value "$UNIT" 2>/dev/null || true)"
 case "$state" in
@@ -154,32 +154,57 @@ fi
 mkdir -p "$(dirname "$STATUS_JSON")"
 tmp="$(mktemp "$(dirname "$STATUS_JSON")/.status.XXXXXX")"
 trap 'rm -f "$tmp"' EXIT
-cat > "$tmp" <<EOF
-{
-  "status": "$status",
-  "server_name": "$(json_escape "$server_name")",
-  "world": "$(json_escape "$world_name")",
-  "join_code": "$(json_escape "$join_code")",
-  "players": $players,
-  "players_max": 6,
-  "player_names": "$(json_escape "$player_names")",
-  "connect_lan": "$(json_escape "$connect_lan")",
-  "connect_tailnet": "$(json_escape "$connect_tailnet")",
-  "memory_bytes": $memory_bytes,
-  "save_bytes": $save_bytes,
-  "disk_free_bytes": $disk_free_bytes,
-  "uptime_seconds": $uptime_seconds,
-  "listening": $listening,
-  "owner_configured": $owner_configured,
-  "world_password": $world_password,
-  "build": "$(json_escape "$build")",
-  "latest_build": "$(json_escape "$latest_build")",
-  "update_status": "$(json_escape "$update_status")",
-  "update_checked": "$(json_escape "$update_checked")",
-  "last_save": "$last_save",
-  "updated": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-}
-EOF
+# jq builds the document rather than a heredoc: the values below come from an
+# operator-editable ini and from log output, and a hand-rolled escaper missed
+# control characters — a tab in ServerName produced invalid JSON and a blank card.
+# --arg always yields a string, --argjson an already-valid number or boolean.
+jq -n \
+  --arg status "$status" \
+  --arg server_name "$server_name" \
+  --arg world "$world_name" \
+  --arg join_code "$join_code" \
+  --arg player_names "$player_names" \
+  --arg connect_lan "$connect_lan" \
+  --arg connect_tailnet "$connect_tailnet" \
+  --arg build "$build" \
+  --arg latest_build "$latest_build" \
+  --arg update_status "$update_status" \
+  --arg update_checked "$update_checked" \
+  --arg last_save "$last_save" \
+  --arg updated "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --argjson players "$players" \
+  --argjson players_max 6 \
+  --argjson memory_bytes "$memory_bytes" \
+  --argjson save_bytes "$save_bytes" \
+  --argjson disk_free_bytes "$disk_free_bytes" \
+  --argjson uptime_seconds "$uptime_seconds" \
+  --argjson listening "$listening" \
+  --argjson owner_configured "$owner_configured" \
+  --argjson world_password "$world_password" \
+  '{
+    status: $status,
+    server_name: $server_name,
+    world: $world,
+    join_code: $join_code,
+    players: $players,
+    players_max: $players_max,
+    player_names: $player_names,
+    connect_lan: $connect_lan,
+    connect_tailnet: $connect_tailnet,
+    memory_bytes: $memory_bytes,
+    save_bytes: $save_bytes,
+    disk_free_bytes: $disk_free_bytes,
+    uptime_seconds: $uptime_seconds,
+    listening: $listening,
+    owner_configured: $owner_configured,
+    world_password: $world_password,
+    build: $build,
+    latest_build: $latest_build,
+    update_status: $update_status,
+    update_checked: $update_checked,
+    last_save: $last_save,
+    updated: $updated
+  }' > "$tmp"
 chmod 644 "$tmp"
 # Rename so nginx never serves a half-written file.
 mv "$tmp" "$STATUS_JSON"
