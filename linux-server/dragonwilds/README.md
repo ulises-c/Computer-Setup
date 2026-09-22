@@ -95,6 +95,11 @@ Shutdown sends SIGTERM and waits up to 120 s: the server flushes its world to
 `RSDragonwilds/Saved/Savegames/*.sav` on that signal, so cutting it short can
 lose recent progress. On startup it loads the newest `.sav` it finds.
 
+Saves are numbered slots (`1.sav`), not named after the world — `DefaultWorldName`
+is recorded inside the file, not in its filename. So importing an existing world
+means emptying `Savegames/` first: a world the server generated on an earlier
+start carries the same name and can win the "newest" comparison.
+
 ## Status card
 
 `dragonwilds-status.timer` runs `dragonwilds-status.sh` every minute, writing
