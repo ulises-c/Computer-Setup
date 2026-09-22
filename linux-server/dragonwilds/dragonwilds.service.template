@@ -12,7 +12,9 @@ WorkingDirectory=@INSTALL_DIR@
 
 # Pull the latest build on every start. Leading "-" so a Steam outage leaves the
 # server starting on the build already on disk instead of failing to come up.
-ExecStartPre=-@STEAMCMD@ +force_install_dir @INSTALL_DIR@ +login anonymous +app_update @APPID@ +quit
+# flock: dragonwilds-update-check.timer also runs steamcmd, and two instances
+# sharing ~/.steam can trip over each other.
+ExecStartPre=-/usr/bin/flock @INSTALL_DIR@/.steamcmd.lock @STEAMCMD@ +force_install_dir @INSTALL_DIR@ +login anonymous +app_update @APPID@ +quit
 ExecStart=@INSTALL_DIR@/RSDragonwildsServer.sh -log
 
 # The server flushes its world to Saved/Savegames on SIGTERM; give it room to

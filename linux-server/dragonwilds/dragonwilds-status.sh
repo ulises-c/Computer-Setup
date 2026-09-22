@@ -21,6 +21,7 @@ fi
 : "${DRAGONWILDS_INSTALL_DIR:=$HOME/games/dragonwilds}"
 : "${STATUS_JSON:=$SCRIPT_DIR/status/dragonwilds-status.json}"
 : "${SERVER_PORT:=7777}"
+: "${LATEST_BUILD_FILE:=$SCRIPT_DIR/status/.latest-build}"
 
 readonly UNIT=dragonwilds.service
 readonly APPID=4019830
@@ -142,6 +143,22 @@ if [[ -r "$manifest" ]]; then
   build="$(sed -n 's/^[[:space:]]*"buildid"[[:space:]]*"\([0-9]*\)".*/\1/p' "$manifest" | head -1)"
 fi
 
+# Written by dragonwilds-update-check.timer, which is the only thing that talks
+# to Steam — keep this path free of network calls, it runs every minute.
+latest_build=""
+update_checked=""
+update_status="unknown"
+if [[ -r "$LATEST_BUILD_FILE" ]]; then
+  read -r latest_build update_checked < "$LATEST_BUILD_FILE" || true
+  if [[ "$latest_build" =~ ^[0-9]+$ && "$build" =~ ^[0-9]+$ ]]; then
+    if [[ "$latest_build" == "$build" ]]; then
+      update_status="up to date"
+    else
+      update_status="update available ($latest_build)"
+    fi
+  fi
+fi
+
 # The newest .sav is the one the server reloads on startup.
 last_save=""
 save_bytes=0
@@ -178,6 +195,9 @@ cat > "$tmp" <<EOF
   "owner_configured": $owner_configured,
   "world_password": $world_password,
   "build": "$(json_escape "$build")",
+  "latest_build": "$(json_escape "$latest_build")",
+  "update_status": "$(json_escape "$update_status")",
+  "update_checked": "$(json_escape "$update_checked")",
   "last_save": "$last_save",
   "updated": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }

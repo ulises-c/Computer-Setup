@@ -282,6 +282,9 @@
                 - field: save_bytes
                   label: World size
                   format: bytes
+                - field: update_status
+                  label: Build
+                  format: text
 
 - NAS:
     - wd 14tb r/w:

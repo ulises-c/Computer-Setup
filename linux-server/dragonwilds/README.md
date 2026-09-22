@@ -375,7 +375,29 @@ Fields: `status` (`running` / `starting` / `stopped` / `failed` / `unknown`),
 `server_name`, `world`, `join_code`, `players`, `players_max`, `player_names`,
 `connect_lan`, `connect_tailnet`, `memory_bytes`, `save_bytes`,
 `disk_free_bytes`, `uptime_seconds`, `listening`, `owner_configured`,
-`world_password`, `build`, `last_save`, `updated`.
+`world_password`, `build`, `latest_build`, `update_status`, `update_checked`,
+`last_save`, `updated`.
+
+### Update checking
+
+`dragonwilds-update-check.timer` runs every two hours on even hours, asking Steam
+for the current public build and writing it to `status/.latest-build`. The status
+script compares that against the installed build from the app manifest and
+publishes `update_status` (`up to date` / `update available (<build>)` /
+`unknown`). The query takes about 4 seconds.
+
+It is a separate timer because it is the only part of this that touches the
+network — the status script runs every minute and must stay local. The check
+never modifies the install; updates are applied by the service's `ExecStartPre`
+on the next restart:
+
+```bash
+sudo systemctl restart dragonwilds.service
+```
+
+Both that `ExecStartPre` and the checker take a `flock` on
+`<install dir>/.steamcmd.lock`, since two steamcmd instances sharing `~/.steam`
+can trip over each other.
 
 `connect_lan` is derived from the default route rather than the first global
 address on the host — on a box with 20-odd Docker bridges, "first" is almost

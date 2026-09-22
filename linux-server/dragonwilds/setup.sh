@@ -79,15 +79,19 @@ render() {
       -e "s|@APPID@|$APPID|g" \
       -e "s|@STATUS_SCRIPT@|$SCRIPT_DIR/dragonwilds-status.sh|g" \
       -e "s|@STATUS_JSON@|$SCRIPT_DIR/status/dragonwilds-status.json|g" \
+      -e "s|@UPDATE_CHECK_SCRIPT@|$SCRIPT_DIR/dragonwilds-update-check.sh|g" \
+      -e "s|@LATEST_BUILD_FILE@|$SCRIPT_DIR/status/.latest-build|g" \
       "$src" > "$tmp/$dest"
 }
 
 render "$SCRIPT_DIR/dragonwilds.service.template" dragonwilds.service
 render "$SCRIPT_DIR/dragonwilds-status.service.template" dragonwilds-status.service
+render "$SCRIPT_DIR/dragonwilds-update-check.service.template" dragonwilds-update-check.service
 
 if command -v systemd-analyze >/dev/null; then
   systemd-analyze verify "$tmp/dragonwilds.service" "$tmp/dragonwilds-status.service" \
-    "$SCRIPT_DIR/dragonwilds-status.timer"
+    "$tmp/dragonwilds-update-check.service" "$SCRIPT_DIR/dragonwilds-status.timer" \
+    "$SCRIPT_DIR/dragonwilds-update-check.timer"
 fi
 
 if [[ "$DRY_RUN" == true ]]; then
@@ -96,6 +100,9 @@ else
   install -o root -g root -m 644 "$tmp/dragonwilds.service" "$UNIT_DIR/dragonwilds.service"
   install -o root -g root -m 644 "$tmp/dragonwilds-status.service" "$UNIT_DIR/dragonwilds-status.service"
   install -o root -g root -m 644 "$SCRIPT_DIR/dragonwilds-status.timer" "$UNIT_DIR/dragonwilds-status.timer"
+  install -o root -g root -m 644 "$tmp/dragonwilds-update-check.service" "$UNIT_DIR/dragonwilds-update-check.service"
+  install -o root -g root -m 644 "$SCRIPT_DIR/dragonwilds-update-check.timer" "$UNIT_DIR/dragonwilds-update-check.timer"
+  chmod 755 "$SCRIPT_DIR/dragonwilds-update-check.sh"
   install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 755 "$SCRIPT_DIR/status"
   chmod 755 "$SCRIPT_DIR/dragonwilds-status.sh"
 fi
@@ -103,6 +110,7 @@ fi
 run systemctl daemon-reload
 run systemctl enable --now dragonwilds.service
 run systemctl enable --now dragonwilds-status.timer
+run systemctl enable --now dragonwilds-update-check.timer
 
 # LAN and tailnet only — running this never implies a router port-forward.
 if [[ -z "$LAN_CIDR" ]]; then
