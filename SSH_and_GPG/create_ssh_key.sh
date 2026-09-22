@@ -241,18 +241,23 @@ awk -v begin="$managed_begin" -v legacy_begin="$legacy_begin" -v legacy_end="$le
 managed_block="$(mktemp "$SSH_DIR/config-block.XXXXXX")"
 final_cfg="$(mktemp "$SSH_DIR/config.XXXXXX")"
 trap 'rm -f "$tmp_cfg" "$managed_block" "$final_cfg"' EXIT
+host_patterns="$GIT_HOST"
+if [[ -n "$IS_SELF_HOSTED" && "$GIT_HOST" != "$GIT_HOSTNAME" ]]; then
+  host_patterns+=" $GIT_HOSTNAME"
+fi
 {
   printf '%s\n' "$managed_begin"
   if [[ -n "$IS_SELF_HOSTED" ]]; then
-    printf 'Host %s %s\n' "$GIT_HOST" "$GIT_HOSTNAME"
+    printf 'Host %s\n' "$host_patterns"
     printf '  HostName %s\n' "$GIT_HOSTNAME"
     [[ "$GIT_SSH_PORT" != "22" ]] && printf '  Port %s\n' "$GIT_SSH_PORT"
     printf '  User git\n'
   else
-    printf 'Host %s\n' "$GIT_HOST"
+    printf 'Host %s\n' "$host_patterns"
   fi
   printf '  AddKeysToAgent %s\n' "$ADD_KEYS_TO_AGENT"
   printf '  IdentityFile %s\n' "$KEY_PATH"
+  printf '  IdentitiesOnly yes\n'
   printf '%s\n' "$managed_end"
 } > "$managed_block"
 
