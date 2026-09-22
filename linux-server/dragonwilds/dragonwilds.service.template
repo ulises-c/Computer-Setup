@@ -24,7 +24,7 @@ ExecStartPre=-/usr/bin/flock @INSTALL_DIR@/.steamcmd.lock @STEAMCMD@ +force_inst
 # engine flag. Without it the server takes Unreal's default, 7777.
 ExecStart=@INSTALL_DIR@/RSDragonwildsServer.sh -log -port=@SERVER_PORT@
 
-# The server flushes its world to Saved/Savegames on SIGTERM; give it room to
+# The server flushes its world to Saved/SaveGames on SIGTERM; give it room to
 # finish before systemd escalates, otherwise a restart can lose recent progress.
 KillSignal=SIGTERM
 TimeoutStopSec=120

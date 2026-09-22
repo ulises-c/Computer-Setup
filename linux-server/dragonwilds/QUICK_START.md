@@ -5,8 +5,8 @@ Copy-paste path. Full detail and the reasoning behind each step:
 
 ## 1. Get your player ID
 
-In game: **Settings → Player ID**. It is a **32-character hex string** like
-`4f8976fb2ed8447d98f32a86d33e69af`.
+In game: **Settings → Player ID**. It is a **32-character hex string** (lowercase
+`0-9a-f`, no dashes).
 
 It is *not* your SteamID. A 17-digit number (`76561198…`) is the wrong ID.
 
