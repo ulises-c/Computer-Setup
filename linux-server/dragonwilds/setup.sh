@@ -90,6 +90,7 @@ render() {
       -e "s|@UPDATE_CHECK_SCRIPT@|$SCRIPT_DIR/dragonwilds-update-check.sh|g" \
       -e "s|@LATEST_BUILD_FILE@|$SCRIPT_DIR/status/.latest-build|g" \
       -e "s|@NOTIFIED_BUILD_FILE@|$SCRIPT_DIR/status/.notified-build|g" \
+      -e "s|@FAILED_BUILD_FILE@|$SCRIPT_DIR/status/.failed-build|g" \
       -e "s|@AUTO_UPDATE_SCRIPT@|$SCRIPT_DIR/dragonwilds-auto-update.sh|g" \
       "$src" > "$tmp/$dest"
 }

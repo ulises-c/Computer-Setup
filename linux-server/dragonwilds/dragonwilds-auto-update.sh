@@ -20,6 +20,7 @@ fi
 : "${DRAGONWILDS_INSTALL_DIR:=$HOME/games/dragonwilds}"
 : "${LATEST_BUILD_FILE:=$SCRIPT_DIR/status/.latest-build}"
 : "${NOTIFIED_BUILD_FILE:=$SCRIPT_DIR/status/.notified-build}"
+: "${FAILED_BUILD_FILE:=$SCRIPT_DIR/status/.failed-build}"
 : "${AUTO_UPDATE_RESTART:=true}"
 : "${SERVER_PORT:=7777}"
 : "${NTFY_URL:=}"
@@ -32,6 +33,11 @@ manifest="$DRAGONWILDS_INSTALL_DIR/steamapps/appmanifest_$APPID.acf"
 
 log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 
+installed_build() {
+  [[ -r "$manifest" ]] || return 0
+  sed -n 's/^[[:space:]]*"buildid"[[:space:]]*"\([0-9]*\)".*/\1/p' "$manifest" | head -1
+}
+
 notify() {
   local title="$1" body="$2" priority="${3:-default}"
   [[ -n "$NTFY_URL" && -n "$NTFY_TOPIC" ]] || return 0
@@ -43,8 +49,7 @@ notify() {
     || log "warning: ntfy notification failed"
 }
 
-installed=""
-[[ -r "$manifest" ]] && installed="$(sed -n 's/^[[:space:]]*"buildid"[[:space:]]*"\([0-9]*\)".*/\1/p' "$manifest" | head -1)"
+installed="$(installed_build)"
 latest=""
 [[ -r "$LATEST_BUILD_FILE" ]] && read -r latest _ < "$LATEST_BUILD_FILE" || true
 
@@ -73,6 +78,16 @@ if [[ "$AUTO_UPDATE_RESTART" != true ]]; then
   exit 0
 fi
 
+# A build that already failed to download once is not retried every 15 minutes:
+# each attempt bounces an empty server and would re-alert. It is retried when a
+# newer build appears, or on any manual restart (ExecStartPre runs every start).
+failed=""
+[[ -r "$FAILED_BUILD_FILE" ]] && read -r failed < "$FAILED_BUILD_FILE" || true
+if [[ "$failed" == "$latest" ]]; then
+  log "update $latest previously failed to install; waiting for a manual restart"
+  exit 0
+fi
+
 # Fail closed: only an explicit count of zero allows a restart. An unreadable
 # journal must never be mistaken for an empty server.
 if ! counted="$("$SCRIPT_DIR/dragonwilds-players.sh" "$UNIT")"; then
@@ -85,14 +100,27 @@ if [[ "$players" != 0 ]]; then
   exit 0
 fi
 
+fail() {
+  log "error: $1"
+  printf '%s\n' "$latest" > "$FAILED_BUILD_FILE"
+  notify "Dragonwilds update FAILED" "$1 Check: systemctl status $UNIT" high
+  exit 1
+}
+
 log "update $latest available and nobody online — restarting $UNIT"
-systemctl restart "$UNIT"
+# Blocks through ExecStartPre, i.e. the whole download.
+systemctl --no-ask-password restart "$UNIT" \
+  || fail "Restart for build $latest did not complete (download timed out or the unit failed to start)."
 
 # ExecStartPre downloads the build before the server starts, so the socket can
 # take a while to come back. Confirm rather than assume.
 for _ in $(seq 1 60); do
   if ss -uln 2>/dev/null | awk 'NR>1 {n=split($4,a,":"); print a[n]}' | grep -qx "$SERVER_PORT"; then
-    new="$(sed -n 's/^[[:space:]]*"buildid"[[:space:]]*"\([0-9]*\)".*/\1/p' "$manifest" | head -1)"
+    new="$(installed_build)"
+    # ExecStartPre's "-" lets a failed download start the old build, which looks
+    # exactly like success from the socket alone.
+    [[ "$new" == "$latest" ]] \
+      || fail "Server is back up but still on build $new, not $latest — the steamcmd download failed."
     log "back up on build $new"
     notify "Dragonwilds updated" "Server restarted onto build $new (was $installed)." low
     exit 0
@@ -100,8 +128,4 @@ for _ in $(seq 1 60); do
   sleep 10
 done
 
-log "error: server did not come back within 10 minutes"
-notify "Dragonwilds update FAILED" \
-  "Restarted for build $latest but the server never bound UDP $SERVER_PORT. Check: systemctl status $UNIT" \
-  high
-exit 1
+fail "Restarted for build $latest but the server never bound UDP $SERVER_PORT within 10 minutes."

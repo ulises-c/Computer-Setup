@@ -10,6 +10,11 @@ User=@USER@
 Group=@GROUP@
 WorkingDirectory=@INSTALL_DIR@
 
+# The download below runs inside the start job, so systemd's default 90 s start
+# timeout would kill any real patch mid-transfer — and a lock held by the update
+# check can eat that whole budget before steamcmd even starts.
+TimeoutStartSec=30min
+
 # Pull the latest build on every start. Leading "-" so a Steam outage leaves the
 # server starting on the build already on disk instead of failing to come up.
 # flock: dragonwilds-update-check.timer also runs steamcmd, and two instances

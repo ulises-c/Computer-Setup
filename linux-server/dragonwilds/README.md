@@ -407,8 +407,17 @@ invokes steamcmd — the network work stays unprivileged in
 
 The player count comes from `dragonwilds-players.sh` at decision time, not from
 the cached status JSON, so nobody is kicked by a count that went stale between
-timer ticks. On restart it waits for UDP 7777 to be bound again and alerts at
-high priority if it never comes back.
+timer ticks. It fails closed: if the journal cannot be read (the user needs the
+`adm` or `systemd-journal` group — `setup.sh` warns), the restart is deferred
+rather than treating an unknown count as zero.
+
+On restart it confirms the server is back on UDP 7777 **and** on the new build.
+Because `ExecStartPre`'s `-` lets a failed download start the old build, "the port
+came back" alone is not success. Any failure — the start job failing, the old
+build coming back, or the port never binding — alerts at high priority and
+records the build in `status/.failed-build`, so it is not retried every 15
+minutes. It is retried when a newer build appears, or on any manual restart. The
+unit's `TimeoutStartSec=30min` leaves room for the download inside the start job.
 
 Set `AUTO_UPDATE_RESTART=false` in `.env` to be notified but apply updates
 yourself:
