@@ -723,3 +723,9 @@ it is derived from addresses alone.
   game client (Windows only).
 - [Official setup guide](https://dragonwilds.runescape.com/news/how-to-dedicated-servers)
   · [Wiki: Dedicated Servers](https://dragonwilds.runescape.wiki/w/Dedicated_Servers)
+
+---
+
+Gist: https://gist.github.com/ulises-c/add4c146891d551a43dcf69e51b95ead
+
+Repo: https://github.com/ulises-c/Computer-Setup/tree/main/linux-server/dragonwilds
