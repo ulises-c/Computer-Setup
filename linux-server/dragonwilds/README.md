@@ -4,7 +4,8 @@ Native Linux dedicated server (Steam app **4019830**), run by `dragonwilds.servi
 and surfaced on the homepage dashboard through a loopback status endpoint.
 
 Listens on **UDP 7777**, allowed from the LAN and the tailnet only — no public
-exposure, no router port-forward.
+exposure, no router port-forward. Join by IP literal (`192.168.x.y:7777` or
+`100.x.y.z:7777`); the client does not resolve hostnames — see pain point 10.
 
 In a hurry? [QUICK_START.md](QUICK_START.md) is the copy-paste path. This file
 explains the reasoning and documents where the official guide is wrong.
@@ -148,13 +149,52 @@ The launcher spawns the real binary as a child, so killing the wrapper orphans a
 running server that keeps holding port 7777. systemd handles this correctly via
 cgroups; it only bites when starting the server by hand.
 
-### 10. "Running" does not mean joinable
+### 10. The client needs an IP literal, not a MagicDNS name
+
+Joining over Tailscale needs the tailnet IP (`100.x.y.z:7777`, from
+`tailscale ip -4`). The MagicDNS name is rejected by the client's connect field
+even though the name resolves correctly at the OS level — `getent hosts
+<host>.<tailnet>.ts.net` returns the right `100.x` address on the server. The
+client parses the address itself and never performs a DNS lookup.
+
+### 11. "Running" does not mean joinable
 
 Roughly 30 seconds of asset loading separate process start from the UDP socket
 opening. The status card reports `starting` until the port is actually bound
 rather than claiming the server is up.
 
 ---
+
+## Playing from outside the network
+
+The tailnet address works from anywhere — that is the whole point of the `100.x`
+range. Nothing needs to change on the server: the ufw rule is bound to the
+`tailscale0` interface, not to a subnet, so a peer connecting from another
+network is allowed exactly like one at home.
+
+For other people to join, they each need to be on the tailnet. Inviting them to
+the whole tailnet gives them every machine on it; **sharing just this node** is
+the narrower option and is usually what you want:
+
+> Tailscale admin console → Machines → this host → **Share** → send the link.
+
+A shared user sees only this one machine. They still connect to
+`100.x.y.z:7777`.
+
+If a connection feels laggy, check whether Tailscale found a direct path or fell
+back to a relay:
+
+```bash
+tailscale ping <peer>
+```
+
+`direct` is a normal peer-to-peer UDP path. `via DERP` means NAT traversal failed
+and traffic is being relayed, which adds real latency for a game — usually fixed
+by enabling UPnP/NAT-PMP on the restrictive side.
+
+The alternative is forwarding UDP 7777 on the router, which makes the server
+public. That needs a matching ufw rule (`setup.sh` deliberately adds none) and
+means anyone who finds the port can attempt to join — set `WorldPassword` first.
 
 ## Why the game server is not a container
 

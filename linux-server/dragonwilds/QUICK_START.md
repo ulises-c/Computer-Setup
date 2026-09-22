@@ -113,8 +113,19 @@ curl -s localhost:8096/dragonwilds-status.json | jq
 
 ## Connect
 
-Server browser, or direct to `<server-ip>:7777` / `<server>.<tailnet>.ts.net:7777`.
-LAN and tailnet only — no public access without a router port-forward.
+Direct connect to an **IP literal**. The client does not resolve hostnames, so a
+MagicDNS name is rejected even though it resolves fine at the OS level.
+
+- LAN: `192.168.x.y:7777`
+- Tailnet: `100.x.y.z:7777` — get it with `tailscale ip -4` on the server
+
+Not `<server>.<tailnet>.ts.net:7777`.
+
+The tailnet address works from outside your network too, unchanged. For friends
+to join, share this machine from the Tailscale admin console (Machines → host →
+Share) rather than inviting them to the whole tailnet.
+
+No public access without a router port-forward — see the README.
 
 ## If something is wrong
 
