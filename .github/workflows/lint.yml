@@ -79,6 +79,9 @@ jobs:
       - name: Test SSH config rendering
         run: bash SSH_and_GPG/test-create_ssh_key.sh
 
+      - name: Test setup preflight helpers
+        run: bash scripts/test-core-preflight.sh
+
   zsh-syntax:
     runs-on: ubuntu-latest
     steps:
