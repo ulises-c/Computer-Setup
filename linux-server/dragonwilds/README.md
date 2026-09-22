@@ -91,14 +91,33 @@ the server starting on whatever is already on disk rather than failing to boot.
 
 Startup takes roughly 30 seconds of asset loading before the UDP socket opens.
 
-Shutdown sends SIGTERM and waits up to 120 s: the server flushes its world to
-`RSDragonwilds/Saved/Savegames/*.sav` on that signal, so cutting it short can
-lose recent progress. On startup it loads the newest `.sav` it finds.
+Shutdown sends SIGTERM and waits up to 120 s: the server flushes its world on
+that signal, so cutting it short can lose recent progress.
 
-Saves are numbered slots (`1.sav`), not named after the world — `DefaultWorldName`
-is recorded inside the file, not in its filename. So importing an existing world
-means emptying `Savegames/` first: a world the server generated on an earlier
-start carries the same name and can win the "newest" comparison.
+## Where saves actually live
+
+The official guide says `RSDragonwilds/Saved/Savegames` and that the server
+"loads the latest .sav file available". Both are wrong on Linux. Verified by
+running the server against each layout and reading `LogPersistence`:
+
+| Layout | Result |
+| --- | --- |
+| `Savegames/1.sav` (lowercase, as documented) | ignored — `NewGame()`, world discarded |
+| `SaveGames/1.sav` | ignored — `NewGame()`, world discarded |
+| `SaveGames/<DefaultWorldName>.sav` | `LoadGameFromSaveGame()` — loads |
+
+So the real rule: the directory is **`Saved/SaveGames`** (capital G — the Unreal
+standard, and case matters here where it does not on Windows), and the filename
+must equal `DefaultWorldName` from `DedicatedServer.ini`. Nothing is chosen by
+modification time, so a stale save never silently wins — but a save whose name
+does not match the config is silently ignored and overwritten by a fresh world.
+
+`Savegames` is a symlink to `SaveGames` so the documented path is not a silent
+dead end.
+
+Importing a world from a singleplayer client means renaming its `.sav` to match
+`DefaultWorldName` (client saves are numbered slots, `1.sav`), or setting
+`DefaultWorldName` to the file's name.
 
 ## Status card
 
