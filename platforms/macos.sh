@@ -69,20 +69,9 @@ mac_pipx_install_tier() { mac_install_list "$(pkg_names pipx "$1")" pipx install
 
 # Cache sudo credentials once up front. Homebrew's cask/pkg installers each shell
 # out to `sudo`, so without this a fresh install prompts for the password ~6
-# times. Prime the timestamp once, then refresh it in the background until this
-# script exits so every later sudo call reuses it silently.
+# times.
 mac_prime_sudo() {
-  if [[ "$DRY_RUN" == true ]]; then
-    printf '  [dry-run] sudo -v (cache credentials + background keepalive)\n'
-    return 0
-  fi
-  printf '==> Caching credentials (you may be prompted for your password once)...\n'
-  sudo -v || return 0
-  # || true: the subshell inherits set -e, and one failed refresh (timestamp
-  # revoked mid-run) must not silently kill the keepalive. stdout is redirected
-  # so a piped run (setup.sh | tee) sees EOF at exit instead of hanging on the
-  # fd this subshell holds for up to 60s.
-  ( while true; do sudo -n true || true; sleep 60; kill -0 "$$" 2>/dev/null || exit; done ) >/dev/null 2>&1 &
+  core_prime_sudo
 }
 
 print_app_store_reminders() {
@@ -154,6 +143,7 @@ platform_main() {
   fi
 
   if [[ "$DRY_RUN" == false ]]; then
+    prepare_nvm_environment
     export NVM_DIR="$HOME/.nvm"
     [[ -s "$NVM_DIR/nvm.sh" ]] && \. "$NVM_DIR/nvm.sh"
     nvm install 'lts/*'
