@@ -255,12 +255,30 @@
                 - field: players
                   label: Players
                   format: number
+                - field: player_names
+                  label: Online
+                  format: text
                 - field: join_code
                   label: Join code
                   format: text
+                - field: connect_lan
+                  label: LAN
+                  format: text
+                - field: connect_tailnet
+                  label: Tailnet
+                  format: text
+                - field: last_save
+                  label: Last save
+                  format: relativeDate
                 - field: uptime_seconds
                   label: Uptime
                   format: duration
+                - field: memory_bytes
+                  label: Memory
+                  format: bytes
+                - field: save_bytes
+                  label: World size
+                  format: bytes
 
 - NAS:
     - wd 14tb r/w:

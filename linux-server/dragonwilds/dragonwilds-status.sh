@@ -114,6 +114,29 @@ world_name="$(ini_get DefaultWorldName)"
 [[ -n "$(ini_get OwnerId)" ]] && owner_configured=true || owner_configured=false
 [[ -n "$(ini_get WorldPassword)" ]] && world_password=true || world_password=false
 
+# The address to paste into the client's Direct field — it does not resolve
+# hostnames. Derive the LAN address from the default route: picking "the first
+# global address" would land on one of the host's many Docker bridges.
+connect_lan=""
+default_iface="$(ip -4 route show default 2>/dev/null | awk '{print $5; exit}')"
+if [[ -n "$default_iface" ]]; then
+  lan_ip="$(ip -4 -o addr show dev "$default_iface" scope global 2>/dev/null \
+    | awk '{sub(/\/.*/, "", $4); print $4; exit}')"
+  [[ -n "$lan_ip" ]] && connect_lan="$lan_ip:$SERVER_PORT"
+fi
+connect_tailnet=""
+if command -v tailscale >/dev/null 2>&1; then
+  ts_ip="$(tailscale ip -4 2>/dev/null | head -1)"
+  [[ -n "$ts_ip" ]] && connect_tailnet="$ts_ip:$SERVER_PORT"
+fi
+
+# Empty for an inactive unit, so it cannot be emitted as a bare JSON value.
+memory_bytes="$(systemctl show "$UNIT" -p MemoryCurrent --value 2>/dev/null || true)"
+[[ "$memory_bytes" =~ ^[0-9]+$ ]] || memory_bytes=0
+
+disk_free_bytes="$(df -B1 --output=avail "$DRAGONWILDS_INSTALL_DIR" 2>/dev/null | tail -1 | tr -d ' ')"
+[[ "$disk_free_bytes" =~ ^[0-9]+$ ]] || disk_free_bytes=0
+
 build=""
 if [[ -r "$manifest" ]]; then
   build="$(sed -n 's/^[[:space:]]*"buildid"[[:space:]]*"\([0-9]*\)".*/\1/p' "$manifest" | head -1)"
@@ -121,10 +144,17 @@ fi
 
 # The newest .sav is the one the server reloads on startup.
 last_save=""
+save_bytes=0
 if [[ -d "$savegames" ]]; then
   newest="$(find "$savegames" -maxdepth 1 -name '*.sav' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)"
-  [[ -n "$newest" ]] && last_save="$(date -u -d "@$(stat -c %Y "$newest")" +%Y-%m-%dT%H:%M:%SZ)"
+  if [[ -n "$newest" ]]; then
+    last_save="$(date -u -d "@$(stat -c %Y "$newest")" +%Y-%m-%dT%H:%M:%SZ)"
+    save_bytes="$(stat -c %s "$newest" 2>/dev/null || echo 0)"
+  fi
 fi
+
+# A blank row reads as a broken widget; an em dash reads as "nobody".
+[[ -z "$player_names" ]] && player_names="—"
 
 mkdir -p "$(dirname "$STATUS_JSON")"
 tmp="$(mktemp "$(dirname "$STATUS_JSON")/.status.XXXXXX")"
@@ -136,7 +166,13 @@ cat > "$tmp" <<EOF
   "world": "$(json_escape "$world_name")",
   "join_code": "$(json_escape "$join_code")",
   "players": $players,
+  "players_max": 6,
   "player_names": "$(json_escape "$player_names")",
+  "connect_lan": "$(json_escape "$connect_lan")",
+  "connect_tailnet": "$(json_escape "$connect_tailnet")",
+  "memory_bytes": $memory_bytes,
+  "save_bytes": $save_bytes,
+  "disk_free_bytes": $disk_free_bytes,
   "uptime_seconds": $uptime_seconds,
   "listening": $listening,
   "owner_configured": $owner_configured,

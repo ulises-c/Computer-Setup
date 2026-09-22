@@ -372,8 +372,15 @@ bash dragonwilds-status.sh        # regenerate by hand
 ```
 
 Fields: `status` (`running` / `starting` / `stopped` / `failed` / `unknown`),
-`server_name`, `world`, `join_code`, `players`, `player_names`, `uptime_seconds`,
-`listening`, `owner_configured`, `world_password`, `build`, `last_save`, `updated`.
+`server_name`, `world`, `join_code`, `players`, `players_max`, `player_names`,
+`connect_lan`, `connect_tailnet`, `memory_bytes`, `save_bytes`,
+`disk_free_bytes`, `uptime_seconds`, `listening`, `owner_configured`,
+`world_password`, `build`, `last_save`, `updated`.
+
+`connect_lan` is derived from the default route rather than the first global
+address on the host — on a box with 20-odd Docker bridges, "first" is almost
+never the one you can reach (pain point 11). `player_names` falls back to an em
+dash so an empty row reads as "nobody" rather than a broken widget.
 
 The card's Docker container field tracks only the status nginx — the game server
 is a host unit, so its real state is the `status` field.
