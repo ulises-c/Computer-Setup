@@ -252,6 +252,9 @@
                 - field: status
                   label: Server
                   format: text
+                - field: join_code
+                  label: Join code
+                  format: text
                 - field: world
                   label: World
                   format: text

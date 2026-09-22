@@ -66,6 +66,17 @@ elif [[ "$status" == running ]]; then
   status=starting
 fi
 
+# The join code is minted per session and only ever appears in the log, so scope
+# the search to this run's start — a code from a previous boot is already dead.
+join_code=""
+if [[ "$status" == running && -n "$started" ]]; then
+  if since="$(date -d "$started" '+%Y-%m-%d %H:%M:%S' 2>/dev/null)"; then
+    join_code="$(journalctl -u "$UNIT" --since "$since" --no-pager 2>/dev/null \
+      | grep -oE '"JoinCode"\] written with key\[[a-z]+\] value\[[A-Z0-9-]+\]' \
+      | tail -1 | grep -oE '[A-Z0-9]{4}-[A-Z0-9]{4}' || true)"
+  fi
+fi
+
 server_name="$(ini_get ServerName)"
 world_name="$(ini_get DefaultWorldName)"
 [[ -n "$(ini_get OwnerId)" ]] && owner_configured=true || owner_configured=false
@@ -91,6 +102,7 @@ cat > "$tmp" <<EOF
   "status": "$status",
   "server_name": "$(json_escape "$server_name")",
   "world": "$(json_escape "$world_name")",
+  "join_code": "$(json_escape "$join_code")",
   "uptime_seconds": $uptime_seconds,
   "listening": $listening,
   "owner_configured": $owner_configured,
