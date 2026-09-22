@@ -39,6 +39,15 @@ services:
       # ntfy is behind a reverse proxy (tailscale serve) — trust X-Forwarded-For
       # so rate limiting / visitor identification uses the real client IP.
       - NTFY_BEHIND_PROXY=true
+      # Without an explicit cache file ntfy keeps messages in memory only, so the
+      # ./cache mount below did nothing and every alert was lost on restart —
+      # which watchtower does on its own schedule.
+      - NTFY_CACHE_FILE=/var/cache/ntfy/cache.db
+      # Default is 12h, which loses an alert nobody was awake for — the whole
+      # point of caching. A month keeps enough history to correlate an incident
+      # after the fact; the messages are plain text and attachments are off, so
+      # the database stays small.
+      - NTFY_CACHE_DURATION=30d
     volumes:
       - ./data:/var/lib/ntfy
       - ./cache:/var/cache/ntfy
