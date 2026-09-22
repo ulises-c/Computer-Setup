@@ -100,24 +100,30 @@ The official guide says `RSDragonwilds/Saved/Savegames` and that the server
 "loads the latest .sav file available". Both are wrong on Linux. Verified by
 running the server against each layout and reading `LogPersistence`:
 
-| Layout | Result |
-| --- | --- |
-| `Savegames/1.sav` (lowercase, as documented) | ignored — `NewGame()`, world discarded |
-| `SaveGames/1.sav` | ignored — `NewGame()`, world discarded |
-| `SaveGames/<DefaultWorldName>.sav` | `LoadGameFromSaveGame()` — loads |
+| Layout | `DefaultWorldName` | Save's internal `WorldName` | Result |
+| --- | --- | --- | --- |
+| `Savegames/1.sav` (lowercase, as documented) | `World-90667` | `1` | ignored — `NewGame()` |
+| `SaveGames/1.sav` | `World-90667` | `1` | ignored — `NewGame()` |
+| `SaveGames/<owner>.sav` | `<owner>` | `1` | ignored — no load attempted |
+| `SaveGames/1.sav` | `1` | `1` | `LoadGameFromSaveGame()` — loads |
 
 So the real rule: the directory is **`Saved/SaveGames`** (capital G — the Unreal
-standard, and case matters here where it does not on Windows), and the filename
-must equal `DefaultWorldName` from `DedicatedServer.ini`. Nothing is chosen by
-modification time, so a stale save never silently wins — but a save whose name
-does not match the config is silently ignored and overwritten by a fresh world.
+standard, and case matters here where it does not on Windows), and
+`DefaultWorldName` must equal the **world name stored inside the save**, with the
+file named `<that name>.sav`. Matching the filename alone is not enough — row 3
+above renames the file and the config together and still never loads, because the
+name inside the save still says `1`. Nothing is selected by modification time.
 
-`Savegames` is a symlink to `SaveGames` so the documented path is not a silent
-dead end.
+A mismatch is silent: no error, no load attempt, and the server goes on to create
+a fresh world that overwrites the import on next save.
 
-Importing a world from a singleplayer client means renaming its `.sav` to match
-`DefaultWorldName` (client saves are numbered slots, `1.sav`), or setting
-`DefaultWorldName` to the file's name.
+A client's singleplayer worlds are named by slot number, so an imported save is
+usually `WorldName[1]` and needs `DefaultWorldName=1`. Read the name out of the
+header before copying:
+
+```bash
+strings -n 3 <save>.sav | sed -n '20,30p'    # value block: world name, then L_World, then owner
+```
 
 ## Status card
 
