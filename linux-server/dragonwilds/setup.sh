@@ -23,6 +23,7 @@ fi
 
 readonly APPID=4019830
 readonly UNIT_DIR=/etc/systemd/system
+readonly POLKIT_RULE=/etc/polkit-1/rules.d/50-dragonwilds-restart.rules
 : "${SERVICE_USER:=${SUDO_USER:-$(id -un)}}"
 : "${STEAMCMD:=/usr/games/steamcmd}"
 : "${SERVER_PORT:=7777}"
@@ -39,6 +40,11 @@ if [[ "$DRY_RUN" == false && $EUID -ne 0 ]]; then
   exit 1
 fi
 
+# Also rendered into the polkit rule, which is JavaScript.
+if ! [[ "$SERVICE_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+  printf 'error: unsupported service user name: %s\n' "$SERVICE_USER" >&2
+  exit 1
+fi
 if ! id -u "$SERVICE_USER" >/dev/null 2>&1; then
   printf 'error: no such user: %s\n' "$SERVICE_USER" >&2
   exit 1
@@ -99,6 +105,7 @@ render "$SCRIPT_DIR/dragonwilds.service.template" dragonwilds.service
 render "$SCRIPT_DIR/dragonwilds-status.service.template" dragonwilds-status.service
 render "$SCRIPT_DIR/dragonwilds-update-check.service.template" dragonwilds-update-check.service
 render "$SCRIPT_DIR/dragonwilds-auto-update.service.template" dragonwilds-auto-update.service
+render "$SCRIPT_DIR/dragonwilds-restart.rules.template" dragonwilds-restart.rules
 
 if command -v systemd-analyze >/dev/null; then
   systemd-analyze verify "$tmp/dragonwilds.service" "$tmp/dragonwilds-status.service" \
@@ -109,6 +116,7 @@ fi
 
 if [[ "$DRY_RUN" == true ]]; then
   printf '[dry-run] install rendered units into %s/\n' "$UNIT_DIR"
+  printf '[dry-run] install polkit rule %s\n' "$POLKIT_RULE"
 else
   install -o root -g root -m 644 "$tmp/dragonwilds.service" "$UNIT_DIR/dragonwilds.service"
   install -o root -g root -m 644 "$tmp/dragonwilds-status.service" "$UNIT_DIR/dragonwilds-status.service"
@@ -117,6 +125,8 @@ else
   install -o root -g root -m 644 "$SCRIPT_DIR/dragonwilds-update-check.timer" "$UNIT_DIR/dragonwilds-update-check.timer"
   install -o root -g root -m 644 "$tmp/dragonwilds-auto-update.service" "$UNIT_DIR/dragonwilds-auto-update.service"
   install -o root -g root -m 644 "$SCRIPT_DIR/dragonwilds-auto-update.timer" "$UNIT_DIR/dragonwilds-auto-update.timer"
+  # polkitd watches rules.d and reloads on its own.
+  install -o root -g root -m 644 "$tmp/dragonwilds-restart.rules" "$POLKIT_RULE"
   chmod 755 "$SCRIPT_DIR/dragonwilds-update-check.sh" "$SCRIPT_DIR/dragonwilds-auto-update.sh" \
     "$SCRIPT_DIR/dragonwilds-players.sh"
   install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 755 "$SCRIPT_DIR/status"

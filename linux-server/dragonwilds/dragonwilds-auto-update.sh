@@ -4,9 +4,11 @@ set -euo pipefail
 # Restart the server onto a new build, but only while nobody is playing.
 #
 # The build itself is downloaded by the service's own ExecStartPre; this script
-# decides *when* that restart is allowed to happen. It runs as root because it
-# calls systemctl, which is why it never invokes steamcmd itself — network work
-# stays in dragonwilds-update-check.sh, running unprivileged on its own timer.
+# decides *when* that restart is allowed to happen. It runs as the service user,
+# not root: this checkout and its .env are writable by that same account (and so
+# by a compromised game process), so a root run would hand them root. The one
+# privileged action it needs — restarting this unit — is granted by the polkit
+# rule setup.sh installs.
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 

@@ -401,8 +401,12 @@ still happens in the service's `ExecStartPre`; this timer only decides when that
 restart is allowed. The 15-minute cadence means an update found mid-session lands
 shortly after the last player logs off rather than hours later.
 
-It runs as root because it calls `systemctl`, which is exactly why it never
-invokes steamcmd — the network work stays unprivileged in
+It runs as the service user, not root. The checkout and its `.env` are writable
+by that same account — and so by a compromised game process — so a root timer
+executing them would be a path to root. The one privileged action it needs is
+granted narrowly instead: `setup.sh` installs
+`/etc/polkit-1/rules.d/50-dragonwilds-restart.rules`, which lets that user
+`restart` `dragonwilds.service` and nothing else. Network work stays in
 `dragonwilds-update-check.sh`.
 
 The player count comes from `dragonwilds-players.sh` at decision time, not from
