@@ -248,6 +248,9 @@
               # host systemd unit, so its real state is the `status` field.
               url: http://localhost:8096/dragonwilds-status.json
               refreshInterval: 60000
+              # Block view (the default) renders only the first 4 mappings; list
+              # view has no such cap and is what makes the extra rows visible.
+              display: list
               mappings:
                 - field: status
                   label: Server
