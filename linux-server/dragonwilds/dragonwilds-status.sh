@@ -83,9 +83,13 @@ if [[ "$status" == running && -n "$since" ]]; then
     | tail -1 | grep -oE '[A-Z0-9]{4}-[A-Z0-9]{4}' || true)"
 
   # Shared with dragonwilds-auto-update.sh, which needs the same live answer.
-  counted="$("$SCRIPT_DIR/dragonwilds-players.sh" "$UNIT")"
-  players="${counted%%$'\t'*}"
-  player_names="${counted#*$'\t'}"
+  # A failed read must not abort the whole refresh and freeze the card.
+  if counted="$("$SCRIPT_DIR/dragonwilds-players.sh" "$UNIT")"; then
+    players="${counted%%$'\t'*}"
+    player_names="${counted#*$'\t'}"
+  else
+    player_names="unknown (journal unreadable)"
+  fi
 fi
 
 server_name="$(ini_get ServerName)"

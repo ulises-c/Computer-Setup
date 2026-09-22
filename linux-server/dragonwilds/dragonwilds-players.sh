@@ -28,7 +28,16 @@ if [[ -z "$since" ]]; then
   exit 0
 fi
 
-journalctl -u "$UNIT" --since "$since" --no-pager 2>/dev/null | awk '
+# Exit non-zero rather than print 0 when the journal cannot be read: the
+# auto-updater treats 0 as permission to restart. A running server logs heavily
+# from its first second, so an empty read means no access (the user lacks the
+# adm/systemd-journal group; journalctl may still exit 0), not an idle server.
+if ! run_log="$(journalctl -u "$UNIT" --since "$since" --no-pager 2>/dev/null)" || [[ -z "$run_log" ]]; then
+  printf 'error: cannot read the journal for %s\n' "$UNIT" >&2
+  exit 1
+fi
+
+awk '
   /AddClientConnection: Added client connection/ {
     if (match($0, /RemoteAddr: [0-9.]+:[0-9]+/)) {
       a = substr($0, RSTART + 12, RLENGTH - 12); live[a] = 1; pending = a
@@ -48,4 +57,4 @@ journalctl -u "$UNIT" --since "$since" --no-pager 2>/dev/null | awk '
     n = 0; list = ""
     for (a in live) { n++; list = list (list ? ", " : "") (name[a] ? name[a] : "?") }
     printf "%d\t%s\n", n, list
-  }'
+  }' <<< "$run_log"

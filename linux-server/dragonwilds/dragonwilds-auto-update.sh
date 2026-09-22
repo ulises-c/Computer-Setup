@@ -73,8 +73,14 @@ if [[ "$AUTO_UPDATE_RESTART" != true ]]; then
   exit 0
 fi
 
-players="$("$SCRIPT_DIR/dragonwilds-players.sh" "$UNIT" | cut -f1)"
-if [[ "$players" =~ ^[0-9]+$ ]] && (( players > 0 )); then
+# Fail closed: only an explicit count of zero allows a restart. An unreadable
+# journal must never be mistaken for an empty server.
+if ! counted="$("$SCRIPT_DIR/dragonwilds-players.sh" "$UNIT")"; then
+  log "update $latest available; deferring, cannot determine who is online"
+  exit 0
+fi
+players="${counted%%$'\t'*}"
+if [[ "$players" != 0 ]]; then
   log "update $latest available; deferring, $players player(s) online"
   exit 0
 fi

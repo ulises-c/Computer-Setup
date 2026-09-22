@@ -56,6 +56,14 @@ fi
 [[ -x "$DRAGONWILDS_INSTALL_DIR/RSDragonwildsServer.sh" ]] || \
   printf 'warning: %s not installed yet — run the steamcmd app_update from README.md\n' "$DRAGONWILDS_INSTALL_DIR" >&2
 
+# The player count and join code come from the unit's journal, read as this user.
+# Without access the card shows no players, and the auto-updater refuses to
+# restart because it cannot prove the server is empty.
+if ! id -nG "$SERVICE_USER" | tr ' ' '\n' | grep -qxE 'adm|systemd-journal'; then
+  printf 'warning: %s cannot read the system journal — run: sudo usermod -aG systemd-journal %s\n' \
+    "$SERVICE_USER" "$SERVICE_USER" >&2
+fi
+
 # The server boots without an OwnerId but then refuses to create a world, which
 # is easy to miss in the log.
 config="$DRAGONWILDS_INSTALL_DIR/RSDragonwilds/Saved/Config/LinuxServer/DedicatedServer.ini"
