@@ -36,11 +36,13 @@ if ! flock -w 300 9; then
   exit 1
 fi
 
-# Only "branches" carries a buildid; depot entries have manifest ids instead.
+# Take the buildid of the "public" entry under "branches" specifically: depot
+# entries carry manifest ids rather than buildids, and branch order is not
+# guaranteed, so a beta listed first would otherwise win.
 latest="$(timeout 240 "$STEAMCMD" +login anonymous +app_info_update 1 \
   +app_info_print "$APPID" +quit 2>/dev/null \
-  | grep -A6 '"branches"' | grep -oE '"buildid"[[:space:]]+"[0-9]+"' \
-  | grep -oE '[0-9]+' | head -1 || true)"
+  | awk '/"branches"/ { b = 1 } b && /"public"/ { p = 1 }
+         p && /"buildid"/ { gsub(/[^0-9]/, "", $2); print $2; exit }' || true)"
 
 if [[ ! "$latest" =~ ^[0-9]+$ ]]; then
   printf 'error: could not read the public buildid from steamcmd\n' >&2
