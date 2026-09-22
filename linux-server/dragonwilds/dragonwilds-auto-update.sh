@@ -17,7 +17,7 @@ if [[ -f "$SCRIPT_DIR/.env" ]]; then
   set +a
 fi
 
-: "${DRAGONWILDS_INSTALL_DIR:=/home/ollie/games/dragonwilds}"
+: "${DRAGONWILDS_INSTALL_DIR:=$HOME/games/dragonwilds}"
 : "${LATEST_BUILD_FILE:=$SCRIPT_DIR/status/.latest-build}"
 : "${NOTIFIED_BUILD_FILE:=$SCRIPT_DIR/status/.notified-build}"
 : "${AUTO_UPDATE_RESTART:=true}"
