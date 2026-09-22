@@ -161,26 +161,24 @@ even though the name resolves correctly at the OS level — `getent hosts
 <host>.<tailnet>.ts.net` returns the right `100.x` address on the server. The
 client parses the address itself and never performs a DNS lookup.
 
-### 11. LAN auto-discovery advertises the wrong address on a multi-homed host
+### 11. Browser entries and join codes dial the WAN address, which never arrives
 
-The server answers LAN discovery probes, so it shows up in the browser by name —
-but joining that entry fails with "Connection Lost / Network connection was
-interrupted", while typing the address by hand works. The log shows probe replies
-going out and **no** matching `NotifyAcceptedConnection`, so the client never
-reaches the server at all: it is dialling an address that is not the one you can
-reach it on.
+The server shows up in the browser by name, but on some clients joining that
+entry fails with "Connection Lost / Network connection was interrupted", while
+typing the address by hand works. Join codes fail the same way. The log shows
+the client's LAN probes being answered and **no** matching
+`NotifyAcceptedConnection`, so the client never reaches the server at all.
 
-This box carries 23 IPv4 addresses, 21 of them Docker bridges. Unreal's discovery
-embeds a local address it selects itself, and on a multi-homed host that is
-frequently a bridge (`172.17.0.1` and friends) rather than the LAN address. Not
-proven here — the probe payload is not logged and capturing it needs root — but it
-matches the symptom exactly, and the host is about as multi-homed as they come.
-
-`-MULTIHOME=<ip>` would pin the address (the build does support it — the option
-string is there, in UTF-16, which an ASCII `strings` scan misses). It is the wrong
-trade here: it binds the socket to that one address, so pinning the LAN IP drops
-tailnet access and vice versa. Direct connect works on LAN, tailnet, and remote
-with no such compromise, so that is the recommendation.
+The cause is not this host's multi-homing, which an earlier revision of this file
+blamed. A browser entry resolves to the server's LAN address only if the client
+receives the server's reply to its LAN probe. A client firewall with
+default-deny incoming drops that reply, so the client falls back to the address
+EOS holds. The server registers `0.0.0.0:7777` with EOS, so EOS holds the address
+it observes, the WAN address, and a LAN client dialling that needs NAT loopback
+the router does not do. Join codes appear to use the EOS address regardless
+(retesting after the fix is still open). Captured on both
+ends; see [Network connectivity](#network-connectivity) for the evidence and the
+client-side fix.
 
 ### 12. Connections are unencrypted unless you configure signing keys
 
@@ -227,6 +225,12 @@ Three routes, in rough order of reliability:
 Steam invites are a known Jagex issue: they do not currently connect to a
 dedicated server. Use one of the above instead.
 
+On this network the join code does not work: it resolves the address through
+EOS, which hands out the WAN address (pain point 11). The browser entry works
+on LAN clients that receive the server's reply to their LAN probe; a
+client firewall has to allow it. Direct connect always works — see
+[Network connectivity](#network-connectivity).
+
 The code is minted per session, so assume it changes whenever the service
 restarts — which is why the status card reads it from the current run's journal
 rather than caching it.
@@ -261,6 +265,198 @@ by enabling UPnP/NAT-PMP on the restrictive side.
 The alternative is forwarding UDP 7777 on the router, which makes the server
 public. That needs a matching ufw rule (`setup.sh` deliberately adds none) and
 means anyone who finds the port can attempt to join — set `WorldPassword` first.
+
+## Network connectivity
+
+Every join route ends in the client dialling an IP literal on UDP `SERVER_PORT`.
+What differs is **where that address comes from**, and one of the sources is
+wrong on this network.
+
+| Route | Address comes from | Works here |
+| --- | --- | --- |
+| Typed (Direct) | you | ✅ LAN and tailnet |
+| Browser entry, probe reply received | the reply's source address | ✅ on LAN |
+| Browser entry, no probe reply | EOS | ❌ dials the WAN address |
+| Join code | EOS | ❌ dials the WAN address |
+
+### Why the EOS routes fail
+
+The server never tells EOS a reachable address. It binds every interface and
+logs:
+
+```
+LogRedpointEOSNetworking: User '(dedicated server)' is now listening on Internet address '0.0.0.0:7777'
+```
+
+`0.0.0.0` means "all interfaces", so EOS substitutes the address it sees the
+server arrive from — the WAN address. Clients then dial that, and with no
+port-forward the packets die at the router. A LAN client would need NAT loopback
+(hairpin) for it to work even with a forward in place.
+
+Confirmed on both ends:
+
+- **Server side.** During a failed join the client's probes are answered and
+  nothing else arrives: no packets to `SERVER_PORT` on any interface, on either
+  the LAN link or `tailscale0`.
+- **Client side.** The failing browser row sends ~19 unanswered packets to
+  `<wan-ip>:7777`, from the LAN interface, never to the server's LAN or tailnet
+  address.
+
+This also explains the join code, which resolves through the same EOS session,
+and the in-game recent-connections list, which reports say fails the same way.
+
+The address is the server's **outbound** public IP, as EOS sees it at
+registration. A community report shows it: a server behind a VPS relay was
+advertised with the home WAN address until its egress was switched to a Tailscale
+exit node on the VPS *before* EOS registered — after which the browser row carried
+the VPS address and joins worked. So there is nothing to configure on the server:
+whatever public address its HTTPS leaves from is what gets advertised, and an EOS
+route can only work if UDP 7777 on that public address reaches the server.
+
+It is **not** a firewall problem (ufw is inactive, see issue #81), and not the
+Docker bridges (issue #75): the probe reply carries no address at all, just an ID
+and the client's echoed nonce, so the bridges cannot leak into it.
+
+### The same browser entry resolves differently per client
+
+There is one browser entry. It is listed because the server is associated with
+the player's `OwnerId` through EOS, not because anything found it on the LAN.
+The LAN only supplies the *address*: while browsing, the client also broadcasts
+a probe to UDP 45453 (from its port 45454) and the server replies from its LAN
+address. The reply carries no address, so a client that receives it
+can only use the reply's source — correct by construction — and dials the LAN
+address. A client that does not receive it falls back to the EOS address.
+
+Two clients on the same LAN, joining the same entry:
+
+| Client | Firewall | Tailscale | Result |
+| --- | --- | --- | --- |
+| Handheld on Wi-Fi | none | no | ✅ reaches the LAN address ~1 s after the probe |
+| Desktop on Ethernet | ufw, deny incoming | yes | ❌ dials the WAN address |
+
+The server sent its replies to both; the server-side capture shows them leaving
+the LAN interface. The difference is the **client's firewall**, not Tailscale.
+The desktop runs ufw with default-deny incoming, and its kernel log shows every
+reply dropped, the last one two seconds before the client dialled the WAN
+address:
+
+```
+[UFW BLOCK] IN=<lan-iface> SRC=<server-lan-ip> DST=<client-ip> PROTO=UDP SPT=45453 DPT=45454
+```
+
+The probe goes to a broadcast address and the reply comes back from a unicast
+one. Linux connection tracking cannot match those as a pair, so a stateful
+firewall treats the reply as unsolicited and drops it. The handheld has no
+active firewall, so it accepts the reply.
+
+The fix goes on the **client**. Allow probe replies from the LAN and nothing
+else:
+
+```bash
+sudo ufw allow proto udp from <lan-cidr> port 45453 to any port 45454 comment 'Dragonwilds LAN discovery replies'
+```
+
+Scoping to the subnet rather than the server's address keeps the rule valid if
+the server is renumbered. `to any port 45454` matters: a source port is the
+sender's choice, so without it anything on the LAN could reach every UDP port on
+the client just by sending from 45453. The client probed from 45454 in every
+capture.
+
+Verified: with the rule in place, the desktop joins from the browser entry, and
+the entry resolves to the LAN address with nothing typed. The probe broadcasts
+do not cross the tailnet, so away from home the entry falls back to the EOS
+address and it is still the typed tailnet address.
+
+**Untested:** whether a join code works from a client running Tailscale. Every
+code attempt so far predates the ufw fix, so it is also untested whether a code
+resolves through the probe reply the way the browser entry does. The captures
+point the other way: a code resolves through the EOS session, whose address is
+the WAN address, and nothing on the tailnet routes that. Consoles cannot run
+Tailscale or change a firewall, so none of this applies to them.
+
+### Options for avoiding a typed address
+
+| Option | Typing | Tailnet | Consoles | Exposure |
+| --- | --- | --- | --- | --- |
+| Browser entry, reply received | none | no (LAN only) | yes | none |
+| Client-side redirect | none | kept | no | none |
+| Typed address | every join | kept | yes | none |
+| Router port-forward | none | kept | yes | **public** |
+| VPS relay + exit-node egress | none | kept | yes | **public** (VPS) |
+
+- **Client-side redirect** — on a Linux client, rewrite the dead WAN address to
+  the tailnet address, so the browser row and the join code both work from that
+  machine and keep working away from home:
+
+  ```bash
+  sudo iptables -t nat -A OUTPUT -p udp -d <wan-ip> --dport 7777 \
+    -j DNAT --to-destination <server-tailnet-ip>:7777
+  ```
+
+  The WAN address is dynamic, so the rule goes stale when the ISP changes it.
+  Per-machine, and no help to consoles.
+
+- **VPS relay** — the community fix above: forward UDP 7777 on a VPS back over
+  Tailscale, and route this host's egress through the VPS as an exit node once
+  steamcmd has finished (the reporter's container hung updating through it), so
+  EOS registers the VPS address. It works for every client including consoles,
+  but it is a public endpoint like a port-forward, just on someone else's IP.
+
+- **Not `-MULTIHOME`.** It is the only address option in the binary (`MULTIHOME`
+  appears in UTF-16, which an ASCII `strings` scan misses; `PUBLICIP`,
+  `AdvertisedAddress` and `ExternalAddress` are all absent), but it only chooses
+  the bind address. EOS advertises the observed egress address regardless, and
+  binding one interface would cost tailnet access for nothing.
+
+- **Router** — ruled out on the Orbi RBR750 in use here. Its loopback applies
+  only to traffic matching an existing port-forward rule, there is no LAN-only
+  redirect, and owners report loopback not working on that model regardless.
+
+With no public endpoint, the EOS routes cannot be made to work for anyone, so
+the choice is between the zero-exposure options. Direct connect remains the
+recommendation: it needs nothing configured anywhere and works on LAN, tailnet
+and remote. The client rejects hostnames (pain point 10) and does not save Direct
+entries, so it is a typed address every time; at home the browser entry avoids
+that on any client that receives the probe reply.
+
+### Diagnosing a failed join
+
+Check the client's firewall first. On a Linux client with ufw logging on, the
+dropped probe replies are already in the kernel log:
+
+```bash
+sudo journalctl -k --since today | grep 'UFW BLOCK' | grep 'SPT=45453'
+```
+
+Any hits mean the fix above. Otherwise, on the server, watch what arrives while
+a client tries to join:
+
+```bash
+sudo tcpdump -ni any -l "udp and host <client-ip> and not port 45453 and not port 45454"
+```
+
+Nothing arriving means the client is dialling elsewhere, and only a client-side
+capture shows where:
+
+```bash
+sudo tcpdump -ni <lan-iface> -l "udp and not port 41641 and not port 5353"
+```
+
+Exclude Tailscale's own port (41641) and mDNS (5353) or the output is unreadable.
+The destination of the packets that appear when Join is pressed is the whole
+answer: the WAN address means this issue, the server's LAN or tailnet address
+means look further.
+
+The probe exchange can be watched from the server:
+
+```bash
+sudo tcpdump -ni <lan-iface> -X udp port 45453
+```
+
+Note for whenever ufw is enabled (#81): only `SERVER_PORT` is opened today.
+Joining works without 45453, but the browser entry resolving to the LAN address —
+the one route that needs no typed address — does not, so it would need its own
+LAN-scoped rule.
 
 ## Why the game server is not a container
 
@@ -351,7 +547,7 @@ It also binds two more UDP ports that `-port` does not move:
 | Port | Log line | Purpose |
 |---|---|---|
 | 8888 | `LogDomGameMode: World settings beacon listening on port 8888` | World-settings beacon (`BeaconNetDriver`) |
-| 45453 | `LogDomLanProbe: SERVER : Socket setup OK [0.0.0.0:45453]` | LAN discovery probe |
+| 45453 | `LogDomLanProbe: SERVER : Socket setup OK [0.0.0.0:45453]` | LAN probe; its reply supplies a listed entry's LAN address |
 
 Only `SERVER_PORT` is opened in ufw. Joining by typed address works without the
 other two, so the beacon evidently is not needed to connect. The LAN probe is a
