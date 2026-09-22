@@ -82,30 +82,8 @@ if [[ "$status" == running && -n "$since" ]]; then
     | grep -oE '"JoinCode"\] written with key\[[a-z]+\] value\[[A-Z0-9-]+\]' \
     | tail -1 | grep -oE '[A-Z0-9]{4}-[A-Z0-9]{4}' || true)"
 
-  # The server publishes no query port and its EOS session attributes are written
-  # once at creation, so the live count has to come from the connection log.
-  # Add/Remove pairs are authoritative — Remove fires on timeout as well as on a
-  # clean quit. Names are best-effort: the "Join succeeded" line carries no
-  # address, so it is attributed to the connection added just before it.
-  counted="$(printf '%s\n' "$run_log" | awk '
-    /AddClientConnection: Added client connection/ {
-      if (match($0, /RemoteAddr: [0-9.]+:[0-9]+/)) {
-        a = substr($0, RSTART + 12, RLENGTH - 12); live[a] = 1; pending = a
-      }
-    }
-    /LogNet: Join succeeded: / {
-      if (pending != "") { name[pending] = $NF; pending = "" }
-    }
-    /UNetDriver::RemoveClientConnection - Removed address/ {
-      if (match($0, /address [0-9.]+:[0-9]+/)) {
-        a = substr($0, RSTART + 8, RLENGTH - 8); delete live[a]; delete name[a]
-      }
-    }
-    END {
-      n = 0; list = ""
-      for (a in live) { n++; list = list (list ? ", " : "") (name[a] ? name[a] : "?") }
-      printf "%d\t%s\n", n, list
-    }')"
+  # Shared with dragonwilds-auto-update.sh, which needs the same live answer.
+  counted="$("$SCRIPT_DIR/dragonwilds-players.sh" "$UNIT")"
   players="${counted%%$'\t'*}"
   player_names="${counted#*$'\t'}"
 fi

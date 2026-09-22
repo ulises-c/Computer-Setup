@@ -388,12 +388,35 @@ publishes `update_status` (`up to date` / `update available (<build>)` /
 
 It is a separate timer because it is the only part of this that touches the
 network — the status script runs every minute and must stay local. The check
-never modifies the install; updates are applied by the service's `ExecStartPre`
-on the next restart:
+never modifies the install.
+
+### Applying updates automatically
+
+`dragonwilds-auto-update.timer` runs every 15 minutes and restarts the server
+onto a pending build **only when nobody is playing**. The build download itself
+still happens in the service's `ExecStartPre`; this timer only decides when that
+restart is allowed. The 15-minute cadence means an update found mid-session lands
+shortly after the last player logs off rather than hours later.
+
+It runs as root because it calls `systemctl`, which is exactly why it never
+invokes steamcmd — the network work stays unprivileged in
+`dragonwilds-update-check.sh`.
+
+The player count comes from `dragonwilds-players.sh` at decision time, not from
+the cached status JSON, so nobody is kicked by a count that went stale between
+timer ticks. On restart it waits for UDP 7777 to be bound again and alerts at
+high priority if it never comes back.
+
+Set `AUTO_UPDATE_RESTART=false` in `.env` to be notified but apply updates
+yourself:
 
 ```bash
 sudo systemctl restart dragonwilds.service
 ```
+
+ntfy alerts fire for "update available" (once per build, not once per tick),
+"updated", and a failed restart. Leave `NTFY_URL` empty to disable them —
+everything else still works.
 
 Both that `ExecStartPre` and the checker take a `flock` on
 `<install dir>/.steamcmd.lock`, since two steamcmd instances sharing `~/.steam`

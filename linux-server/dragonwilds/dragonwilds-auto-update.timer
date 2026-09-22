@@ -1,0 +1,12 @@
+[Unit]
+Description=Apply pending Dragonwilds builds once the server empties
+
+[Timer]
+# Every 15 minutes rather than on the 2-hourly check: an update found while
+# people are playing should land shortly after they log off, not hours later.
+OnBootSec=10min
+OnUnitActiveSec=15min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
