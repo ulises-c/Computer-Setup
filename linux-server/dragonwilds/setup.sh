@@ -175,6 +175,13 @@ fi
 if ip link show tailscale0 >/dev/null 2>&1; then
   run ufw allow in on tailscale0 proto udp to any port "$SERVER_PORT" comment 'dragonwilds (tailnet)'
 fi
+# ufw records rules while inactive and reports success, so the lines above can
+# succeed while enforcing nothing. The game binds 0.0.0.0, so say so.
+# (`ufw status` needs root, hence skipped on a non-root dry run.)
+if [[ $EUID -eq 0 ]] && ufw status 2>/dev/null | grep -qx 'Status: inactive'; then
+  printf 'warning: ufw is inactive — the rules above are saved but NOT enforced; UDP %s, 8888 and 45453 are open to any network that can reach this host\n' \
+    "$SERVER_PORT" >&2
+fi
 
 run docker compose -f "$SCRIPT_DIR/docker-compose.yml" up -d
 

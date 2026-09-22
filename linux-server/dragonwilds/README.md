@@ -3,9 +3,13 @@
 Native Linux dedicated server (Steam app **4019830**), run by `dragonwilds.service`
 and surfaced on the homepage dashboard through a loopback status endpoint.
 
-Listens on **UDP 7777**, allowed from the LAN and the tailnet only — no public
-exposure, no router port-forward. Join by IP literal (`192.168.x.y:7777` or
-`100.x.y.z:7777`); the client does not resolve hostnames — see pain point 10.
+Listens on **UDP 7777**, with ufw rules allowing it from the LAN and the tailnet
+only — no public exposure, no router port-forward. Those rules are enforced only
+if ufw is **active**; `setup.sh` warns when it is not, in which case nothing but
+the router's lack of a port-forward keeps the server off the internet.
+
+Join by IP literal (`192.168.x.y:7777` or `100.x.y.z:7777`); the client does not
+resolve hostnames — see pain point 10.
 
 In a hurry? [QUICK_START.md](QUICK_START.md) is the copy-paste path. This file
 explains the reasoning and documents where the official guide is wrong.
