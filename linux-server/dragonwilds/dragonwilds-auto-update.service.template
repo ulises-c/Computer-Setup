@@ -1,0 +1,15 @@
+[Unit]
+Description=Restart Dragonwilds onto a new build when nobody is playing
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Unprivileged: the one root-only action, restarting dragonwilds.service, is
+# granted to this user alone by the polkit rule setup.sh installs.
+User=@USER@
+Group=@GROUP@
+Environment=DRAGONWILDS_INSTALL_DIR=@INSTALL_DIR@
+Environment=LATEST_BUILD_FILE=@LATEST_BUILD_FILE@
+Environment=NOTIFIED_BUILD_FILE=@NOTIFIED_BUILD_FILE@
+Environment=FAILED_BUILD_FILE=@FAILED_BUILD_FILE@
+ExecStart=@AUTO_UPDATE_SCRIPT@

@@ -235,6 +235,29 @@ kept the primary AdGuard from recovering.
 - [ ] **Secondary DHCP.** DHCP is still single-homed on the server; a server
       outage means no new leases. Add a secondary scope (Pi/router) or long leases.
 
+## Server Docker network sprawl — [#75](https://github.com/ulises-c/Computer-Setup/issues/75)
+
+The host carries 23 IPv4 addresses, 21 of them Docker bridges — one
+`<project>_default` per compose project, not one per Tailscale sidecar
+(`backup` and `dragonwilds` have no sidecar and still get a bridge). With
+`default-address-pools` unset, Docker has spilled six bridges into
+`192.168.16.0`–`192.168.111.255`, which is home-LAN space and can collide with a
+LAN reached over Tailscale.
+
+Suspected cause of Unreal's LAN discovery advertising an unreachable address in
+`linux-server/dragonwilds` (README pain point 11) — the server appears in the
+game browser but joining that entry fails, while a typed address works.
+
+- [ ] Pin `default-address-pools` to `172.16.0.0/12` in `/etc/docker/daemon.json`
+      and recreate the six `192.168.x` networks — fixes the collision risk with no
+      service changes
+- [ ] Decide whether to collapse the per-project bridges onto one shared external
+      network, and fold that into the `{service}.<tailnet>.ts.net` →
+      `<host>.<tailnet>.ts.net/{service}` rework (that rework removes ~18 sidecars
+      and tailnet nodes but no bridges on its own)
+- [ ] Re-test Dragonwilds LAN discovery afterwards; if it still advertises a
+      bridge address, the only fixes left are `-MULTIHOME=<ip>` or direct connect
+
 ## qBittorrent — VPN routing
 
 `linux-server/qbittorrent` currently runs without a VPN (fine for academic/legal

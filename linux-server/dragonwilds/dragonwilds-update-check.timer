@@ -1,0 +1,12 @@
+[Unit]
+Description=Check for a new Dragonwilds build every 2 hours
+
+[Timer]
+OnCalendar=*-*-* 00/2:00:00
+# Catch up after downtime, and stagger so every timer on the host does not hit
+# the network on the same second.
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

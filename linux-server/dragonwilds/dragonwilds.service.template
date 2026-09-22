@@ -1,0 +1,44 @@
+[Unit]
+Description=RuneScape: Dragonwilds dedicated server
+Documentation=https://dragonwilds.runescape.com/news/how-to-dedicated-servers
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+Group=@GROUP@
+WorkingDirectory=@INSTALL_DIR@
+
+# The download below runs inside the start job, so systemd's default 90 s start
+# timeout would kill any real patch mid-transfer — and a lock held by the update
+# check can eat that whole budget before steamcmd even starts.
+TimeoutStartSec=30min
+
+# Pull the latest build on every start. Leading "-" so a Steam outage leaves the
+# server starting on the build already on disk instead of failing to come up.
+# flock: dragonwilds-update-check.timer also runs steamcmd, and two instances
+# sharing ~/.steam can trip over each other.
+ExecStartPre=-/usr/bin/flock @INSTALL_DIR@/.steamcmd.lock @STEAMCMD@ +force_install_dir @INSTALL_DIR@ +login anonymous +app_update @APPID@ +quit
+# The launcher forwards its arguments to the Unreal binary; -port is the standard
+# engine flag. Without it the server takes Unreal's default, 7777.
+ExecStart=@INSTALL_DIR@/RSDragonwildsServer.sh -log -port=@SERVER_PORT@
+
+# The server flushes its world to Saved/SaveGames on SIGTERM; give it room to
+# finish before systemd escalates, otherwise a restart can lose recent progress.
+KillSignal=SIGTERM
+TimeoutStopSec=120
+
+Restart=on-failure
+RestartSec=15
+LimitNOFILE=65535
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=multi-user.target

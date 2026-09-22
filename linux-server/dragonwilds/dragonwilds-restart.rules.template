@@ -1,0 +1,10 @@
+// Lets the Dragonwilds auto-updater restart its own game server without root —
+// that one verb on that one unit, for the service user only.
+polkit.addRule(function(action, subject) {
+  if (action.id == "org.freedesktop.systemd1.manage-units" &&
+      action.lookup("unit") == "dragonwilds.service" &&
+      action.lookup("verb") == "restart" &&
+      subject.user == "@USER@") {
+    return polkit.Result.YES;
+  }
+});

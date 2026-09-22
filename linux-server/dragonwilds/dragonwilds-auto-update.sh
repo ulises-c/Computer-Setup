@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Restart the server onto a new build, but only while nobody is playing.
+#
+# The build itself is downloaded by the service's own ExecStartPre; this script
+# decides *when* that restart is allowed to happen. It runs as the service user,
+# not root: this checkout and its .env are writable by that same account (and so
+# by a compromised game process), so a root run would hand them root. The one
+# privileged action it needs — restarting this unit — is granted by the polkit
+# rule setup.sh installs.
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+
+if [[ -f "$SCRIPT_DIR/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$SCRIPT_DIR/.env"
+  set +a
+fi
+
+: "${DRAGONWILDS_INSTALL_DIR:=$HOME/games/dragonwilds}"
+: "${LATEST_BUILD_FILE:=$SCRIPT_DIR/status/.latest-build}"
+: "${NOTIFIED_BUILD_FILE:=$SCRIPT_DIR/status/.notified-build}"
+: "${FAILED_BUILD_FILE:=$SCRIPT_DIR/status/.failed-build}"
+: "${AUTO_UPDATE_RESTART:=true}"
+: "${SERVER_PORT:=7777}"
+: "${NTFY_URL:=}"
+: "${NTFY_TOPIC:=}"
+: "${NTFY_TOKEN:=}"
+
+readonly UNIT=dragonwilds.service
+readonly APPID=4019830
+manifest="$DRAGONWILDS_INSTALL_DIR/steamapps/appmanifest_$APPID.acf"
+
+log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
+
+installed_build() {
+  [[ -r "$manifest" ]] || return 0
+  sed -n 's/^[[:space:]]*"buildid"[[:space:]]*"\([0-9]*\)".*/\1/p' "$manifest" | head -1
+}
+
+notify() {
+  local title="$1" body="$2" priority="${3:-default}"
+  [[ -n "$NTFY_URL" && -n "$NTFY_TOPIC" ]] || return 0
+  local -a auth=()
+  [[ -n "$NTFY_TOKEN" ]] && auth=(-H "Authorization: Bearer $NTFY_TOKEN")
+  curl -fsS -m 15 "${auth[@]}" \
+    -H "Title: $title" -H "Priority: $priority" -H "Tags: video_game" \
+    -d "$body" "$NTFY_URL/$NTFY_TOPIC" >/dev/null 2>&1 \
+    || log "warning: ntfy notification failed"
+}
+
+installed="$(installed_build)"
+latest=""
+[[ -r "$LATEST_BUILD_FILE" ]] && read -r latest _ < "$LATEST_BUILD_FILE" || true
+
+if [[ ! "$installed" =~ ^[0-9]+$ || ! "$latest" =~ ^[0-9]+$ ]]; then
+  log "no usable build numbers yet (installed='$installed' latest='$latest')"
+  exit 0
+fi
+if [[ "$installed" == "$latest" ]]; then
+  exit 0
+fi
+
+# Announce a given build once, however many times this timer fires before the
+# server is actually free to restart.
+notified=""
+[[ -r "$NOTIFIED_BUILD_FILE" ]] && read -r notified < "$NOTIFIED_BUILD_FILE" || true
+if [[ "$notified" != "$latest" ]]; then
+  notify "Dragonwilds update available" \
+    "Build $latest is out (running $installed). Will restart when the server is empty." \
+    default
+  mkdir -p "$(dirname "$NOTIFIED_BUILD_FILE")"
+  printf '%s\n' "$latest" > "$NOTIFIED_BUILD_FILE"
+fi
+
+if [[ "$AUTO_UPDATE_RESTART" != true ]]; then
+  log "update $latest available; AUTO_UPDATE_RESTART is off, leaving it alone"
+  exit 0
+fi
+
+# A build that already failed to download once is not retried every 15 minutes:
+# each attempt bounces an empty server and would re-alert. It is retried when a
+# newer build appears, or on any manual restart (ExecStartPre runs every start).
+failed=""
+[[ -r "$FAILED_BUILD_FILE" ]] && read -r failed < "$FAILED_BUILD_FILE" || true
+if [[ "$failed" == "$latest" ]]; then
+  log "update $latest previously failed to install; waiting for a manual restart"
+  exit 0
+fi
+
+# Fail closed: only an explicit count of zero allows a restart. An unreadable
+# journal must never be mistaken for an empty server.
+if ! counted="$("$SCRIPT_DIR/dragonwilds-players.sh" "$UNIT")"; then
+  log "update $latest available; deferring, cannot determine who is online"
+  exit 0
+fi
+players="${counted%%$'\t'*}"
+if [[ "$players" != 0 ]]; then
+  log "update $latest available; deferring, $players player(s) online"
+  exit 0
+fi
+
+fail() {
+  log "error: $1"
+  printf '%s\n' "$latest" > "$FAILED_BUILD_FILE"
+  notify "Dragonwilds update FAILED" "$1 Check: systemctl status $UNIT" high
+  exit 1
+}
+
+log "update $latest available and nobody online — restarting $UNIT"
+# Blocks through ExecStartPre, i.e. the whole download.
+systemctl --no-ask-password restart "$UNIT" \
+  || fail "Restart for build $latest did not complete (download timed out or the unit failed to start)."
+
+# ExecStartPre downloads the build before the server starts, so the socket can
+# take a while to come back. Confirm rather than assume.
+for _ in $(seq 1 60); do
+  if ss -uln 2>/dev/null | awk 'NR>1 {n=split($4,a,":"); print a[n]}' | grep -qx "$SERVER_PORT"; then
+    new="$(installed_build)"
+    # ExecStartPre's "-" lets a failed download start the old build, which looks
+    # exactly like success from the socket alone.
+    [[ "$new" == "$latest" ]] \
+      || fail "Server is back up but still on build $new, not $latest — the steamcmd download failed."
+    log "back up on build $new"
+    notify "Dragonwilds updated" "Server restarted onto build $new (was $installed)." low
+    exit 0
+  fi
+  sleep 10
+done
+
+fail "Restarted for build $latest but the server never bound UDP $SERVER_PORT within 10 minutes."

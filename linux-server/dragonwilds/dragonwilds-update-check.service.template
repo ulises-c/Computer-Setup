@@ -1,0 +1,13 @@
+[Unit]
+Description=Record the latest available Dragonwilds build
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=@USER@
+Group=@GROUP@
+Environment=DRAGONWILDS_INSTALL_DIR=@INSTALL_DIR@
+Environment=STEAMCMD=@STEAMCMD@
+Environment=LATEST_BUILD_FILE=@LATEST_BUILD_FILE@
+ExecStart=@UPDATE_CHECK_SCRIPT@

@@ -1,0 +1,18 @@
+; Reference copy of the live config, which the server generates and rewrites at
+;   <install dir>/RSDragonwilds/Saved/Config/LinuxServer/DedicatedServer.ini
+; Edit the live file with the server stopped — it is rewritten on shutdown.
+; ServerGuid is generated per install; do not copy this one.
+;METADATA=(Diff=true, UseCommands=true)
+[/Script/Dominion.DedicatedServerSettings]
+; Required. Your player ID, from the in-game Settings menu. Without it the server
+; boots but refuses to create a world.
+OwnerId=
+ServerGuid=
+; Name shown in the server browser.
+ServerName=
+; Leave empty for an open world; otherwise this overrides per-world passwords.
+WorldPassword=
+; Name given to the default world created on first start.
+DefaultWorldName=
+PlatformPolicy=Crossplay
+bAllowSendingCrashDumps=True

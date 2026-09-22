@@ -68,3 +68,6 @@ linux-server/ups/peanut-config/
 # Benchmarking suite downloads and results (multi-GB; contain hostnames/hardware IDs)
 benchmarking/tools/
 benchmarking/results/
+
+# Dragonwilds status JSON written at runtime (served to the homepage card)
+linux-server/dragonwilds/status/

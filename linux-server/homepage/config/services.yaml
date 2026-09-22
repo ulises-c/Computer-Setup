@@ -234,6 +234,58 @@
               username: "{{HOMEPAGE_VAR_QBITTORRENT_USERNAME}}"
               password: "{{HOMEPAGE_VAR_QBITTORRENT_PASSWORD}}"
 
+    - Games:
+        - dragonwilds:
+            icon: mdi-sword-cross
+            description: RuneScape Dragonwilds — UDP 7777 (LAN + tailnet)
+            server: my-docker
+            container: dragonwilds-status
+            widget:
+              type: customapi
+              # dragonwilds-status.sh writes this JSON; the loopback nginx in
+              # linux-server/dragonwilds serves it. homepage is host-networked.
+              # The container above is only that nginx — the game server is a
+              # host systemd unit, so its real state is the `status` field.
+              url: http://localhost:8096/dragonwilds-status.json
+              refreshInterval: 60000
+              # Block view (the default) renders only the first 4 mappings; list
+              # view has no such cap and is what makes the extra rows visible.
+              display: list
+              mappings:
+                - field: status
+                  label: Server
+                  format: text
+                - field: players
+                  label: Players
+                  format: number
+                - field: player_names
+                  label: Online
+                  format: text
+                - field: join_code
+                  label: Join code
+                  format: text
+                - field: connect_lan
+                  label: LAN
+                  format: text
+                - field: connect_tailnet
+                  label: Tailnet
+                  format: text
+                - field: last_save
+                  label: Last save
+                  format: relativeDate
+                - field: uptime_seconds
+                  label: Uptime
+                  format: duration
+                - field: memory_bytes
+                  label: Memory
+                  format: bytes
+                - field: save_bytes
+                  label: World size
+                  format: bytes
+                - field: update_status
+                  label: Build
+                  format: text
+
 - NAS:
     - wd 14tb r/w:
         icon: mdi-harddisk

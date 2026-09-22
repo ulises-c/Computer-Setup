@@ -104,12 +104,38 @@ case "$SERVER_DIR/" in
 esac
 
 # --- resolve sources --------------------------------------------------------
+# Read one key from a service's .env without sourcing it (this runs as root, and
+# those files are user-owned). Strips one layer of matching quotes, since the
+# services themselves source the file and so accept KEY="value" — left in, the
+# quotes make the path miss the -e filter below and drop out of the backup.
+env_value() {
+  local v
+  v="$(grep -E "^$2=" "$1" | tail -1 | cut -d= -f2- || true)"
+  if [[ "$v" =~ ^\"(.*)\"$ || "$v" =~ ^\'(.*)\'$ ]]; then
+    v="${BASH_REMATCH[1]}"
+  fi
+  printf '%s' "$v"
+}
+
 # Forgejo's data dir may be relocated to an external drive via its own .env.
 forgejo_data="$SERVER_DIR/forgejo/data"
 if [[ -f "$SERVER_DIR/forgejo/.env" ]]; then
-  fdp="$(grep -E '^FORGEJO_DATA_PATH=' "$SERVER_DIR/forgejo/.env" | tail -1 | cut -d= -f2- || true)"
+  fdp="$(env_value "$SERVER_DIR/forgejo/.env" FORGEJO_DATA_PATH)"
   if [[ -n "${fdp:-}" ]]; then
     [[ "$fdp" = /* ]] && forgejo_data="$fdp" || forgejo_data="$SERVER_DIR/forgejo/$fdp"
+  fi
+fi
+
+# Dragonwilds worlds live outside the repo; its .env says where the install is.
+dragonwilds_saved=""
+if [[ -f "$SERVER_DIR/dragonwilds/.env" ]]; then
+  dwd="$(env_value "$SERVER_DIR/dragonwilds/.env" DRAGONWILDS_INSTALL_DIR)"
+  if [[ -n "${dwd:-}" ]]; then
+    # A relative value would otherwise resolve against systemd's CWD and be
+    # silently skipped by the -e filter — a backup script must not lose a path quietly.
+    [[ "$dwd" = /* ]] || dwd="$SERVER_DIR/dragonwilds/$dwd"
+    dragonwilds_saved="$dwd/RSDragonwilds/Saved"
+    [[ -d "$dragonwilds_saved" ]] || log "warning: Dragonwilds saves not found at $dragonwilds_saved — not backed up"
   fi
 fi
 
@@ -129,6 +155,10 @@ CANDIDATES=(
   "$SERVER_DIR/homepage/config"
   /etc/atvloadly
 )
+# Worlds and server config only — the ~5.5 GB game install comes back from steamcmd,
+# and Saved/ also holds logs and an EOS cache that are pure noise in a snapshot.
+[[ -n "$dragonwilds_saved" ]] && CANDIDATES+=("$dragonwilds_saved/SaveGames" "$dragonwilds_saved/Config")
+
 # shellcheck disable=SC2206
 [[ -n "${BACKUP_EXTRA_PATHS:-}" ]] && CANDIDATES+=(${BACKUP_EXTRA_PATHS})
 
