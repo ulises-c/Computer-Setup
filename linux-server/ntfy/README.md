@@ -43,11 +43,17 @@ alert that fired overnight would be gone before it was ever read.
 
 ```yaml
 - NTFY_CACHE_FILE=/var/cache/ntfy/cache.db
-- NTFY_CACHE_DURATION=72h
+- NTFY_CACHE_DURATION=30d
 ```
 
-Retention defaults to 12h; 72h means a weekend outage is still visible on Monday.
-Verified by publishing a message, restarting the container, and reading it back.
+Retention defaults to 12h, which loses exactly the alert nobody was awake for. A
+month keeps enough history to correlate an incident after the fact; messages are
+plain text and attachments are off, so the database stays small.
+
+ntfy validates the duration at startup and refuses to run on a bad value
+(`invalid cache duration: ...`), so a healthy container means the setting took.
+Cache persistence was verified by publishing a message, restarting the container,
+and reading it back.
 
 ## Auth
 
