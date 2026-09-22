@@ -252,11 +252,11 @@
                 - field: status
                   label: Server
                   format: text
+                - field: players
+                  label: Players
+                  format: number
                 - field: join_code
                   label: Join code
-                  format: text
-                - field: world
-                  label: World
                   format: text
                 - field: uptime_seconds
                   label: Uptime

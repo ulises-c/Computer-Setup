@@ -372,15 +372,32 @@ bash dragonwilds-status.sh        # regenerate by hand
 ```
 
 Fields: `status` (`running` / `starting` / `stopped` / `failed` / `unknown`),
-`server_name`, `world`, `uptime_seconds`, `listening`, `owner_configured`,
-`world_password`, `build`, `last_save`, `updated`.
+`server_name`, `world`, `join_code`, `players`, `player_names`, `uptime_seconds`,
+`listening`, `owner_configured`, `world_password`, `build`, `last_save`, `updated`.
 
 The card's Docker container field tracks only the status nginx — the game server
 is a host unit, so its real state is the `status` field.
 
-There is no player count: the server exposes no query port, and the log lines for
-joins were not verifiable without a live player. Worth revisiting once someone has
-connected.
+### Player count
+
+The server publishes no query port, and its EOS session attributes (`key[pc]` and
+friends) are written once when the session is created and never updated on join or
+leave — so they cannot be used for a live count. The count instead comes from the
+connection log for the current run:
+
+```
+AddClientConnection: Added client connection: ... RemoteAddr: <ip>:<port>
+LogNet: Join succeeded: <name>
+UNetDriver::RemoveClientConnection - Removed address <ip>:<port>
+```
+
+Add/Remove pairs are authoritative — `Remove` fires on a timeout as well as on a
+clean quit, so a crashed client does not leave a phantom player behind.
+
+`player_names` is best-effort: `Join succeeded` carries no address, so the name is
+attributed to the connection added immediately before it. With two players joining
+in the same instant the names could swap; `players` stays exact regardless, since
+it is derived from addresses alone.
 
 ## Notes
 
