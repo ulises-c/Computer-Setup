@@ -20,7 +20,9 @@ TimeoutStartSec=30min
 # flock: dragonwilds-update-check.timer also runs steamcmd, and two instances
 # sharing ~/.steam can trip over each other.
 ExecStartPre=-/usr/bin/flock @INSTALL_DIR@/.steamcmd.lock @STEAMCMD@ +force_install_dir @INSTALL_DIR@ +login anonymous +app_update @APPID@ +quit
-ExecStart=@INSTALL_DIR@/RSDragonwildsServer.sh -log
+# The launcher forwards its arguments to the Unreal binary; -port is the standard
+# engine flag. Without it the server takes Unreal's default, 7777.
+ExecStart=@INSTALL_DIR@/RSDragonwildsServer.sh -log -port=@SERVER_PORT@
 
 # The server flushes its world to Saved/Savegames on SIGTERM; give it room to
 # finish before systemd escalates, otherwise a restart can lose recent progress.

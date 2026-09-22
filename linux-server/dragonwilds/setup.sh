@@ -40,6 +40,11 @@ if [[ "$DRY_RUN" == false && $EUID -ne 0 ]]; then
   exit 1
 fi
 
+if ! [[ "$SERVER_PORT" =~ ^[0-9]+$ ]] || (( SERVER_PORT < 1024 || SERVER_PORT > 65535 )); then
+  printf 'error: SERVER_PORT must be a number from 1024 to 65535, got: %s\n' "$SERVER_PORT" >&2
+  exit 1
+fi
+
 # Also rendered into the polkit rule, which is JavaScript.
 if ! [[ "$SERVICE_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
   printf 'error: unsupported service user name: %s\n' "$SERVICE_USER" >&2
@@ -94,6 +99,7 @@ render() {
       -e "s|@INSTALL_DIR@|$DRAGONWILDS_INSTALL_DIR|g" \
       -e "s|@STEAMCMD@|$STEAMCMD|g" \
       -e "s|@APPID@|$APPID|g" \
+      -e "s|@SERVER_PORT@|$SERVER_PORT|g" \
       -e "s|@STATUS_SCRIPT@|$SCRIPT_DIR/dragonwilds-status.sh|g" \
       -e "s|@STATUS_JSON@|$SCRIPT_DIR/status/dragonwilds-status.json|g" \
       -e "s|@UPDATE_CHECK_SCRIPT@|$SCRIPT_DIR/dragonwilds-update-check.sh|g" \

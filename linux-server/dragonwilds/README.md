@@ -320,6 +320,40 @@ sudo systemctl start dragonwilds.service
 The guide mentions an admin password, but no such key is generated in the config
 — only `WorldPassword`.
 
+### Port
+
+`DedicatedServer.ini` has no port key. The port is `SERVER_PORT` in `.env`
+(default 7777), which `setup.sh` renders into the unit as `-port=<n>` and also
+uses for the ufw rules, the port health checks in the status and auto-update
+scripts, and the connect addresses on the card. Change it in `.env` and re-run
+`sudo bash setup.sh`; editing the unit alone leaves the firewall and the checks
+on the old port. The homepage card's `description` hardcodes 7777 as well.
+
+`-port=` is Unreal's standard flag and the launcher passes its arguments
+straight through; verified on build 25387240 (`SERVER_PORT=7778` bound 7778).
+Re-running `setup.sh` does not restart a running server, so restart it to pick
+up a change, then confirm the bind — expect `SERVER_PORT` plus the two fixed
+ports below:
+
+```bash
+sudo ss -ulnp | grep RSDragonwilds
+```
+
+The server does **not** fall back to the next free port: a port conflict makes it
+exit cleanly (pain point 7).
+
+It also binds two more UDP ports that `-port` does not move:
+
+| Port | Log line | Purpose |
+|---|---|---|
+| 8888 | `LogDomGameMode: World settings beacon listening on port 8888` | World-settings beacon (`BeaconNetDriver`) |
+| 45453 | `LogDomLanProbe: SERVER : Socket setup OK [0.0.0.0:45453]` | LAN discovery probe |
+
+Only `SERVER_PORT` is opened in ufw. Joining by typed address works without the
+other two, so the beacon evidently is not needed to connect. The LAN probe is a
+lead for pain point 11. Both being fixed is why a second server on this host is
+not just a matter of a different `SERVER_PORT`.
+
 ## Operate
 
 ```bash
@@ -481,7 +515,10 @@ it is derived from addresses alone.
 - 64-bit only. Budget ~2 GB RAM plus ~1 GB per player; the cap is 6 players.
 - Networking runs over Epic Online Services (`RedpointEOSNetDriver` in the log),
   so the server needs outbound HTTPS as well as inbound UDP 7777.
-- A second server on the same host would use 7778, a third 7779, and so on.
+- A second server on the same host is not supported: beyond its own
+  `SERVER_PORT` it would collide on the fixed beacon (8888) and LAN probe (45453)
+  ports — see [Port](#port) — and these scripts assume a single
+  `dragonwilds.service`.
 - Steam app IDs: **4019830** dedicated server (Linux depot 3501791), **1374490**
   game client (Windows only).
 - [Official setup guide](https://dragonwilds.runescape.com/news/how-to-dedicated-servers)
