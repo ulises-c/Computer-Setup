@@ -57,7 +57,10 @@ fi
 # Roughly 30s of asset loading separates process start from the socket opening,
 # so an active unit alone would show "running" while nobody can connect yet.
 listening=false
-if ss -uln 2>/dev/null | grep -qE "(^|[^0-9.]):$SERVER_PORT\b"; then
+# Compare the port field exactly. A regex on the whole line cannot: the local
+# address ends in a digit ("0.0.0.0:7777"), and a bare ":7777" would also match
+# a peer column or a longer port.
+if ss -uln 2>/dev/null | awk 'NR>1 {n=split($4,a,":"); print a[n]}' | grep -qx "$SERVER_PORT"; then
   listening=true
 elif [[ "$status" == running ]]; then
   status=starting
