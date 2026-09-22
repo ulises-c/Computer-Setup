@@ -25,7 +25,7 @@ fi
 readonly UNIT=dragonwilds.service
 readonly APPID=4019830
 config="$DRAGONWILDS_INSTALL_DIR/RSDragonwilds/Saved/Config/LinuxServer/DedicatedServer.ini"
-savegames="$DRAGONWILDS_INSTALL_DIR/RSDragonwilds/Saved/Savegames"
+savegames="$DRAGONWILDS_INSTALL_DIR/RSDragonwilds/Saved/SaveGames"
 manifest="$DRAGONWILDS_INSTALL_DIR/steamapps/appmanifest_$APPID.acf"
 
 ini_get() {
