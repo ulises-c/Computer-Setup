@@ -113,6 +113,18 @@ if [[ -f "$SERVER_DIR/forgejo/.env" ]]; then
   fi
 fi
 
+# Dragonwilds worlds live outside the repo; its .env says where the install is.
+dragonwilds_saved=""
+if [[ -f "$SERVER_DIR/dragonwilds/.env" ]]; then
+  dwd="$(grep -E '^DRAGONWILDS_INSTALL_DIR=' "$SERVER_DIR/dragonwilds/.env" | tail -1 | cut -d= -f2- || true)"
+  if [[ -n "${dwd:-}" ]]; then
+    # A relative value would otherwise resolve against systemd's CWD and be
+    # silently skipped by the -e filter — a backup script must not lose a path quietly.
+    [[ "$dwd" = /* ]] || dwd="$SERVER_DIR/dragonwilds/$dwd"
+    dragonwilds_saved="$dwd/RSDragonwilds/Saved"
+  fi
+fi
+
 CANDIDATES=(
   "$forgejo_data"
   "$SERVER_DIR/uptime-kuma/data"
@@ -129,6 +141,10 @@ CANDIDATES=(
   "$SERVER_DIR/homepage/config"
   /etc/atvloadly
 )
+# Worlds and server config only — the ~5.5 GB game install comes back from steamcmd,
+# and Saved/ also holds logs and an EOS cache that are pure noise in a snapshot.
+[[ -n "$dragonwilds_saved" ]] && CANDIDATES+=("$dragonwilds_saved/SaveGames" "$dragonwilds_saved/Config")
+
 # shellcheck disable=SC2206
 [[ -n "${BACKUP_EXTRA_PATHS:-}" ]] && CANDIDATES+=(${BACKUP_EXTRA_PATHS})
 

@@ -11,10 +11,18 @@ drive. Encrypted, deduplicated, pruned, and reported to ntfy + a homepage card.
   certs), ntfy, filebrowser, adguard config/stats
 - **Syncthing** config + device keys, **qBittorrent** config (not downloads),
   **Portainer** BoltDB volume, **atvloadly** (`/etc/atvloadly`)
+- **Dragonwilds** `Saved/SaveGames` (worlds) + `Saved/Config` (server settings,
+  including `OwnerId`), resolved from `dragonwilds/.env`
 - Every service's gitignored **`.env`** (secrets needed to restore)
 
 Excluded as disposable/regenerable: qBittorrent downloads, all `ts-state/`
-(Tailscale node keys — re-auth with `TS_AUTHKEY` regenerates them), caches.
+(Tailscale node keys — re-auth with `TS_AUTHKEY` regenerates them), caches, and
+the ~5.5 GB Dragonwilds game install (steamcmd re-downloads it).
+
+A Dragonwilds world is a plain `.sav` with no online-snapshot equivalent to
+sqlite's `.backup`, so a save written at the moment the 03:30 run reads it could
+be captured torn. Nightly retention means the previous snapshot is the fallback;
+stop `dragonwilds.service` first if you want a guaranteed-clean copy.
 
 SQLite DBs are snapshotted with sqlite3's online `.backup` (consistent, **no
 downtime**); the staged copies carry a `.sqlitebak` suffix. Portainer's BoltDB
