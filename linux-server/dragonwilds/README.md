@@ -293,7 +293,10 @@ sudo bash setup.sh
 
 `setup.sh` renders the units from templates, enables the service and the status
 timer, opens UDP 7777 to the LAN and tailnet, and brings up the status container.
-It reads `.env`; every value there can also be passed as an environment variable.
+It reads `.env`, as do the status, update-check and auto-update scripts. The file
+is sourced with `set -a`, so a key present in `.env` **overrides** the same
+variable in the environment — to override from the environment instead, comment
+the key out of `.env`. (Same pattern as `forgejo/runner-status.sh`.)
 
 Paths interpolated into the unit templates are validated against a conservative
 charset first, since the rendered units are installed as root.
