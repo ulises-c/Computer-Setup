@@ -59,8 +59,11 @@ fi
 
 [[ -x "$STEAMCMD" ]] || \
   printf 'warning: %s not found — install steamcmd first (apt install steamcmd)\n' "$STEAMCMD" >&2
-[[ -x "$DRAGONWILDS_INSTALL_DIR/RSDragonwildsServer.sh" ]] || \
+game_installed=true
+if [[ ! -x "$DRAGONWILDS_INSTALL_DIR/RSDragonwildsServer.sh" ]]; then
+  game_installed=false
   printf 'warning: %s not installed yet — run the steamcmd app_update from README.md\n' "$DRAGONWILDS_INSTALL_DIR" >&2
+fi
 
 # The player count and join code come from the unit's journal, read as this user.
 # Without access the card shows no players, and the auto-updater refuses to
@@ -108,7 +111,11 @@ render "$SCRIPT_DIR/dragonwilds-auto-update.service.template" dragonwilds-auto-u
 render "$SCRIPT_DIR/dragonwilds-restart.rules.template" dragonwilds-restart.rules
 
 if command -v systemd-analyze >/dev/null; then
-  systemd-analyze verify "$tmp/dragonwilds.service" "$tmp/dragonwilds-status.service" \
+  # verify rejects an ExecStart that does not exist yet, which would abort a
+  # first-time setup run before the game is installed.
+  verify_units=()
+  [[ "$game_installed" == true ]] && verify_units+=("$tmp/dragonwilds.service")
+  systemd-analyze verify "${verify_units[@]}" "$tmp/dragonwilds-status.service" \
     "$tmp/dragonwilds-update-check.service" "$tmp/dragonwilds-auto-update.service" \
     "$SCRIPT_DIR/dragonwilds-status.timer" "$SCRIPT_DIR/dragonwilds-update-check.timer" \
     "$SCRIPT_DIR/dragonwilds-auto-update.timer"
@@ -136,7 +143,14 @@ else
 fi
 
 run systemctl daemon-reload
-run systemctl enable --now dragonwilds.service
+# Starting before the game is installed would run the whole first download inside
+# ExecStartPre; do that explicitly (README.md), then start the unit.
+if [[ "$game_installed" == true ]]; then
+  run systemctl enable --now dragonwilds.service
+else
+  run systemctl enable dragonwilds.service
+  printf 'note: dragonwilds.service enabled but not started — install the game, then: sudo systemctl start dragonwilds.service\n' >&2
+fi
 run systemctl enable --now dragonwilds-status.timer
 run systemctl enable --now dragonwilds-update-check.timer
 run systemctl enable --now dragonwilds-auto-update.timer

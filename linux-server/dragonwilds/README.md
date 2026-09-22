@@ -291,8 +291,10 @@ sudo bash setup.sh --dry-run         # preview
 sudo bash setup.sh
 ```
 
-`setup.sh` renders the units from templates, enables the service and the status
-timer, opens UDP 7777 to the LAN and tailnet, and brings up the status container.
+`setup.sh` renders the units from templates, enables the service (starting it
+only once the game is installed, so the first download never runs inside the
+start job) and its timers, installs the auto-updater's polkit rule, opens UDP
+7777 to the LAN and tailnet, and brings up the status container.
 It reads `.env`, as do the status, update-check and auto-update scripts. The file
 is sourced with `set -a`, so a key present in `.env` **overrides** the same
 variable in the environment — to override from the environment instead, comment
