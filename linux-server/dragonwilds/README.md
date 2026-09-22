@@ -157,7 +157,41 @@ even though the name resolves correctly at the OS level — `getent hosts
 <host>.<tailnet>.ts.net` returns the right `100.x` address on the server. The
 client parses the address itself and never performs a DNS lookup.
 
-### 11. "Running" does not mean joinable
+### 11. LAN auto-discovery advertises the wrong address on a multi-homed host
+
+The server answers LAN discovery probes, so it shows up in the browser by name —
+but joining that entry fails with "Connection Lost / Network connection was
+interrupted", while typing the address by hand works. The log shows probe replies
+going out and **no** matching `NotifyAcceptedConnection`, so the client never
+reaches the server at all: it is dialling an address that is not the one you can
+reach it on.
+
+This box carries 23 IPv4 addresses, 21 of them Docker bridges. Unreal's discovery
+embeds a local address it selects itself, and on a multi-homed host that is
+frequently a bridge (`172.17.0.1` and friends) rather than the LAN address. Not
+proven here — the probe payload is not logged and capturing it needs root — but it
+matches the symptom exactly, and the host is about as multi-homed as they come.
+
+`-MULTIHOME=<ip>` would pin the address (the build does support it — the option
+string is there, in UTF-16, which an ASCII `strings` scan misses). It is the wrong
+trade here: it binds the socket to that one address, so pinning the LAN IP drops
+tailnet access and vice versa. Direct connect works on LAN, tailnet, and remote
+with no such compromise, so that is the recommendation.
+
+### 12. Connections are unencrypted unless you configure signing keys
+
+```
+The dedicated server had no public/private signing keypair set, so the connection
+will not be automatically encrypted.
+Skipping verification of connecting user <id> because this connection is not
+trusted. To verify users, turn on trusted dedicated servers.
+```
+
+Normal for an unconfigured dedicated server. Over Tailscale the traffic is inside
+WireGuard anyway; on plain LAN it is in the clear. Worth knowing before forwarding
+the port publicly.
+
+### 13. "Running" does not mean joinable
 
 Roughly 30 seconds of asset loading separate process start from the UDP socket
 opening. The status card reports `starting` until the port is actually bound

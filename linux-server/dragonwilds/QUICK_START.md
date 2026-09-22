@@ -143,4 +143,5 @@ No public access without a router port-forward — see the README.
 | Imported save ignored, `NewGame()` in log | `DefaultWorldName` ≠ name inside the save |
 | Save copied but never read | Wrong folder — it is `SaveGames`, capital G |
 | Service dead after `start`, exit status 0 | Port 7777 already held; kill the stray process |
+| Server visible in browser, join says "Connection Lost" | LAN auto-discovery advertises a Docker-bridge address — use direct connect |
 | Card says `starting` | Normal for ~30 s while assets load |
