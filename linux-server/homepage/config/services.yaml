@@ -234,6 +234,31 @@
               username: "{{HOMEPAGE_VAR_QBITTORRENT_USERNAME}}"
               password: "{{HOMEPAGE_VAR_QBITTORRENT_PASSWORD}}"
 
+    - Games:
+        - dragonwilds:
+            icon: mdi-sword-cross
+            description: RuneScape Dragonwilds — UDP 7777 (LAN + tailnet)
+            server: my-docker
+            container: dragonwilds-status
+            widget:
+              type: customapi
+              # dragonwilds-status.sh writes this JSON; the loopback nginx in
+              # linux-server/dragonwilds serves it. homepage is host-networked.
+              # The container above is only that nginx — the game server is a
+              # host systemd unit, so its real state is the `status` field.
+              url: http://localhost:8096/dragonwilds-status.json
+              refreshInterval: 60000
+              mappings:
+                - field: status
+                  label: Server
+                  format: text
+                - field: world
+                  label: World
+                  format: text
+                - field: uptime_seconds
+                  label: Uptime
+                  format: duration
+
 - NAS:
     - wd 14tb r/w:
         icon: mdi-harddisk
