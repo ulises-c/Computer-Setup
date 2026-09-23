@@ -1,0 +1,357 @@
+#!/usr/bin/env bash
+# Deterministic sync between Hermes and two private skill repos (work, personal).
+# The repos are the source of truth: Hermes reads them through
+# skills.external_dirs, which also makes them read-only to the background
+# curator, so a skill only changes through a reviewed git commit.
+set -euo pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+HERMES_CFG_DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
+ENV_FILE="${HERMES_SKILLS_ENV:-$HERMES_CFG_DIR/.env}"
+HERMES_HOME_DIR="${HERMES_HOME:-$HOME/.hermes}"
+LOCAL_SKILLS="$HERMES_HOME_DIR/skills"
+KINDS=(work personal)
+
+# sk- needs a left boundary: "task-driven-development" would otherwise match.
+SECRET_PATTERNS='AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{30,}|glpat-[A-Za-z0-9_-]{20,}|xox[abeprs]-[A-Za-z0-9-]{10,}|xapp-[A-Za-z0-9-]{10,}|ATATT[A-Za-z0-9_=-]{20,}|(^|[^A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----'
+
+ERRORS=0
+die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
+err()  { printf '  [FAIL] %s\n' "$*" >&2; ERRORS=$(( ERRORS + 1 )); }
+ok()   { printf '  [ OK ] %s\n' "$*"; }
+warn() { printf '  [WARN] %s\n' "$*"; }
+section() { printf '\n=== %s ===\n' "$*"; }
+
+usage() {
+  cat <<'EOF'
+usage: hermes-skills <command>
+
+  install              clone both repos, install commit guards, set skills.external_dirs
+  status               repo state, unadopted local skills, name collisions
+  verify               status checks as pass/fail; exit 1 on any failure
+  migrate [--apply]    plan (default) or perform adoption of every unadopted local skill
+  adopt <skill> <work|personal>
+                       move one local skill into a repo and stage it (no commit)
+  scan [work|personal] secret scan (both) + work-marker scan (personal) of the working tree
+  pull                 fast-forward both repos from origin
+  push                 scan, then push both repos (refuses uncommitted changes)
+  hook <work|personal> pre-commit entry point (scans the index)
+EOF
+}
+
+load_env() {
+  [[ -f "$ENV_FILE" ]] || die "missing $ENV_FILE (copy .env.example and fill it in)"
+  set -a
+  # shellcheck source=/dev/null
+  source "$ENV_FILE"
+  set +a
+  local v
+  for v in HERMES_SKILLS_WORK_REMOTE HERMES_SKILLS_WORK_DIR \
+           HERMES_SKILLS_PERSONAL_REMOTE HERMES_SKILLS_PERSONAL_DIR \
+           HERMES_SKILLS_WORK_MARKERS; do
+    [[ -n "${!v:-}" ]] || die "$v is not set in $ENV_FILE"
+  done
+}
+
+kind_var() { local name="HERMES_SKILLS_${1^^}_$2"; printf '%s' "${!name:-}"; }
+kind_dir() { kind_var "$1" DIR; }
+check_kind() { [[ "${1:-}" == work || "${1:-}" == personal ]] || die "kind must be 'work' or 'personal'"; }
+
+skill_name() {
+  local md="$1" name
+  name="$(awk 'NR == 1 && $0 != "---" { exit }
+               NR > 1 && $0 == "---" { exit }
+               NR > 1 && /^name:/ { sub(/^name:[ \t]*/, ""); gsub(/^["'\'']|["'\'']$/, ""); print; exit }' "$md")"
+  printf '%s' "${name:-$(basename "$(dirname "$md")")}"
+}
+
+# "<name>\t<path relative to root>" for every skill under root. Hidden dirs
+# (.archive, .curator_backups, .git) are skipped by the path relative to root,
+# because root itself sits under ~/.hermes. find does not descend into
+# symlinked skill dirs, which belong to some other repo.
+list_skills() {
+  local root="$1" md rel
+  [[ -d "$root" ]] || return 0
+  while IFS= read -r md; do
+    rel="${md#"$root"/}"
+    [[ "/$rel" == */.* ]] && continue
+    printf '%s\t%s\n' "$(skill_name "$md")" "$(dirname "$rel")"
+  done < <(find "$root" -name SKILL.md | LC_ALL=C sort)
+}
+
+# Names Hermes itself owns: bundled, hub-installed, or shipped in the source tree.
+foreign_names() {
+  [[ -f "$LOCAL_SKILLS/.bundled_manifest" ]] && cut -d: -f1 "$LOCAL_SKILLS/.bundled_manifest"
+  [[ -f "$LOCAL_SKILLS/.hub/lock.json" ]] && jq -r '.installed | keys[]' "$LOCAL_SKILLS/.hub/lock.json"
+  local src
+  for src in "$HERMES_HOME_DIR/hermes-agent/skills" "$HERMES_HOME_DIR/hermes-agent/optional-skills"; do
+    [[ -d "$src" ]] && find "$src" -name SKILL.md -printf '%h\n' | xargs -r -n1 basename
+  done
+  return 0
+}
+
+# Local, user-authored skills that are not yet in either repo.
+unadopted() {
+  local foreign
+  foreign="$(foreign_names | LC_ALL=C sort -u)"
+  list_skills "$LOCAL_SKILLS" | while IFS=$'\t' read -r name rel; do
+    grep -qxF "$name" <<< "$foreign" || printf '%s\t%s\n' "$name" "$rel"
+  done
+}
+
+repo_skills() { local k; for k in "${KINDS[@]}"; do list_skills "$(kind_dir "$k")/skills" | sed "s/^/$k\t/"; done; }
+
+secret_hits_dir() { grep -rnIE --exclude-dir=.git -e "$SECRET_PATTERNS" "$1" | cut -d: -f1,2 || true; }
+marker_hits_dir() { grep -rnIoiE --exclude-dir=.git -e "$HERMES_SKILLS_WORK_MARKERS" "$1" || true; }
+
+# mode: index (what is about to be committed) or tree (tracked + untracked files)
+scan_repo() {
+  local kind="$1" dir="$2" mode="$3" hits rc=0 flags=(-n -I -E)
+  if [[ "$mode" == index ]]; then flags+=(--cached); else flags+=(--untracked); fi
+  hits="$(git -C "$dir" grep "${flags[@]}" -e "$SECRET_PATTERNS" -- . | cut -d: -f1,2 || true)"
+  if [[ -n "$hits" ]]; then
+    printf 'possible secrets in %s repo (file:line, values not shown):\n%s\n' "$kind" "$hits" >&2
+    rc=1
+  fi
+  if [[ "$kind" == personal ]]; then
+    hits="$(git -C "$dir" grep "${flags[@]}" -o -i -e "$HERMES_SKILLS_WORK_MARKERS" -- . || true)"
+    if [[ -n "$hits" ]]; then
+      printf 'work markers in personal repo (move these to the work repo):\n%s\n' "$hits" >&2
+      rc=1
+    fi
+  fi
+  return "$rc"
+}
+
+current_external_dirs() { hermes config get skills.external_dirs 2>/dev/null | sed -n 's/^- //p'; }
+norm_path() { realpath -m "${1/#\~/$HOME}"; }
+
+set_external_dirs() {
+  local want=() e k keep json
+  while IFS= read -r e; do
+    keep=1
+    for k in "${KINDS[@]}"; do
+      if [[ "$(norm_path "$e")" == "$(norm_path "$(kind_dir "$k")/skills")" ]]; then keep=0; fi
+    done
+    if (( keep )); then want+=("$e"); fi
+  done < <(current_external_dirs)
+  for k in "${KINDS[@]}"; do want+=("$(kind_dir "$k")/skills"); done
+  json="$(printf '%s\n' "${want[@]}" | jq -R . | jq -sc .)"
+  hermes config set skills.external_dirs "$json"
+}
+
+write_hook() {
+  local kind="$1" dir="$2" hook
+  hook="$(git -C "$dir" rev-parse --git-path hooks/pre-commit)"
+  [[ "$hook" == /* ]] || hook="$dir/$hook"
+  printf '#!/usr/bin/env bash\n# managed by hermes-skills install\nexec %q hook %s\n' "$SELF" "$kind" > "$hook"
+  chmod +x "$hook"
+}
+
+cmd_install() {
+  local k dir remote email
+  for k in "${KINDS[@]}"; do
+    dir="$(kind_dir "$k")"; remote="$(kind_var "$k" REMOTE)"; email="$(kind_var "$k" GIT_EMAIL)"
+    if [[ ! -d "$dir/.git" ]]; then
+      mkdir -p "$(dirname "$dir")"
+      git clone "$remote" "$dir" || die "clone of the $k repo failed; create it on the server first"
+    elif [[ "$(git -C "$dir" remote get-url origin)" != "$remote" ]]; then
+      die "$dir origin is $(git -C "$dir" remote get-url origin), expected $remote"
+    fi
+    mkdir -p "$dir/skills"
+    if [[ -n "$email" ]]; then git -C "$dir" config user.email "$email"; fi
+    write_hook "$k" "$dir"
+    printf 'Ready: %s repo → %s\n' "$k" "$dir"
+  done
+  set_external_dirs
+}
+
+cmd_status() {
+  local k dir counts dirty
+  section repos
+  for k in "${KINDS[@]}"; do
+    dir="$(kind_dir "$k")"
+    if [[ ! -d "$dir/.git" ]]; then warn "$k: not cloned ($dir) — run: hermes-skills install"; continue; fi
+    dirty="$(git -C "$dir" status --porcelain | wc -l)"
+    counts="$(git -C "$dir" rev-list --left-right --count '@{u}...HEAD' 2>/dev/null || printf 'n/a')"
+    printf '  %-9s %s  head=%s  behind/ahead=%s  uncommitted=%s  skills=%s\n' "$k" "$dir" \
+      "$(git -C "$dir" rev-parse --short HEAD 2>/dev/null || printf 'empty')" \
+      "${counts//$'\t'//}" "$dirty" "$(list_skills "$dir/skills" | wc -l)"
+  done
+  section "unadopted local skills (suggested target)"
+  local plan
+  plan="$(migration_plan)"
+  if [[ -n "$plan" ]]; then printf '%s\n' "$plan" | sed 's/^/  /'; else printf '  none\n'; fi
+  section "name collisions (Hermes refuses ambiguous names)"
+  collisions | sed 's/^/  /'
+}
+
+# "<name>\t<rel>\t<work|personal|SKIP:reason>"
+migration_plan() {
+  unadopted | while IFS=$'\t' read -r name rel; do
+    local src="$LOCAL_SKILLS/$rel" target=personal
+    if [[ -n "$(secret_hits_dir "$src")" ]]; then target="SKIP:possible-secret"
+    elif [[ -n "$(marker_hits_dir "$src")" ]]; then target=work
+    fi
+    printf '%s\t%s\t%s\n' "$name" "$rel" "$target"
+  done
+}
+
+collisions() {
+  local repo local_names dup found=0
+  repo="$(repo_skills)"
+  local_names="$(list_skills "$LOCAL_SKILLS" | cut -f1)"
+  while IFS=$'\t' read -r kind name rel; do
+    [[ -n "$name" ]] || continue
+    if grep -qxF "$name" <<< "$local_names"; then
+      printf '%s: in %s repo (%s) and in %s\n' "$name" "$kind" "$rel" "$LOCAL_SKILLS"; found=1
+    fi
+  done <<< "$repo"
+  dup="$(cut -f2 <<< "$repo" | sed '/^$/d' | LC_ALL=C sort | uniq -d)"
+  if [[ -n "$dup" ]]; then printf '%s: present in both repos\n' "$dup"; found=1; fi
+  if (( ! found )); then printf 'none\n'; fi
+}
+
+cmd_verify() {
+  local k dir hook ext name rel md
+  section repos
+  for k in "${KINDS[@]}"; do
+    dir="$(kind_dir "$k")"
+    if [[ ! -d "$dir/.git" ]]; then err "$k repo not cloned at $dir"; continue; fi
+    if [[ "$(git -C "$dir" remote get-url origin)" == "$(kind_var "$k" REMOTE)" ]]; then ok "$k origin"; else err "$k origin mismatch"; fi
+    hook="$(git -C "$dir" rev-parse --git-path hooks/pre-commit)"
+    [[ "$hook" == /* ]] || hook="$dir/$hook"
+    if grep -q "hermes-skills hook $k\$" "$hook" 2>/dev/null; then ok "$k pre-commit guard"; else err "$k pre-commit guard missing"; fi
+    if scan_repo "$k" "$dir" tree; then ok "$k scan clean"; else err "$k scan found problems"; fi
+    if [[ -n "$(git -C "$dir" status --porcelain)" ]]; then warn "$k has uncommitted changes"; fi
+    while IFS=$'\t' read -r name rel; do
+      md="$dir/skills/$rel/SKILL.md"
+      if [[ "$name" != "$(basename "$rel")" ]]; then err "$k: $rel/SKILL.md name '$name' differs from its directory"; fi
+      if ! grep -q '^description:' "$md"; then err "$k: $rel/SKILL.md has no description"; fi
+    done < <(list_skills "$dir/skills")
+  done
+  section config
+  ext="$(current_external_dirs | while IFS= read -r e; do norm_path "$e"; done)"
+  for k in "${KINDS[@]}"; do
+    if grep -qxF "$(norm_path "$(kind_dir "$k")/skills")" <<< "$ext"; then ok "external_dirs has $k"; else err "external_dirs is missing the $k repo"; fi
+  done
+  section collisions
+  local c
+  c="$(collisions)"
+  if [[ "$c" == none ]]; then ok "no name collisions"; else while IFS= read -r line; do err "$line"; done <<< "$c"; fi
+  printf '\n'
+  if (( ERRORS )); then printf '%d check(s) failed\n' "$ERRORS" >&2; exit 1; fi
+  printf 'all checks passed\n'
+}
+
+cmd_adopt() {
+  local name="${1:-}" kind="${2:-}" rel src dest dir match
+  [[ -n "$name" ]] || die "usage: hermes-skills adopt <skill> <work|personal>"
+  check_kind "$kind"
+  dir="$(kind_dir "$kind")"
+  [[ -d "$dir/.git" ]] || die "$kind repo not cloned; run: hermes-skills install"
+  match="$(unadopted | awk -F'\t' -v n="$name" '$1 == n')"
+  [[ -n "$match" ]] || die "'$name' is not an unadopted local skill (see: hermes-skills status)"
+  (( $(wc -l <<< "$match") == 1 )) || die "'$name' matches more than one local skill:"$'\n'"$match"
+  rel="$(cut -f2 <<< "$match")"
+  src="$LOCAL_SKILLS/$rel"
+  dest="$dir/skills/$rel"
+  if repo_skills | cut -f2 | grep -qxF "$name"; then die "'$name' already exists in a repo"; fi
+  [[ ! -e "$dest" ]] || die "$dest already exists"
+  if [[ -n "$(secret_hits_dir "$src")" ]]; then
+    die "possible secret in $src (file:line): $(secret_hits_dir "$src" | tr '\n' ' ')"
+  fi
+  if [[ "$kind" == personal && -n "$(marker_hits_dir "$src")" ]]; then
+    die "'$name' contains work markers; adopt it into the work repo instead"
+  fi
+  mkdir -p "$(dirname "$dest")"
+  mv "$src" "$dest"
+  git -C "$dir" add -- "skills/$rel"
+  printf 'Adopted: %s → %s repo (skills/%s), staged\n' "$name" "$kind" "$rel"
+}
+
+cmd_migrate() {
+  local apply=0 plan name rel target
+  [[ "${1:-}" == --apply ]] && apply=1
+  plan="$(migration_plan)"
+  [[ -n "$plan" ]] || { printf 'nothing to migrate\n'; return 0; }
+  if (( ! apply )); then
+    printf '%s\n' "$plan" | column -t -s $'\t'
+    printf '\ndry run; re-run with --apply to move these (SKIP rows are left in place)\n'
+    return 0
+  fi
+  while IFS=$'\t' read -r name rel target; do
+    case "$target" in
+      SKIP:*) printf 'Skipped: %s (%s)\n' "$name" "${target#SKIP:}" ;;
+      *) cmd_adopt "$name" "$target" ;;
+    esac
+  done <<< "$plan"
+  printf '\nReview with: git -C <repo> diff --cached --stat, then commit in each repo.\n'
+}
+
+cmd_scan() {
+  local k rc=0
+  local kinds=("${KINDS[@]}")
+  if [[ -n "${1:-}" ]]; then check_kind "$1"; kinds=("$1"); fi
+  for k in "${kinds[@]}"; do
+    if scan_repo "$k" "$(kind_dir "$k")" tree; then printf '%s: clean\n' "$k"; else rc=1; fi
+  done
+  return "$rc"
+}
+
+cmd_pull() {
+  local k dir
+  for k in "${KINDS[@]}"; do
+    dir="$(kind_dir "$k")"
+    git -C "$dir" fetch --quiet origin
+    if git -C "$dir" rev-parse --verify --quiet '@{u}' >/dev/null; then
+      git -C "$dir" merge --ff-only --quiet '@{u}'
+    fi
+    printf 'Pulled: %s @ %s\n' "$k" "$(git -C "$dir" rev-parse --short HEAD 2>/dev/null || printf 'empty')"
+  done
+}
+
+cmd_push() {
+  local k dir
+  for k in "${KINDS[@]}"; do
+    dir="$(kind_dir "$k")"
+    [[ -z "$(git -C "$dir" status --porcelain)" ]] || die "$k repo has uncommitted changes; commit or discard first"
+    scan_repo "$k" "$dir" tree || die "$k scan failed; not pushing"
+  done
+  for k in "${KINDS[@]}"; do
+    dir="$(kind_dir "$k")"
+    git -C "$dir" rev-parse --verify --quiet HEAD >/dev/null || { printf 'Skipped: %s (no commits)\n' "$k"; continue; }
+    git -C "$dir" push --quiet -u origin HEAD
+    printf 'Pushed: %s @ %s\n' "$k" "$(git -C "$dir" rev-parse --short HEAD)"
+  done
+}
+
+cmd_hook() {
+  check_kind "${1:-}"
+  scan_repo "$1" "$PWD" index || die "commit blocked by hermes-skills"
+}
+
+main() {
+  local cmd="${1:-}"
+  [[ -n "$cmd" ]] || { usage; exit 2; }
+  shift
+  case "$cmd" in
+    -h|--help|help) usage; return 0 ;;
+  esac
+  command -v jq >/dev/null || die "jq is required"
+  load_env
+  case "$cmd" in
+    install) cmd_install ;;
+    status)  cmd_status ;;
+    verify)  cmd_verify ;;
+    migrate) cmd_migrate "$@" ;;
+    adopt)   cmd_adopt "$@" ;;
+    scan)    cmd_scan "$@" ;;
+    pull)    cmd_pull ;;
+    push)    cmd_push ;;
+    hook)    cmd_hook "$@" ;;
+    *) usage >&2; exit 2 ;;
+  esac
+}
+
+main "$@"
