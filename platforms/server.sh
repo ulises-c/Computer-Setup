@@ -32,6 +32,48 @@ server_ups_step() {
   fi
 }
 
+# Pin Docker's address pools so compose networks never spill out of 172.16/12
+# into home-LAN space (#75). Merged, not copied: the host's daemon.json carries
+# other keys (e.g. the nvidia runtime) that must survive.
+server_docker_daemon_step() {
+  local src="$CONFIG_SRC_DIR/docker/daemon.json" dst=/etc/docker/daemon.json merged
+  printf '\n==> Pinning Docker default-address-pools...\n'
+  if [[ -f "$dst" ]]; then
+    if ! merged="$(jq -S -s '.[0] * .[1]' "$dst" "$src")"; then
+      printf 'warning: %s is not valid JSON; leaving it alone\n' "$dst" >&2
+      return 0
+    fi
+    if [[ "$merged" == "$(jq -S . "$dst")" ]]; then
+      printf '  %s already up to date\n' "$dst"
+      return 0
+    fi
+  else
+    merged="$(jq -S . "$src")"
+  fi
+
+  if [[ "$DRY_RUN" == true ]]; then
+    printf '  [dry-run] merge %s into %s, validate with dockerd --validate, restart docker\n' "$src" "$dst"
+    return 0
+  fi
+
+  local tmp
+  tmp="$(mktemp)"
+  printf '%s\n' "$merged" > "$tmp"
+  if ! dockerd --validate --config-file "$tmp" >/dev/null; then
+    printf 'warning: merged daemon.json failed dockerd --validate; %s unchanged\n' "$dst" >&2
+    rm -f "$tmp"
+    return 0
+  fi
+  sudo mkdir -p /etc/docker
+  [[ -f "$dst" ]] && sudo cp "$dst" "$dst.bak.$(date +%Y%m%d_%H%M%S)"
+  sudo install -m 644 "$tmp" "$dst"
+  rm -f "$tmp"
+  sudo systemctl restart docker
+  printf '  %s updated; docker restarted\n' "$dst"
+  printf '  Existing networks keep their old subnets — see linux-server/README.md\n'
+  printf '  ("Docker address pools") to recreate any outside 172.16.0.0/12.\n'
+}
+
 # Server-only "step two": the headless service + dashboard layer that runs after
 # the shared base install (packages, shell, dotfiles, Tailscale, Docker engine).
 server_extras() {

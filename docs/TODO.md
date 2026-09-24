@@ -250,7 +250,9 @@ game browser but joining that entry fails, while a typed address works.
 
 - [ ] Pin `default-address-pools` to `172.16.0.0/12` in `/etc/docker/daemon.json`
       and recreate the six `192.168.x` networks — fixes the collision risk with no
-      service changes
+      service changes. `setup.sh --profile server` now deploys the pin and
+      `verify.sh` flags stray bridges; applying it on the live server and
+      recreating the networks (`linux-server/README.md` step 8) is still manual
 - [ ] Decide whether to collapse the per-project bridges onto one shared external
       network, and fold that into the `{service}.<tailnet>.ts.net` →
       `<host>.<tailnet>.ts.net/{service}` rework (that rework removes ~18 sidecars

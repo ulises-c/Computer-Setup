@@ -6,6 +6,17 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com). Remaining
 work lives in [TODO.md](TODO.md); the design rationale for the unified layout is
 in [UNIFICATION.md](UNIFICATION.md).
 
+## Unreleased — Docker address pools
+
+### Added
+- `setup.sh --profile server` pins Docker's `default-address-pools` to
+  `172.16.0.0/12` (`/24` each) by merging `linux-server/docker/daemon.json` into
+  `/etc/docker/daemon.json` ([#75](https://github.com/ulises-c/Computer-Setup/issues/75)).
+  The merge keeps existing keys, is validated with `dockerd --validate` before
+  install, backs up the old file, and restarts Docker only when the file
+  changes. `verify.sh` checks the pin and lists any bridge network still outside
+  `172.16.0.0/12` that needs recreating.
+
 ## Unreleased — Codex hook parity
 
 ### Added

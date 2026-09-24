@@ -148,6 +148,30 @@ In NPM admin (`http://<server-ip>:81`):
 
 > Requires enabling HTTPS certificates in the Tailscale admin console: `login.tailscale.com/admin/dns`
 
+### 8. Docker address pools
+
+`setup.sh` merges [`docker/daemon.json`](docker/daemon.json) into
+`/etc/docker/daemon.json`, preserving other keys such as the nvidia runtime, and
+restarts Docker. From then on, every new compose network gets a `/24` inside
+`172.16.0.0/12` (4096 networks). Without the pin, Docker's default pools spill
+into `192.168.0.0/16` once `172.17`–`172.31` fill, which collides with home-LAN
+space ([#75](https://github.com/ulises-c/Computer-Setup/issues/75)).
+
+Existing networks keep their old subnets until they are recreated. `verify.sh
+--profile server` lists any bridge outside `172.16.0.0/12`. For each one, find its
+project and recreate it:
+
+```sh
+docker network inspect <network> --format '{{index .Labels "com.docker.compose.project"}}'
+cd linux-server/<project> && docker compose down && docker compose up -d
+```
+
+`down` removes the project network, and `up` recreates it from the pinned pool.
+Bind-mounted state (`ts-state/`, app data) is untouched, so Tailscale sidecars
+come back as the same tailnet node with the same `<service>.<tailnet>.ts.net`
+name and 100.x address. Only the container-internal `172.x`/`192.168.x` address
+changes, and nothing addresses a container by that address.
+
 ---
 
 ## Docker services

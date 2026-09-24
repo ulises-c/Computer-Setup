@@ -285,6 +285,27 @@ verify_extras_server() {
       check "$ups reachable via upsc $ups@localhost" false
     fi
   done
+
+  local pools_src="$SETUP_ROOT/linux-server/docker/daemon.json"
+  if jq -e --slurpfile want "$pools_src" \
+      '."default-address-pools" == $want[0]."default-address-pools"' \
+      /etc/docker/daemon.json &>/dev/null; then
+    check "docker default-address-pools match linux-server/docker/daemon.json" true
+  else
+    check "docker default-address-pools match linux-server/docker/daemon.json (run setup.sh --profile server)" false
+  fi
+
+  local bridges stray
+  if mapfile -t bridges < <(docker network ls -q --filter driver=bridge 2>/dev/null) \
+      && [[ ${#bridges[@]} -gt 0 ]]; then
+    stray="$(docker network inspect --format '{{range .IPAM.Config}}{{println .Subnet}}{{end}}' "${bridges[@]}" 2>/dev/null \
+      | grep -E '^[0-9]+\.' | grep -vE '^172\.(1[6-9]|2[0-9]|3[01])\.' | sort -u | paste -sd' ' || true)"
+    if [[ -z "$stray" ]]; then
+      check "docker bridge networks all inside 172.16.0.0/12" true
+    else
+      check "docker bridge networks all inside 172.16.0.0/12 (recreate: $stray)" false
+    fi
+  fi
 }
 
 # npm + pnpm supply-chain cooldown checks (issue #23) — identical on every platform.

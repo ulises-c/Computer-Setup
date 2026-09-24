@@ -953,6 +953,7 @@ linux_main() {
   if [[ "$SERVER_PROFILE" == true ]]; then
     printf '\n'
     platform_docker_optional
+    server_docker_daemon_step
     if [[ "$INCLUDE_OPTIONAL" == true ]]; then
       printf '\n==> Installing optional (low) packages...\n'
       platform_install_tier low
