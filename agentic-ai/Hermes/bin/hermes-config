@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Deterministic sync between Hermes and private skill repos: a work repo, a
+# Deterministic sync between Hermes and private config repos: a work repo, a
 # personal repo, or both (a repo is enabled when its REMOTE is set in .env), so
-# the same tool serves a work machine and a personal-only setup.
+# the same tool serves a work machine and a personal-only setup. The repos hold
+# user-authored skills and, in one of them, a backup of cron jobs and scripts.
 #
 # The repos are the source of truth: Hermes reads them through
 # skills.external_dirs, which also makes them read-only to the background
@@ -16,7 +17,7 @@ set -euo pipefail
 
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
 HERMES_CFG_DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
-ENV_FILE="${HERMES_SKILLS_ENV:-$HERMES_CFG_DIR/.env}"
+ENV_FILE="${HERMES_CONFIG_SYNC_ENV:-$HERMES_CFG_DIR/.env}"
 HERMES_HOME_DIR="${HERMES_HOME:-$HOME/.hermes}"
 LOCAL_SKILLS="$HERMES_HOME_DIR/skills"
 KINDS=()
@@ -33,7 +34,7 @@ section() { printf '\n=== %s ===\n' "$*"; }
 
 usage() {
   cat <<'EOF'
-usage: hermes-skills <command>
+usage: hermes-config <command>
 
   install              clone the enabled repos, install commit guards, refresh
                        work terms (if configured), set skills.external_dirs
@@ -53,12 +54,12 @@ usage: hermes-skills <command>
 EOF
 }
 
-kind_var() { local name="HERMES_SKILLS_${1^^}_$2"; printf '%s' "${!name:-}"; }
+kind_var() { local name="HERMES_CONFIG_SYNC_${1^^}_$2"; printf '%s' "${!name:-}"; }
 kind_dir() { kind_var "$1" DIR; }
 enabled()  { local k; for k in "${KINDS[@]}"; do [[ "$k" == "$1" ]] && return 0; done; return 1; }
 check_kind() {
   [[ "${1:-}" == work || "${1:-}" == personal ]] || die "kind must be 'work' or 'personal'"
-  enabled "$1" || die "the $1 repo is not enabled (set HERMES_SKILLS_${1^^}_REMOTE in $ENV_FILE)"
+  enabled "$1" || die "the $1 repo is not enabled (set HERMES_CONFIG_SYNC_${1^^}_REMOTE in $ENV_FILE)"
 }
 
 load_env() {
@@ -70,11 +71,11 @@ load_env() {
   local k
   for k in work personal; do
     [[ -n "$(kind_var "$k" REMOTE)" ]] || continue
-    [[ -n "$(kind_dir "$k")" ]] || die "HERMES_SKILLS_${k^^}_DIR is not set in $ENV_FILE"
+    [[ -n "$(kind_dir "$k")" ]] || die "HERMES_CONFIG_SYNC_${k^^}_DIR is not set in $ENV_FILE"
     KINDS+=("$k")
   done
-  (( ${#KINDS[@]} )) || die "set HERMES_SKILLS_WORK_REMOTE and/or HERMES_SKILLS_PERSONAL_REMOTE in $ENV_FILE"
-  TERMS_FILE="${HERMES_SKILLS_TERMS_FILE:-$HERMES_CFG_DIR/.work-terms}"
+  (( ${#KINDS[@]} )) || die "set HERMES_CONFIG_SYNC_WORK_REMOTE and/or HERMES_CONFIG_SYNC_PERSONAL_REMOTE in $ENV_FILE"
+  TERMS_FILE="${HERMES_CONFIG_SYNC_TERMS_FILE:-$HERMES_CFG_DIR/.work-terms}"
   TERMS_FILE="${TERMS_FILE/#\~/$HOME}"
 }
 
@@ -106,7 +107,7 @@ list_skills() {
 # still sit in ~/.hermes/skills looking user-authored.
 foreign_names() {
   if [[ -n "${FOREIGN_CACHE+x}" ]]; then printf '%s\n' "$FOREIGN_CACHE"; return 0; fi
-  local src="${HERMES_SKILLS_HERMES_SRC:-$HERMES_HOME_DIR/hermes-agent}" sub
+  local src="${HERMES_CONFIG_SYNC_HERMES_SRC:-$HERMES_HOME_DIR/hermes-agent}" sub
   {
     if [[ -f "$LOCAL_SKILLS/.bundled_manifest" ]]; then cut -d: -f1 "$LOCAL_SKILLS/.bundled_manifest"; fi
     if [[ -f "$LOCAL_SKILLS/.hub/lock.json" ]]; then jq -r '.installed | keys[]' "$LOCAL_SKILLS/.hub/lock.json"; fi
@@ -132,18 +133,18 @@ unadopted() {
 repo_skills() { local k; for k in "${KINDS[@]}"; do list_skills "$(kind_dir "$k")/skills" | sed "s/^/$k\t/"; done; }
 
 # --- markers ---------------------------------------------------------------
-# Three sources, all optional: HERMES_SKILLS_WORK_MARKERS (hand-written ERE,
+# Three sources, all optional: HERMES_CONFIG_SYNC_WORK_MARKERS (hand-written ERE,
 # case-insensitive), the generated terms file (whole-word, case-insensitive
-# fixed strings), and Jira issue refs built from HERMES_SKILLS_JIRA_KEYS
+# fixed strings), and Jira issue refs built from HERMES_CONFIG_SYNC_JIRA_KEYS
 # (case-sensitive, so "ai-1" in prose does not match project AI).
 
 jira_ere() {
   local keys
-  keys="$(tr -s ' ,' '\n' <<< "${HERMES_SKILLS_JIRA_KEYS:-}" | sed '/^$/d' | paste -sd'|')"
+  keys="$(tr -s ' ,' '\n' <<< "${HERMES_CONFIG_SYNC_JIRA_KEYS:-}" | sed '/^$/d' | paste -sd'|')"
   if [[ -n "$keys" ]]; then printf '(^|[^A-Za-z0-9_])(%s)-[0-9]+' "$keys"; fi
 }
 
-markers_configured() { [[ -n "${HERMES_SKILLS_WORK_MARKERS:-}" || -s "$TERMS_FILE" || -n "$(jira_ere)" ]]; }
+markers_configured() { [[ -n "${HERMES_CONFIG_SYNC_WORK_MARKERS:-}" || -s "$TERMS_FILE" || -n "$(jira_ere)" ]]; }
 
 grep_dir() { local d="$1"; shift; grep -rnI --exclude-dir=.git "$@" -- "$d" 2>/dev/null; }
 grep_git() {
@@ -157,7 +158,7 @@ grep_git() {
 # Prints "file:line:match" for every work marker hit.
 marker_hits() {
   local j
-  if [[ -n "${HERMES_SKILLS_WORK_MARKERS:-}" ]]; then "$@" -o -i -E -e "$HERMES_SKILLS_WORK_MARKERS" || true; fi
+  if [[ -n "${HERMES_CONFIG_SYNC_WORK_MARKERS:-}" ]]; then "$@" -o -i -E -e "$HERMES_CONFIG_SYNC_WORK_MARKERS" || true; fi
   if [[ -s "$TERMS_FILE" ]]; then "$@" -o -i -w -F -f "$TERMS_FILE" || true; fi
   j="$(jira_ere)"
   if [[ -n "$j" ]]; then "$@" -o -E -e "$j" || true; fi
@@ -167,10 +168,10 @@ secret_hits() { { "$@" -E -e "$SECRET_PATTERNS" || true; } | cut -d: -f1,2; }
 # The same markers for lib/provenance.py, which matches them against what the
 # user typed. Terms are escaped there (re.escape), not here.
 export_marker_regexes() {
-  HERMES_SKILLS_MARK_CI="${HERMES_SKILLS_WORK_MARKERS:-}"
-  HERMES_SKILLS_MARK_CS="$(jira_ere)"
-  HERMES_SKILLS_MARK_TERMS="$TERMS_FILE"
-  export HERMES_SKILLS_MARK_CI HERMES_SKILLS_MARK_CS HERMES_SKILLS_MARK_TERMS
+  HERMES_CONFIG_SYNC_MARK_CI="${HERMES_CONFIG_SYNC_WORK_MARKERS:-}"
+  HERMES_CONFIG_SYNC_MARK_CS="$(jira_ere)"
+  HERMES_CONFIG_SYNC_MARK_TERMS="$TERMS_FILE"
+  export HERMES_CONFIG_SYNC_MARK_CI HERMES_CONFIG_SYNC_MARK_CS HERMES_CONFIG_SYNC_MARK_TERMS
 }
 
 # stdin: skill names. stdout: "<name>\t<work edits>\t<classified edits>".
@@ -201,7 +202,7 @@ migration_plan() {
     counts="$(awk -F'\t' -v n="$name" '$1 == n { print $2 " " $3; exit }' <<< "$prov")"
     read -r w t <<< "${counts:-0 0}"
     if [[ -n "$secrets" ]]; then
-      target="SKIP:possible-secret" why="$(wc -l <<< "$secrets") hit(s); see: hermes-skills classify $name"
+      target="SKIP:possible-secret" why="$(wc -l <<< "$secrets") hit(s); see: hermes-config classify $name"
     elif [[ -n "$hit" ]]; then
       hit="${hit##*:}"; hit="${hit#"${hit%%[[:alnum:]]*}"}"
       target=work why="content names '$hit'"
@@ -218,7 +219,7 @@ migration_plan() {
 }
 
 cmd_classify() {
-  (( $# )) || die "usage: hermes-skills classify <skill>..."
+  (( $# )) || die "usage: hermes-config classify <skill>..."
   local plan name row rel target why
   plan="$(migration_plan)"
   for name in "$@"; do
@@ -272,18 +273,18 @@ write_hook() {
   local kind="$1" dir="$2" hook
   hook="$(git -C "$dir" rev-parse --git-path hooks/pre-commit)"
   [[ "$hook" == /* ]] || hook="$dir/$hook"
-  printf '#!/usr/bin/env bash\n# managed by hermes-skills install\nexec %q hook %s\n' "$SELF" "$kind" > "$hook"
+  printf '#!/usr/bin/env bash\n# managed by hermes-config install\nexec %q hook %s\n' "$SELF" "$kind" > "$hook"
   chmod +x "$hook"
 }
 
 # --- commands --------------------------------------------------------------
 
 cmd_refresh_markers() {
-  local ws="${HERMES_SKILLS_BITBUCKET_WORKSPACE:-}" netrc="${HERMES_SKILLS_BITBUCKET_NETRC:-}"
-  local api="${HERMES_SKILLS_BITBUCKET_API:-https://api.bitbucket.org/2.0}" url page tmp common n
-  [[ -n "$ws" ]] || die "HERMES_SKILLS_BITBUCKET_WORKSPACE is not set in $ENV_FILE"
+  local ws="${HERMES_CONFIG_SYNC_BITBUCKET_WORKSPACE:-}" netrc="${HERMES_CONFIG_SYNC_BITBUCKET_NETRC:-}"
+  local api="${HERMES_CONFIG_SYNC_BITBUCKET_API:-https://api.bitbucket.org/2.0}" url page tmp common n
+  [[ -n "$ws" ]] || die "HERMES_CONFIG_SYNC_BITBUCKET_WORKSPACE is not set in $ENV_FILE"
   netrc="${netrc/#\~/$HOME}"
-  [[ -r "$netrc" ]] || die "HERMES_SKILLS_BITBUCKET_NETRC ($netrc) is not readable"
+  [[ -r "$netrc" ]] || die "HERMES_CONFIG_SYNC_BITBUCKET_NETRC ($netrc) is not readable"
   tmp="$(mktemp)"
   url="$api/repositories/$ws?pagelen=100&fields=next,values.slug"
   while [[ -n "$url" ]]; do
@@ -291,9 +292,9 @@ cmd_refresh_markers() {
     jq -r '.values[].slug' <<< "$page" >> "$tmp"
     url="$(jq -r '.next // empty' <<< "$page")"
   done
-  tr ' ,' '\n' <<< "${HERMES_SKILLS_EXTRA_TERMS:-}" >> "$tmp"
+  tr ' ,' '\n' <<< "${HERMES_CONFIG_SYNC_EXTRA_TERMS:-}" >> "$tmp"
   tr '[:upper:]' '[:lower:]' < "$tmp" | sed '/^$/d' \
-    | grep -vxF -f <(tr ' ,' '\n' <<< "${HERMES_SKILLS_TERM_EXCLUDE:-}" | tr '[:upper:]' '[:lower:]' | sed '/^$/d') \
+    | grep -vxF -f <(tr ' ,' '\n' <<< "${HERMES_CONFIG_SYNC_TERM_EXCLUDE:-}" | tr '[:upper:]' '[:lower:]' | sed '/^$/d') \
     | LC_ALL=C sort -u > "$tmp.new" || true
   rm -f "$tmp"
   [[ -s "$tmp.new" ]] || { rm -f "$tmp.new"; die "no terms fetched; terms file left unchanged"; }
@@ -304,7 +305,7 @@ cmd_refresh_markers() {
   if [[ -r /usr/share/dict/words ]]; then
     common="$(grep -ixF -f "$TERMS_FILE" /usr/share/dict/words | tr '[:upper:]' '[:lower:]' | LC_ALL=C sort -u | paste -sd' ' || true)"
     if [[ -n "$common" ]]; then
-      warn "ordinary words among the terms (add to HERMES_SKILLS_TERM_EXCLUDE if they flag general skills): $common"
+      warn "ordinary words among the terms (add to HERMES_CONFIG_SYNC_TERM_EXCLUDE if they flag general skills): $common"
     fi
   fi
 }
@@ -324,7 +325,7 @@ cmd_install() {
     write_hook "$k" "$dir"
     printf 'Ready: %s repo → %s\n' "$k" "$dir"
   done
-  if [[ -n "${HERMES_SKILLS_BITBUCKET_WORKSPACE:-}" ]]; then
+  if [[ -n "${HERMES_CONFIG_SYNC_BITBUCKET_WORKSPACE:-}" ]]; then
     ( cmd_refresh_markers ) || warn "work-terms refresh failed; keeping the existing file"
   fi
   write_cron_script
@@ -336,7 +337,7 @@ cmd_status() {
   section repos
   for k in "${KINDS[@]}"; do
     dir="$(kind_dir "$k")"
-    if [[ ! -d "$dir/.git" ]]; then warn "$k: not cloned ($dir) — run: hermes-skills install"; continue; fi
+    if [[ ! -d "$dir/.git" ]]; then warn "$k: not cloned ($dir) — run: hermes-config install"; continue; fi
     dirty="$(git -C "$dir" status --porcelain | wc -l)"
     counts="$(git -C "$dir" rev-list --left-right --count '@{u}...HEAD' 2>/dev/null || printf 'n/a')"
     printf '  %-9s %s  head=%s  behind/ahead=%s  uncommitted=%s  skills=%s\n' "$k" "$dir" \
@@ -374,7 +375,7 @@ cmd_verify() {
     if [[ "$(git -C "$dir" remote get-url origin)" == "$(kind_var "$k" REMOTE)" ]]; then ok "$k origin"; else err "$k origin mismatch"; fi
     hook="$(git -C "$dir" rev-parse --git-path hooks/pre-commit)"
     [[ "$hook" == /* ]] || hook="$dir/$hook"
-    if grep -q "hermes-skills hook $k\$" "$hook" 2>/dev/null; then ok "$k pre-commit guard"; else err "$k pre-commit guard missing"; fi
+    if grep -q "hermes-config hook $k\$" "$hook" 2>/dev/null; then ok "$k pre-commit guard"; else err "$k pre-commit guard missing"; fi
     if scan_repo "$k" "$dir" tree; then ok "$k scan clean"; else err "$k scan found problems"; fi
     if [[ -n "$(git -C "$dir" status --porcelain)" ]]; then warn "$k has uncommitted changes"; fi
     while IFS=$'\t' read -r name rel; do
@@ -384,12 +385,12 @@ cmd_verify() {
     done < <(list_skills "$dir/skills")
   done
   section markers
-  if [[ -n "${HERMES_SKILLS_BITBUCKET_WORKSPACE:-}" ]]; then
+  if [[ -n "${HERMES_CONFIG_SYNC_BITBUCKET_WORKSPACE:-}" ]]; then
     if [[ -s "$TERMS_FILE" ]]; then
       age=$(( ( $(date +%s) - $(stat -c %Y "$TERMS_FILE") ) / 86400 ))
-      if (( age > 30 )); then warn "work terms are $age days old; run: hermes-skills refresh-markers"; else ok "work terms ($(wc -l < "$TERMS_FILE"), ${age}d old)"; fi
+      if (( age > 30 )); then warn "work terms are $age days old; run: hermes-config refresh-markers"; else ok "work terms ($(wc -l < "$TERMS_FILE"), ${age}d old)"; fi
     else
-      err "work terms missing; run: hermes-skills refresh-markers"
+      err "work terms missing; run: hermes-config refresh-markers"
     fi
   fi
   if markers_configured; then ok "work markers configured"
@@ -410,12 +411,12 @@ cmd_verify() {
 
 cmd_adopt() {
   local name="${1:-}" kind="${2:-}" rel src dest dir match hits
-  [[ -n "$name" ]] || die "usage: hermes-skills adopt <skill> <work|personal>"
+  [[ -n "$name" ]] || die "usage: hermes-config adopt <skill> <work|personal>"
   check_kind "$kind"
   dir="$(kind_dir "$kind")"
-  [[ -d "$dir/.git" ]] || die "$kind repo not cloned; run: hermes-skills install"
+  [[ -d "$dir/.git" ]] || die "$kind repo not cloned; run: hermes-config install"
   match="$(unadopted | awk -F'\t' -v n="$name" '$1 == n')"
-  [[ -n "$match" ]] || die "'$name' is not an unadopted local skill (see: hermes-skills status)"
+  [[ -n "$match" ]] || die "'$name' is not an unadopted local skill (see: hermes-config status)"
   (( $(wc -l <<< "$match") == 1 )) || die "'$name' matches more than one local skill:"$'\n'"$match"
   rel="$(cut -f2 <<< "$match")"
   src="$LOCAL_SKILLS/$rel"
@@ -442,7 +443,7 @@ cmd_migrate() {
   if (( ! apply )); then
     column -t -s $'\t' <<< "$plan"
     printf '\ndry run; re-run with --apply to move these (SKIP rows are left in place).\n'
-    printf 'Override one suggestion with: hermes-skills adopt <skill> <work|personal>\n'
+    printf 'Override one suggestion with: hermes-config adopt <skill> <work|personal>\n'
     return 0
   fi
   while IFS=$'\t' read -r name rel target why; do
@@ -493,7 +494,7 @@ cmd_push() {
 
 cmd_hook() {
   check_kind "${1:-}"
-  scan_repo "$1" "$PWD" index || die "commit blocked by hermes-skills"
+  scan_repo "$1" "$PWD" index || die "commit blocked by hermes-config"
 }
 
 # --- cron backup -------------------------------------------------------------
@@ -512,13 +513,13 @@ CRON_RUNTIME_FIELDS='del(.last_run_at, .next_run_at, .last_status, .last_error, 
 CRON_REDACT_TARGETS='def redact: if type == "string" then split(",") | map(if test(":") then sub(":.*"; ":<redacted>") else . end) | join(",") else . end; if $redact then (.deliver |= redact) | (.failure_deliver |= redact) | (if .origin then .origin = "<redacted>" else . end) else . end'
 
 cron_backup_kind() {
-  local kind="${HERMES_SKILLS_CRON_BACKUP:-}"
+  local kind="${HERMES_CONFIG_SYNC_CRON_BACKUP:-}"
   if [[ -z "$kind" ]]; then if enabled personal; then kind=personal; else kind=off; fi; fi
   printf '%s' "$kind"
 }
 
 hermes_root() {
-  local root="${HERMES_SKILLS_HERMES_ROOT:-$HERMES_HOME_DIR}"
+  local root="${HERMES_CONFIG_SYNC_HERMES_ROOT:-$HERMES_HOME_DIR}"
   if [[ "$root" == */profiles/* ]]; then root="${root%/profiles/*}"; fi
   printf '%s' "$root"
 }
@@ -538,7 +539,7 @@ cron_refuse() {
 # stores what it skipped in $SKIPPED_FILE for the caller to report.
 export_cron() {
   local kind="$1" dir="$2" host root tmp home profile jobs n id why f rel out
-  host="${HERMES_SKILLS_CRON_HOST:-$(hostname -s)}"
+  host="${HERMES_CONFIG_SYNC_CRON_HOST:-$(hostname -s)}"
   [[ -n "$host" && "$host" != */* && "$host" != .* ]] || die "bad cron backup host name: '$host'"
   root="$(hermes_root)"
   tmp="$(mktemp -d)"
@@ -586,10 +587,10 @@ export_cron() {
 cmd_backup_cron() {
   local kind dir
   kind="$(cron_backup_kind)"
-  [[ "$kind" != off ]] || die "cron backup is off (set HERMES_SKILLS_CRON_BACKUP=personal|work)"
+  [[ "$kind" != off ]] || die "cron backup is off (set HERMES_CONFIG_SYNC_CRON_BACKUP=personal|work)"
   check_kind "$kind"
   dir="$(kind_dir "$kind")"
-  [[ -d "$dir/.git" ]] || die "$kind repo not cloned; run: hermes-skills install"
+  [[ -d "$dir/.git" ]] || die "$kind repo not cloned; run: hermes-config install"
   SKIPPED_FILE="$(mktemp)"
   export_cron "$kind" "$dir"
   if [[ -s "$SKIPPED_FILE" ]]; then printf 'not backed up:\n'; sed 's/^/  /' "$SKIPPED_FILE"; fi
@@ -604,8 +605,8 @@ cmd_backup_cron() {
 # (diverged history, a guard hit, a failed push). Never forces, never resets.
 cmd_sync() {
   local lock_dir="${XDG_RUNTIME_DIR:-/tmp}" k dir rc=0
-  exec 9> "$lock_dir/hermes-skills-sync.lock"
-  flock -n 9 || die "another hermes-skills sync is running"
+  exec 9> "$lock_dir/hermes-config-sync.lock"
+  flock -n 9 || die "another hermes-config sync is running"
   for k in "${KINDS[@]}"; do
     sync_repo "$k" "$(kind_dir "$k")" || rc=1
   done
@@ -614,7 +615,7 @@ cmd_sync() {
 
 sync_repo() {
   local kind="$1" dir="$2" changes names msg ahead parts=() seen
-  if [[ ! -d "$dir/.git" ]]; then printf '%s: not cloned at %s; run: hermes-skills install\n' "$kind" "$dir" >&2; return 1; fi
+  if [[ ! -d "$dir/.git" ]]; then printf '%s: not cloned at %s; run: hermes-config install\n' "$kind" "$dir" >&2; return 1; fi
   if ! git -C "$dir" fetch --quiet origin; then printf '%s: fetch failed\n' "$kind" >&2; return 1; fi
   if git -C "$dir" rev-parse --verify --quiet '@{u}' >/dev/null && ! git -C "$dir" merge --ff-only --quiet '@{u}' 2>/dev/null; then
     printf '%s: local and origin have diverged, or uncommitted edits touch files that changed upstream; resolve by hand in %s\n' "$kind" "$dir" >&2
@@ -639,9 +640,9 @@ sync_repo() {
     if grep -qE $'^[A-Z][0-9]*\t(.*\t)?cron/' <<< "$changes"; then parts+=("cron backup"); fi
     (( ${#parts[@]} )) || parts+=("config")
     msg="chore: sync $(IFS=,; printf '%s' "${parts[*]}" | sed 's/,/, /g')"
-    if ! git -C "$dir" commit --quiet -m "$msg" -m "Automated nightly commit by hermes-skills sync."$'\n\n'"$changes" 2>"$dir/.git/hermes-skills-sync.err"; then
+    if ! git -C "$dir" commit --quiet -m "$msg" -m "Automated nightly commit by hermes-config sync."$'\n\n'"$changes" 2>"$dir/.git/hermes-config-sync.err"; then
       git -C "$dir" reset --quiet
-      printf '%s: commit blocked, changes left unstaged in %s:\n%s\n' "$kind" "$dir" "$(cat "$dir/.git/hermes-skills-sync.err")" >&2
+      printf '%s: commit blocked, changes left unstaged in %s:\n%s\n' "$kind" "$dir" "$(cat "$dir/.git/hermes-config-sync.err")" >&2
       return 1
     fi
     printf '%s: committed %s — %s\n' "$kind" "$(git -C "$dir" rev-parse --short HEAD)" "$msg"
@@ -658,9 +659,9 @@ sync_repo() {
 # $HERMES_HOME/scripts/ and refuses symlinks that point out of it, so this is a
 # two-line wrapper, not a link.
 write_cron_script() {
-  local dst="$HERMES_HOME_DIR/scripts/hermes-skills-sync.sh"
+  local dst="$HERMES_HOME_DIR/scripts/hermes-config-sync.sh"
   mkdir -p "$(dirname "$dst")"
-  printf '#!/usr/bin/env bash\n# managed by hermes-skills install: nightly skill commit + push\nexec %q sync\n' "$SELF" > "$dst"
+  printf '#!/usr/bin/env bash\n# managed by hermes-config install: nightly skill commit + push\nexec %q sync\n' "$SELF" > "$dst"
   chmod 700 "$dst"
   printf 'Cron script: %s\n' "$dst"
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end test for bin/hermes-skills against a throwaway HERMES_HOME, local
+# End-to-end test for bin/hermes-config against a throwaway HERMES_HOME, local
 # bare repos standing in for the Forgejo remotes, a fake Bitbucket API
 # (file://), a fake Hermes source repo, a fake state.db + curator ledger, and
 # the real `hermes` CLI (so skills.external_dirs is written by Hermes itself).
@@ -7,7 +7,7 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TOOL="$REPO_DIR/bin/hermes-skills"
+TOOL="$REPO_DIR/bin/hermes-config"
 command -v hermes >/dev/null || { printf 'skip: hermes not on PATH\n'; exit 0; }
 command -v python3 >/dev/null || { printf 'skip: python3 not on PATH\n'; exit 0; }
 
@@ -47,7 +47,7 @@ fake_repo() {  # dir origin email
 }
 
 export HERMES_HOME="$T/hermes"
-export HERMES_SKILLS_ENV="$T/env"
+export HERMES_CONFIG_SYNC_ENV="$T/env"
 export PATH="$REPO_DIR/bin:$PATH"
 S="$HERMES_HOME/skills"
 mkdir -p "$S/.hub"
@@ -127,21 +127,21 @@ printf 'machine example.invalid login a password b\n' > "$T/netrc"
 
 for k in work personal; do git init -q --bare "$T/remote-$k.git"; done
 cat > "$T/env" <<EOF
-HERMES_SKILLS_WORK_REMOTE=$T/remote-work.git
-HERMES_SKILLS_WORK_DIR=$T/clones/work
-HERMES_SKILLS_PERSONAL_REMOTE=$T/remote-personal.git
-HERMES_SKILLS_PERSONAL_DIR=$T/clones/personal
-HERMES_SKILLS_WORK_MARKERS='acmecorp'
-HERMES_SKILLS_JIRA_KEYS='ACME OPS'
-HERMES_SKILLS_TERMS_FILE=$T/terms
-HERMES_SKILLS_BITBUCKET_WORKSPACE=acmecorp
-HERMES_SKILLS_BITBUCKET_NETRC=$T/netrc
-HERMES_SKILLS_BITBUCKET_API=file://$T/bbapi
-HERMES_SKILLS_EXTRA_TERMS='gadgetron'
-HERMES_SKILLS_TERM_EXCLUDE='embedded'
-HERMES_SKILLS_WORK_EMAIL_DOMAINS='acme.example'
-HERMES_SKILLS_WORK_REMOTE_PATTERNS='bitbucket\.org[:/]acmecorp/'
-HERMES_SKILLS_HERMES_SRC=$T/hsrc
+HERMES_CONFIG_SYNC_WORK_REMOTE=$T/remote-work.git
+HERMES_CONFIG_SYNC_WORK_DIR=$T/clones/work
+HERMES_CONFIG_SYNC_PERSONAL_REMOTE=$T/remote-personal.git
+HERMES_CONFIG_SYNC_PERSONAL_DIR=$T/clones/personal
+HERMES_CONFIG_SYNC_WORK_MARKERS='acmecorp'
+HERMES_CONFIG_SYNC_JIRA_KEYS='ACME OPS'
+HERMES_CONFIG_SYNC_TERMS_FILE=$T/terms
+HERMES_CONFIG_SYNC_BITBUCKET_WORKSPACE=acmecorp
+HERMES_CONFIG_SYNC_BITBUCKET_NETRC=$T/netrc
+HERMES_CONFIG_SYNC_BITBUCKET_API=file://$T/bbapi
+HERMES_CONFIG_SYNC_EXTRA_TERMS='gadgetron'
+HERMES_CONFIG_SYNC_TERM_EXCLUDE='embedded'
+HERMES_CONFIG_SYNC_WORK_EMAIL_DOMAINS='acme.example'
+HERMES_CONFIG_SYNC_WORK_REMOTE_PATTERNS='bitbucket\.org[:/]acmecorp/'
+HERMES_CONFIG_SYNC_HERMES_SRC=$T/hsrc
 EOF
 hermes config set skills.external_dirs '["~/.agents/skills"]' >/dev/null
 
@@ -160,8 +160,8 @@ check "extra terms added" grep -qx gadgetron "$T/terms"
 if grep -qix embedded "$T/terms"; then fail "excluded term dropped"; else pass "excluded term dropped"; fi
 check "terms file is private" test "$(stat -c %a "$T/terms")" = 600
 cp "$T/terms" "$T/terms.before"
-sed "s#^HERMES_SKILLS_BITBUCKET_API=.*#HERMES_SKILLS_BITBUCKET_API=file://$T/missing#" "$T/env" > "$T/env-badapi"
-expect_rc 1 "refresh fails on API error" env HERMES_SKILLS_ENV="$T/env-badapi" "$TOOL" refresh-markers
+sed "s#^HERMES_CONFIG_SYNC_BITBUCKET_API=.*#HERMES_CONFIG_SYNC_BITBUCKET_API=file://$T/missing#" "$T/env" > "$T/env-badapi"
+expect_rc 1 "refresh fails on API error" env HERMES_CONFIG_SYNC_ENV="$T/env-badapi" "$TOOL" refresh-markers
 check "failed refresh keeps the old terms" cmp -s "$T/terms" "$T/terms.before"
 
 printf 'migrate plan\n'
@@ -187,14 +187,14 @@ expect_rc 0 "classify explains" "$TOOL" classify widget-notes
 expect_out 'marker +dev/widget-notes/SKILL.md:[0-9]+:widget-server' "classify shows marker file:line"
 
 printf 'single-repo setups\n'
-grep -v '^HERMES_SKILLS_WORK_\(REMOTE\|DIR\)=' "$T/env" > "$T/env-personal"
-expect_rc 0 "personal-only plan" env HERMES_SKILLS_ENV="$T/env-personal" "$TOOL" migrate
+grep -v '^HERMES_CONFIG_SYNC_WORK_\(REMOTE\|DIR\)=' "$T/env" > "$T/env-personal"
+expect_rc 0 "personal-only plan" env HERMES_CONFIG_SYNC_ENV="$T/env-personal" "$TOOL" migrate
 expect_out 'acme-deploy +dev/acme-deploy +SKIP:work' "personal-only setup leaves work skills local"
 expect_out 'tidy-notes +general/tidy-notes +personal' "personal-only setup still adopts personal skills"
-grep -v '^HERMES_SKILLS_PERSONAL_' "$T/env" > "$T/env-work"
-expect_rc 0 "work-only plan" env HERMES_SKILLS_ENV="$T/env-work" "$TOOL" migrate
+grep -v '^HERMES_CONFIG_SYNC_PERSONAL_' "$T/env" > "$T/env-work"
+expect_rc 0 "work-only plan" env HERMES_CONFIG_SYNC_ENV="$T/env-work" "$TOOL" migrate
 expect_out 'tidy-notes +general/tidy-notes +work' "work-only setup sends everything to work"
-expect_rc 1 "adopt into a disabled repo is refused" env HERMES_SKILLS_ENV="$T/env-work" "$TOOL" adopt tidy-notes personal
+expect_rc 1 "adopt into a disabled repo is refused" env HERMES_CONFIG_SYNC_ENV="$T/env-work" "$TOOL" adopt tidy-notes personal
 expect_out 'not enabled' "refused because the repo is not enabled"
 
 printf 'adopt guards\n'
@@ -268,9 +268,9 @@ for n in tidy-notes acme-deploy second; do
 done
 
 printf 'sync (nightly cron entry point)\n'
-export HERMES_SKILLS_CRON_BACKUP=off  # cron backup has its own section below
-check "install wrote the cron script" test -x "$HERMES_HOME/scripts/hermes-skills-sync.sh"
-expect_rc 0 "sync with nothing to do" "$HERMES_HOME/scripts/hermes-skills-sync.sh"
+export HERMES_CONFIG_SYNC_CRON_BACKUP=off  # cron backup has its own section below
+check "install wrote the cron script" test -x "$HERMES_HOME/scripts/hermes-config-sync.sh"
+expect_rc 0 "sync with nothing to do" "$HERMES_HOME/scripts/hermes-config-sync.sh"
 if [[ -s "$T/out" ]]; then fail "sync is silent when idle"; sed 's/^/       /' "$T/out" >&2; else pass "sync is silent when idle"; fi
 printf '\nA new step.\n' >> "$T/clones/work/skills/dev/acme-deploy/SKILL.md"
 skill "$T/clones/personal/skills/general/fresh" fresh
@@ -306,8 +306,8 @@ expect_out 'work: local and origin have diverged' "divergence is reported"
 check "nothing force-pushed" bash -c "git --git-dir='$T/remote-work.git' log -1 --format=%s | grep -q 'other side'"
 
 printf 'cron backup\n'
-unset HERMES_SKILLS_CRON_BACKUP
-export HERMES_SKILLS_CRON_HOST=testhost
+unset HERMES_CONFIG_SYNC_CRON_BACKUP
+export HERMES_CONFIG_SYNC_CRON_HOST=testhost
 mkdir -p "$HERMES_HOME/cron" "$HERMES_HOME/profiles/p1/cron" "$HERMES_HOME/scripts/lib" "$HERMES_HOME/scripts/.cache"
 jq -n --arg aws "$FAKE_AWS" '{jobs: [
   {id: "j_clean", name: "clean", prompt: "", script: "clean.sh", no_agent: true, schedule: {kind: "cron", expr: "0 3 * * *"},
@@ -322,7 +322,7 @@ printf 'helper\n' > "$HERMES_HOME/scripts/lib/util.sh"
 printf '#!/usr/bin/env bash\n# pages on ACME-9\n' > "$HERMES_HOME/scripts/work.sh"
 printf 'cache\n' > "$HERMES_HOME/scripts/.cache/state"
 P="$T/clones/personal/cron/testhost"
-expect_rc 0 "backup-cron snapshots jobs" env HERMES_SKILLS_ENV="$T/env-personal" "$TOOL" backup-cron
+expect_rc 0 "backup-cron snapshots jobs" env HERMES_CONFIG_SYNC_ENV="$T/env-personal" "$TOOL" backup-cron
 expect_out "job j_work \(work\): names 'acmecorp'" "work-named job left out, with the reason"
 expect_out 'job j_secret \(leaky\): possible secret' "secret job left out"
 expect_out 'script work.sh: names' "work-named script left out"
@@ -336,27 +336,27 @@ check "other profiles backed up" test "$(jq -r '.jobs[0].id' "$P/p1/jobs.json")"
 check "scripts backed up, mode kept" test -x "$P/default/scripts/clean.sh"
 check "nested scripts backed up" test -f "$P/default/scripts/lib/util.sh"
 if [[ -e "$P/default/scripts/work.sh" || -e "$P/default/scripts/.cache" ]]; then fail "work-named and hidden scripts not copied"; else pass "work-named and hidden scripts not copied"; fi
-expect_rc 0 "sync commits the cron backup" env HERMES_SKILLS_ENV="$T/env-personal" "$TOOL" sync
+expect_rc 0 "sync commits the cron backup" env HERMES_CONFIG_SYNC_ENV="$T/env-personal" "$TOOL" sync
 expect_out 'personal: cron backup left out:' "left-out jobs reported on first sync"
 expect_out 'personal: committed [0-9a-f]+ — chore: sync cron backup' "cron commit message"
 check "personal remote has the backup" git --git-dir="$T/remote-personal.git" cat-file -e HEAD:cron/testhost/default/jobs.json
 jq '.jobs[0].next_run_at = "2031-01-01T03:00:00" | .jobs[0].last_status = "error" | .jobs[0].repeat.completed = 9' "$HERMES_HOME/cron/jobs.json" > "$T/j" && mv "$T/j" "$HERMES_HOME/cron/jobs.json"
-expect_rc 0 "sync after a run" env HERMES_SKILLS_ENV="$T/env-personal" "$TOOL" sync
+expect_rc 0 "sync after a run" env HERMES_CONFIG_SYNC_ENV="$T/env-personal" "$TOOL" sync
 if [[ -s "$T/out" ]]; then fail "run-only changes and the same left-out set stay silent"; sed 's/^/       /' "$T/out" >&2; else pass "run-only changes and the same left-out set stay silent"; fi
 jq '.jobs |= map(select(.id != "j_clean"))' "$HERMES_HOME/cron/jobs.json" > "$T/j" && mv "$T/j" "$HERMES_HOME/cron/jobs.json"
 rm -f "$HERMES_HOME/scripts/clean.sh"
-expect_rc 0 "sync records a removed job" env HERMES_SKILLS_ENV="$T/env-personal" "$TOOL" sync
+expect_rc 0 "sync records a removed job" env HERMES_CONFIG_SYNC_ENV="$T/env-personal" "$TOOL" sync
 expect_out 'chore: sync cron backup' "removal committed"
 if [[ -e "$P/default/jobs.json" || -e "$P/default/scripts/clean.sh" ]]; then fail "removed job and script gone from the backup"; else pass "removed job and script gone from the backup"; fi
-check "other host's backup untouched" bash -c "mkdir -p '$T/clones/personal/cron/otherhost' && touch '$T/clones/personal/cron/otherhost/keep' && env HERMES_SKILLS_ENV='$T/env-personal' '$TOOL' backup-cron >/dev/null && test -f '$T/clones/personal/cron/otherhost/keep'"
+check "other host's backup untouched" bash -c "mkdir -p '$T/clones/personal/cron/otherhost' && touch '$T/clones/personal/cron/otherhost/keep' && env HERMES_CONFIG_SYNC_ENV='$T/env-personal' '$TOOL' backup-cron >/dev/null && test -f '$T/clones/personal/cron/otherhost/keep'"
 rm -rf "$T/clones/personal/cron/otherhost"
-expect_rc 0 "backup into the work repo" env HERMES_SKILLS_ENV="$T/env-work" HERMES_SKILLS_CRON_BACKUP=work "$TOOL" backup-cron
+expect_rc 0 "backup into the work repo" env HERMES_CONFIG_SYNC_ENV="$T/env-work" HERMES_CONFIG_SYNC_CRON_BACKUP=work "$TOOL" backup-cron
 check "work repo keeps work-named jobs" test "$(jq -r '[.jobs[].id] | join(",")' "$T/clones/work/cron/testhost/default/jobs.json")" = j_work
 check "work repo still blocks secrets" bash -c "! grep -rqF '$FAKE_AWS' '$T/clones/work/cron'"
 rm -rf "$T/clones/work/cron"
-expect_rc 1 "bad host label refused" env HERMES_SKILLS_ENV="$T/env-personal" HERMES_SKILLS_CRON_HOST=../x "$TOOL" backup-cron
-expect_rc 1 "backup off is explicit" env HERMES_SKILLS_ENV="$T/env-work" "$TOOL" backup-cron
-unset HERMES_SKILLS_CRON_HOST
+expect_rc 1 "bad host label refused" env HERMES_CONFIG_SYNC_ENV="$T/env-personal" HERMES_CONFIG_SYNC_CRON_HOST=../x "$TOOL" backup-cron
+expect_rc 1 "backup off is explicit" env HERMES_CONFIG_SYNC_ENV="$T/env-work" "$TOOL" backup-cron
+unset HERMES_CONFIG_SYNC_CRON_HOST
 
 printf '\n'
 if (( FAILS )); then printf '%d failure(s)\n' "$FAILS" >&2; exit 1; fi

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Idempotent setup for the Hermes pieces of this repo: puts hermes-skills on
+# Idempotent setup for the Hermes pieces of this repo: puts hermes-config on
 # PATH and links each TUI widget into $HERMES_HOME/tui-widgets/. Wiring the
-# private skill repos is a separate, explicit step (`hermes-skills install`)
+# private skill repos is a separate, explicit step (`hermes-config install`)
 # because it needs .env and the Forgejo repos to exist.
 set -euo pipefail
 
@@ -23,13 +23,13 @@ link() {
 }
 
 mkdir -p "$LOCAL_BIN" "$WIDGETS_DST"
-link "$REPO_DIR/bin/hermes-skills" "$LOCAL_BIN/hermes-skills"
+link "$REPO_DIR/bin/hermes-config" "$LOCAL_BIN/hermes-config"
 for widget in "$REPO_DIR"/tui-widgets/*.mjs; do
   link "$widget" "$WIDGETS_DST/$(basename "$widget")"
 done
 
 if [[ -f "$REPO_DIR/.env" ]]; then
-  printf '\nNext: hermes-skills install && hermes-skills migrate\n'
+  printf '\nNext: hermes-config install && hermes-config migrate\n'
 else
-  printf '\nNext: cp %s/.env.example %s/.env, fill it in, then: hermes-skills install\n' "$REPO_DIR" "$REPO_DIR"
+  printf '\nNext: cp %s/.env.example %s/.env, fill it in, then: hermes-config install\n' "$REPO_DIR" "$REPO_DIR"
 fi

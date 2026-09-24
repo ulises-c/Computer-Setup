@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""Per-skill edit provenance for hermes-skills.
+"""Per-skill edit provenance for hermes-config.
 
 The curator ledger records the session behind every skill create/patch, and
 each session records its working directory. Each session is classified:
 
-  1. its repo commits as an address outside HERMES_SKILLS_WORK_EMAIL_DOMAINS
+  1. its repo commits as an address outside HERMES_CONFIG_SYNC_WORK_EMAIL_DOMAINS
      -> not work. Definitive: work is only ever committed as the work identity.
-  2. its repo's origin matches HERMES_SKILLS_WORK_REMOTE_PATTERNS -> work.
+  2. its repo's origin matches HERMES_CONFIG_SYNC_WORK_REMOTE_PATTERNS -> work.
      The work email alone proves nothing: work-adjacent open-source repos use
      it too.
   3. any other repo -> not work
   4. no repo (home dir, deleted worktree): the parent session's class for a
      subagent, else work if what the user typed matches a work marker:
-     HERMES_SKILLS_MARK_CI (ERE, case-insensitive), HERMES_SKILLS_MARK_CS
+     HERMES_CONFIG_SYNC_MARK_CI (ERE, case-insensitive), HERMES_CONFIG_SYNC_MARK_CS
      (Jira refs, case-sensitive), or a whole word from the terms file named
-     by HERMES_SKILLS_MARK_TERMS (case-insensitive).
+     by HERMES_CONFIG_SYNC_MARK_TERMS (case-insensitive).
 
 Prints "<skill>\t<work edits>\t<classified edits>" for each skill on argv.
 Reads state.db read-only; never writes anything.
@@ -43,7 +43,7 @@ def compile_env(name: str, flags: int = 0) -> re.Pattern | None:
 
 
 def terms_pattern() -> re.Pattern | None:
-    path = os.environ.get("HERMES_SKILLS_MARK_TERMS", "")
+    path = os.environ.get("HERMES_CONFIG_SYNC_MARK_TERMS", "")
     if not path or not Path(path).is_file():
         return None
     terms = sorted({t.strip() for t in Path(path).read_text().splitlines() if t.strip()}, key=len, reverse=True)
@@ -63,11 +63,11 @@ def main() -> int:
             print(f"{name}\t0\t0")
         return 0
 
-    remote_re = compile_env("HERMES_SKILLS_WORK_REMOTE_PATTERNS")
-    domains = {d.lower() for d in os.environ.get("HERMES_SKILLS_WORK_EMAIL_DOMAINS", "").split()}
+    remote_re = compile_env("HERMES_CONFIG_SYNC_WORK_REMOTE_PATTERNS")
+    domains = {d.lower() for d in os.environ.get("HERMES_CONFIG_SYNC_WORK_EMAIL_DOMAINS", "").split()}
     typed_res = [
         p
-        for p in (compile_env("HERMES_SKILLS_MARK_CI", re.I), compile_env("HERMES_SKILLS_MARK_CS"), terms_pattern())
+        for p in (compile_env("HERMES_CONFIG_SYNC_MARK_CI", re.I), compile_env("HERMES_CONFIG_SYNC_MARK_CS"), terms_pattern())
         if p
     ]
     user_home = str(Path.home())
