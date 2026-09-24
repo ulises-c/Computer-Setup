@@ -1,8 +1,10 @@
 # Hermes
 
 Hermes Agent config that is not a skill: the skill-sync tool and TUI widgets.
-The skills themselves live in **private** Forgejo repos, never here — this
-repo is public, and the skills contain work IP and identifying details.
+The skills themselves, plus a backup of cron jobs, live in **private** Forgejo
+repos, never here. This repo is public, and the skills contain work IP and
+identifying details. Suggested repo names are `hermes-config-work` (work
+account) and `hermes-config` (personal account).
 
 ## Layout
 
@@ -18,9 +20,10 @@ repo is public, and the skills contain work IP and identifying details.
 ## Skill sync model
 
 ```
-work repo      (work Forgejo account)      ─┐
-personal repo  (personal Forgejo account)  ─┴─► skills.external_dirs ─► Hermes
-~/.hermes/skills/                         Hermes-owned skills only
+hermes-config-work  (work Forgejo account)      ─┐
+hermes-config       (personal Forgejo account)  ─┴─► skills.external_dirs ─► Hermes
+  └─ cron/<host>/<profile>/   cron jobs + scripts backup (personal)
+~/.hermes/skills/                              Hermes-owned skills only
 ```
 
 - **The repos are the source of truth.** Hermes reads them through
