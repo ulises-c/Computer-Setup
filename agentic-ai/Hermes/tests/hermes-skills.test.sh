@@ -267,6 +267,43 @@ for n in tidy-notes acme-deploy second; do
   if grep -q "$n" <<< "$list"; then pass "hermes skills list shows $n"; else fail "hermes skills list shows $n"; fi
 done
 
+printf 'sync (nightly cron entry point)\n'
+check "install wrote the cron script" test -x "$HERMES_HOME/scripts/hermes-skills-sync.sh"
+expect_rc 0 "sync with nothing to do" "$HERMES_HOME/scripts/hermes-skills-sync.sh"
+if [[ -s "$T/out" ]]; then fail "sync is silent when idle"; sed 's/^/       /' "$T/out" >&2; else pass "sync is silent when idle"; fi
+printf '\nA new step.\n' >> "$T/clones/work/skills/dev/acme-deploy/SKILL.md"
+skill "$T/clones/personal/skills/general/fresh" fresh
+expect_rc 0 "sync commits and pushes edits and new skills" "$TOOL" sync
+expect_out 'work: committed [0-9a-f]+ — chore: sync skills \(acme-deploy\)' "work commit names the skill"
+expect_out 'personal: committed [0-9a-f]+ — chore: sync skills \(fresh\)' "personal commit names the skill"
+expect_out 'personal: pushed 1 commit' "personal pushed"
+check "work remote has the edit" test "$(git -C "$T/clones/work" rev-parse HEAD)" = "$(git --git-dir="$T/remote-work.git" rev-parse HEAD)"
+check "commit body lists changed files" bash -c "git -C '$T/clones/personal' log -1 --format=%b | grep -q 'A.skills/general/fresh/SKILL.md'"
+expect_rc 0 "second sync is a no-op" "$TOOL" sync
+if [[ -s "$T/out" ]]; then fail "second sync is silent"; else pass "second sync is silent"; fi
+printf 'follow up in ACME-5\n' > "$T/clones/personal/skills/general/fresh/notes.md"
+before="$(git -C "$T/clones/personal" rev-parse HEAD)"
+expect_rc 1 "sync refuses a guard hit" "$TOOL" sync
+expect_out 'personal: commit blocked' "guard hit is reported"
+check "blocked change not committed" test "$(git -C "$T/clones/personal" rev-parse HEAD)" = "$before"
+check "blocked change left in the working tree, unstaged" bash -c "[[ -f '$T/clones/personal/skills/general/fresh/notes.md' ]] && git -C '$T/clones/personal' diff --cached --quiet"
+rm -f "$T/clones/personal/skills/general/fresh/notes.md"
+git -C "$T/other" pull -q --ff-only
+printf '\nupstream edit\n' >> "$T/other/skills/dev/second/SKILL.md"
+git -C "$T/other" -c commit.gpgsign=false commit -qam "feat: upstream edit" && git -C "$T/other" push -q
+skill "$T/clones/work/skills/dev/third" third
+expect_rc 0 "sync fast-forwards upstream first, then commits" "$TOOL" sync
+check "upstream edit pulled" grep -q 'upstream edit' "$T/clones/work/skills/dev/second/SKILL.md"
+check "local commit pushed on top" test "$(git -C "$T/clones/work" rev-parse HEAD)" = "$(git --git-dir="$T/remote-work.git" rev-parse HEAD)"
+git -C "$T/other" pull -q --ff-only
+printf '\nother side\n' >> "$T/other/skills/dev/third/SKILL.md"
+git -C "$T/other" -c commit.gpgsign=false commit -qam "feat: other side" && git -C "$T/other" push -q
+printf '\nthis side\n' >> "$T/clones/work/skills/dev/third/SKILL.md"
+git -C "$T/clones/work" -c commit.gpgsign=false commit -qam "feat: this side"
+expect_rc 1 "sync refuses diverged history" "$TOOL" sync
+expect_out 'work: local and origin have diverged' "divergence is reported"
+check "nothing force-pushed" bash -c "git --git-dir='$T/remote-work.git' log -1 --format=%s | grep -q 'other side'"
+
 printf '\n'
 if (( FAILS )); then printf '%d failure(s)\n' "$FAILS" >&2; exit 1; fi
 printf 'all tests passed\n'

@@ -30,6 +30,10 @@ if command -v codeburn >/dev/null; then pass "codeburn (widget data source)"; el
 if [[ -f "$REPO_DIR/.env" ]]; then
   printf '\n=== skill sync ===\n'
   "$REPO_DIR/bin/hermes-skills" verify || ERRORS=$(( ERRORS + 1 ))
+  printf '\n=== nightly sync ===\n'
+  cron_script="$HERMES_HOME_DIR/scripts/hermes-skills-sync.sh"
+  if grep -qF "$REPO_DIR/bin/hermes-skills sync" "$cron_script" 2>/dev/null; then pass "cron script $cron_script"; else fail "cron script missing or stale; run: hermes-skills install"; fi
+  if hermes cron list 2>/dev/null | grep -q 'Script: *hermes-skills-sync.sh'; then pass "cron job scheduled"; else warn "no cron job runs hermes-skills-sync.sh (see README: Nightly commit + push)"; fi
 else
   warn "no .env; skill sync not configured (see .env.example)"
 fi

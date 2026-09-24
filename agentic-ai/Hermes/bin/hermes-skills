@@ -47,6 +47,7 @@ usage: hermes-skills <command>
   scan [work|personal] secret scan + work-marker scan (personal) of the working tree
   pull                 fast-forward the enabled repos from origin
   push                 scan, then push the enabled repos (refuses uncommitted changes)
+  sync                 unattended: pull --ff-only, commit all changes, push (cron entry point)
   hook <work|personal> pre-commit entry point (scans the index)
 EOF
 }
@@ -325,6 +326,7 @@ cmd_install() {
   if [[ -n "${HERMES_SKILLS_BITBUCKET_WORKSPACE:-}" ]]; then
     ( cmd_refresh_markers ) || warn "work-terms refresh failed; keeping the existing file"
   fi
+  write_cron_script
   set_external_dirs
 }
 
@@ -493,6 +495,60 @@ cmd_hook() {
   scan_repo "$1" "$PWD" index || die "commit blocked by hermes-skills"
 }
 
+# Unattended commit + push for cron. Per enabled repo: fast-forward from
+# origin, stage everything, commit with a generated message (the pre-commit
+# guard still runs), push. Silent when nothing changed; one summary line per
+# repo that did; exit 1 with the reason on anything it will not do alone
+# (diverged history, a guard hit, a failed push). Never forces, never resets.
+cmd_sync() {
+  local lock_dir="${XDG_RUNTIME_DIR:-/tmp}" k dir rc=0
+  exec 9> "$lock_dir/hermes-skills-sync.lock"
+  flock -n 9 || die "another hermes-skills sync is running"
+  for k in "${KINDS[@]}"; do
+    sync_repo "$k" "$(kind_dir "$k")" || rc=1
+  done
+  return "$rc"
+}
+
+sync_repo() {
+  local kind="$1" dir="$2" changes names msg ahead
+  if [[ ! -d "$dir/.git" ]]; then printf '%s: not cloned at %s; run: hermes-skills install\n' "$kind" "$dir" >&2; return 1; fi
+  if ! git -C "$dir" fetch --quiet origin; then printf '%s: fetch failed\n' "$kind" >&2; return 1; fi
+  if git -C "$dir" rev-parse --verify --quiet '@{u}' >/dev/null && ! git -C "$dir" merge --ff-only --quiet '@{u}' 2>/dev/null; then
+    printf '%s: local and origin have diverged, or uncommitted edits touch files that changed upstream; resolve by hand in %s\n' "$kind" "$dir" >&2
+    return 1
+  fi
+  git -C "$dir" add -A
+  if ! git -C "$dir" diff --cached --quiet; then
+    changes="$(git -C "$dir" diff --cached --name-status)"
+    names="$(sed -nE 's#^[A-Z][0-9]*\t(.*\t)?skills/(.*/)?([^/]+)/(SKILL\.md|references/.*|templates/.*|scripts/.*|assets/.*)$#\3#p' <<< "$changes" | LC_ALL=C sort -u | paste -sd' ')"
+    msg="chore: sync skills${names:+ ($names)}"
+    if ! git -C "$dir" commit --quiet -m "$msg" -m "Automated nightly commit by hermes-skills sync."$'\n\n'"$changes" 2>"$dir/.git/hermes-skills-sync.err"; then
+      git -C "$dir" reset --quiet
+      printf '%s: commit blocked, changes left unstaged in %s:\n%s\n' "$kind" "$dir" "$(cat "$dir/.git/hermes-skills-sync.err")" >&2
+      return 1
+    fi
+    printf '%s: committed %s — %s\n' "$kind" "$(git -C "$dir" rev-parse --short HEAD)" "$msg"
+  fi
+  git -C "$dir" rev-parse --verify --quiet HEAD >/dev/null || return 0
+  ahead="$(git -C "$dir" rev-list --count '@{u}..HEAD' 2>/dev/null || printf 'new')"
+  [[ "$ahead" != 0 ]] || return 0
+  if ! scan_repo "$kind" "$dir" tree; then printf '%s: scan failed; not pushing\n' "$kind" >&2; return 1; fi
+  if ! git -C "$dir" push --quiet -u origin HEAD; then printf '%s: push failed\n' "$kind" >&2; return 1; fi
+  printf '%s: pushed %s commit(s) → %s\n' "$kind" "$ahead" "$(git -C "$dir" rev-parse --short HEAD)"
+}
+
+# Writes the cron entry point. Hermes cron only runs scripts inside
+# $HERMES_HOME/scripts/ and refuses symlinks that point out of it, so this is a
+# two-line wrapper, not a link.
+write_cron_script() {
+  local dst="$HERMES_HOME_DIR/scripts/hermes-skills-sync.sh"
+  mkdir -p "$(dirname "$dst")"
+  printf '#!/usr/bin/env bash\n# managed by hermes-skills install: nightly skill commit + push\nexec %q sync\n' "$SELF" > "$dst"
+  chmod 700 "$dst"
+  printf 'Cron script: %s\n' "$dst"
+}
+
 main() {
   local cmd="${1:-}"
   [[ -n "$cmd" ]] || { usage; exit 2; }
@@ -516,6 +572,7 @@ main() {
     scan)     cmd_scan "$@" ;;
     pull)     cmd_pull ;;
     push)     cmd_push ;;
+    sync)     cmd_sync ;;
     hook)     cmd_hook "$@" ;;
     *) usage >&2; exit 2 ;;
   esac

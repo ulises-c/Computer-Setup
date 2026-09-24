@@ -75,10 +75,45 @@ hermes-skills adopt <name> <work|personal>
 hermes-skills classify <name>... # why a skill got its suggestion
 hermes-skills refresh-markers    # regenerate .work-terms from the Bitbucket workspace
 hermes-skills scan | verify | pull | push
+hermes-skills sync               # unattended pull --ff-only + commit + push (nightly cron)
 ```
 
 A new agent-created skill lands in `~/.hermes/skills/`. `status` lists it as
 unadopted, and `adopt` moves it into a repo.
+
+## Nightly commit + push
+
+Edits to adopted skills land in the clones as uncommitted changes: a
+`skill_manage patch`, or your own edit. `hermes-skills sync` commits and pushes
+them, and a Hermes cron job runs it nightly:
+
+```bash
+hermes cron create "0 2 * * *" --name "hermes-skills nightly sync" \
+  --script hermes-skills-sync.sh --no-agent --deliver slack:<home-channel>
+```
+
+`install` writes `$HERMES_HOME/scripts/hermes-skills-sync.sh`, a two-line
+wrapper. Hermes cron only runs scripts inside that dir and rejects symlinks
+that escape it. The job has no LLM step (`--no-agent`), so it costs nothing,
+and it only messages you when something happened. For each enabled repo:
+
+1. `fetch` + `merge --ff-only` from origin (another machine's pushes).
+2. `git add -A`. If anything is staged, commit as
+   `chore: sync skills (<names>)` with the changed files listed in the body.
+   The commit is signed, and the pre-commit guard runs as for any commit.
+3. Push if ahead, after re-running the scan.
+
+| Outcome | Message |
+|---|---|
+| Nothing changed | none (empty stdout is silent) |
+| Committed / pushed | one line per repo |
+| Diverged history, guard hit, fetch or push failure | exit 1 with the reason, sent as a cron failure alert |
+
+It never force-pushes, rebases, or discards work. A blocked commit is
+unstaged and left in the working tree for you to fix. A `flock` stops
+overlapping runs. Unattended runs need the Forgejo SSH key and the GPG
+signing key to work without a prompt, or the key cached in an agent the
+gateway can reach.
 
 ## First-time setup
 
@@ -88,3 +123,4 @@ unadopted, and `adopt` moves it into a repo.
 4. `hermes-skills migrate`, review the plan, then `hermes-skills migrate --apply`
 5. In each clone: `git diff --cached`, commit, then `hermes-skills push`
 6. `bash validate.sh`
+7. Schedule the nightly sync (command above).
