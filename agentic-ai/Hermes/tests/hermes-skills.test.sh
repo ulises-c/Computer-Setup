@@ -181,7 +181,7 @@ expect_out 'ticket-helper .*work .*edits: 1/1' "no-repo session typed a Jira ref
 expect_out 'child-helper .*work .*edits: 2/2' "subagent inherits parent session"
 expect_out 'notes-helper .*personal .*edits: 0/2' "no-repo session without markers → personal"
 expect_out 'terms-helper .*work .*edits: 1/1' "no-repo session typed a generated term → work"
-expect_out 'tie-helper .*work .*edits: 1/2' "a tie goes to work"
+expect_out 'tie-helper .*personal .*edits: 1/2' "a tie goes to personal"
 if [[ -d "$S/general/tidy-notes" ]]; then pass "dry run moved nothing"; else fail "dry run moved nothing"; fi
 expect_rc 0 "classify explains" "$TOOL" classify widget-notes
 expect_out 'marker +dev/widget-notes/SKILL.md:[0-9]+:widget-server' "classify shows marker file:line"

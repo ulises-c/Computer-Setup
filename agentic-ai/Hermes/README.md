@@ -49,8 +49,8 @@ Checked in order; the first rule that applies decides.
    enforced rule: `adopt`, the personal repo's pre-commit hook, and `push` all
    refuse it. Markers are the generated repo-name terms, Jira issue refs
    (`KEY-123`, case-sensitive), and an optional hand-written regex.
-3. **Most of its edits happened in work sessions** (a tie counts as work) →
-   suggest work. `lib/provenance.py` reads the curator ledger and each
+3. **Most of its edits happened in work sessions** (more than half; a tie is
+   personal) → suggest work. `lib/provenance.py` reads the curator ledger and each
    session's repo:
    - The repo commits as a non-work address → not work. This is definitive:
      work is only ever committed as the work identity.
@@ -62,9 +62,8 @@ Checked in order; the first rule that applies decides.
 4. **Otherwise** → suggest personal.
 
 Rules 3 and 4 are suggestions. `hermes-skills classify <skill>` shows the
-evidence behind one, and `adopt <skill> <work|personal>` overrides it. When it
-is unclear, pick work: a personal skill in the work repo can be moved later on
-purpose, but a work skill in the personal repo is IP that has left.
+evidence behind one, and `adopt <skill> <work|personal>` overrides it. Content
+that names work can never be overridden into the personal repo.
 
 ## Commands
 

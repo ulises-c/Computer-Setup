@@ -10,8 +10,8 @@
 # Classification (see README): Hermes-owned skills stay local; content naming
 # anything work-internal is work (hard block on the personal repo); otherwise a
 # skill follows where most of its edits happened (lib/provenance.py; a tie is
-# work, since misfiling work as personal is the costly mistake); the rest is
-# personal. Only the content rule is enforced; the rest are suggestions.
+# personal); the rest is personal. Only the content rule is enforced; the
+# rest are suggestions.
 set -euo pipefail
 
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
@@ -203,7 +203,7 @@ migration_plan() {
     elif [[ -n "$hit" ]]; then
       hit="${hit##*:}"; hit="${hit#"${hit%%[[:alnum:]]*}"}"
       target=work why="content names '$hit'"
-    elif (( t > 0 && w * 2 >= t )); then
+    elif (( t > 0 && w * 2 > t )); then
       target=work why="edits: $w/$t in work sessions"
     else
       target=personal why="edits: $w/$t in work sessions"
