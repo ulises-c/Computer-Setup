@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # End-to-end test for bin/hermes-skills against a throwaway HERMES_HOME, local
-# bare repos standing in for the Forgejo remotes, and the real `hermes` CLI (so
-# skills.external_dirs is written by Hermes itself). Touches nothing under the
-# real ~/.hermes.
+# bare repos standing in for the Forgejo remotes, a fake Bitbucket API
+# (file://), a fake Hermes source repo, a fake state.db + curator ledger, and
+# the real `hermes` CLI (so skills.external_dirs is written by Hermes itself).
+# Touches nothing under the real ~/.hermes.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TOOL="$REPO_DIR/bin/hermes-skills"
 command -v hermes >/dev/null || { printf 'skip: hermes not on PATH\n'; exit 0; }
+command -v python3 >/dev/null || { printf 'skip: python3 not on PATH\n'; exit 0; }
 
 # Fake credentials, assembled at runtime so no scanner flags this file.
 FAKE_AWS="AKIA""ABCDEFGHIJKLMNOP"
@@ -15,6 +17,7 @@ FAKE_SLACK="xoxb""-1234567890-abcdefghij"
 
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
+export GIT_CEILING_DIRECTORIES="$T"
 FAILS=0
 pass() { printf '  ok   %s\n' "$1"; }
 fail() { printf '  FAIL %s\n' "$1" >&2; FAILS=$(( FAILS + 1 )); }
@@ -27,28 +30,100 @@ expect_rc() {
 check() {
   local desc="$1"
   shift
-  if "$@"; then pass "$desc"; else fail "$desc"; fi
+  if "$@" >/dev/null; then pass "$desc"; else fail "$desc"; fi
 }
 expect_out() { if grep -qE -- "$1" "$T/out"; then pass "$2"; else fail "$2"; sed 's/^/       /' "$T/out" >&2; fi; }
+reject_out() { if grep -qE -- "$1" "$T/out"; then fail "$2"; sed 's/^/       /' "$T/out" >&2; else pass "$2"; fi; }
 
 skill() {
   local dir="$1" name="$2" body="${3:-plain procedure}"
   mkdir -p "$dir"
   printf -- '---\nname: %s\ndescription: test skill %s\n---\n\n%s\n' "$name" "$name" "$body" > "$dir/SKILL.md"
 }
+fake_repo() {  # dir origin email
+  git init -q "$1"
+  git -C "$1" remote add origin "$2"
+  git -C "$1" config user.email "$3"
+}
 
 export HERMES_HOME="$T/hermes"
 export HERMES_SKILLS_ENV="$T/env"
 export PATH="$REPO_DIR/bin:$PATH"
-mkdir -p "$HERMES_HOME/skills/.hub"
-printf 'stock-skill:abc\n' > "$HERMES_HOME/skills/.bundled_manifest"
-printf '{"installed":{"hub-skill":{}}}\n' > "$HERMES_HOME/skills/.hub/lock.json"
-skill "$HERMES_HOME/skills/general/stock-skill" stock-skill
-skill "$HERMES_HOME/skills/hub-skill" hub-skill
-skill "$HERMES_HOME/skills/general/tidy-notes" tidy-notes
-skill "$HERMES_HOME/skills/dev/acme-deploy" acme-deploy "Deploy the Acmecorp service."
-skill "$HERMES_HOME/skills/dev/leaky" leaky "token: $FAKE_SLACK"
-skill "$HERMES_HOME/skills/.archive/old" old
+S="$HERMES_HOME/skills"
+mkdir -p "$S/.hub"
+printf 'stock-skill:abc\n' > "$S/.bundled_manifest"
+printf '{"installed":{"hub-skill":{}}}\n' > "$S/.hub/lock.json"
+skill "$S/general/stock-skill" stock-skill
+skill "$S/hub-skill" hub-skill
+skill "$S/general/retired-upstream" retired-upstream
+skill "$S/general/tidy-notes" tidy-notes
+skill "$S/dev/acme-deploy" acme-deploy "Deploy the Acmecorp service."
+skill "$S/dev/leaky" leaky "token: $FAKE_SLACK"
+skill "$S/.archive/old" old
+# content markers: generated terms, excluded terms, Jira refs (case-sensitive)
+skill "$S/dev/widget-notes" widget-notes "Restart widget-server after deploy."
+skill "$S/dev/embedded-notes" embedded-notes "Notes on embedded Linux."
+skill "$S/dev/jira-notes" jira-notes "Tracked in OPS-7."
+skill "$S/dev/prose-notes" prose-notes "Compare the ai-1 and ops-2 variants."
+# provenance-only skills (clean content)
+for n in ci-helper oss-helper fork-helper ticket-helper child-helper notes-helper terms-helper tie-helper; do
+  skill "$S/dev/$n" "$n"
+done
+
+# A Hermes source tree that once shipped retired-upstream, then dropped it.
+git init -q "$T/hsrc"
+skill "$T/hsrc/skills/general/retired-upstream" retired-upstream
+git -C "$T/hsrc" add -A && git -C "$T/hsrc" -c commit.gpgsign=false commit -qm add
+git -C "$T/hsrc" rm -rq skills && git -C "$T/hsrc" -c commit.gpgsign=false commit -qm drop
+
+# Repos the fake sessions ran in.
+fake_repo "$T/src/work-app" git@bitbucket.org:acmecorp/app.git me@acme.example
+fake_repo "$T/src/oss-tool" https://github.com/other/tool.git me@acme.example
+fake_repo "$T/src/fork" git@bitbucket.org:acmecorp/fork.git me@home.example
+mkdir -p "$T/src/plain"
+
+python3 - "$HERMES_HOME/state.db" "$S/.curator_ledger.jsonl" "$T/src" <<'EOF'
+import json, sqlite3, sys
+db_path, ledger, src = sys.argv[1:]
+db = sqlite3.connect(db_path)
+db.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, cwd TEXT, git_repo_root TEXT, parent_session_id TEXT)")
+db.execute("CREATE TABLE messages (session_id TEXT, role TEXT, content TEXT)")
+sessions = {
+    "s_work": (f"{src}/work-app", f"{src}/work-app", None),
+    "s_oss": (f"{src}/oss-tool", f"{src}/oss-tool", None),
+    "s_fork": (f"{src}/fork", f"{src}/fork", None),
+    "s_gone": ("/nonexistent/wt", None, None),
+    "s_gone_plain": ("/nonexistent/wt2", None, None),
+    "s_child": (None, None, "s_work"),
+    "s_terms": (f"{src}/plain", None, None),
+}
+for sid, (cwd, root, parent) in sessions.items():
+    db.execute("INSERT INTO sessions VALUES (?, ?, ?, ?)", (sid, cwd, root, parent))
+for sid, text in [("s_gone", "please fix ACME-12"), ("s_gone_plain", "tidy my notes, ai-3 style"),
+                  ("s_terms", "update the Widget-Server config")]:
+    db.execute("INSERT INTO messages VALUES (?, 'user', ?)", (sid, text))
+db.commit()
+edits = {
+    "ci-helper": ["s_work"] * 3 + ["s_oss"],
+    "oss-helper": ["s_oss", "s_oss", "s_work"],
+    "fork-helper": ["s_fork"] * 3,
+    "ticket-helper": ["s_gone"],
+    "child-helper": ["s_child", "s_child"],
+    "notes-helper": ["s_gone_plain", "s_gone_plain"],
+    "terms-helper": ["s_terms"],
+    "tie-helper": ["s_work", "s_oss"],
+}
+with open(ledger, "w") as fh:
+    for skill, sids in edits.items():
+        for sid in sids:
+            fh.write(json.dumps({"actor": "curator", "action": "patch", "skill": skill, "evidence": {"session_id": sid}}) + "\n")
+EOF
+
+# Fake Bitbucket API, two pages.
+mkdir -p "$T/bbapi/repositories"
+printf '{"values":[{"slug":"widget-server"}],"next":"file://%s/bbapi/page2"}\n' "$T" > "$T/bbapi/repositories/acmecorp"
+printf '{"values":[{"slug":"Embedded"}]}\n' > "$T/bbapi/page2"
+printf 'machine example.invalid login a password b\n' > "$T/netrc"
 
 for k in work personal; do git init -q --bare "$T/remote-$k.git"; done
 cat > "$T/env" <<EOF
@@ -57,6 +132,16 @@ HERMES_SKILLS_WORK_DIR=$T/clones/work
 HERMES_SKILLS_PERSONAL_REMOTE=$T/remote-personal.git
 HERMES_SKILLS_PERSONAL_DIR=$T/clones/personal
 HERMES_SKILLS_WORK_MARKERS='acmecorp'
+HERMES_SKILLS_JIRA_KEYS='ACME OPS'
+HERMES_SKILLS_TERMS_FILE=$T/terms
+HERMES_SKILLS_BITBUCKET_WORKSPACE=acmecorp
+HERMES_SKILLS_BITBUCKET_NETRC=$T/netrc
+HERMES_SKILLS_BITBUCKET_API=file://$T/bbapi
+HERMES_SKILLS_EXTRA_TERMS='gadgetron'
+HERMES_SKILLS_TERM_EXCLUDE='embedded'
+HERMES_SKILLS_WORK_EMAIL_DOMAINS='acme.example'
+HERMES_SKILLS_WORK_REMOTE_PATTERNS='bitbucket\.org[:/]acmecorp/'
+HERMES_SKILLS_HERMES_SRC=$T/hsrc
 EOF
 hermes config set skills.external_dirs '["~/.agents/skills"]' >/dev/null
 
@@ -69,36 +154,84 @@ if grep -qF -- "$T/clones/personal/skills" <<< "$ext"; then pass "personal repo 
 expect_rc 0 "install is idempotent" "$TOOL" install
 if (( $(hermes config get skills.external_dirs | grep -c clones) == 2 )); then pass "no duplicate external_dirs entries"; else fail "no duplicate external_dirs entries"; fi
 
+printf 'refresh-markers\n'
+check "terms fetched across pages" grep -qx widget-server "$T/terms"
+check "extra terms added" grep -qx gadgetron "$T/terms"
+if grep -qix embedded "$T/terms"; then fail "excluded term dropped"; else pass "excluded term dropped"; fi
+check "terms file is private" test "$(stat -c %a "$T/terms")" = 600
+cp "$T/terms" "$T/terms.before"
+sed "s#^HERMES_SKILLS_BITBUCKET_API=.*#HERMES_SKILLS_BITBUCKET_API=file://$T/missing#" "$T/env" > "$T/env-badapi"
+expect_rc 1 "refresh fails on API error" env HERMES_SKILLS_ENV="$T/env-badapi" "$TOOL" refresh-markers
+check "failed refresh keeps the old terms" cmp -s "$T/terms" "$T/terms.before"
+
 printf 'migrate plan\n'
 expect_rc 0 "migrate dry run" "$TOOL" migrate
 expect_out 'tidy-notes +general/tidy-notes +personal' "general skill → personal"
-expect_out 'acme-deploy +dev/acme-deploy +work' "work-marked skill → work"
+expect_out 'acme-deploy +dev/acme-deploy +work' "hand-written marker → work"
 expect_out 'leaky +dev/leaky +SKIP:possible-secret' "secret skill skipped"
-if grep -qE 'stock-skill|hub-skill|old' "$T/out"; then fail "bundled/hub/archived excluded"; else pass "bundled/hub/archived excluded"; fi
-if [[ -d "$HERMES_HOME/skills/general/tidy-notes" ]]; then pass "dry run moved nothing"; else fail "dry run moved nothing"; fi
+reject_out 'stock-skill|hub-skill|old|retired-upstream' "bundled/hub/archived/historical-upstream excluded"
+expect_out "widget-notes .*work .*content names 'widget-server'" "generated term → work"
+expect_out 'embedded-notes .*personal' "excluded term does not mark work"
+expect_out 'jira-notes .*work' "Jira ref → work"
+expect_out 'prose-notes .*personal' "lowercase key-like prose is not a Jira ref"
+expect_out 'ci-helper .*work .*edits: 3/4' "majority work edits → work"
+expect_out 'oss-helper .*personal .*edits: 1/3' "work email in an OSS repo is not work"
+expect_out 'fork-helper .*personal .*edits: 0/3' "non-work email is definitive even on a work remote"
+expect_out 'ticket-helper .*work .*edits: 1/1' "no-repo session typed a Jira ref → work"
+expect_out 'child-helper .*work .*edits: 2/2' "subagent inherits parent session"
+expect_out 'notes-helper .*personal .*edits: 0/2' "no-repo session without markers → personal"
+expect_out 'terms-helper .*work .*edits: 1/1' "no-repo session typed a generated term → work"
+expect_out 'tie-helper .*work .*edits: 1/2' "a tie goes to work"
+if [[ -d "$S/general/tidy-notes" ]]; then pass "dry run moved nothing"; else fail "dry run moved nothing"; fi
+expect_rc 0 "classify explains" "$TOOL" classify widget-notes
+expect_out 'marker +dev/widget-notes/SKILL.md:[0-9]+:widget-server' "classify shows marker file:line"
+
+printf 'single-repo setups\n'
+grep -v '^HERMES_SKILLS_WORK_\(REMOTE\|DIR\)=' "$T/env" > "$T/env-personal"
+expect_rc 0 "personal-only plan" env HERMES_SKILLS_ENV="$T/env-personal" "$TOOL" migrate
+expect_out 'acme-deploy +dev/acme-deploy +SKIP:work' "personal-only setup leaves work skills local"
+expect_out 'tidy-notes +general/tidy-notes +personal' "personal-only setup still adopts personal skills"
+grep -v '^HERMES_SKILLS_PERSONAL_' "$T/env" > "$T/env-work"
+expect_rc 0 "work-only plan" env HERMES_SKILLS_ENV="$T/env-work" "$TOOL" migrate
+expect_out 'tidy-notes +general/tidy-notes +work' "work-only setup sends everything to work"
+expect_rc 1 "adopt into a disabled repo is refused" env HERMES_SKILLS_ENV="$T/env-work" "$TOOL" adopt tidy-notes personal
+expect_out 'not enabled' "refused because the repo is not enabled"
 
 printf 'adopt guards\n'
 expect_rc 1 "work skill refused by personal repo" "$TOOL" adopt acme-deploy personal
 expect_out 'contains work markers' "refused for the marker reason"
+expect_rc 1 "generated-term skill refused by personal repo" "$TOOL" adopt widget-notes personal
 expect_rc 1 "secret skill refused" "$TOOL" adopt leaky work
 expect_out 'possible secret in .*leaky/SKILL.md:[0-9]+' "refused for the secret reason, by file:line"
 if grep -qF "$FAKE_SLACK" "$T/out"; then fail "adopt does not echo the secret"; else pass "adopt does not echo the secret"; fi
 expect_rc 1 "bundled skill refused" "$TOOL" adopt stock-skill personal
 expect_out 'not an unadopted local skill' "refused because Hermes owns it"
+expect_rc 0 "provenance suggestion can be overridden" "$TOOL" adopt ci-helper personal
 
 printf 'migrate apply\n'
 expect_rc 0 "migrate --apply" "$TOOL" migrate --apply
 if [[ -f "$T/clones/personal/skills/general/tidy-notes/SKILL.md" ]]; then pass "tidy-notes in personal repo"; else fail "tidy-notes in personal repo"; fi
 if [[ -f "$T/clones/work/skills/dev/acme-deploy/SKILL.md" ]]; then pass "acme-deploy in work repo"; else fail "acme-deploy in work repo"; fi
-if [[ ! -e "$HERMES_HOME/skills/general/tidy-notes" ]]; then pass "local copy removed (no collision)"; else fail "local copy removed (no collision)"; fi
-if [[ -d "$HERMES_HOME/skills/dev/leaky" ]]; then pass "skipped skill left in place"; else fail "skipped skill left in place"; fi
+if [[ -f "$T/clones/work/skills/dev/child-helper/SKILL.md" ]]; then pass "child-helper in work repo"; else fail "child-helper in work repo"; fi
+if [[ -f "$T/clones/personal/skills/dev/ci-helper/SKILL.md" ]]; then pass "override kept"; else fail "override kept"; fi
+if [[ ! -e "$S/general/tidy-notes" ]]; then pass "local copy removed (no collision)"; else fail "local copy removed (no collision)"; fi
+if [[ -d "$S/dev/leaky" ]]; then pass "skipped skill left in place"; else fail "skipped skill left in place"; fi
+if [[ -d "$S/general/retired-upstream" ]]; then pass "historical upstream skill left in place"; else fail "historical upstream skill left in place"; fi
 if git -C "$T/clones/work" diff --cached --name-only | grep -q acme-deploy; then pass "adoption staged"; else fail "adoption staged"; fi
 
 printf 'commit guards\n'
 for k in work personal; do check "$k commit passes guard" git -C "$T/clones/$k" -c commit.gpgsign=false commit -qm "feat: adopt skills"; done
 printf 'Acmecorp internal notes\n' > "$T/clones/personal/skills/general/tidy-notes/extra.md"
 git -C "$T/clones/personal" add -A
-expect_rc 1 "guard blocks work marker in personal repo" git -C "$T/clones/personal" -c commit.gpgsign=false commit -qm leak
+expect_rc 1 "guard blocks hand-written marker in personal repo" git -C "$T/clones/personal" -c commit.gpgsign=false commit -qm leak
+git -C "$T/clones/personal" reset -q --hard
+printf 'see gadgetron runbook\n' > "$T/clones/personal/skills/general/tidy-notes/extra.md"
+git -C "$T/clones/personal" add -A
+expect_rc 1 "guard blocks generated term in personal repo" git -C "$T/clones/personal" -c commit.gpgsign=false commit -qm leak
+git -C "$T/clones/personal" reset -q --hard
+printf 'follow up in ACME-99\n' > "$T/clones/personal/skills/general/tidy-notes/extra.md"
+git -C "$T/clones/personal" add -A
+expect_rc 1 "guard blocks Jira ref in personal repo" git -C "$T/clones/personal" -c commit.gpgsign=false commit -qm leak
 git -C "$T/clones/personal" reset -q --hard
 printf 'key %s\n' "$FAKE_AWS" > "$T/clones/work/skills/dev/acme-deploy/creds.md"
 git -C "$T/clones/work" add -A
@@ -108,11 +241,15 @@ git -C "$T/clones/work" reset -q --hard
 rm -f "$T/clones/work/skills/dev/acme-deploy/creds.md"
 
 printf 'verify / collisions / push / pull\n'
+rm -rf "$S/dev/leaky"
 expect_rc 0 "verify passes on a clean setup" "$TOOL" verify
-skill "$HERMES_HOME/skills/general/tidy-notes" tidy-notes
+skill "$S/general/tidy-notes" tidy-notes
 expect_rc 1 "verify fails on a local/repo name collision" "$TOOL" verify
 expect_out 'tidy-notes: in personal repo' "collision is named"
-rm -rf "$HERMES_HOME/skills/general/tidy-notes"
+rm -rf "$S/general/tidy-notes"
+touch -d '40 days ago' "$T/terms"
+expect_rc 0 "verify still passes with stale terms" "$TOOL" verify
+expect_out 'work terms are [0-9]+ days old' "stale terms are flagged"
 printf 'dirty\n' > "$T/clones/work/skills/dev/acme-deploy/wip.md"
 expect_rc 1 "push refuses uncommitted changes" "$TOOL" push
 rm -f "$T/clones/work/skills/dev/acme-deploy/wip.md"

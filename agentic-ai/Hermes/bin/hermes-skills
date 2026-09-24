@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
-# Deterministic sync between Hermes and two private skill repos (work, personal).
+# Deterministic sync between Hermes and private skill repos: a work repo, a
+# personal repo, or both (a repo is enabled when its REMOTE is set in .env), so
+# the same tool serves a work machine and a personal-only setup.
+#
 # The repos are the source of truth: Hermes reads them through
 # skills.external_dirs, which also makes them read-only to the background
 # curator, so a skill only changes through a reviewed git commit.
+#
+# Classification (see README): Hermes-owned skills stay local; content naming
+# anything work-internal is work (hard block on the personal repo); otherwise a
+# skill follows where most of its edits happened (lib/provenance.py; a tie is
+# work, since misfiling work as personal is the costly mistake); the rest is
+# personal. Only the content rule is enforced; the rest are suggestions.
 set -euo pipefail
 
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
@@ -10,7 +19,7 @@ HERMES_CFG_DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
 ENV_FILE="${HERMES_SKILLS_ENV:-$HERMES_CFG_DIR/.env}"
 HERMES_HOME_DIR="${HERMES_HOME:-$HOME/.hermes}"
 LOCAL_SKILLS="$HERMES_HOME_DIR/skills"
-KINDS=(work personal)
+KINDS=()
 
 # sk- needs a left boundary: "task-driven-development" would otherwise match.
 SECRET_PATTERNS='AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{30,}|glpat-[A-Za-z0-9_-]{20,}|xox[abeprs]-[A-Za-z0-9-]{10,}|xapp-[A-Za-z0-9-]{10,}|ATATT[A-Za-z0-9_=-]{20,}|(^|[^A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----'
@@ -26,17 +35,28 @@ usage() {
   cat <<'EOF'
 usage: hermes-skills <command>
 
-  install              clone both repos, install commit guards, set skills.external_dirs
-  status               repo state, unadopted local skills, name collisions
+  install              clone the enabled repos, install commit guards, refresh
+                       work terms (if configured), set skills.external_dirs
+  status               repo state, unadopted local skills with suggested target, collisions
   verify               status checks as pass/fail; exit 1 on any failure
   migrate [--apply]    plan (default) or perform adoption of every unadopted local skill
   adopt <skill> <work|personal>
                        move one local skill into a repo and stage it (no commit)
-  scan [work|personal] secret scan (both) + work-marker scan (personal) of the working tree
-  pull                 fast-forward both repos from origin
-  push                 scan, then push both repos (refuses uncommitted changes)
+  classify <skill>...  explain the suggested target for local skills
+  refresh-markers      regenerate the work-terms file from the Bitbucket workspace
+  scan [work|personal] secret scan + work-marker scan (personal) of the working tree
+  pull                 fast-forward the enabled repos from origin
+  push                 scan, then push the enabled repos (refuses uncommitted changes)
   hook <work|personal> pre-commit entry point (scans the index)
 EOF
+}
+
+kind_var() { local name="HERMES_SKILLS_${1^^}_$2"; printf '%s' "${!name:-}"; }
+kind_dir() { kind_var "$1" DIR; }
+enabled()  { local k; for k in "${KINDS[@]}"; do [[ "$k" == "$1" ]] && return 0; done; return 1; }
+check_kind() {
+  [[ "${1:-}" == work || "${1:-}" == personal ]] || die "kind must be 'work' or 'personal'"
+  enabled "$1" || die "the $1 repo is not enabled (set HERMES_SKILLS_${1^^}_REMOTE in $ENV_FILE)"
 }
 
 load_env() {
@@ -45,17 +65,16 @@ load_env() {
   # shellcheck source=/dev/null
   source "$ENV_FILE"
   set +a
-  local v
-  for v in HERMES_SKILLS_WORK_REMOTE HERMES_SKILLS_WORK_DIR \
-           HERMES_SKILLS_PERSONAL_REMOTE HERMES_SKILLS_PERSONAL_DIR \
-           HERMES_SKILLS_WORK_MARKERS; do
-    [[ -n "${!v:-}" ]] || die "$v is not set in $ENV_FILE"
+  local k
+  for k in work personal; do
+    [[ -n "$(kind_var "$k" REMOTE)" ]] || continue
+    [[ -n "$(kind_dir "$k")" ]] || die "HERMES_SKILLS_${k^^}_DIR is not set in $ENV_FILE"
+    KINDS+=("$k")
   done
+  (( ${#KINDS[@]} )) || die "set HERMES_SKILLS_WORK_REMOTE and/or HERMES_SKILLS_PERSONAL_REMOTE in $ENV_FILE"
+  TERMS_FILE="${HERMES_SKILLS_TERMS_FILE:-$HERMES_CFG_DIR/.work-terms}"
+  TERMS_FILE="${TERMS_FILE/#\~/$HOME}"
 }
-
-kind_var() { local name="HERMES_SKILLS_${1^^}_$2"; printf '%s' "${!name:-}"; }
-kind_dir() { kind_var "$1" DIR; }
-check_kind() { [[ "${1:-}" == work || "${1:-}" == personal ]] || die "kind must be 'work' or 'personal'"; }
 
 skill_name() {
   local md="$1" name
@@ -79,21 +98,30 @@ list_skills() {
   done < <(find "$root" -name SKILL.md | LC_ALL=C sort)
 }
 
-# Names Hermes itself owns: bundled, hub-installed, or shipped in the source tree.
+# Names Hermes itself owns: bundled, hub-installed, shipped in the source tree
+# now, or shipped at any point in its history. The last catches skills Hermes
+# later moved to optional-skills or made built-in, whose old seeded copies
+# still sit in ~/.hermes/skills looking user-authored.
 foreign_names() {
-  [[ -f "$LOCAL_SKILLS/.bundled_manifest" ]] && cut -d: -f1 "$LOCAL_SKILLS/.bundled_manifest"
-  [[ -f "$LOCAL_SKILLS/.hub/lock.json" ]] && jq -r '.installed | keys[]' "$LOCAL_SKILLS/.hub/lock.json"
-  local src
-  for src in "$HERMES_HOME_DIR/hermes-agent/skills" "$HERMES_HOME_DIR/hermes-agent/optional-skills"; do
-    [[ -d "$src" ]] && find "$src" -name SKILL.md -printf '%h\n' | xargs -r -n1 basename
-  done
-  return 0
+  if [[ -n "${FOREIGN_CACHE+x}" ]]; then printf '%s\n' "$FOREIGN_CACHE"; return 0; fi
+  local src="${HERMES_SKILLS_HERMES_SRC:-$HERMES_HOME_DIR/hermes-agent}" sub
+  {
+    if [[ -f "$LOCAL_SKILLS/.bundled_manifest" ]]; then cut -d: -f1 "$LOCAL_SKILLS/.bundled_manifest"; fi
+    if [[ -f "$LOCAL_SKILLS/.hub/lock.json" ]]; then jq -r '.installed | keys[]' "$LOCAL_SKILLS/.hub/lock.json"; fi
+    for sub in skills optional-skills; do
+      if [[ -d "$src/$sub" ]]; then find "$src/$sub" -name SKILL.md -printf '%h\n' | xargs -r -n1 basename; fi
+    done
+    if [[ -e "$src/.git" ]]; then
+      git -C "$src" log --all --format= --name-only -- ':(glob)skills/**/SKILL.md' ':(glob)optional-skills/**/SKILL.md' \
+        | sed -n 's#/SKILL\.md$##p' | xargs -r -n1 basename
+    fi
+  } | LC_ALL=C sort -u
 }
 
-# Local, user-authored skills that are not yet in either repo.
+# Local, user-authored skills that are not yet in a repo.
 unadopted() {
   local foreign
-  foreign="$(foreign_names | LC_ALL=C sort -u)"
+  foreign="$(foreign_names)"
   list_skills "$LOCAL_SKILLS" | while IFS=$'\t' read -r name rel; do
     grep -qxF "$name" <<< "$foreign" || printf '%s\t%s\n' "$name" "$rel"
   done
@@ -101,20 +129,118 @@ unadopted() {
 
 repo_skills() { local k; for k in "${KINDS[@]}"; do list_skills "$(kind_dir "$k")/skills" | sed "s/^/$k\t/"; done; }
 
-secret_hits_dir() { grep -rnIE --exclude-dir=.git -e "$SECRET_PATTERNS" "$1" | cut -d: -f1,2 || true; }
-marker_hits_dir() { grep -rnIoiE --exclude-dir=.git -e "$HERMES_SKILLS_WORK_MARKERS" "$1" || true; }
+# --- markers ---------------------------------------------------------------
+# Three sources, all optional: HERMES_SKILLS_WORK_MARKERS (hand-written ERE,
+# case-insensitive), the generated terms file (whole-word, case-insensitive
+# fixed strings), and Jira issue refs built from HERMES_SKILLS_JIRA_KEYS
+# (case-sensitive, so "ai-1" in prose does not match project AI).
+
+jira_ere() {
+  local keys
+  keys="$(tr -s ' ,' '\n' <<< "${HERMES_SKILLS_JIRA_KEYS:-}" | sed '/^$/d' | paste -sd'|')"
+  if [[ -n "$keys" ]]; then printf '(^|[^A-Za-z0-9_])(%s)-[0-9]+' "$keys"; fi
+}
+
+markers_configured() { [[ -n "${HERMES_SKILLS_WORK_MARKERS:-}" || -s "$TERMS_FILE" || -n "$(jira_ere)" ]]; }
+
+grep_dir() { local d="$1"; shift; grep -rnI --exclude-dir=.git "$@" -- "$d" 2>/dev/null; }
+grep_git() {
+  local d="$1" mode="$2" f=(-n -I)
+  shift 2
+  if [[ "$mode" == index ]]; then f+=(--cached); else f+=(--untracked); fi
+  git -C "$d" grep "${f[@]}" "$@" -- . 2>/dev/null
+}
+
+# $@ = a grep runner: grep_dir <dir>  |  grep_git <dir> <index|tree>
+# Prints "file:line:match" for every work marker hit.
+marker_hits() {
+  local j
+  if [[ -n "${HERMES_SKILLS_WORK_MARKERS:-}" ]]; then "$@" -o -i -E -e "$HERMES_SKILLS_WORK_MARKERS" || true; fi
+  if [[ -s "$TERMS_FILE" ]]; then "$@" -o -i -w -F -f "$TERMS_FILE" || true; fi
+  j="$(jira_ere)"
+  if [[ -n "$j" ]]; then "$@" -o -E -e "$j" || true; fi
+}
+secret_hits() { { "$@" -E -e "$SECRET_PATTERNS" || true; } | cut -d: -f1,2; }
+
+# The same markers for lib/provenance.py, which matches them against what the
+# user typed. Terms are escaped there (re.escape), not here.
+export_marker_regexes() {
+  HERMES_SKILLS_MARK_CI="${HERMES_SKILLS_WORK_MARKERS:-}"
+  HERMES_SKILLS_MARK_CS="$(jira_ere)"
+  HERMES_SKILLS_MARK_TERMS="$TERMS_FILE"
+  export HERMES_SKILLS_MARK_CI HERMES_SKILLS_MARK_CS HERMES_SKILLS_MARK_TERMS
+}
+
+# stdin: skill names. stdout: "<name>\t<work edits>\t<classified edits>".
+provenance() {
+  if ! command -v python3 >/dev/null; then
+    while IFS= read -r n; do printf '%s\t0\t0\n' "$n"; done
+    return 0
+  fi
+  export_marker_regexes
+  local names=()
+  mapfile -t names
+  (( ${#names[@]} )) || return 0
+  python3 "$HERMES_CFG_DIR/lib/provenance.py" "${names[@]}"
+}
+
+# --- classification --------------------------------------------------------
+
+# "<name>\t<rel>\t<work|personal|SKIP:reason>\t<why>" for each unadopted skill.
+migration_plan() {
+  local list prov name rel src secrets hit counts w t target why
+  list="$(unadopted)"
+  [[ -n "$list" ]] || return 0
+  prov="$(cut -f1 <<< "$list" | provenance)"
+  while IFS=$'\t' read -r name rel; do
+    src="$LOCAL_SKILLS/$rel"
+    secrets="$(secret_hits grep_dir "$src")"
+    hit="$(marker_hits grep_dir "$src" | head -1)"
+    counts="$(awk -F'\t' -v n="$name" '$1 == n { print $2 " " $3; exit }' <<< "$prov")"
+    read -r w t <<< "${counts:-0 0}"
+    if [[ -n "$secrets" ]]; then
+      target="SKIP:possible-secret" why="$(wc -l <<< "$secrets") hit(s); see: hermes-skills classify $name"
+    elif [[ -n "$hit" ]]; then
+      hit="${hit##*:}"; hit="${hit#"${hit%%[[:alnum:]]*}"}"
+      target=work why="content names '$hit'"
+    elif (( t > 0 && w * 2 >= t )); then
+      target=work why="edits: $w/$t in work sessions"
+    else
+      target=personal why="edits: $w/$t in work sessions"
+      (( t )) || why="no work signal"
+    fi
+    if [[ "$target" == work ]] && ! enabled work; then target="SKIP:work"; fi
+    if [[ "$target" == personal ]] && ! enabled personal; then target=work; fi
+    printf '%s\t%s\t%s\t%s\n' "$name" "$rel" "$target" "$why"
+  done <<< "$list"
+}
+
+cmd_classify() {
+  (( $# )) || die "usage: hermes-skills classify <skill>..."
+  local plan name row rel target why
+  plan="$(migration_plan)"
+  for name in "$@"; do
+    row="$(awk -F'\t' -v n="$name" '$1 == n' <<< "$plan")"
+    if [[ -z "$row" ]]; then printf '%s: not an unadopted local skill\n' "$name"; continue; fi
+    IFS=$'\t' read -r _ rel target why <<< "$row"
+    printf '%s → %s (%s)\n' "$name" "$target" "$why"
+    marker_hits grep_dir "$LOCAL_SKILLS/$rel" | sed "s#^$LOCAL_SKILLS/##; s/^/  marker  /" | head -10
+    secret_hits grep_dir "$LOCAL_SKILLS/$rel" | sed "s#^$LOCAL_SKILLS/##; s/^/  secret  /"
+  done
+}
+
+# --- repo scanning ---------------------------------------------------------
 
 # mode: index (what is about to be committed) or tree (tracked + untracked files)
 scan_repo() {
-  local kind="$1" dir="$2" mode="$3" hits rc=0 flags=(-n -I -E)
-  if [[ "$mode" == index ]]; then flags+=(--cached); else flags+=(--untracked); fi
-  hits="$(git -C "$dir" grep "${flags[@]}" -e "$SECRET_PATTERNS" -- . | cut -d: -f1,2 || true)"
+  local kind="$1" dir="$2" mode="$3" hits rc=0
+  hits="$(secret_hits grep_git "$dir" "$mode")"
   if [[ -n "$hits" ]]; then
     printf 'possible secrets in %s repo (file:line, values not shown):\n%s\n' "$kind" "$hits" >&2
     rc=1
   fi
   if [[ "$kind" == personal ]]; then
-    hits="$(git -C "$dir" grep "${flags[@]}" -o -i -e "$HERMES_SKILLS_WORK_MARKERS" -- . || true)"
+    hits="$(marker_hits grep_git "$dir" "$mode")"
     if [[ -n "$hits" ]]; then
       printf 'work markers in personal repo (move these to the work repo):\n%s\n' "$hits" >&2
       rc=1
@@ -130,8 +256,8 @@ set_external_dirs() {
   local want=() e k keep json
   while IFS= read -r e; do
     keep=1
-    for k in "${KINDS[@]}"; do
-      if [[ "$(norm_path "$e")" == "$(norm_path "$(kind_dir "$k")/skills")" ]]; then keep=0; fi
+    for k in work personal; do
+      if [[ -n "$(kind_dir "$k")" && "$(norm_path "$e")" == "$(norm_path "$(kind_dir "$k")/skills")" ]]; then keep=0; fi
     done
     if (( keep )); then want+=("$e"); fi
   done < <(current_external_dirs)
@@ -146,6 +272,39 @@ write_hook() {
   [[ "$hook" == /* ]] || hook="$dir/$hook"
   printf '#!/usr/bin/env bash\n# managed by hermes-skills install\nexec %q hook %s\n' "$SELF" "$kind" > "$hook"
   chmod +x "$hook"
+}
+
+# --- commands --------------------------------------------------------------
+
+cmd_refresh_markers() {
+  local ws="${HERMES_SKILLS_BITBUCKET_WORKSPACE:-}" netrc="${HERMES_SKILLS_BITBUCKET_NETRC:-}"
+  local api="${HERMES_SKILLS_BITBUCKET_API:-https://api.bitbucket.org/2.0}" url page tmp common n
+  [[ -n "$ws" ]] || die "HERMES_SKILLS_BITBUCKET_WORKSPACE is not set in $ENV_FILE"
+  netrc="${netrc/#\~/$HOME}"
+  [[ -r "$netrc" ]] || die "HERMES_SKILLS_BITBUCKET_NETRC ($netrc) is not readable"
+  tmp="$(mktemp)"
+  url="$api/repositories/$ws?pagelen=100&fields=next,values.slug"
+  while [[ -n "$url" ]]; do
+    page="$(curl -fsS --netrc-file "$netrc" "$url")" || { rm -f "$tmp"; die "Bitbucket request failed; terms file left unchanged"; }
+    jq -r '.values[].slug' <<< "$page" >> "$tmp"
+    url="$(jq -r '.next // empty' <<< "$page")"
+  done
+  tr ' ,' '\n' <<< "${HERMES_SKILLS_EXTRA_TERMS:-}" >> "$tmp"
+  tr '[:upper:]' '[:lower:]' < "$tmp" | sed '/^$/d' \
+    | grep -vxF -f <(tr ' ,' '\n' <<< "${HERMES_SKILLS_TERM_EXCLUDE:-}" | tr '[:upper:]' '[:lower:]' | sed '/^$/d') \
+    | LC_ALL=C sort -u > "$tmp.new" || true
+  rm -f "$tmp"
+  [[ -s "$tmp.new" ]] || { rm -f "$tmp.new"; die "no terms fetched; terms file left unchanged"; }
+  chmod 600 "$tmp.new"
+  mv "$tmp.new" "$TERMS_FILE"
+  n="$(wc -l < "$TERMS_FILE")"
+  printf 'Wrote %d work terms to %s\n' "$n" "$TERMS_FILE"
+  if [[ -r /usr/share/dict/words ]]; then
+    common="$(grep -ixF -f "$TERMS_FILE" /usr/share/dict/words | tr '[:upper:]' '[:lower:]' | LC_ALL=C sort -u | paste -sd' ' || true)"
+    if [[ -n "$common" ]]; then
+      warn "ordinary words among the terms (add to HERMES_SKILLS_TERM_EXCLUDE if they flag general skills): $common"
+    fi
+  fi
 }
 
 cmd_install() {
@@ -163,11 +322,14 @@ cmd_install() {
     write_hook "$k" "$dir"
     printf 'Ready: %s repo → %s\n' "$k" "$dir"
   done
+  if [[ -n "${HERMES_SKILLS_BITBUCKET_WORKSPACE:-}" ]]; then
+    ( cmd_refresh_markers ) || warn "work-terms refresh failed; keeping the existing file"
+  fi
   set_external_dirs
 }
 
 cmd_status() {
-  local k dir counts dirty
+  local k dir counts dirty plan
   section repos
   for k in "${KINDS[@]}"; do
     dir="$(kind_dir "$k")"
@@ -179,22 +341,10 @@ cmd_status() {
       "${counts//$'\t'//}" "$dirty" "$(list_skills "$dir/skills" | wc -l)"
   done
   section "unadopted local skills (suggested target)"
-  local plan
   plan="$(migration_plan)"
-  if [[ -n "$plan" ]]; then printf '%s\n' "$plan" | sed 's/^/  /'; else printf '  none\n'; fi
+  if [[ -n "$plan" ]]; then cut -f1,3,4 <<< "$plan" | column -t -s $'\t' | sed 's/^/  /'; else printf '  none\n'; fi
   section "name collisions (Hermes refuses ambiguous names)"
   collisions | sed 's/^/  /'
-}
-
-# "<name>\t<rel>\t<work|personal|SKIP:reason>"
-migration_plan() {
-  unadopted | while IFS=$'\t' read -r name rel; do
-    local src="$LOCAL_SKILLS/$rel" target=personal
-    if [[ -n "$(secret_hits_dir "$src")" ]]; then target="SKIP:possible-secret"
-    elif [[ -n "$(marker_hits_dir "$src")" ]]; then target=work
-    fi
-    printf '%s\t%s\t%s\n' "$name" "$rel" "$target"
-  done
 }
 
 collisions() {
@@ -213,7 +363,7 @@ collisions() {
 }
 
 cmd_verify() {
-  local k dir hook ext name rel md
+  local k dir hook ext name rel md c age
   section repos
   for k in "${KINDS[@]}"; do
     dir="$(kind_dir "$k")"
@@ -230,13 +380,24 @@ cmd_verify() {
       if ! grep -q '^description:' "$md"; then err "$k: $rel/SKILL.md has no description"; fi
     done < <(list_skills "$dir/skills")
   done
+  section markers
+  if [[ -n "${HERMES_SKILLS_BITBUCKET_WORKSPACE:-}" ]]; then
+    if [[ -s "$TERMS_FILE" ]]; then
+      age=$(( ( $(date +%s) - $(stat -c %Y "$TERMS_FILE") ) / 86400 ))
+      if (( age > 30 )); then warn "work terms are $age days old; run: hermes-skills refresh-markers"; else ok "work terms ($(wc -l < "$TERMS_FILE"), ${age}d old)"; fi
+    else
+      err "work terms missing; run: hermes-skills refresh-markers"
+    fi
+  fi
+  if markers_configured; then ok "work markers configured"
+  elif enabled personal; then warn "no work markers configured; the personal repo guard only checks secrets"
+  fi
   section config
   ext="$(current_external_dirs | while IFS= read -r e; do norm_path "$e"; done)"
   for k in "${KINDS[@]}"; do
     if grep -qxF "$(norm_path "$(kind_dir "$k")/skills")" <<< "$ext"; then ok "external_dirs has $k"; else err "external_dirs is missing the $k repo"; fi
   done
   section collisions
-  local c
   c="$(collisions)"
   if [[ "$c" == none ]]; then ok "no name collisions"; else while IFS= read -r line; do err "$line"; done <<< "$c"; fi
   printf '\n'
@@ -245,7 +406,7 @@ cmd_verify() {
 }
 
 cmd_adopt() {
-  local name="${1:-}" kind="${2:-}" rel src dest dir match
+  local name="${1:-}" kind="${2:-}" rel src dest dir match hits
   [[ -n "$name" ]] || die "usage: hermes-skills adopt <skill> <work|personal>"
   check_kind "$kind"
   dir="$(kind_dir "$kind")"
@@ -258,11 +419,11 @@ cmd_adopt() {
   dest="$dir/skills/$rel"
   if repo_skills | cut -f2 | grep -qxF "$name"; then die "'$name' already exists in a repo"; fi
   [[ ! -e "$dest" ]] || die "$dest already exists"
-  if [[ -n "$(secret_hits_dir "$src")" ]]; then
-    die "possible secret in $src (file:line): $(secret_hits_dir "$src" | tr '\n' ' ')"
-  fi
-  if [[ "$kind" == personal && -n "$(marker_hits_dir "$src")" ]]; then
-    die "'$name' contains work markers; adopt it into the work repo instead"
+  hits="$(secret_hits grep_dir "$src")"
+  [[ -z "$hits" ]] || die "possible secret in $src (file:line): $(tr '\n' ' ' <<< "$hits")"
+  if [[ "$kind" == personal ]]; then
+    hits="$(marker_hits grep_dir "$src" | head -1)"
+    [[ -z "$hits" ]] || die "'$name' contains work markers ('${hits##*:}'); it can only go to the work repo"
   fi
   mkdir -p "$(dirname "$dest")"
   mv "$src" "$dest"
@@ -271,18 +432,19 @@ cmd_adopt() {
 }
 
 cmd_migrate() {
-  local apply=0 plan name rel target
+  local apply=0 plan name rel target why
   [[ "${1:-}" == --apply ]] && apply=1
   plan="$(migration_plan)"
   [[ -n "$plan" ]] || { printf 'nothing to migrate\n'; return 0; }
   if (( ! apply )); then
-    printf '%s\n' "$plan" | column -t -s $'\t'
-    printf '\ndry run; re-run with --apply to move these (SKIP rows are left in place)\n'
+    column -t -s $'\t' <<< "$plan"
+    printf '\ndry run; re-run with --apply to move these (SKIP rows are left in place).\n'
+    printf 'Override one suggestion with: hermes-skills adopt <skill> <work|personal>\n'
     return 0
   fi
-  while IFS=$'\t' read -r name rel target; do
+  while IFS=$'\t' read -r name rel target why; do
     case "$target" in
-      SKIP:*) printf 'Skipped: %s (%s)\n' "$name" "${target#SKIP:}" ;;
+      SKIP:*) printf 'Skipped: %s (%s: %s)\n' "$name" "${target#SKIP:}" "$why" ;;
       *) cmd_adopt "$name" "$target" ;;
     esac
   done <<< "$plan"
@@ -341,15 +503,20 @@ main() {
   command -v jq >/dev/null || die "jq is required"
   load_env
   case "$cmd" in
-    install) cmd_install ;;
-    status)  cmd_status ;;
-    verify)  cmd_verify ;;
-    migrate) cmd_migrate "$@" ;;
-    adopt)   cmd_adopt "$@" ;;
-    scan)    cmd_scan "$@" ;;
-    pull)    cmd_pull ;;
-    push)    cmd_push ;;
-    hook)    cmd_hook "$@" ;;
+    status|verify|migrate|adopt|classify) FOREIGN_CACHE="$(foreign_names)" ;;
+  esac
+  case "$cmd" in
+    install)  cmd_install ;;
+    status)   cmd_status ;;
+    verify)   cmd_verify ;;
+    migrate)  cmd_migrate "$@" ;;
+    adopt)    cmd_adopt "$@" ;;
+    classify) cmd_classify "$@" ;;
+    refresh-markers) cmd_refresh_markers ;;
+    scan)     cmd_scan "$@" ;;
+    pull)     cmd_pull ;;
+    push)     cmd_push ;;
+    hook)     cmd_hook "$@" ;;
     *) usage >&2; exit 2 ;;
   esac
 }
