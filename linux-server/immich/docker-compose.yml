@@ -1,0 +1,96 @@
+services:
+  # Tailscale sidecar — joins the tailnet as `immich`, terminating HTTPS for
+  # https://immich.<tailnet>.ts.net (web UI, API, and the mobile app's server URL).
+  # See ../HTTPS.md. Immich can't be served under a sub-path, so it needs its own
+  # hostname like this even if other services move to path routing.
+  immich-ts:
+    image: tailscale/tailscale:latest
+    container_name: immich-ts
+    hostname: immich
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SERVE_CONFIG=/config/serve.json
+      # Requires TS_AUTHKEY to be allowed to apply tag:container (OAuth client, or
+      # a tag-scoped auth key). Drop this line if using an untagged personal key.
+      - TS_EXTRA_ARGS=--advertise-tags=tag:container
+    volumes:
+      - ./ts-state:/var/lib/tailscale
+      - ./ts-serve.json:/config/serve.json:ro
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+
+  # Adapted from Immich's release docker-compose.yml. Upstream loads the whole
+  # .env via env_file; here each container gets only the variables it needs, so
+  # TS_AUTHKEY never lands in the app's environment.
+  immich-server:
+    image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-v3}
+    container_name: immich-server
+    # Share the sidecar's network namespace: tailscale serve proxies :443 to
+    # 127.0.0.1:2283. The sidecar sits on this project's bridge, so the default
+    # `database`, `redis`, and `immich-machine-learning` hostnames still resolve.
+    network_mode: service:immich-ts
+    depends_on:
+      - immich-ts
+      - redis
+      - database
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-America/Los_Angeles}
+      - DB_PASSWORD=${DB_PASSWORD:?set DB_PASSWORD in .env}
+      - DB_USERNAME=${DB_USERNAME:-postgres}
+      - DB_DATABASE_NAME=${DB_DATABASE_NAME:-immich}
+    volumes:
+      - ${UPLOAD_LOCATION:?set UPLOAD_LOCATION in .env}:/data
+      - /etc/localtime:/etc/localtime:ro
+    # Intel Quick Sync for video transcoding. Also select it in Administration →
+    # Settings → Video Transcoding → Hardware Acceleration.
+    devices:
+      - /dev/dri:/dev/dri
+    labels:
+      # Immich releases can carry breaking changes; upgrade by hand after reading
+      # the release notes, never via watchtower.
+      - com.centurylinklabs.watchtower.enable=false
+
+  immich-machine-learning:
+    image: ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-v3}
+    container_name: immich-machine-learning
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-America/Los_Angeles}
+    volumes:
+      - model-cache:/cache
+    labels:
+      - com.centurylinklabs.watchtower.enable=false
+
+  redis:
+    image: docker.io/valkey/valkey:9@sha256:70739f85ad2ee01a726a965584a0f94895f01b0c60b3cc8b0aeef11eaa6888cf
+    container_name: immich-redis
+    healthcheck:
+      test: redis-cli ping | grep -q PONG || exit 1
+    restart: unless-stopped
+    labels:
+      - com.centurylinklabs.watchtower.enable=false
+
+  database:
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23
+    container_name: immich-postgres
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_DB: ${DB_DATABASE_NAME:-immich}
+      POSTGRES_INITDB_ARGS: '--data-checksums'
+    volumes:
+      # Must be local SSD storage — Immich doesn't support the DB on a network
+      # share, and on an HDD it needs DB_STORAGE_TYPE=HDD.
+      - ${DB_DATA_LOCATION:-./postgres}:/var/lib/postgresql/data
+    shm_size: 128mb
+    restart: unless-stopped
+    labels:
+      - com.centurylinklabs.watchtower.enable=false
+
+volumes:
+  model-cache:

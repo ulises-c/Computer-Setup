@@ -210,6 +210,17 @@
                 - field: alloc
                   label: Memory
                   format: bytes
+        - immich:
+            icon: si-immich
+            href: https://{{HOMEPAGE_VAR_IMMICH_DOMAIN}}/
+            description: Photo + video backup
+            server: my-docker
+            container: immich-server
+            widget:
+              type: immich
+              url: https://{{HOMEPAGE_VAR_IMMICH_DOMAIN}}
+              key: "{{HOMEPAGE_VAR_IMMICH_KEY}}"
+              version: 2
         - filebrowser:
             icon: mdi-folder-network
             href: https://{{HOMEPAGE_VAR_FILEBROWSER_DOMAIN}}/
