@@ -47,7 +47,8 @@ usage: hermes-skills <command>
   scan [work|personal] secret scan + work-marker scan (personal) of the working tree
   pull                 fast-forward the enabled repos from origin
   push                 scan, then push the enabled repos (refuses uncommitted changes)
-  sync                 unattended: pull --ff-only, commit all changes, push (cron entry point)
+  sync                 unattended: pull --ff-only, back up cron, commit all changes, push (cron entry point)
+  backup-cron          snapshot cron jobs + scripts into the backup repo (no commit)
   hook <work|personal> pre-commit entry point (scans the index)
 EOF
 }
@@ -495,6 +496,107 @@ cmd_hook() {
   scan_repo "$1" "$PWD" index || die "commit blocked by hermes-skills"
 }
 
+# --- cron backup -------------------------------------------------------------
+# Snapshot every profile's cron jobs and scripts into <repo>/cron/<host>/<profile>/.
+# Keyed by host because one personal repo is shared by several machines. Runtime
+# fields (next/last run, claims, streaks) are dropped so a run by itself never
+# makes a diff. A job or script that names work (in the personal repo) or looks
+# like it holds a secret is left out, so one bad job cannot block every other
+# commit to the repo.
+
+CRON_RUNTIME_FIELDS='del(.last_run_at, .next_run_at, .last_status, .last_error, .last_delivery_error, .last_delivery_unverified, .failure_streak, .fire_claim, .monitor_state) | if (.repeat | type) == "object" then .repeat |= del(.completed) else . end'
+# Outside the work repo, chat IDs in delivery targets (a DM or channel in the
+# work Slack) become <redacted>; the platform name stays, so restoring a job
+# only needs the target re-picked. ($redact is a jq variable, not shell.)
+# shellcheck disable=SC2016
+CRON_REDACT_TARGETS='def redact: if type == "string" then split(",") | map(if test(":") then sub(":.*"; ":<redacted>") else . end) | join(",") else . end; if $redact then (.deliver |= redact) | (.failure_deliver |= redact) | (if .origin then .origin = "<redacted>" else . end) else . end'
+
+cron_backup_kind() {
+  local kind="${HERMES_SKILLS_CRON_BACKUP:-}"
+  if [[ -z "$kind" ]]; then if enabled personal; then kind=personal; else kind=off; fi; fi
+  printf '%s' "$kind"
+}
+
+hermes_root() {
+  local root="${HERMES_SKILLS_HERMES_ROOT:-$HERMES_HOME_DIR}"
+  if [[ "$root" == */profiles/* ]]; then root="${root%/profiles/*}"; fi
+  printf '%s' "$root"
+}
+
+# True (0) when a file must not go into <kind>'s repo; prints the reason.
+cron_refuse() {
+  local kind="$1" file="$2" hit
+  if [[ -n "$(secret_hits grep_dir "$file")" ]]; then printf 'possible secret'; return 0; fi
+  if [[ "$kind" == personal ]]; then
+    hit="$(marker_hits grep_dir "$file" | head -1)"
+    if [[ -n "$hit" ]]; then hit="${hit##*:}"; printf "names '%s'" "${hit#"${hit%%[[:alnum:]]*}"}"; return 0; fi
+  fi
+  return 1
+}
+
+# Rebuilds <dir>/cron/<host>/ from the live state. Prints nothing on success;
+# stores what it skipped in $SKIPPED_FILE for the caller to report.
+export_cron() {
+  local kind="$1" dir="$2" host root tmp home profile jobs n id why f rel out
+  host="${HERMES_SKILLS_CRON_HOST:-$(hostname -s)}"
+  [[ -n "$host" && "$host" != */* && "$host" != .* ]] || die "bad cron backup host name: '$host'"
+  root="$(hermes_root)"
+  tmp="$(mktemp -d)"
+  : > "$tmp/skipped"
+  for home in "$root" "$root"/profiles/*; do
+    [[ -d "$home" ]] || continue
+    if [[ "$home" == "$root" ]]; then profile=default; else profile="$(basename "$home")"; fi
+    out="$tmp/tree/$profile"
+    jobs="$home/cron/jobs.json"
+    n="$( { jq '.jobs | length' "$jobs" 2>/dev/null || printf 0; } | tail -1)"
+    if (( n > 0 )); then
+      mkdir -p "$tmp/jobs/$profile"
+      while IFS= read -r id; do
+        jq -S --arg id "$id" --argjson redact "$([[ "$kind" == work ]] && echo false || echo true)" \
+          ".jobs[] | select(.id == \$id) | $CRON_RUNTIME_FIELDS | $CRON_REDACT_TARGETS" "$jobs" > "$tmp/jobs/$profile/$id.json"
+        if why="$(cron_refuse "$kind" "$tmp/jobs/$profile/$id.json")"; then
+          printf '%s/%s job %s (%s): %s\n' "$host" "$profile" "$id" "$(jq -r '.name // ""' "$tmp/jobs/$profile/$id.json")" "$why" >> "$tmp/skipped"
+          rm -f "$tmp/jobs/$profile/$id.json"
+        fi
+      done < <(jq -r '.jobs[].id' "$jobs" | LC_ALL=C sort)
+      if compgen -G "$tmp/jobs/$profile/*.json" >/dev/null; then
+        mkdir -p "$out"
+        jq -S -s '{jobs: .}' "$tmp/jobs/$profile"/*.json > "$out/jobs.json"
+      fi
+    fi
+    if [[ -d "$home/scripts" ]]; then
+      while IFS= read -r f; do
+        rel="${f#"$home/scripts/"}"
+        if why="$(cron_refuse "$kind" "$f")"; then
+          printf '%s/%s script %s: %s\n' "$host" "$profile" "$rel" "$why" >> "$tmp/skipped"
+          continue
+        fi
+        mkdir -p "$out/scripts/$(dirname "$rel")"
+        cp -L --preserve=mode "$f" "$out/scripts/$rel"
+      done < <(find -L "$home/scripts" -mindepth 1 -name '.*' -prune -o -type f -print | LC_ALL=C sort)
+    fi
+  done
+  rm -rf "$dir/cron/$host"
+  if [[ -d "$tmp/tree" ]]; then mkdir -p "$dir/cron"; mv "$tmp/tree" "$dir/cron/$host"; fi
+  rmdir "$dir/cron" 2>/dev/null || true
+  mv "$tmp/skipped" "$SKIPPED_FILE"
+  rm -rf "$tmp"
+}
+
+cmd_backup_cron() {
+  local kind dir
+  kind="$(cron_backup_kind)"
+  [[ "$kind" != off ]] || die "cron backup is off (set HERMES_SKILLS_CRON_BACKUP=personal|work)"
+  check_kind "$kind"
+  dir="$(kind_dir "$kind")"
+  [[ -d "$dir/.git" ]] || die "$kind repo not cloned; run: hermes-skills install"
+  SKIPPED_FILE="$(mktemp)"
+  export_cron "$kind" "$dir"
+  if [[ -s "$SKIPPED_FILE" ]]; then printf 'not backed up:\n'; sed 's/^/  /' "$SKIPPED_FILE"; fi
+  rm -f "$SKIPPED_FILE"
+  git -C "$dir" status --short -- cron
+}
+
 # Unattended commit + push for cron. Per enabled repo: fast-forward from
 # origin, stage everything, commit with a generated message (the pre-commit
 # guard still runs), push. Silent when nothing changed; one summary line per
@@ -511,18 +613,32 @@ cmd_sync() {
 }
 
 sync_repo() {
-  local kind="$1" dir="$2" changes names msg ahead
+  local kind="$1" dir="$2" changes names msg ahead parts=() seen
   if [[ ! -d "$dir/.git" ]]; then printf '%s: not cloned at %s; run: hermes-skills install\n' "$kind" "$dir" >&2; return 1; fi
   if ! git -C "$dir" fetch --quiet origin; then printf '%s: fetch failed\n' "$kind" >&2; return 1; fi
   if git -C "$dir" rev-parse --verify --quiet '@{u}' >/dev/null && ! git -C "$dir" merge --ff-only --quiet '@{u}' 2>/dev/null; then
     printf '%s: local and origin have diverged, or uncommitted edits touch files that changed upstream; resolve by hand in %s\n' "$kind" "$dir" >&2
     return 1
   fi
+  if [[ "$kind" == "$(cron_backup_kind)" ]]; then
+    SKIPPED_FILE="$dir/.git/hermes-cron-skipped.new"
+    export_cron "$kind" "$dir"
+    # Report left-out jobs only when that set changes, not every night.
+    seen="$dir/.git/hermes-cron-skipped"
+    if ! cmp -s "$SKIPPED_FILE" "$seen" 2>/dev/null && [[ -s "$SKIPPED_FILE" || -e "$seen" ]]; then
+      if [[ -s "$SKIPPED_FILE" ]]; then printf '%s: cron backup left out:\n' "$kind"; sed 's/^/  /' "$SKIPPED_FILE"
+      else printf '%s: cron backup no longer leaves anything out\n' "$kind"; fi
+    fi
+    mv "$SKIPPED_FILE" "$seen"
+  fi
   git -C "$dir" add -A
   if ! git -C "$dir" diff --cached --quiet; then
     changes="$(git -C "$dir" diff --cached --name-status)"
     names="$(sed -nE 's#^[A-Z][0-9]*\t(.*\t)?skills/(.*/)?([^/]+)/(SKILL\.md|references/.*|templates/.*|scripts/.*|assets/.*)$#\3#p' <<< "$changes" | LC_ALL=C sort -u | paste -sd' ')"
-    msg="chore: sync skills${names:+ ($names)}"
+    if [[ -n "$names" ]]; then parts+=("skills ($names)"); fi
+    if grep -qE $'^[A-Z][0-9]*\t(.*\t)?cron/' <<< "$changes"; then parts+=("cron backup"); fi
+    (( ${#parts[@]} )) || parts+=("config")
+    msg="chore: sync $(IFS=,; printf '%s' "${parts[*]}" | sed 's/,/, /g')"
     if ! git -C "$dir" commit --quiet -m "$msg" -m "Automated nightly commit by hermes-skills sync."$'\n\n'"$changes" 2>"$dir/.git/hermes-skills-sync.err"; then
       git -C "$dir" reset --quiet
       printf '%s: commit blocked, changes left unstaged in %s:\n%s\n' "$kind" "$dir" "$(cat "$dir/.git/hermes-skills-sync.err")" >&2
@@ -573,6 +689,7 @@ main() {
     pull)     cmd_pull ;;
     push)     cmd_push ;;
     sync)     cmd_sync ;;
+    backup-cron) cmd_backup_cron ;;
     hook)     cmd_hook "$@" ;;
     *) usage >&2; exit 2 ;;
   esac

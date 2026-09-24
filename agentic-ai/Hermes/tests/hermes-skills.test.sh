@@ -268,6 +268,7 @@ for n in tidy-notes acme-deploy second; do
 done
 
 printf 'sync (nightly cron entry point)\n'
+export HERMES_SKILLS_CRON_BACKUP=off  # cron backup has its own section below
 check "install wrote the cron script" test -x "$HERMES_HOME/scripts/hermes-skills-sync.sh"
 expect_rc 0 "sync with nothing to do" "$HERMES_HOME/scripts/hermes-skills-sync.sh"
 if [[ -s "$T/out" ]]; then fail "sync is silent when idle"; sed 's/^/       /' "$T/out" >&2; else pass "sync is silent when idle"; fi
@@ -303,6 +304,59 @@ git -C "$T/clones/work" -c commit.gpgsign=false commit -qam "feat: this side"
 expect_rc 1 "sync refuses diverged history" "$TOOL" sync
 expect_out 'work: local and origin have diverged' "divergence is reported"
 check "nothing force-pushed" bash -c "git --git-dir='$T/remote-work.git' log -1 --format=%s | grep -q 'other side'"
+
+printf 'cron backup\n'
+unset HERMES_SKILLS_CRON_BACKUP
+export HERMES_SKILLS_CRON_HOST=testhost
+mkdir -p "$HERMES_HOME/cron" "$HERMES_HOME/profiles/p1/cron" "$HERMES_HOME/scripts/lib" "$HERMES_HOME/scripts/.cache"
+jq -n --arg aws "$FAKE_AWS" '{jobs: [
+  {id: "j_clean", name: "clean", prompt: "", script: "clean.sh", no_agent: true, schedule: {kind: "cron", expr: "0 3 * * *"},
+   deliver: "slack:D0TEST1234,local", origin: {platform: "slack", chat_id: "D0TEST1234"},
+   next_run_at: "2030-01-01T03:00:00", last_run_at: "2029-12-31T03:00:00", last_status: "ok", repeat: {times: null, completed: 4}},
+  {id: "j_work", name: "work", prompt: "check acmecorp deploys", schedule: {kind: "cron", expr: "0 4 * * *"}},
+  {id: "j_secret", name: "leaky", prompt: ("use key " + $aws), schedule: {kind: "cron", expr: "0 5 * * *"}}
+], updated_at: "x"}' > "$HERMES_HOME/cron/jobs.json"
+jq -n '{jobs: [{id: "j_p1", name: "profile job", prompt: "summarize my notes", schedule: {kind: "interval", minutes: 60}}]}' > "$HERMES_HOME/profiles/p1/cron/jobs.json"
+printf '#!/usr/bin/env bash\necho clean\n' > "$HERMES_HOME/scripts/clean.sh"; chmod 755 "$HERMES_HOME/scripts/clean.sh"
+printf 'helper\n' > "$HERMES_HOME/scripts/lib/util.sh"
+printf '#!/usr/bin/env bash\n# pages on ACME-9\n' > "$HERMES_HOME/scripts/work.sh"
+printf 'cache\n' > "$HERMES_HOME/scripts/.cache/state"
+P="$T/clones/personal/cron/testhost"
+expect_rc 0 "backup-cron snapshots jobs" env HERMES_SKILLS_ENV="$T/env-personal" "$TOOL" backup-cron
+expect_out "job j_work \(work\): names 'acmecorp'" "work-named job left out, with the reason"
+expect_out 'job j_secret \(leaky\): possible secret' "secret job left out"
+expect_out 'script work.sh: names' "work-named script left out"
+if grep -qF "$FAKE_AWS" "$T/out"; then fail "backup-cron does not echo the secret"; else pass "backup-cron does not echo the secret"; fi
+check "clean job backed up" test "$(jq -r '[.jobs[].id] | join(",")' "$P/default/jobs.json")" = j_clean
+check "delivery chat id redacted" test "$(jq -r '.jobs[0].deliver' "$P/default/jobs.json")" = "slack:<redacted>,local"
+check "origin redacted" test "$(jq -r '.jobs[0].origin' "$P/default/jobs.json")" = "<redacted>"
+if grep -rq D0TEST1234 "$P"; then fail "no chat id anywhere in the backup"; else pass "no chat id anywhere in the backup"; fi
+check "runtime fields dropped" test "$(jq '.jobs[0] | has("next_run_at") or has("last_status") or (.repeat | has("completed"))' "$P/default/jobs.json")" = false
+check "other profiles backed up" test "$(jq -r '.jobs[0].id' "$P/p1/jobs.json")" = j_p1
+check "scripts backed up, mode kept" test -x "$P/default/scripts/clean.sh"
+check "nested scripts backed up" test -f "$P/default/scripts/lib/util.sh"
+if [[ -e "$P/default/scripts/work.sh" || -e "$P/default/scripts/.cache" ]]; then fail "work-named and hidden scripts not copied"; else pass "work-named and hidden scripts not copied"; fi
+expect_rc 0 "sync commits the cron backup" env HERMES_SKILLS_ENV="$T/env-personal" "$TOOL" sync
+expect_out 'personal: cron backup left out:' "left-out jobs reported on first sync"
+expect_out 'personal: committed [0-9a-f]+ — chore: sync cron backup' "cron commit message"
+check "personal remote has the backup" git --git-dir="$T/remote-personal.git" cat-file -e HEAD:cron/testhost/default/jobs.json
+jq '.jobs[0].next_run_at = "2031-01-01T03:00:00" | .jobs[0].last_status = "error" | .jobs[0].repeat.completed = 9' "$HERMES_HOME/cron/jobs.json" > "$T/j" && mv "$T/j" "$HERMES_HOME/cron/jobs.json"
+expect_rc 0 "sync after a run" env HERMES_SKILLS_ENV="$T/env-personal" "$TOOL" sync
+if [[ -s "$T/out" ]]; then fail "run-only changes and the same left-out set stay silent"; sed 's/^/       /' "$T/out" >&2; else pass "run-only changes and the same left-out set stay silent"; fi
+jq '.jobs |= map(select(.id != "j_clean"))' "$HERMES_HOME/cron/jobs.json" > "$T/j" && mv "$T/j" "$HERMES_HOME/cron/jobs.json"
+rm -f "$HERMES_HOME/scripts/clean.sh"
+expect_rc 0 "sync records a removed job" env HERMES_SKILLS_ENV="$T/env-personal" "$TOOL" sync
+expect_out 'chore: sync cron backup' "removal committed"
+if [[ -e "$P/default/jobs.json" || -e "$P/default/scripts/clean.sh" ]]; then fail "removed job and script gone from the backup"; else pass "removed job and script gone from the backup"; fi
+check "other host's backup untouched" bash -c "mkdir -p '$T/clones/personal/cron/otherhost' && touch '$T/clones/personal/cron/otherhost/keep' && env HERMES_SKILLS_ENV='$T/env-personal' '$TOOL' backup-cron >/dev/null && test -f '$T/clones/personal/cron/otherhost/keep'"
+rm -rf "$T/clones/personal/cron/otherhost"
+expect_rc 0 "backup into the work repo" env HERMES_SKILLS_ENV="$T/env-work" HERMES_SKILLS_CRON_BACKUP=work "$TOOL" backup-cron
+check "work repo keeps work-named jobs" test "$(jq -r '[.jobs[].id] | join(",")' "$T/clones/work/cron/testhost/default/jobs.json")" = j_work
+check "work repo still blocks secrets" bash -c "! grep -rqF '$FAKE_AWS' '$T/clones/work/cron'"
+rm -rf "$T/clones/work/cron"
+expect_rc 1 "bad host label refused" env HERMES_SKILLS_ENV="$T/env-personal" HERMES_SKILLS_CRON_HOST=../x "$TOOL" backup-cron
+expect_rc 1 "backup off is explicit" env HERMES_SKILLS_ENV="$T/env-work" "$TOOL" backup-cron
+unset HERMES_SKILLS_CRON_HOST
 
 printf '\n'
 if (( FAILS )); then printf '%d failure(s)\n' "$FAILS" >&2; exit 1; fi

@@ -75,7 +75,8 @@ hermes-skills adopt <name> <work|personal>
 hermes-skills classify <name>... # why a skill got its suggestion
 hermes-skills refresh-markers    # regenerate .work-terms from the Bitbucket workspace
 hermes-skills scan | verify | pull | push
-hermes-skills sync               # unattended pull --ff-only + commit + push (nightly cron)
+hermes-skills sync               # unattended pull --ff-only + cron backup + commit + push (nightly cron)
+hermes-skills backup-cron        # snapshot cron jobs + scripts into the backup repo, no commit
 ```
 
 A new agent-created skill lands in `~/.hermes/skills/`. `status` lists it as
@@ -114,6 +115,31 @@ unstaged and left in the working tree for you to fix. A `flock` stops
 overlapping runs. Unattended runs need the Forgejo SSH key and the GPG
 signing key to work without a prompt, or the key cached in an agent the
 gateway can reach.
+
+## Cron backup
+
+`sync` also snapshots every profile's cron jobs and `scripts/` into the
+personal repo, under `cron/<host>/<profile>/{jobs.json,scripts/}`, before it
+commits (`hermes-skills backup-cron` does the same without committing).
+
+- **Default target:** the personal repo when it is enabled, otherwise off.
+  Override it with `HERMES_SKILLS_CRON_BACKUP=personal|work|off`.
+- **Keyed by host:** one personal repo is shared by several machines, so each
+  host rebuilds only its own directory.
+- **No-op runs stay silent:** runtime fields (`next_run_at`, `last_*`,
+  `fire_claim`, `repeat.completed`, ...) are dropped, so a run by itself never
+  makes a diff.
+- **Redaction:** outside the work repo, chat IDs in `deliver` /
+  `failure_deliver` become `platform:<redacted>` and `origin` is dropped, so a
+  work Slack DM ID never reaches the personal repo. When restoring, re-pick
+  the delivery target.
+- **Left out:** a job or script with a possible secret, or (personal repo)
+  one that names work, is not backed up. `sync` reports what it left out only
+  when that set changes. It is not an error: one work job must not block
+  every other commit. Hidden files under `scripts/` are skipped.
+
+Restoring uses the normal CLI (`hermes cron create ...` from the saved
+fields). The snapshot is a record, not a file to copy over `jobs.json`.
 
 ## First-time setup
 
