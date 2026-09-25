@@ -6,7 +6,9 @@ convergence is supposed to carry.
 
 Shared placeholders:
 
-- `{{SCOPE}}` — e.g. ``the branch diff `git diff main...HEAD` on `fix/foo` ``
+- `{{SCOPE}}` — e.g. ``the diff `origin/trunk...<full-head-sha>` on `fix/foo` ``
+- `{{BASE_REF}}` — the fetched base ref, e.g. `origin/trunk`
+- `{{HEAD_SHA}}` — the exact full head SHA both reviewers must inspect
 - `{{DOMAIN}}` — what the codebase is and what it must guarantee
 - `{{PRIORITY}}` — the failure class that matters most here (see note below)
 
@@ -67,8 +69,9 @@ Review target: {{SCOPE}}. {{ONE_PARAGRAPH_SUMMARY_OF_THE_CHANGE}}
 Your job: assess whether this branch is ready to ship as a PR.
 
 Method:
-- Run `git log --oneline main..HEAD` and `git diff main...HEAD` (read it fully; use
-  `git diff main...HEAD -- <file>` per file for large files).
+- Run `git log --oneline {{BASE_REF}}..{{HEAD_SHA}}` and
+  `git diff {{BASE_REF}}...{{HEAD_SHA}}` (read it fully; use
+  `git diff {{BASE_REF}}...{{HEAD_SHA}} -- <file>` per file for large files).
 - Read surrounding code beyond the diff hunks wherever needed to verify a claim — do not
   report a finding you have not grounded in the actual code.
 - Prioritize {{PRIORITY}}. Also check second-order failures, empty-state handling,
