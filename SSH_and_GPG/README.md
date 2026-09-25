@@ -24,6 +24,16 @@ bash create_gpg_key.sh
 NAME="Jane Doe" EMAIL="jane@example.com" EXPIRY="1y" bash create_gpg_key.sh
 ```
 
+**Add an email to an existing key** (for example a personal email next to a work one, so one key
+signs for both identities):
+```bash
+bash create_gpg_key.sh --add-email <key-id>
+```
+It lists the key's current emails, prompts for new ones (skipping any the key already has), and
+prints the updated public key. Re-upload that key to every Git host that has the old one: hosts
+check each commit's email against the emails on the key. Once a key is published, its emails are
+public and can be revoked but never removed.
+
 ---
 
 ### `create_ssh_key.sh`

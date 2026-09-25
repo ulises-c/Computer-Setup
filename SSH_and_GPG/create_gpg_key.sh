@@ -1,10 +1,33 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Usage:
+#   create_gpg_key.sh                       create a new key (prompts; NAME/EMAIL/EXPIRY env vars pre-fill)
+#   create_gpg_key.sh --add-email <key-id>  add one or more emails to an existing key
+#
+# A key's emails are public once the key is published, and a published email can
+# be revoked but never removed, so only add emails you are fine linking together.
+
+usage() {
+  sed -n '4,9p' "$0" | sed 's/^# \{0,1\}//'
+  exit "${1:-0}"
+}
+
 # ---- Inputs (can be provided as env vars or will be prompted) ----
 NAME="${NAME:-}"
 EMAIL="${EMAIL:-}"
 EXPIRY="${EXPIRY:-2y}"
+ADD_TO_KEY=""
+
+case "${1:-}" in
+  "") ;;
+  --add-email)
+    ADD_TO_KEY="${2:-}"
+    [[ -n "$ADD_TO_KEY" ]] || { echo "Error: --add-email needs a key id." >&2; usage 2; }
+    ;;
+  -h|--help) usage 0 ;;
+  *) echo "Error: unknown argument: $1" >&2; usage 2 ;;
+esac
 
 prompt() {
   local var_name="$1" label="$2" default="${3:-}"
@@ -25,19 +48,71 @@ prompt() {
   printf -v "$var_name" '%s' "$value"
 }
 
+collect_emails() {
+  EXTRA_EMAILS=()
+  echo ""
+  echo "Enter $1 emails to attach to this key (one per line, empty line to finish):"
+  while true; do
+    read -r -p "  Email (or Enter to finish): " extra
+    [[ -z "$extra" ]] && break
+    EXTRA_EMAILS+=("$extra")
+  done
+}
+
+# Adds each EXTRA_EMAILS entry as a UID on key $1; skips emails the key already has.
+add_uids() {
+  local key_id="$1" extra_email
+  for extra_email in "${EXTRA_EMAILS[@]+"${EXTRA_EMAILS[@]}"}"; do
+    if gpg --list-keys --with-colons "$key_id" | awk -F: '$1=="uid"{print $10}' | grep -Fq "<$extra_email>"; then
+      echo "Key already has <$extra_email> (skipping)."
+      continue
+    fi
+    echo "Adding UID: $NAME <$extra_email>..."
+    gpg --quick-add-uid "$key_id" "$NAME <$extra_email>"
+  done
+}
+
+print_public_key() {
+  echo ""
+  echo "Public key (add this to GitHub / GitLab / etc.):"
+  echo "------------------------------------------------------------"
+  gpg --armor --export "$1"
+  echo "------------------------------------------------------------"
+  echo ""
+}
+
+# ---- Add emails to an existing key ----
+if [[ -n "$ADD_TO_KEY" ]]; then
+  if ! gpg --list-secret-keys "$ADD_TO_KEY" >/dev/null 2>&1; then
+    echo "Error: no secret key found for $ADD_TO_KEY." >&2
+    exit 1
+  fi
+  KEY_ID="$(gpg --list-secret-keys --with-colons "$ADD_TO_KEY" | awk -F: '$1=="sec"{print $5; exit}')"
+  if [[ -z "$NAME" ]]; then
+    # Default the name to the key's first UID, without its comment and email.
+    NAME="$(gpg --list-keys --with-colons "$KEY_ID" | awk -F: '$1=="uid"{print $10; exit}' | sed -E 's/ *(\(.*\))? *<.*>$//')"
+  fi
+  prompt NAME "Full name"
+  echo "Key $KEY_ID currently has:"
+  gpg --list-keys --with-colons "$KEY_ID" | awk -F: '$1=="uid"{print "  " $10}'
+  collect_emails "the"
+  if [[ ${#EXTRA_EMAILS[@]} -eq 0 ]]; then
+    echo "No emails given; nothing to do."
+    exit 0
+  fi
+  add_uids "$KEY_ID"
+  print_public_key "$KEY_ID"
+  echo "Re-upload this public key everywhere the old one is registered, so the host knows the new email."
+  echo "Git hosts check the email of each commit against the emails on the key."
+  exit 0
+fi
+
 prompt NAME   "Full name"
 prompt EMAIL  "Primary email"
 prompt EXPIRY "Key expiry (e.g. 1y, 2y, 0 for no expiry)" "2y"
 
 # ---- Collect additional emails ----
-EXTRA_EMAILS=()
-echo ""
-echo "Enter additional emails to attach to this key (one per line, empty line to finish):"
-while true; do
-  read -r -p "  Additional email (or Enter to finish): " extra
-  [[ -z "$extra" ]] && break
-  EXTRA_EMAILS+=("$extra")
-done
+collect_emails "additional"
 
 # ---- Generate key ----
 echo ""
@@ -58,9 +133,9 @@ Expire-Date: $EXPIRY
 %commit
 EOF
 
-# ---- Find the new key ----
-KEY_ID="$(gpg --list-secret-keys --keyid-format=long "$EMAIL" \
-  | awk '/^sec/{split($2,a,"/"); print a[2]; exit}')"
+# ---- Find the new key (newest secret key for this email, in case an older key shares it) ----
+KEY_ID="$(gpg --list-secret-keys --with-colons "<$EMAIL>" \
+  | awk -F: '$1=="sec"{print $6, $5}' | sort -n | tail -1 | cut -d' ' -f2)"
 
 if [[ -z "$KEY_ID" ]]; then
   echo "Error: could not find generated key for $EMAIL." >&2
@@ -71,25 +146,10 @@ echo ""
 echo "Key ID: $KEY_ID"
 
 # ---- Add extra UIDs ----
-for extra_email in "${EXTRA_EMAILS[@]+"${EXTRA_EMAILS[@]}"}"; do
-  echo "Adding UID: $NAME <$extra_email>..."
-  gpg --command-fd 0 --no-tty --edit-key "$KEY_ID" <<EOF
-adduid
-$NAME
-$extra_email
-
-O
-save
-EOF
-done
+add_uids "$KEY_ID"
 
 # ---- Show public key ----
-echo ""
-echo "Public key (add this to GitHub / GitLab / etc.):"
-echo "------------------------------------------------------------"
-gpg --armor --export "$KEY_ID"
-echo "------------------------------------------------------------"
-echo ""
+print_public_key "$KEY_ID"
 
 # ---- Configure git to use this key (optional) ----
 read -r -p "Configure git to sign commits with this key? (Y/n): " yn
