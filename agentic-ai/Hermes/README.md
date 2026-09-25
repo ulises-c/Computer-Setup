@@ -38,6 +38,19 @@ hermes-config       (personal Forgejo account)  ─┴─► skills.external_dir
 - **Secrets are blocked everywhere.** The token and private-key patterns are
   checked by `adopt`, by a pre-commit hook installed into each clone, and again
   by `push`. A match is reported by file:line only; the value is never printed.
+- **The guard checks what a push publishes.** `push`, `sync`, and a pre-push
+  hook installed next to the pre-commit hook scan everything the push sends
+  that origin does not have yet: every new file (binary files and symlink
+  targets too, including files a later commit deleted), every path, every
+  commit message, and the branch name. The tool then pushes exactly the
+  commit it scanned. Commit author and email are not checked.
+- **The scan fails closed.** A scanner error (for example a
+  `HERMES_CONFIG_SYNC_WORK_MARKERS` that is not a valid ERE) or a missing terms
+  file blocks the commit, push, or adopt; it never counts as clean. `\n`, `\r`
+  and `\t` escapes (JSON, `printf` strings) count as word boundaries.
+- **Only the configured remote.** `sync`, `pull`, and `push` refuse to run when
+  origin's fetch URL or its push URL (after `insteadOf` rewrites) is not the
+  `REMOTE` in `.env`; `verify` checks both.
 - **Skills Hermes owns are never moved.** Bundled, hub-installed, shipped, and
   once-shipped skills (found in the Hermes source history) stay local and update
   through `hermes update`. Only skills you wrote are adopted into a repo.
@@ -50,8 +63,8 @@ Checked in order; the first rule that applies decides.
 
 1. **Hermes owns it** → stays local, never adopted.
 2. **The content names something work-internal** → work. This is the only
-   enforced rule: `adopt`, the personal repo's pre-commit hook, and `push` all
-   refuse it. Markers are the generated repo-name terms, Jira issue refs
+   enforced rule: `adopt`, the personal repo's pre-commit and pre-push hooks,
+   and `push` all refuse it, in file contents and in file and directory names. Markers are the generated repo-name terms, Jira issue refs
    (`KEY-123`, case-sensitive), and an optional hand-written regex.
 3. **Most of its edits happened in work sessions** (more than half; a tie is
    personal) → suggest work. `lib/provenance.py` reads the curator ledger and each
@@ -106,7 +119,7 @@ and it only messages you when something happened. For each enabled repo:
 2. `git add -A`. If anything is staged, commit as
    `chore: sync skills (<names>)` with the changed files listed in the body.
    The commit is signed, and the pre-commit guard runs as for any commit.
-3. Push if ahead, after re-running the scan.
+3. Push if ahead, after scanning the outgoing commits.
 
 | Outcome | Message |
 |---|---|

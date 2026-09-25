@@ -306,6 +306,190 @@ expect_rc 1 "sync refuses diverged history" "$TOOL" sync
 expect_out 'work: local and origin have diverged' "divergence is reported"
 check "nothing force-pushed" bash -c "git --git-dir='$T/remote-work.git' log -1 --format=%s | grep -q 'other side'"
 
+printf 'push-time guard\n'
+PC="$T/clones/personal" PR="$T/remote-personal.git" WC="$T/clones/work" F="$T/clones/personal/skills/general/fresh"
+PB="$(git -C "$PC" symbolic-ref --short HEAD)"
+PBASE="$(git -C "$PC" rev-parse HEAD)"
+PREFS="$(git --git-dir="$PR" for-each-ref)"
+psync() { env HERMES_CONFIG_SYNC_ENV="$T/env-personal" "$TOOL" "$@"; }
+published() { [[ "$(git --git-dir="$PR" for-each-ref)" != "$PREFS" ]]; }
+# Puts the personal clone and its remote back where this section started.
+preset() {
+  local r
+  git -C "$PC" checkout -qf "$PB"
+  git -C "$PC" reset -q --hard "$PBASE"
+  git -C "$PC" clean -qfd
+  git -C "$PC" config --unset remote.origin.pushurl || true
+  git -C "$PC" remote set-url origin "$PR"
+  for r in $(git --git-dir="$PR" for-each-ref --format='%(refname)'); do
+    if [[ "$r" != "refs/heads/$PB" ]]; then git --git-dir="$PR" update-ref -d "$r"; fi
+  done
+  git --git-dir="$PR" update-ref "refs/heads/$PB" "$PBASE"
+  git -C "$PC" fetch -q --prune origin
+  for r in $(git -C "$PC" for-each-ref --format='%(refname:short)' refs/heads); do
+    if [[ "$r" != "$PB" ]]; then git -C "$PC" branch -qD "$r"; fi
+  done
+}
+blocked() {  # a personal-only sync must fail and publish nothing
+  expect_rc 1 "$1" psync sync
+  if published; then fail "$1: nothing published"; else pass "$1: nothing published"; fi
+  preset
+}
+check "install wrote the pre-push hook" test -x "$PC/.git/hooks/pre-push"
+mkdir -p "$F/references" && printf 'plain notes\n' > "$F/references/widget-server.md"
+blocked "sync blocks a marker in a file name"
+skill "$PC/skills/acmecorp/tool" tool
+blocked "sync blocks a marker in a directory name"
+printf 'plain notes\n' > "$F/gadgetron.md"
+git -C "$PC" add -A
+expect_rc 1 "the commit guard checks staged file names" git -C "$PC" -c commit.gpgsign=false commit -qm "docs: notes"
+preset
+git -C "$PC" checkout -qb ACME-99-widget-server
+skill "$PC/skills/general/branchy" branchy
+blocked "sync blocks a marker in the branch name"
+printf 'bin\0Acmecorp internal\n' > "$F/blob.bin"
+blocked "sync blocks a marker in a file with a NUL byte"
+printf '*.md -diff\n' > "$PC/.gitattributes"
+printf 'see gadgetron runbook\n' > "$F/notes.md"
+blocked "sync blocks a marker in a -diff file"
+ln -s ../../acmecorp/runbook.md "$F/runbook.md"
+blocked "sync blocks a symlink whose target names a marker"
+jq -n '{summary: "Summary:\nACME-12 done"}' > "$F/data.json"
+blocked 'sync blocks a \nACME-12 escape in JSON'
+jq -n '{summary: "see:\twidget-server"}' > "$F/data.json"
+blocked 'sync blocks a \twidget-server escape in JSON'
+git clone -q -b "$PB" "$PR" "$T/pother"
+printf 'old notes\n' > "$T/pother/gadgetron-notes.md"
+git -C "$T/pother" add -A && git -C "$T/pother" -c commit.gpgsign=false commit -qm "docs: old notes" && git -C "$T/pother" push -q
+mark="$(git -C "$T/pother" rev-parse HEAD)"
+git -C "$PC" fetch -q origin && git -C "$PC" merge -q --ff-only "origin/$PB"
+rm "$PC/gadgetron-notes.md"
+expect_rc 1 "sync blocks a marker in the generated commit message" psync sync
+check "generated commit message: nothing pushed" test "$(git --git-dir="$PR" rev-parse "refs/heads/$PB")" = "$mark"
+check "generated commit message: nothing committed" test "$(git -C "$PC" rev-parse HEAD)" = "$mark"
+preset
+rm -rf "$T/pother"
+printf 'Acmecorp notes\n' > "$F/wip.md"
+git -C "$PC" add -A && git -C "$PC" -c commit.gpgsign=false commit -q --no-verify -m "wip"
+git -C "$PC" rm -q skills/general/fresh/wip.md && git -C "$PC" -c commit.gpgsign=false commit -qm "chore: drop wip"
+expect_rc 1 "push blocks a --no-verify blob deleted in a later commit" psync push
+if published; then fail "push of a deleted blob: nothing published"; else pass "push of a deleted blob: nothing published"; fi
+blocked "sync blocks a --no-verify blob deleted in a later commit"
+printf 'Acmecorp notes\n' > "$F/wip.md"
+git -C "$PC" add -A && git -C "$PC" -c commit.gpgsign=false commit -q --no-verify -m "wip"
+expect_rc 1 "the pre-push hook blocks a manual git push" git -C "$PC" push -q origin HEAD
+if published; then fail "manual git push: nothing published"; else pass "manual git push: nothing published"; fi
+preset
+
+printf 'fail-closed scanning\n'
+sed "s/^HERMES_CONFIG_SYNC_WORK_MARKERS=.*/HERMES_CONFIG_SYNC_WORK_MARKERS='(?i)acmecorp'/" "$T/env-personal" > "$T/env-badre"
+expect_rc 1 "an invalid marker regex is refused" env HERMES_CONFIG_SYNC_ENV="$T/env-badre" "$TOOL" scan personal
+expect_out 'HERMES_CONFIG_SYNC_WORK_MARKERS' "the invalid regex is named"
+sed "s/^HERMES_CONFIG_SYNC_JIRA_KEYS=.*/HERMES_CONFIG_SYNC_JIRA_KEYS='A[B'/" "$T/env-personal" > "$T/env-badjira"
+expect_rc 1 "a scanner error fails the scan" env HERMES_CONFIG_SYNC_ENV="$T/env-badjira" "$TOOL" scan personal
+printf 'plain notes\n' > "$F/more.md"
+git -C "$PC" add -A
+expect_rc 1 "a scanner error blocks the commit" env HERMES_CONFIG_SYNC_ENV="$T/env-badjira" git -C "$PC" -c commit.gpgsign=false commit -qm "docs: more"
+preset
+skill "$S/general/plain-adopt" plain-adopt
+expect_rc 1 "a scanner error blocks adopt" env HERMES_CONFIG_SYNC_ENV="$T/env-badjira" "$TOOL" adopt plain-adopt personal
+check "the skill was not moved" test -f "$S/general/plain-adopt/SKILL.md"
+rm -rf "$S/general/plain-adopt"
+preset
+mv "$T/terms" "$T/terms.away"
+expect_rc 1 "scan fails without the terms file" psync scan personal
+expect_out 'refresh-markers' "the missing terms file names the fix"
+expect_rc 1 "sync fails without the terms file" psync sync
+printf 'plain notes\n' > "$F/more.md"
+git -C "$PC" add -A
+expect_rc 1 "the commit guard fails without the terms file" git -C "$PC" -c commit.gpgsign=false commit -qm "docs: more"
+preset
+expect_rc 0 "install still works without the terms file" "$TOOL" install
+check "install recreated the terms file" test -s "$T/terms"
+rm -f "$T/terms.away"
+skill "$S/dev/escape-a" escape-a
+mkdir -p "$S/dev/escape-a/scripts"
+cat > "$S/dev/escape-a/scripts/report.sh" <<'EOF'
+printf "Summary:\nACME-42 done\n"
+EOF
+skill "$S/dev/escape-b" escape-b
+cat > "$S/dev/escape-b/run.sh" <<'EOF'
+echo "see:\twidget-server"
+EOF
+skill "$S/dev/name-notes" name-notes
+mkdir -p "$S/dev/name-notes/references" && printf 'plain notes\n' > "$S/dev/name-notes/references/gadgetron.md"
+skill "$S/dev/linked" linked
+ln -s /opt/elsewhere "$S/dev/linked/data"
+expect_rc 0 "migrate plan with escapes, names and links" "$TOOL" migrate
+expect_out 'escape-a +dev/escape-a +work' 'a \nACME-42 escape in a script marks work'
+expect_out 'escape-b +dev/escape-b +work' 'a \twidget-server escape in a script marks work'
+expect_out 'name-notes +dev/name-notes +work' "a marker in a file name marks work"
+expect_out 'linked +dev/linked +SKIP:symlink' "a skill with a symlink is skipped"
+for n in escape-a escape-b name-notes; do
+  expect_rc 1 "adopt refuses $n for the personal repo" "$TOOL" adopt "$n" personal
+done
+expect_rc 1 "adopt refuses a skill with a symlink" "$TOOL" adopt linked personal
+expect_out 'symlink' "refused for the symlink reason"
+rm -rf "$S/dev/escape-a" "$S/dev/escape-b" "$S/dev/name-notes" "$S/dev/linked"
+
+printf 'remote enforcement\n'
+git clone -q --bare "$PR" "$T/elsewhere.git"
+ELSE="$(git --git-dir="$T/elsewhere.git" for-each-ref)"
+skill "$PC/skills/general/moved" moved
+git -C "$PC" remote set-url origin "$T/elsewhere.git"
+expect_rc 1 "sync refuses an origin that is not the configured remote" psync sync
+expect_out 'HERMES_CONFIG_SYNC_PERSONAL_REMOTE' "the mismatch names the setting"
+check "origin mismatch: nothing committed" test "$(git -C "$PC" rev-parse HEAD)" = "$PBASE"
+expect_rc 1 "pull refuses an origin that is not the configured remote" psync pull
+expect_rc 1 "verify flags an origin mismatch" "$TOOL" verify
+expect_out 'personal origin mismatch' "origin mismatch is named"
+git -C "$PC" remote set-url origin "$PR"
+git -C "$PC" config remote.origin.pushurl "$T/elsewhere.git"
+expect_rc 1 "sync refuses a pushurl that is not the configured remote" psync sync
+expect_rc 1 "push refuses a pushurl that is not the configured remote" psync push
+expect_out 'push URL is not HERMES_CONFIG_SYNC_PERSONAL_REMOTE' "push names the push URL mismatch"
+check "nothing pushed to the other remote" test "$(git --git-dir="$T/elsewhere.git" for-each-ref)" = "$ELSE"
+expect_rc 1 "verify flags a pushurl mismatch" "$TOOL" verify
+reject_out '\[ OK \] personal origin' "verify does not pass a pushurl mismatch"
+git -C "$PC" config --unset remote.origin.pushurl
+git -C "$PC" config "url.$T/elsewhere.git.pushInsteadOf" "$PR"
+expect_rc 1 "sync refuses a pushInsteadOf rewrite to another remote" psync sync
+check "nothing pushed through the rewrite" test "$(git --git-dir="$T/elsewhere.git" for-each-ref)" = "$ELSE"
+git -C "$PC" config --remove-section "url.$T/elsewhere.git"
+preset
+rm -rf "$T/elsewhere.git"
+
+printf 'guard in the work repo / clean sync\n'
+WB="$(git -C "$WC" symbolic-ref --short HEAD)"
+git -C "$WC" fetch -q origin && git -C "$WC" reset -q --hard "origin/$WB"  # drop the diverged test commit
+WREFS="$(git --git-dir="$T/remote-work.git" for-each-ref)"
+printf 'key %s\n' "$FAKE_AWS" > "$WC/skills/dev/acme-deploy/creds.md"
+git -C "$WC" add -A && git -C "$WC" -c commit.gpgsign=false commit -q --no-verify -m "wip"
+git -C "$WC" rm -q skills/dev/acme-deploy/creds.md && git -C "$WC" -c commit.gpgsign=false commit -qm "chore: drop creds"
+expect_rc 1 "sync blocks a secret in an outgoing blob of the work repo" "$TOOL" sync
+expect_out 'possible secrets in work repo' "the work secret is reported"
+if grep -qF "$FAKE_AWS" "$T/out"; then fail "outgoing secret value not echoed"; else pass "outgoing secret value not echoed"; fi
+check "work remote unchanged" test "$(git --git-dir="$T/remote-work.git" for-each-ref)" = "$WREFS"
+git -C "$WC" reset -q --hard "origin/$WB"
+rm -f "$PC/.git/hooks/pre-push"
+expect_rc 1 "verify fails without the pre-push guard" "$TOOL" verify
+expect_out 'personal pre-push guard missing' "the missing pre-push guard is named"
+expect_rc 0 "install restores the pre-push guard" "$TOOL" install
+git -C "$PC" checkout -qb topic
+skill "$PC/skills/general/topic-one" topic-one
+git -C "$PC" add -A && git -C "$PC" -c commit.gpgsign=false commit -qm "feat: topic"
+expect_rc 0 "push publishes a new clean branch" psync push
+check "the new branch has an upstream" git -C "$PC" rev-parse --verify --quiet '@{u}'
+check "the remote has the new branch" git --git-dir="$PR" rev-parse --verify --quiet refs/heads/topic
+preset
+skill "$PC/skills/general/clean-one" clean-one
+expect_rc 0 "a clean sync still commits and pushes" psync sync
+expect_out 'personal: committed [0-9a-f]+ — chore: sync skills \(clean-one\)' "clean sync commit message"
+expect_out 'personal: pushed 1 commit' "clean sync pushed"
+check "remote has the clean commit" test "$(git -C "$PC" rev-parse HEAD)" = "$(git --git-dir="$PR" rev-parse "refs/heads/$PB")"
+expect_rc 0 "idle sync after the guard tests" "$TOOL" sync
+if [[ -s "$T/out" ]]; then fail "idle sync stays silent"; sed 's/^/       /' "$T/out" >&2; else pass "idle sync stays silent"; fi
+
 printf 'cron backup\n'
 unset HERMES_CONFIG_SYNC_CRON_BACKUP
 export HERMES_CONFIG_SYNC_CRON_HOST=testhost
