@@ -6,6 +6,19 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com). Remaining
 work lives in [TODO.md](TODO.md); the design rationale for the unified layout is
 in [UNIFICATION.md](UNIFICATION.md).
 
+## Unreleased — EcoFlow UPS disconnected
+
+### Removed
+- The EcoFlow River 3 Plus is physically disconnected, so its NUT config is gone:
+  the `[ecoflow]` stanza in `linux-server/ups/ups.conf`, `udev-ecoflow.rules`
+  and its deploy in `ups/setup.sh`, `nut-driver@ecoflow` from `setup.sh`'s
+  enable/restart lists and `verify.sh`'s checks, and the homepage `ups-ecoflow`
+  card. Its driver had been restart-looping on the missing device since
+  2026-09-09, and that failure aborted `setup.sh --profile server` right after
+  the Docker step. `nut-driver-enumerator` drops the unit once the new
+  `ups.conf` is deployed. The parked `ups.load` NUT-master-build TODO went with
+  it; restore both from git history if the unit comes back.
+
 ## Unreleased — pnpm 12
 
 ### Fixed

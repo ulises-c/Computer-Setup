@@ -146,16 +146,6 @@
               # so localhost reaches it.
               url: http://localhost:8097
               key: cyberpower
-        - ups-ecoflow:
-            icon: mdi-battery-charging-high
-            href: https://{{HOMEPAGE_VAR_PEANUT_DOMAIN}}/
-            description: NUT · EcoFlow River 3 Plus
-            server: my-docker
-            container: peanut
-            widget:
-              type: peanut
-              url: http://localhost:8097
-              key: ecoflow
 
     - Storage:
         - forgejo:

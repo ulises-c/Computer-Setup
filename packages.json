@@ -415,7 +415,7 @@
     "package_manager": { "server": "apt" },
     "priority": "medium",
     "optional": false,
-    "description": "Network UPS Tools — monitors the CyberPower CST135UC2 (primary, graceful shutdown on low battery) and EcoFlow River 3 Plus (monitoring-only) over USB (usbhid-ups, standalone); configure via linux-server/ups/setup.sh"
+    "description": "Network UPS Tools — monitors the CyberPower CST135UC2 (primary, graceful shutdown on low battery) over USB (usbhid-ups, standalone); configure via linux-server/ups/setup.sh"
   },
   {
     "name": "tailscale",

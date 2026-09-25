@@ -398,7 +398,7 @@ with a new 100.x address. Appending `?ephemeral=false` to the secret in
     3. The status card on Homepage shows last-run time, status, and repo size; failures push to ntfy
 
 19. UPS | [NUT](https://networkupstools.org/) | [Docs](https://networkupstools.org/docs/man/)
-    1. Battery-backup monitoring over USB — CyberPower CST135UC2 (primary: ntfy alerts, clean shutdown on low battery, auto-restart when wall power returns) plus an EcoFlow River 3 Plus (monitoring-only) wired upstream as a battery bank (`wall -> EcoFlow -> CyberPower -> server`). Full runbook in [`ups/README.md`](ups/README.md)
+    1. Battery-backup monitoring over USB — CyberPower CST135UC2 (primary: ntfy alerts, clean shutdown on low battery, auto-restart when wall power returns). Full runbook in [`ups/README.md`](ups/README.md)
     2. Deploy:
        ```sh
        sudo apt install nut   # or rerun the root setup.sh --profile server
@@ -406,7 +406,6 @@ with a new 100.x address. Appending `?ephemeral=false` to the secret in
        cp .env.example .env   # set UPSMON_PASSWORD (openssl rand -hex 16) + ntfy
        sudo bash setup.sh
        upsc cyberpower ups.status   # expect: OL
-       upsc ecoflow ups.status      # expect: OL
        docker compose up -d         # PeaNUT dashboard + homepage widgets
        ```
     3. Dashboard (charge/load/runtime graphs) at `https://peanut.<tailnet>.ts.net/` (set `TS_AUTHKEY` in `ups/.env` for the sidecar); the homepage **ups** card reads it via the `peanut` widget on localhost

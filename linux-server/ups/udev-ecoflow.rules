@@ -1,6 +1,0 @@
-# EcoFlow River 3 Plus (USB 3746:ffff) — absent from the packaged NUT
-# 62-nut-usbups.rules, so the driver (runs as the nut user) can't open it.
-# Deploy to /etc/udev/rules.d/65-nut-usbups-ecoflow.rules then:
-#   sudo udevadm control --reload
-#   sudo udevadm trigger
-ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="3746", ATTR{idProduct}=="ffff", MODE="0664", GROUP="nut"
