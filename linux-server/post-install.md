@@ -251,6 +251,12 @@ git remote set-url origin ssh://git@forgejo.<tailnet>.ts.net:22/<username>/<repo
   ```
 - [ ] Get API key: Actions → Settings → API Key — add to `homepage/.env` as `HOMEPAGE_VAR_SYNCTHING_KEY`
 
+### Immich — https://immich.\<tailnet\>.ts.net
+- [ ] Create the admin account (first sign-up becomes admin)
+- [ ] Administration → Settings: set **External domain**, pick **Quick Sync** under Video Transcoding → Hardware Acceleration, confirm database dumps are on
+- [ ] Create an API key with `server.statistics` → `HOMEPAGE_VAR_IMMICH_KEY` in `homepage/.env`
+- [ ] Install the phone app, point it at the server URL, enable backup — see [`immich/README.md`](immich/README.md)
+
 ### UPS (NUT) — host service, no UI
 
 Monitors two USB UPS units: the CyberPower (primary, clean shutdown on low
@@ -319,4 +325,5 @@ Three drives are attached via a TerraMas Thunderbolt DAS enclosure:
 | PeaNUT (UPS) | https://peanut.\<tailnet\>.ts.net/ | Tailscale sidecar; homepage ups card reads it via localhost :8097 |
 | Tailscale Web UI | http://localhost:8088 | After `tailscale up` |
 | Tailscale proxy | http://localhost:8089 | Internal — used by Homepage widget |
+| Immich | https://immich.\<tailnet\>.ts.net/ | Tailscale sidecar; excluded from watchtower; media on `UPLOAD_LOCATION`, not yet backed up (#87) |
 | Forgejo | https://forgejo.\<tailnet\>.ts.net/ | Tailscale sidecar (HTTPS via serve); Git over SSH on port 22 |

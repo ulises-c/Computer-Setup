@@ -119,6 +119,12 @@ cd linux-server/openspeedtest && cp .env.example .env
 docker compose up -d
 # Tailnet UI at https://openspeedtest.<tailnet>.ts.net/ — but run LAN tests via
 # http://<server-ip>:3030 so you measure the local network, not the tailnet
+
+# Immich — needs TS_AUTHKEY + DB_PASSWORD; see immich/README.md
+cd linux-server/immich && cp .env.example .env
+# edit .env, then:
+docker compose up -d
+# Access at https://immich.<tailnet>.ts.net/ — first sign-up becomes admin
 ```
 
 ### 6. Tailscale widget
@@ -410,9 +416,16 @@ with a new 100.x address. Appending `?ephemeral=false` to the secret in
     1. Network-wide DNS ad blocker — alternative to AdGuard Home
     2. Not yet configured
 
-21. Immich | [GitHub](https://github.com/immich-app/immich) | [Docs](https://immich.app/docs)
-    1. Self-hosted photo and video backup — Google Photos alternative with mobile apps, face recognition, and timeline view
-    2. Not yet configured
+21. Immich | [GitHub](https://github.com/immich-app/immich) | [Docs](https://docs.immich.app)
+    1. Self-hosted photo and video backup — Google Photos alternative with mobile apps, face recognition, and timeline view. Fronted by its own Tailscale HTTPS sidecar (see [`HTTPS.md`](HTTPS.md)); alternatives considered and the full runbook in [`immich/README.md`](immich/README.md)
+    2. Deploy:
+       ```sh
+       cd linux-server/immich
+       cp .env.example .env   # set TS_AUTHKEY + DB_PASSWORD (openssl rand -hex 24); check UPLOAD_LOCATION
+       docker compose up -d
+       ```
+    3. Access at `https://immich.<tailnet>.ts.net/` — the first sign-up becomes admin. Media on `UPLOAD_LOCATION` (14TB drive), Postgres on the SSD
+    4. Excluded from watchtower (Immich upgrades can break); upgrade by hand after reading the release notes
 
 22. Jellyfin | [GitHub](https://github.com/jellyfin/jellyfin) | [Docs](https://jellyfin.org/docs/)
     1. Self-hosted media server — stream your own movies, TV shows, and music to any device

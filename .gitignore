@@ -71,3 +71,7 @@ benchmarking/results/
 
 # Dragonwilds status JSON written at runtime (served to the homepage card)
 linux-server/dragonwilds/status/
+
+# Immich — postgres data dir + the default ./library if UPLOAD_LOCATION is left local
+linux-server/immich/postgres/
+linux-server/immich/library/

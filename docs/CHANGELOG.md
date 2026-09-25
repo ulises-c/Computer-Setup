@@ -6,6 +6,24 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com). Remaining
 work lives in [TODO.md](TODO.md); the design rationale for the unified layout is
 in [UNIFICATION.md](UNIFICATION.md).
 
+## Unreleased — Immich
+
+### Added
+- `linux-server/immich/`: Immich photo/video backup behind its own Tailscale
+  sidecar (`immich.<tailnet>.ts.net`), adapted from the v3 release compose.
+  Media on `UPLOAD_LOCATION` (a data drive), Postgres on the SSD, Intel Quick
+  Sync passed through for transcoding. Containers get only the env vars they
+  need rather than upstream's whole `.env`, and are labelled out of watchtower
+  so upgrades stay manual. README covers the alternatives considered (Ente,
+  PhotoPrism, …) and how its network lands in the `172.16.0.0/12` pool pinned
+  below ([#75](https://github.com/ulises-c/Computer-Setup/issues/75)).
+- Homepage **immich** card with the stats widget.
+
+### Notes
+Immich media is intentionally left out of the nightly restic backup for now (it
+would outgrow the 1TB target); offsite image backup is tracked in
+[#87](https://github.com/ulises-c/Computer-Setup/issues/87).
+
 ## Unreleased — Docker address pools
 
 ### Added

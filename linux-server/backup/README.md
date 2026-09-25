@@ -18,6 +18,9 @@ drive. Encrypted, deduplicated, pruned, and reported to ntfy + a homepage card.
 Excluded as disposable/regenerable: qBittorrent downloads, all `ts-state/`
 (Tailscale node keys — re-auth with `TS_AUTHKEY` regenerates them), caches, and
 the ~5.5 GB Dragonwilds game install (steamcmd re-downloads it).
+**Immich media is not backed up yet** (only `immich/.env`) — the library would
+outgrow the 1TB target; offsite image backup is tracked in
+[#87](https://github.com/ulises-c/Computer-Setup/issues/87).
 
 A Dragonwilds world is a plain `.sav` with no online-snapshot equivalent to
 sqlite's `.backup`, so a save written at the moment the 03:30 run reads it could
