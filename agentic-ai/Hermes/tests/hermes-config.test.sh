@@ -18,6 +18,7 @@ FAKE_SLACK="xoxb""-1234567890-abcdefghij"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
 export GIT_CEILING_DIRECTORIES="$T"
+export XDG_RUNTIME_DIR="$T"  # private sync lock: never contend with a real or parallel run
 FAILS=0
 pass() { printf '  ok   %s\n' "$1"; }
 fail() { printf '  FAIL %s\n' "$1" >&2; FAILS=$(( FAILS + 1 )); }
