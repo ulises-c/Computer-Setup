@@ -143,5 +143,11 @@ No public access without a router port-forward — see the README.
 | Imported save ignored, `NewGame()` in log | `DefaultWorldName` ≠ name inside the save |
 | Save copied but never read | Wrong folder — it is `SaveGames`, capital G |
 | Service dead after `start`, exit status 0 | Port 7777 already held; kill the stray process |
-| Server visible in browser, join says "Connection Lost" | LAN auto-discovery advertises a Docker-bridge address — use direct connect |
+| Server visible in browser, join says "Connection Lost" | Client firewall drops the server's LAN probe reply, so the game dials the WAN address — allow it ([README](README.md#network-connectivity)) or use direct connect |
 | Card says `starting` | Normal for ~30 s while assets load |
+
+---
+
+Gist: https://gist.github.com/ulises-c/add4c146891d551a43dcf69e51b95ead
+
+Repo: https://github.com/ulises-c/Computer-Setup/tree/main/linux-server/dragonwilds
