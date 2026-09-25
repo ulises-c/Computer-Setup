@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "notes": "Reviewer seats per roster. Each family lists launchers in preference order; scripts/seats.py picks the first usable one per family. 'expires' is the first day a seat is no longer used. The seat's 'model' is passed to its adapter, so this file is the single source of truth for models. No credentials here.",
+  "rosters": {
+    "work": {
+      "description": "Bedrock credits first (use-it-or-lose-it through 2026-12-31), subscriptions as fallback until they lapse.",
+      "families": 2,
+      "exclude_orchestrator_family": false,
+      "effort": {
+        "floor": "medium",
+        "default": "max",
+        "ceiling": "max"
+      },
+      "seats": {
+        "anthropic": [
+          {
+            "launcher": "hermes",
+            "profile": "review-anthropic",
+            "model": "us.anthropic.claude-opus-5-5",
+            "billing": "bedrock"
+          },
+          {
+            "launcher": "claude",
+            "bedrock": true,
+            "model": "us.anthropic.claude-opus-5",
+            "billing": "bedrock",
+            "note": "claude-opus-5-5 needs Claude Code >= 2.1.280"
+          },
+          {
+            "launcher": "claude",
+            "billing": "subscription",
+            "expires": "2027-01-01"
+          }
+        ],
+        "openai": [
+          {
+            "launcher": "codex",
+            "bedrock": true,
+            "model": "openai.gpt-6-sol",
+            "billing": "bedrock",
+            "note": "first: Mantle honours reasoning effort and Codex keeps --sandbox read-only"
+          },
+          {
+            "launcher": "hermes",
+            "profile": "review-openai",
+            "model": "us.openai.gpt-6-sol",
+            "billing": "bedrock",
+            "note": "Converse route: Hermes sends no reasoning effort for OpenAI models until the upstream fix lands"
+          },
+          {
+            "launcher": "codex",
+            "billing": "subscription",
+            "expires": "2027-01-01"
+          }
+        ]
+      }
+    },
+    "personal": {
+      "description": "Personal subscriptions. Reviewers come from the two families the orchestrator is not.",
+      "families": 2,
+      "exclude_orchestrator_family": true,
+      "effort": {
+        "floor": "medium",
+        "default": "xhigh",
+        "ceiling": "max"
+      },
+      "seats": {
+        "anthropic": [
+          {
+            "launcher": "claude",
+            "billing": "subscription"
+          }
+        ],
+        "openai": [
+          {
+            "launcher": "codex",
+            "billing": "subscription"
+          }
+        ],
+        "google": [
+          {
+            "launcher": "agy",
+            "billing": "subscription"
+          }
+        ]
+      }
+    }
+  }
+}

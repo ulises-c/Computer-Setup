@@ -6,7 +6,9 @@ convergence is supposed to carry.
 
 Shared placeholders:
 
-- `{{SCOPE}}` — e.g. ``the branch diff `git diff main...HEAD` on `fix/foo` ``
+- `{{SCOPE}}` — e.g. ``the diff `origin/trunk...<full-head-sha>` on `fix/foo` ``
+- `{{BASE_REF}}` — the fetched base ref, e.g. `origin/trunk`
+- `{{HEAD_SHA}}` — the exact full head SHA both reviewers must inspect
 - `{{DOMAIN}}` — what the codebase is and what it must guarantee
 - `{{PRIORITY}}` — the failure class that matters most here (see note below)
 
@@ -17,10 +19,11 @@ skew. A generic "find bugs" wastes the round.
 
 ---
 
-## Codex side
+## XML-structured variant (OpenAI-family seats)
 
-Write to a file, pass to `scripts/codex-run.sh` with `--prompt`. Never interpolate
-branch names or user text into the command string.
+GPT models follow the tagged structure well. Write to a file and pass it to the seat's
+adapter with `--prompt`. Never interpolate branch names or user text into the command
+string.
 
 ```xml
 <task>
@@ -53,9 +56,9 @@ adds or modifies, actively look for an input that slips past it.
 </dig_deeper_nudge>
 ```
 
-## Claude side
+## Plain variant (Anthropic, Google, and Hermes-launched seats)
 
-Same contract, plus the things a subagent needs told explicitly:
+Same contract, plus the things a tool-using agent needs told explicitly:
 
 ```
 You are performing an independent code review. Do NOT modify any files — read-only.
@@ -67,8 +70,9 @@ Review target: {{SCOPE}}. {{ONE_PARAGRAPH_SUMMARY_OF_THE_CHANGE}}
 Your job: assess whether this branch is ready to ship as a PR.
 
 Method:
-- Run `git log --oneline main..HEAD` and `git diff main...HEAD` (read it fully; use
-  `git diff main...HEAD -- <file>` per file for large files).
+- Run `git log --oneline {{BASE_REF}}..{{HEAD_SHA}}` and
+  `git diff {{BASE_REF}}...{{HEAD_SHA}}` (read it fully; use
+  `git diff {{BASE_REF}}...{{HEAD_SHA}} -- <file>` per file for large files).
 - Read surrounding code beyond the diff hunks wherever needed to verify a claim — do not
   report a finding you have not grounded in the actual code.
 - Prioritize {{PRIORITY}}. Also check second-order failures, empty-state handling,

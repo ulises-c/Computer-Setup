@@ -4,8 +4,8 @@ Each reviewer receives the other's findings **verbatim** and must rule on every 
 Transcribe faithfully — paraphrasing loses the file:line evidence that makes a claim
 checkable, and a reviewer cannot verify a claim you have summarized away.
 
-Send to the **existing** context on both sides (`SendMessage` for the Claude subagent,
-`--resume` for Codex) so neither has to re-derive its own analysis.
+Resume each reviewer's **existing** context using the harness mechanics in `SKILL.md`,
+so neither has to re-derive its own analysis.
 
 ## Frame (both sides)
 
@@ -18,11 +18,10 @@ round:
 > reviewer reproduced a finding empirically and you reasoned from code reading, its
 > evidence is stronger; where you reproduced and it reasoned, yours is.
 
-For Codex, identify yourself: *"This is Claude (<model name>), orchestrating a
-double-blind review."* For the Claude subagent, name the other reviewer with this run's
-actual configuration (*"OpenAI Codex, {{MODEL}} at {{EFFORT}}, reviewed the same diff
-blind"*) and restate the read-only rule —
-a resumed subagent will otherwise start fixing things.
+Identify the orchestrator honestly in both prompts: *"This is {{ORCHESTRATOR_HARNESS}}
+using {{ORCHESTRATOR_PROVIDER}} {{ORCHESTRATOR_MODEL}}, orchestrating a double-blind
+review."* Name the other reviewer with this run's actual configuration. In the Claude
+prompt, restate the read-only rule; a resumed reviewer may otherwise start fixing things.
 
 Pass along anything **you** verified independently between rounds, and say you verified
 it. It anchors the exchange in checked fact and stops both reviewers relitigating a
