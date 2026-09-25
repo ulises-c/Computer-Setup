@@ -3,8 +3,8 @@
 
 Reads ../seats.json, drops the orchestrator's family when the roster says so,
 and for each remaining family takes the first launcher that is usable right now:
-its CLI (and adapter script) exists, its Hermes profile exists, its `until`
-date has not passed, and for Bedrock billing the AWS session is valid.
+its CLI (and adapter script) exists, its Hermes profile exists, its `expires`
+date has not arrived, and for Bedrock billing the AWS session is valid.
 Prints one JSON object; exit 1 when fewer families than required are available.
 """
 
@@ -61,6 +61,17 @@ def unavailable_reason(seat, today):
     return None
 
 
+def excluded_reason(family, seat, excludes):
+    for item in excludes:
+        parts = item.split(":")
+        if len(parts) not in (2, 3):
+            sys.exit(f"seats: --exclude wants FAMILY:LAUNCHER[:BILLING], got '{item}'")
+        if parts[0] == family and parts[1] == seat["launcher"] and (
+                len(parts) == 2 or parts[2] == seat.get("billing")):
+            return "excluded (failed earlier this run)"
+    return None
+
+
 def clamp_effort(requested, policy):
     lo, hi = EFFORTS.index(policy["floor"]), EFFORTS.index(policy["ceiling"])
     return EFFORTS[min(max(EFFORTS.index(requested or policy["default"]), lo), hi)]
@@ -74,6 +85,8 @@ def main():
     ap.add_argument("--effort", choices=EFFORTS, help="requested effort; clamped to the roster's floor/ceiling")
     ap.add_argument("--seats-file", default=str(SKILL_DIR / "seats.json"))
     ap.add_argument("--today", help="YYYY-MM-DD override, for testing expiry")
+    ap.add_argument("--exclude", action="append", default=[], metavar="FAMILY:LAUNCHER[:BILLING]",
+                    help="skip a candidate that already failed this run (repeatable)")
     args = ap.parse_args()
 
     config = json.loads(Path(args.seats_file).read_text())
@@ -89,7 +102,7 @@ def main():
             skipped.append({"family": family, "reason": "orchestrator's own family"})
             continue
         for seat in candidates:
-            reason = unavailable_reason(seat, today)
+            reason = excluded_reason(family, seat, args.exclude) or unavailable_reason(seat, today)
             if reason is None:
                 chosen.append({"family": family, "effort": effort,
                                "adapter": str(SKILL_DIR / "scripts" / ADAPTERS[seat["launcher"]]), **seat})

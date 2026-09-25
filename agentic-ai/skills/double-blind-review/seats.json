@@ -34,16 +34,18 @@
         ],
         "openai": [
           {
-            "launcher": "hermes",
-            "profile": "review-openai",
-            "model": "us.openai.gpt-6-sol",
-            "billing": "bedrock"
-          },
-          {
             "launcher": "codex",
             "bedrock": true,
             "model": "openai.gpt-6-sol",
-            "billing": "bedrock"
+            "billing": "bedrock",
+            "note": "first: Mantle honours reasoning effort and Codex keeps --sandbox read-only"
+          },
+          {
+            "launcher": "hermes",
+            "profile": "review-openai",
+            "model": "us.openai.gpt-6-sol",
+            "billing": "bedrock",
+            "note": "Converse route: Hermes sends no reasoning effort for OpenAI models until the upstream fix lands"
           },
           {
             "launcher": "codex",

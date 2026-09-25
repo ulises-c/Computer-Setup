@@ -25,7 +25,8 @@ Usage:
   --effort   none, minimal, low, medium, high, xhigh, max, or ultra.
   --resume   Continue the seat's session; --session is required with it.
 
-Exit status is hermes's own, or 3 when the worktree was modified.
+Exit status is hermes's own; 3 when the worktree was modified; 4 when the model
+refused (safety/content filter), which hermes itself reports as success.
 EOF
 }
 
@@ -73,6 +74,12 @@ if [[ -n $(git -C "$dir" status --porcelain) ]]; then
   printf 'hermes-run: worktree is not clean before the run: %s\n' "$dir" >&2; exit 2
 fi
 
+# Refusals exit 0 with a canned reply; the profile's agent.log is the only
+# structured record. Profiles live under ~/.hermes/profiles regardless of HERMES_HOME.
+log="$HOME/.hermes/profiles/$profile/logs/agent.log"
+log_start=0
+[[ -f $log ]] && log_start=$(wc -l <"$log")
+
 out=$(mktemp)
 err=$(mktemp)
 trap 'rm -f "$out" "$err"' EXIT
@@ -101,6 +108,12 @@ if (( status != 0 )); then
   exit "$status"
 fi
 [[ -n $sid ]] && printf 'session id: %s\n' "$sid" >&2
+
+if [[ -n $sid && -f $log ]] &&
+  tail -n +"$((log_start + 1))" "$log" | grep -F "[$sid]" | grep -qF 'Model declined to respond'; then
+  printf 'hermes-run: model refused (content filter); treat this seat as failed\n' >&2
+  exit 4
+fi
 
 if [[ -n $(git -C "$dir" status --porcelain) ]]; then
   printf 'hermes-run: reviewer modified the worktree; treat this seat as failed\n' >&2

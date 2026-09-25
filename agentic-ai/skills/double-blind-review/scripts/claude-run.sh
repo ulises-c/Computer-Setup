@@ -23,7 +23,7 @@ Usage:
   --bedrock  Bill through Amazon Bedrock with the caller's AWS credentials.
   --resume   Continue the session given by --session.
 
-Exit status is claude's own.
+Exit status is claude's own; 4 when the model refused.
 EOF
 }
 
@@ -74,9 +74,10 @@ fi
 (( resume )) || session=$(</proc/sys/kernel/random/uuid)
 
 err=$(mktemp)
-trap 'rm -f "$err"' EXIT
+out=$(mktemp)
+trap 'rm -f "$err" "$out"' EXIT
 
-cmd=(claude -p "$(<"$prompt")")
+cmd=(claude -p "$(<"$prompt")" --output-format json)
 if (( resume )); then
   cmd+=(--resume "$session")
 else
@@ -94,7 +95,7 @@ if (( bedrock )); then
   export AWS_REGION=${AWS_REGION:-us-east-1}
 fi
 
-if (cd "$dir" && "${cmd[@]}") </dev/null 2>"$err"; then
+if (cd "$dir" && "${cmd[@]}") </dev/null >"$out" 2>"$err"; then
   status=0
 else
   status=$?
@@ -105,4 +106,19 @@ if (( status != 0 )); then
   tail -n 20 "$err" >&2
   exit "$status"
 fi
+# JSON output carries stop_reason, so a refusal is not mistaken for a review.
+if ! jq -e 'type == "object" and has("result")' "$out" >/dev/null 2>&1; then
+  printf 'claude-run: unexpected output (not a JSON result)\n' >&2
+  head -c 2000 "$out" >&2
+  exit 1
+fi
+jq -r '.result' "$out"
 printf 'session id: %s\n' "$session" >&2
+if [[ $(jq -r '.stop_reason // ""' "$out") == refusal ]]; then
+  printf 'claude-run: model refused; treat this seat as failed\n' >&2
+  exit 4
+fi
+if [[ $(jq -r '.is_error // false' "$out") == true ]]; then
+  printf 'claude-run: claude reported an error result\n' >&2
+  exit 1
+fi

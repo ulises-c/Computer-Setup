@@ -62,9 +62,10 @@ It prints the chosen seats as JSON (launcher, adapter path, profile/model, billi
 effort) plus every skipped candidate with its reason, and exits 1 when fewer families
 than required are available. Each family's candidates are tried in order; the first
 usable one wins (CLI present, Hermes profile present, `expires` not reached, AWS
-session valid for Bedrock billing). Pass each seat's `model` to its adapter. Rosters: `work` prefers Bedrock (Hermes profile first, then
-the Bedrock-routed CLI, then the subscription until it lapses); `personal` excludes the
-orchestrator's own family and uses subscriptions. Effort is clamped to the roster's
+session valid for Bedrock billing). Pass each seat's `model` to its adapter. Rosters:
+`work` prefers Bedrock, then the subscription until it lapses (the OpenAI seat starts with
+Codex on Mantle, the only Bedrock route that honours reasoning effort and keeps a real
+sandbox); `personal` excludes the orchestrator's own family and uses subscriptions. Effort is clamped to the roster's
 floor and ceiling. If `ok` is false, report the skipped reasons and stop: a one-sided
 run is not a double-blind review. Edit `seats.json` to change models or dates.
 
@@ -79,9 +80,9 @@ tool; never interpolate repo text into a command string. Pass the same `--model`
 
 | Launcher | Script | Read-only guarantee |
 | --- | --- | --- |
-| hermes | `hermes-run.sh --profile <p> --dir <worktree>` | none built in: runs in a clean detached worktree and exits 3 if the reviewer dirtied it |
-| codex | `codex-run.sh [--bedrock]` | `--sandbox read-only` (Bedrock via Mantle keeps it) |
-| claude | `claude-run.sh --dir <repo> [--bedrock --model us.…]` | plan mode + read-only tool allowlist |
+| hermes | `hermes-run.sh --profile <p> --dir <worktree>` | none built in: runs in a clean detached worktree and exits 3 if the reviewer dirtied it; exits 4 on a model refusal |
+| codex | `codex-run.sh [--bedrock]` | `--sandbox read-only` (Bedrock via Mantle keeps it); exit code only, no refusal signal |
+| claude | `claude-run.sh --dir <repo> [--bedrock --model us.…]` | plan mode + read-only tool allowlist; exits 4 on `stop_reason: refusal` |
 | agy | not yet written | — |
 
 For the hermes launcher, create one detached worktree per seat at the pinned head
@@ -184,7 +185,21 @@ correct. Apply edits only on a separate explicit request.
 Run `scripts/seats.py` first; it checks every launcher it would use and names what is
 missing. Bedrock seats need a valid AWS session (`aws sts get-caller-identity`; renew
 with `aws sso login`) and, for Codex on Mantle, `uv`. Hermes seats need their profiles
-(`hermes profile list`). If a chosen seat fails mid-run, report it and ask before
-retrying on the next candidate; never substitute the orchestrator or a `delegate_task`
-child for a missing reviewer. Any non-zero adapter exit is a failed side, not a
-double-blind result.
+(`hermes profile list`).
+
+### When a seat fails
+
+Any non-zero adapter exit is a failed side, not a double-blind result: 3 (dirtied the
+worktree), 4 (model refused), or the CLI's own error. Also treat an empty or
+off-contract reply as failed.
+
+1. Tell the user which seat failed, the exit code, and the stderr tail.
+2. Ask before switching. Re-resolve with the failed candidate excluded, so the next
+   choice is still deterministic and still from the same family:
+   `seats.py ... --exclude <family>:<launcher>[:<billing>]` (repeatable).
+3. Round 1 failed: rerun that seat alone with the same prompt. The other seat's result
+   stays held and unseen. Round 2 failed: the replacement has no round-1 context, so
+   send it the round-1 prompt first, then its round-2 prompt; say so in the report.
+4. `ok: false` (the family has no candidates left): stop and report. Never
+   substitute the orchestrator, a `delegate_task` child, or a second seat from the
+   other family.
