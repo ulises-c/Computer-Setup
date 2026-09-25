@@ -173,6 +173,10 @@ require_terms() { if terms_missing; then terms_error; exit 1; fi; }
 stage_new()  { STAGE="$(mktemp -d)" && STAGE_N=0 && mkdir "$STAGE/items" && : > "$STAGE/labels"; }
 stage_drop() { rm -rf "$STAGE"; }
 
+# A written-out tab, CR or newline (\t, \u000a, \x0d, ...) is a word boundary,
+# so a term right after one still counts as a whole word.
+ESCAPE_ERE='\\+([nrt]|u00(0[9aAdD])|x0[9aAdD])'
+
 # stage_add <label> <command...>: stages the command's output as one text.
 stage_add() {
   local label="$1" item
@@ -180,7 +184,7 @@ stage_add() {
   STAGE_N=$(( STAGE_N + 1 ))
   printf -v item '%06d' "$STAGE_N"
   printf '%s\t%s\n' "$item" "${label//$'\n'/ }" >> "$STAGE/labels"
-  "$@" | LC_ALL=C sed -E '/\\[nrt]/{h; s/\\+[nrt]/ /g; H; x; s/\n/ /}' > "$STAGE/items/$item"
+  "$@" | LC_ALL=C sed -E "/$ESCAPE_ERE/{h; s/$ESCAPE_ERE/ /g; H; x; s/\n/ /}" > "$STAGE/items/$item"
 }
 
 # stage_dir <dir> <repo path>: every file under dir (a symlink as its target)
@@ -428,7 +432,8 @@ check_origins() {
 
 # Pushes exactly <oid> (the one that was scanned) to <branch> on origin.
 push_oid() {
-  local dir="$1" oid="$2" branch="$3"
+  local dir="$1" oid="$2" branch="$3" kind="$4"
+  check_origin "$kind" "$dir" || return 1
   git -C "$dir" push --quiet origin "$oid:refs/heads/$branch" || return 1
   git -C "$dir" config "branch.$branch.remote" origin && git -C "$dir" config "branch.$branch.merge" "refs/heads/$branch"
 }
@@ -461,7 +466,7 @@ hook_path() {
 write_hook() {
   local hook
   hook="$(hook_path "$2" "$3")"
-  printf '#!/usr/bin/env bash\n# managed by hermes-config install\nexec %q %s %s\n' "$SELF" "$4" "$1" > "$hook"
+  printf '#!/usr/bin/env bash\n# managed by hermes-config install\nexec %q %s %s "$@"\n' "$SELF" "$4" "$1" > "$hook"
   chmod +x "$hook"
 }
 
@@ -563,9 +568,9 @@ cmd_verify() {
     if [[ ! -d "$dir/.git" ]]; then err "$k repo not cloned at $dir"; continue; fi
     if check_origin "$k" "$dir" 2>/dev/null; then ok "$k origin"; else err "$k origin mismatch (fetch or push URL is not the configured remote)"; fi
     hook="$(hook_path "$dir" pre-commit)"
-    if grep -q "hermes-config hook $k\$" "$hook" 2>/dev/null; then ok "$k pre-commit guard"; else err "$k pre-commit guard missing"; fi
+    if grep -qE "hermes-config hook $k( \"\\\$@\")?\$" "$hook" 2>/dev/null; then ok "$k pre-commit guard"; else err "$k pre-commit guard missing"; fi
     hook="$(hook_path "$dir" pre-push)"
-    if grep -q "hermes-config pre-push $k\$" "$hook" 2>/dev/null; then ok "$k pre-push guard"; else err "$k pre-push guard missing"; fi
+    if grep -qE "hermes-config pre-push $k \"\\\$@\"\$" "$hook" 2>/dev/null; then ok "$k pre-push guard"; else err "$k pre-push guard missing"; fi
     if scan_repo "$k" "$dir" tree; then ok "$k scan clean"; else err "$k scan found problems"; fi
     if [[ -n "$(git -C "$dir" status --porcelain)" ]]; then warn "$k has uncommitted changes"; fi
     while IFS=$'\t' read -r name rel; do
@@ -683,7 +688,7 @@ cmd_push() {
   for k in "${KINDS[@]}"; do
     dir="$(kind_dir "$k")"
     [[ -n "${oids[$k]:-}" ]] || { printf 'Skipped: %s (no commits)\n' "$k"; continue; }
-    push_oid "$dir" "${oids[$k]}" "${branches[$k]}" || die "$k push failed"
+    push_oid "$dir" "${oids[$k]}" "${branches[$k]}" "$k" || die "$k push failed"
     printf 'Pushed: %s @ %s\n' "$k" "$(git -C "$dir" rev-parse --short "${oids[$k]}")"
   done
 }
@@ -696,7 +701,11 @@ cmd_hook() {
 # stdin: "<local ref> <local oid> <remote ref> <remote oid>" per ref (githooks).
 cmd_pre_push() {
   check_kind "${1:-}"
-  local kind="$1" refs=() line loid rref rc=0
+  local kind="$1" url="${3:-}" refs=() line loid rref rc=0
+  # git passes <remote> <url>: the url is where the push really goes, after any
+  # pushurl or pushInsteadOf rewrite, also for `git push <other remote or url>`.
+  [[ -n "$url" && "$url" == "$(kind_var "$kind" REMOTE)" ]] \
+    || die "push blocked by hermes-config: the $kind repo only pushes to HERMES_CONFIG_SYNC_${kind^^}_REMOTE"
   mapfile -t refs
   for line in "${refs[@]}"; do
     read -r _ loid rref _ <<< "$line"
@@ -942,7 +951,7 @@ sync_repo() {
   oid="$(git -C "$dir" rev-parse HEAD)"
   if ! branch="$(git -C "$dir" symbolic-ref --short -q HEAD)"; then printf '%s: detached HEAD; not pushing\n' "$kind" >&2; return 1; fi
   if ! scan_repo "$kind" "$dir" tree || ! scan_outgoing "$kind" "$dir" "$oid" "refs/heads/$branch"; then printf '%s: scan failed; not pushing\n' "$kind" >&2; return 1; fi
-  if ! push_oid "$dir" "$oid" "$branch"; then printf '%s: push failed\n' "$kind" >&2; return 1; fi
+  if ! push_oid "$dir" "$oid" "$branch" "$kind"; then printf '%s: push failed\n' "$kind" >&2; return 1; fi
   printf '%s: pushed %s commit(s) → %s\n' "$kind" "$ahead" "$(git -C "$dir" rev-parse --short "$oid")"
 }
 

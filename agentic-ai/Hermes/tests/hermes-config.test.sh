@@ -379,6 +379,20 @@ printf 'Acmecorp notes\n' > "$F/wip.md"
 git -C "$PC" add -A && git -C "$PC" -c commit.gpgsign=false commit -q --no-verify -m "wip"
 expect_rc 1 "the pre-push hook blocks a manual git push" git -C "$PC" push -q origin HEAD
 if published; then fail "manual git push: nothing published"; else pass "manual git push: nothing published"; fi
+git -C "$PC" reset -q --hard HEAD~1
+git clone -q --bare "$PR" "$T/stray.git"
+STRAY="$(git --git-dir="$T/stray.git" for-each-ref)"
+skill "$PC/skills/general/stray" stray
+git -C "$PC" add -A && git -C "$PC" -c commit.gpgsign=false commit -qm "feat: stray"
+git -C "$PC" remote add stray "$T/stray.git"
+expect_rc 1 "the pre-push hook blocks a push to another remote" git -C "$PC" push -q stray HEAD
+expect_rc 1 "the pre-push hook blocks a push to a bare URL" git -C "$PC" push -q "$T/stray.git" HEAD
+check "the other remote received nothing" test "$(git --git-dir="$T/stray.git" for-each-ref)" = "$STRAY"
+git -C "$PC" remote remove stray
+rm -rf "$T/stray.git"
+preset
+printf 'Summary:\\u000aACME-12 done, see:\\x09widget-server\n' > "$F/unicode.md"
+blocked "sync blocks a marker after a \\u000a or \\x09 escape"
 preset
 
 printf 'fail-closed scanning\n'

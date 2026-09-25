@@ -46,11 +46,14 @@ hermes-config       (personal Forgejo account)  ─┴─► skills.external_dir
   commit it scanned. Commit author and email are not checked.
 - **The scan fails closed.** A scanner error (for example a
   `HERMES_CONFIG_SYNC_WORK_MARKERS` that is not a valid ERE) or a missing terms
-  file blocks the commit, push, or adopt; it never counts as clean. `\n`, `\r`
-  and `\t` escapes (JSON, `printf` strings) count as word boundaries.
+  file blocks the commit, push, or adopt; it never counts as clean. Written-out
+  tabs, CRs and newlines (`\n`, `\t`, `\u000a`, `\x0d`, as in JSON or `printf`
+  strings) count as word boundaries.
 - **Only the configured remote.** `sync`, `pull`, and `push` refuse to run when
   origin's fetch URL or its push URL (after `insteadOf` rewrites) is not the
-  `REMOTE` in `.env`; `verify` checks both.
+  `REMOTE` in `.env`, and check again right before each push; `verify` checks
+  both. The pre-push hook refuses any other destination, including
+  `git push <other remote or URL>`.
 - **Skills Hermes owns are never moved.** Bundled, hub-installed, shipped, and
   once-shipped skills (found in the Hermes source history) stay local and update
   through `hermes update`. Only skills you wrote are adopted into a repo.
