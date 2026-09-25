@@ -6,12 +6,23 @@
   is the **primary** UPS: on power loss it pushes ntfy alerts; when the battery
   runs low it shuts the server down cleanly and tells the UPS to cut its outlets
   so everything restarts when wall power returns.
-An EcoFlow River 3 Plus used to sit upstream as a second, monitoring-only unit
-(`nut-driver@ecoflow`). It was disconnected on 2026-09-25 and removed from the
-config; to bring it back, restore its `ups.conf` stanza, the
-`udev-ecoflow.rules` deploy in `setup.sh`, and the `ups-ecoflow` homepage card
-from git history (`git log -- linux-server/ups/udev-ecoflow.rules`). It needs
-NUT 2.8.4+ and must not use `explore = 1`.
+### EcoFlow River 3 Plus (parked)
+
+The EcoFlow used to sit upstream (`wall -> EcoFlow -> CyberPower -> server`) as
+a second, monitoring-only unit. It was disconnected from the server on
+2026-09-25 and is moving to another device, so `setup.sh` no longer deploys it.
+Its config stays here, undeployed:
+
+- [`ecoflow.ups.conf`](ecoflow.ups.conf) — the `[ecoflow]` stanza to append to
+  that host's `/etc/nut/ups.conf`
+- [`udev-ecoflow.rules`](udev-ecoflow.rules) — install as
+  `/etc/udev/rules.d/65-nut-usbups-ecoflow.rules` so the `nut` user can open the
+  device, then `udevadm control --reload && udevadm trigger`
+
+It needs NUT **2.8.4+** (the dedicated `EcoFlow HID` subdriver) and must **not**
+use `explore = 1`, which falls back to the generic subdriver and reports only a
+constant `OB`. The open `ups.load` work is parked in
+[`../../docs/TODO.md`](../../docs/TODO.md).
 
 ## Setup
 
@@ -100,6 +111,7 @@ docker compose up -d
 | `upsd.users.template` | `/etc/nut/upsd.users` | upsmon user (password from `.env`) |
 | `upsmon.conf.template` | `/etc/nut/upsmon.conf` | shutdown + notification policy |
 | `ups-notify.sh` | `/etc/nut/ups-notify.sh` | NOTIFYCMD → ntfy |
+| `ecoflow.ups.conf`, `udev-ecoflow.rules` | not deployed | parked EcoFlow config (see above) |
 | (rendered from `.env`) | `/etc/nut/ups-notify.env` | ntfy settings for the hook |
 
 The driver runs as the systemd instance `nut-driver@cyberpower`, alongside
