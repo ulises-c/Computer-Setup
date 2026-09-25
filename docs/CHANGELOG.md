@@ -6,6 +6,18 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com). Remaining
 work lives in [TODO.md](TODO.md); the design rationale for the unified layout is
 in [UNIFICATION.md](UNIFICATION.md).
 
+## Unreleased — AdGuard DNS watchdog
+
+### Added
+- `linux-server/adguard/dns-watchdog.sh` + `dns-watchdog.timer`, installed by
+  `linux-server/adguard/setup.sh`: probes host `:53` on loopback and the LAN IP
+  every minute. After two consecutive silent minutes, and only while public
+  resolvers still answer and the Docker daemon is up, it restarts `adguardhome`
+  (or `docker compose up -d` if stopped/removed), at most once per 10 minutes,
+  and alerts ntfy on action, failure, and recovery. Covers the DNS gap called
+  out for the Docker address-pool restart in
+  [#85](https://github.com/ulises-c/Computer-Setup/pull/85).
+
 ## Unreleased — EcoFlow UPS disconnected
 
 ### Removed

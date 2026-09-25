@@ -165,7 +165,8 @@ collides with home-LAN space ([#75](https://github.com/ulises-c/Computer-Setup/i
 
 **The first run after this change restarts Docker.** Every container stops and
 comes back (`restart: unless-stopped`), and host DNS on `:53` (AdGuard) drops for
-the duration, so the Pi resolver carries DNS meanwhile. Run it in a quiet moment.
+the duration, so the Pi resolver carries DNS meanwhile. If AdGuard stays silent
+afterward, the AdGuard DNS watchdog (item 14.8 below) restarts it within ~2 minutes. Run it in a quiet moment.
 Later runs restart nothing unless the file or the running daemon's pools differ
 from the repo. If Docker does not come back with the pinned pools, the step
 restores the previous `daemon.json` (backup in `/etc/docker/daemon.json.bak.*`),
@@ -341,6 +342,22 @@ with a new 100.x address. Appending `?ephemeral=false` to the secret in
       on `:53` via the bridge, so it keeps working even if the sidecar is down
    6. Point your router's DNS (or individual devices) to `<server-ip>` to start filtering
    7. Add credentials to `linux-server/homepage/.env` to enable the stats widget on Homepage
+   8. DNS watchdog — a systemd timer probes host `:53` (loopback and LAN IP) every
+      minute and brings `adguardhome` back if it stays silent:
+      ```sh
+      cd linux-server/adguard
+      bash setup.sh --dry-run
+      sudo bash setup.sh             # installs + enables dns-watchdog.timer
+      journalctl -u dns-watchdog -f  # quiet while healthy
+      ```
+      - Acts only after **2 consecutive** silent minutes, so the brief drop during a
+        dockerd restart (step 8 above) is ignored
+      - Skips action when public resolvers are silent too (internet outage) or when
+        the Docker daemon itself is down (systemd's job)
+      - Running-but-silent → `docker restart adguardhome`; stopped/removed →
+        `docker compose up -d adguardhome`. At most one attempt per 10 min
+      - Alerts to ntfy (`server-dns`) on action, failure, and recovery; optional
+        Uptime Kuma push. Settings live in `adguard/.env`
 
 15. forgejo | [Codeberg](https://codeberg.org/forgejo/forgejo) | [Docs](https://forgejo.org/docs/)
     1. Lightweight self-hosted git service — GitHub-like web UI, SSH push/pull, repo mirroring; LAN/Tailscale only, no public exposure
