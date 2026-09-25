@@ -543,6 +543,117 @@ expect_rc 1 "bad host label refused" env HERMES_CONFIG_SYNC_ENV="$T/env-personal
 expect_rc 1 "backup off is explicit" env HERMES_CONFIG_SYNC_ENV="$T/env-work" "$TOOL" backup-cron
 unset HERMES_CONFIG_SYNC_CRON_HOST
 
+printf 'cron backup: config fields only, fails safe, no symlinks\n'
+export HERMES_CONFIG_SYNC_CRON_HOST=testhost
+TP=(env HERMES_CONFIG_SYNC_ENV="$T/env-personal" "$TOOL")
+PC="$T/clones/personal"
+RP="$T/remote-personal.git"
+J="$HERMES_HOME/cron/jobs.json"
+jq '.jobs += [{id: "j_keep", name: "keep", prompt: "summarize my notes", skills: ["tidy-notes"], skill: "tidy-notes",
+  schedule: {kind: "cron", expr: "0 6 * * *", display: "0 6 * * *"}, schedule_display: "0 6 * * *",
+  repeat: {times: 3, completed: 1}, enabled: true, deliver: "local", created_at: "2029-01-01T00:00:00",
+  state: "scheduled", pending_slot: "testhost:4242", run_claim: {by: "testhost:4242", at: "2029-01-02T06:00:00"},
+  last_dispatch: {at: "2029-01-02T06:00:00", slot: "2029-01-02T06:00:00"}, last_fire_error: null,
+  quota_hold_until: null, future_runtime_field: 1}]' "$J" > "$T/j" && mv "$T/j" "$J"
+expect_rc 0 "sync backs up a job carrying scheduler runtime fields" "${TP[@]}" sync
+expect_out 'chore: sync cron backup' "whitelisted job committed"
+KEEP='.jobs[] | select(.id == "j_keep")'
+check "scheduler runtime and unknown fields not in the backup" test "$(jq "$KEEP"' | [has("state", "pending_slot", "run_claim", "last_dispatch", "last_fire_error", "quota_hold_until", "future_runtime_field"), (.repeat | has("completed"))] | any' "$P/default/jobs.json")" = false
+check "configuration fields kept" test "$(jq "$KEEP"' | .name == "keep" and .prompt == "summarize my notes" and .skills == ["tidy-notes"] and .schedule.expr == "0 6 * * *" and .repeat == {times: 3} and .enabled == true and .deliver == "local" and .created_at == "2029-01-01T00:00:00"' "$P/default/jobs.json")" = true
+jq '(.jobs[] | select(.id == "j_keep")) |= (.state = "error" | .pending_slot = "testhost:5151" | .run_claim.by = "testhost:5151"
+  | .last_dispatch.at = "2029-01-03T06:00:00" | .last_fire_error = "boom" | .last_delivery_queued = true
+  | .quota_hold_until = "2029-01-03T07:00:00" | .future_runtime_field = 2 | .repeat.completed = 2)' "$J" > "$T/j" && mv "$T/j" "$J"
+before="$(git -C "$PC" rev-parse HEAD)"
+expect_rc 0 "sync after scheduler-only changes" "${TP[@]}" sync
+if [[ -s "$T/out" ]]; then fail "scheduler-only changes stay silent"; sed 's/^/       /' "$T/out" >&2; else pass "scheduler-only changes stay silent"; fi
+check "scheduler-only changes make no commit" test "$(git -C "$PC" rev-parse HEAD)" = "$before"
+cp "$J" "$T/jobs.good"
+GOOD_TREE="$(git -C "$PC" rev-parse HEAD:cron/testhost)"
+# The last pushed backup is still in place: clone working tree, clone HEAD, remote.
+backup_intact() {
+  [[ -z "$(git -C "$PC" status --porcelain -- cron)" ]] \
+    && [[ "$(git -C "$PC" rev-parse HEAD:cron/testhost)" == "$GOOD_TREE" ]] \
+    && [[ "$(git --git-dir="$RP" rev-parse HEAD:cron/testhost)" == "$GOOD_TREE" ]]
+}
+check "good backup present on the remote" git --git-dir="$RP" cat-file -e HEAD:cron/testhost/default/jobs.json
+
+before="$(git -C "$PC" rev-parse HEAD)"
+printf '\nlocked edit\n' >> "$PC/skills/general/fresh/SKILL.md"
+: > "$PC/.git/index.lock"
+expect_rc 1 "sync fails on a stale index.lock" "${TP[@]}" sync
+expect_out 'personal: .*git add' "failed staging is reported"
+check "nothing committed while the index is locked" test "$(git -C "$PC" rev-parse HEAD)" = "$before"
+check "edit kept in the working tree" grep -q 'locked edit' "$PC/skills/general/fresh/SKILL.md"
+rm -f "$PC/.git/index.lock"
+expect_rc 0 "sync commits the edit once the lock is gone" "${TP[@]}" sync
+expect_out 'personal: pushed 1 commit' "edit pushed after the lock is gone"
+
+printf '{"jobs": [' > "$J"
+expect_rc 1 "backup-cron fails on a malformed jobs.json" "${TP[@]}" backup-cron
+expect_out 'cron backup failed' "malformed jobs.json is reported"
+check "malformed jobs.json: backup-cron keeps the backup" backup_intact
+expect_rc 1 "sync fails on a malformed jobs.json" "${TP[@]}" sync
+expect_out 'personal: cron backup failed' "sync names the failed cron backup"
+check "malformed jobs.json: sync keeps the backup, here and on the remote" backup_intact
+printf '{"jobs": {"j_keep": {}}}\n' > "$J"
+expect_rc 1 "backup-cron fails when .jobs is not an array" "${TP[@]}" backup-cron
+check ".jobs not an array: backup kept" backup_intact
+: > "$J"
+expect_rc 1 "sync fails on an empty jobs.json" "${TP[@]}" sync
+check "empty jobs.json: backup kept" backup_intact
+cp "$T/jobs.good" "$J"
+if (( EUID == 0 )); then
+  printf '  skip unreadable jobs.json (running as root)\n'
+else
+  chmod 000 "$J"
+  expect_rc 1 "backup-cron fails on an unreadable jobs.json" "${TP[@]}" backup-cron
+  check "unreadable jobs.json: backup-cron keeps the backup" backup_intact
+  expect_rc 1 "sync fails on an unreadable jobs.json" "${TP[@]}" sync
+  check "unreadable jobs.json: sync keeps the backup, here and on the remote" backup_intact
+  chmod 644 "$J"
+  chmod 000 "$HERMES_HOME/scripts/lib/util.sh"
+  expect_rc 1 "sync fails on an unreadable script" "${TP[@]}" sync
+  check "unreadable script: backup kept" backup_intact
+  chmod 644 "$HERMES_HOME/scripts/lib/util.sh"
+fi
+expect_rc 1 "backup-cron fails on a missing Hermes root" env HERMES_CONFIG_SYNC_HERMES_ROOT="$T/no-such-root" "${TP[@]}" backup-cron
+check "missing root: backup-cron keeps the backup" backup_intact
+expect_rc 1 "sync fails on a missing Hermes root" env HERMES_CONFIG_SYNC_HERMES_ROOT="$T/no-such-root" "${TP[@]}" sync
+check "missing root: sync keeps the backup, here and on the remote" backup_intact
+expect_rc 0 "sync is clean again once the inputs are fixed" "${TP[@]}" sync
+check "recovered sync leaves the backup as it was" backup_intact
+
+mkdir -p "$HERMES_HOME/profiles/p2/scripts" "$HERMES_HOME/profiles/p3/cron"
+expect_rc 0 "sync with an empty scripts dir, no cron dir, a cron dir without jobs.json" "${TP[@]}" sync
+if [[ -e "$P/p2" || -e "$P/p3" ]]; then fail "empty profiles leave no backup dir"; else pass "empty profiles leave no backup dir"; fi
+check "empty profiles change nothing" backup_intact
+mkdir -p "$T/bare-root/cron"
+printf '{"jobs": []}\n' > "$T/bare-root/cron/jobs.json"
+expect_rc 0 "backup-cron with no profiles dir and no scripts dir" env HERMES_CONFIG_SYNC_HERMES_ROOT="$T/bare-root" HERMES_CONFIG_SYNC_CRON_HOST=host2 "${TP[@]}" backup-cron
+if [[ -e "$PC/cron/host2" ]]; then fail "nothing to back up writes nothing"; else pass "nothing to back up writes nothing"; fi
+rm -rf "$HERMES_HOME/profiles/p2" "$HERMES_HOME/profiles/p3" "$T/bare-root"
+
+mkdir -p "$T/outside/dir"
+printf 'private outside notes\n' > "$T/outside/dir/gadgetron-plan.txt"
+printf '#!/usr/bin/env bash\necho outside\n' > "$T/outside/tool.sh"
+ln -s "$T/outside/tool.sh" "$HERMES_HOME/scripts/linked.sh"
+ln -s "$T/outside/dir" "$HERMES_HOME/scripts/linked-dir"
+expect_rc 0 "sync with symlinked scripts" "${TP[@]}" sync
+expect_out 'script linked\.sh: symlink' "symlinked script file reported as left out"
+expect_out 'script linked-dir: symlink' "symlinked script dir reported as left out"
+if [[ -e "$P/default/scripts/linked.sh" || -L "$P/default/scripts/linked.sh" || -e "$P/default/scripts/linked-dir" || -L "$P/default/scripts/linked-dir" ]]; then
+  fail "symlinks not copied"; else pass "symlinks not copied"; fi
+if git --git-dir="$RP" ls-tree -r --name-only HEAD | grep -qE 'gadgetron|linked'; then fail "nothing behind a symlink reached the remote"; else pass "nothing behind a symlink reached the remote"; fi
+check "real scripts still backed up next to symlinks" test -f "$P/default/scripts/lib/util.sh"
+rm -f "$HERMES_HOME/scripts/linked.sh" "$HERMES_HOME/scripts/linked-dir"
+
+jq '.jobs = []' "$T/jobs.good" > "$J"
+expect_rc 0 'sync with {"jobs": []}' "${TP[@]}" sync
+expect_out 'chore: sync cron backup' "emptied job list committed"
+if [[ -e "$P/default/jobs.json" ]]; then fail "emptied job list removes the jobs backup"; else pass "emptied job list removes the jobs backup"; fi
+if git --git-dir="$RP" cat-file -e HEAD:cron/testhost/default/jobs.json 2>/dev/null; then fail "removal pushed"; else pass "removal pushed"; fi
+unset HERMES_CONFIG_SYNC_CRON_HOST
+
 printf '\n'
 if (( FAILS )); then printf '%d failure(s)\n' "$FAILS" >&2; exit 1; fi
 printf 'all tests passed\n'
