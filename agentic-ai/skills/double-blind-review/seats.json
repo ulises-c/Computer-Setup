@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "notes": "Reviewer seats per roster. Each family lists launchers in preference order; scripts/seats.py picks the first available one per family. Model ids and profile names only, no credentials.",
+  "rosters": {
+    "work": {
+      "description": "Bedrock credits first (use-it-or-lose-it through 2026-12-31), subscriptions as fallback until they lapse.",
+      "families": 2,
+      "exclude_orchestrator_family": false,
+      "effort": {
+        "floor": "medium",
+        "default": "max",
+        "ceiling": "max"
+      },
+      "seats": {
+        "anthropic": [
+          {
+            "launcher": "hermes",
+            "profile": "review-anthropic",
+            "model": "us.anthropic.claude-opus-5",
+            "billing": "bedrock"
+          },
+          {
+            "launcher": "claude",
+            "bedrock": true,
+            "model": "us.anthropic.claude-opus-5",
+            "billing": "bedrock"
+          },
+          {
+            "launcher": "claude",
+            "billing": "subscription",
+            "until": "2026-12-08"
+          }
+        ],
+        "openai": [
+          {
+            "launcher": "hermes",
+            "profile": "review-openai",
+            "model": "us.openai.gpt-6-sol",
+            "billing": "bedrock"
+          },
+          {
+            "launcher": "codex",
+            "bedrock": true,
+            "model": "openai.gpt-6-sol",
+            "billing": "bedrock"
+          },
+          {
+            "launcher": "codex",
+            "billing": "subscription",
+            "until": "2026-12-08"
+          }
+        ]
+      },
+      "subscription_until_note": "Approximate: work subscriptions lapse about 2.5 months after 2026-09-23. Set the exact date."
+    },
+    "personal": {
+      "description": "Personal subscriptions. Reviewers come from the two families the orchestrator is not.",
+      "families": 2,
+      "exclude_orchestrator_family": true,
+      "effort": {
+        "floor": "medium",
+        "default": "xhigh",
+        "ceiling": "max"
+      },
+      "seats": {
+        "anthropic": [
+          {
+            "launcher": "claude",
+            "billing": "subscription"
+          }
+        ],
+        "openai": [
+          {
+            "launcher": "codex",
+            "billing": "subscription"
+          }
+        ],
+        "google": [
+          {
+            "launcher": "agy",
+            "billing": "subscription"
+          }
+        ]
+      }
+    }
+  }
+}

@@ -19,10 +19,11 @@ skew. A generic "find bugs" wastes the round.
 
 ---
 
-## Codex side
+## XML-structured variant (OpenAI-family seats)
 
-Write to a file, pass to `scripts/codex-run.sh` with `--prompt`. Never interpolate
-branch names or user text into the command string.
+GPT models follow the tagged structure well. Write to a file and pass it to the seat's
+adapter with `--prompt`. Never interpolate branch names or user text into the command
+string.
 
 ```xml
 <task>
@@ -55,9 +56,9 @@ adds or modifies, actively look for an input that slips past it.
 </dig_deeper_nudge>
 ```
 
-## Claude side
+## Plain variant (Anthropic, Google, and Hermes-launched seats)
 
-Same contract, plus the things a subagent needs told explicitly:
+Same contract, plus the things a tool-using agent needs told explicitly:
 
 ```
 You are performing an independent code review. Do NOT modify any files — read-only.

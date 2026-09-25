@@ -1,6 +1,6 @@
 ---
 name: double-blind-review
-description: Use for high-stakes code review by two blind reviewers from different providers (Claude and Codex) who then cross-examine each other's findings before you act. For security-enforcement code, pre-merge PR gates, "is this ready to ship", "double blind review", "cross examination", "have Claude and Codex both review this".
+description: Use for high-stakes code review by two blind reviewers from different model families (Claude, GPT, Gemini) who then cross-examine each other's findings before you act. For security-enforcement code, pre-merge PR gates, "is this ready to ship", "double blind review", "cross examination", "have Claude and Codex both review this".
 ---
 
 # Double-Blind Review + Cross-Examination
@@ -17,6 +17,8 @@ one missed entirely, and turned one reviewer's labeled *inference* into a reprod
 
 **Cost is real.** Four agent runs, two of them long (observed: 7 min and 58 min for the
 Claude side; Codex at `xhigh` is slower still). Use it when being wrong is expensive.
+Which seats run, where they bill, and at what effort is decided by the roster in
+[seats.json](seats.json), not here.
 For an ordinary review, use one reviewer; on Hermes, use `pr-review` when the target
 is a PR and findings must be posted.
 
@@ -43,46 +45,54 @@ shared scope statement. For a working-tree scope, start from
 untracked files are reviewable, and only conclude there is nothing to review when the
 tree is genuinely clean.
 
-The two reviewers must use different providers. The orchestrator may share a provider
-with one reviewer, but must state its real harness, provider, and model. In particular,
-do not treat Hermes `delegate_task` as a Claude reviewer: delegated children inherit
-Hermes's configured delegation model. Under Hermes, run both provider CLIs externally.
+### Seats: pick them, don't improvise them
 
-### Harness mechanics
+The two reviewers must come from different **model families** (anthropic, openai,
+google). Billing does not matter for independence: Bedrock Claude plus Bedrock GPT is
+diverse. State the orchestrator's real harness, provider, and model.
 
-| Orchestrator | Claude reviewer | Codex reviewer | Prompt files and long runs |
-| --- | --- | --- | --- |
-| Claude Code | `Agent`, `subagent_type: claude`; round 2 via `SendMessage` | `scripts/codex-run.sh`; resume by recorded session ID | `Write`; background Agent/Bash |
-| Hermes | `claude -p` with a UUID; round 2 via `--resume <uuid>` | `scripts/codex-run.sh`; resume by recorded session ID | `write_file`; `terminal(background=true, notify=true)` |
-| Codex | external `claude -p` with a UUID; resume it by UUID | wrapper in a separate persisted session | harness file writer; native background shell support |
-
-For external Claude, pass the rendered prompt as one quoted argument and close stdin.
-Use `--permission-mode plan --permission-prompts none`, omit write tools, and allow only
-repository-reading commands. Start round 1 with `--session-id "$claude_session"`; resume
-round 2 with `--resume "$claude_session"`. Reapply the same tool restrictions on resume:
+Resolve the seats with the roster, never by hand:
 
 ```bash
-claude -p "$(<"$prompt")" --session-id "$claude_session" \
-  --permission-mode plan --permission-prompts none --tools "Read,Glob,Grep,Bash" \
-  --allowedTools Read Glob Grep "Bash(git diff *)" "Bash(git log *)" \
-  "Bash(git show *)" "Bash(git status *)" "Bash(git rev-parse *)" </dev/null
+python3 <skill-dir>/scripts/seats.py --roster <work|personal> \
+  --orchestrator-family <anthropic|openai|google|other> [--effort <level>]
 ```
 
-Replace `--session-id` with `--resume` for round 2. Run it from the reviewed repository.
+It prints the chosen seats as JSON (launcher, adapter path, profile/model, billing,
+effort) plus every skipped candidate with its reason, and exits 1 when fewer families
+than required are available. Each family's candidates are tried in order; the first
+usable one wins (CLI present, Hermes profile present, `until` not passed, AWS session
+valid for Bedrock billing). Rosters: `work` prefers Bedrock (Hermes profile first, then
+the Bedrock-routed CLI, then the subscription until it lapses); `personal` excludes the
+orchestrator's own family and uses subscriptions. Effort is clamped to the roster's
+floor and ceiling. If `ok` is false, report the skipped reasons and stop: a one-sided
+run is not a double-blind review. Edit `seats.json` to change models or dates.
 
-The Codex side always uses [scripts/codex-run.sh](scripts/codex-run.sh), resolved relative
-to this skill. Write the rendered prompt with the harness's file-writing tool, then run:
+### Adapters
 
-```bash
-bash <skill-dir>/scripts/codex-run.sh --prompt <round1.md> --effort xhigh
-bash <skill-dir>/scripts/codex-run.sh --resume --session <session-id> --prompt <round2.md>
-```
+Every launcher has one script in `scripts/` with the same contract: prompt from a file
+(passed as one inert argument), stdin closed, verbose stderr kept out of context,
+`session id: <id>` printed to stderr on success, and round 2 by
+`--resume --session <id>`. Write each rendered prompt with the harness's file-writing
+tool; never interpolate repo text into a command string. Pass the same `--model`,
+`--effort`, and `--bedrock` on resume: neither Codex nor Claude restores them.
 
-The wrapper passes prompt text as one inert argument, closes stdin on initial runs, keeps
-verbose stderr out of context, and prints `session id: <id>` to stderr on success. Record
-that ID and use it explicitly: bare `--resume` remains compatible but selects the most
-recent session and is unsafe when reviews overlap. Runs are read-only by default. Leave
-`--model` unset unless the user names one; Codex uses its configured default.
+| Launcher | Script | Read-only guarantee |
+| --- | --- | --- |
+| hermes | `hermes-run.sh --profile <p> --dir <worktree>` | none built in: runs in a clean detached worktree and exits 3 if the reviewer dirtied it |
+| codex | `codex-run.sh [--bedrock]` | `--sandbox read-only` (Bedrock via Mantle keeps it) |
+| claude | `claude-run.sh --dir <repo> [--bedrock --model us.…]` | plan mode + read-only tool allowlist |
+| agy | not yet written | — |
+
+For the hermes launcher, create one detached worktree per seat at the pinned head
+(`git worktree add --detach <scratch>/seat-<family> "$head_sha"`) and remove it after
+round 2. The seat's Hermes profile pins provider and model and disables memory,
+messaging, web, and delegation, so the reviewer inherits nothing from the orchestrator.
+Under Hermes, do not use `delegate_task` for a seat: children share one delegation model
+and cannot be resumed for round 2.
+
+Claude Code orchestrating natively may still use `Agent` + `SendMessage` for its own
+family's seat when the roster allows the subscription.
 
 Launch both reviewers in the same orchestrator message using parallel background calls.
 Long initial and resume runs belong in the background; wait for completion notifications
@@ -102,11 +112,10 @@ defeats the blind.
 Send each reviewer the other's findings **verbatim**, plus their own, and require a
 verdict on each. Templates in [prompts/round2-cross-exam.md](prompts/round2-cross-exam.md).
 
-Continue each reviewer in its existing context — do not start fresh agents. Claude Code
-uses `SendMessage`; external Claude uses `--resume "$claude_session"`; Codex uses
-`codex-run.sh --resume --session "$codex_session" --prompt <round2.md>`. Resumed
-sessions inherit model, effort, and sandbox, so the wrapper rejects conflicting flags.
-Name the orchestrator's actual harness, provider, and model in both round-2 prompts.
+Continue each reviewer in its existing context — do not start fresh agents. Use the
+seat's adapter with `--resume --session <id>` and the same model, effort, and billing
+flags as round 1 (Claude Code's native seat uses `SendMessage`). Name the orchestrator's
+actual harness, provider, and model in both round-2 prompts.
 
 The instructions that carry the weight, in rough order of value:
 
@@ -172,10 +181,10 @@ correct. Apply edits only on a separate explicit request.
 
 ## Prerequisites
 
-`claude` and `codex` on PATH and authenticated. Verify with `claude --version` and
-`codex --version`. If either is missing or unauthenticated, stop and report that a
-provider-diverse double review cannot run; do not substitute the orchestrator or a Hermes
-delegate for the missing reviewer. Install/authenticate through each CLI's documented
-flow (`npm install -g @anthropic-ai/claude-code`; `npm install -g @openai/codex`, then
-`codex login`). Any non-zero reviewer run is a failed side, not a double-blind result.
-Report the wrapper's actionable failure and ask before retrying.
+Run `scripts/seats.py` first; it checks every launcher it would use and names what is
+missing. Bedrock seats need a valid AWS session (`aws sts get-caller-identity`; renew
+with `aws sso login`) and, for Codex on Mantle, `uv`. Hermes seats need their profiles
+(`hermes profile list`). If a chosen seat fails mid-run, report it and ask before
+retrying on the next candidate; never substitute the orchestrator or a `delegate_task`
+child for a missing reviewer. Any non-zero adapter exit is a failed side, not a
+double-blind result.

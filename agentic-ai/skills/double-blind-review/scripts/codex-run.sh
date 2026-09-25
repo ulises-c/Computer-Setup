@@ -6,7 +6,11 @@
 #     failure's tail (and the session-id header) stays recoverable.
 #   - the prompt is passed from a file as one argument, so `$(...)` and backticks
 #     in repo-derived text are never re-expanded by the shell.
-#   - resume re-passes no model/effort/sandbox flags; the session inherits them.
+#   - resume re-passes model, effort, and provider: codex exec resume does NOT
+#     inherit them (0.154 falls back to config.toml defaults), so a resumed seat
+#     would silently switch models without them.
+#   - --bedrock routes through Amazon Bedrock Mantle with a short-lived bearer
+#     token minted from the caller's AWS credentials; config.toml is untouched.
 # It does not background itself: the harness must, because a foreground cap that
 # kills a long run silently loses codex's final report.
 # Vendored from the codex-review plugin (0.4.0); prefer re-vendoring over
@@ -17,8 +21,9 @@ usage() {
   cat <<'EOF'
 Usage:
   codex-run.sh --prompt <file> [--sandbox read-only|workspace-write]
-               [--dir <dir>] [--model <name>] [--effort <low|medium|high|xhigh>]
+               [--dir <dir>] [--model <name>] [--effort <level>] [--bedrock]
   codex-run.sh --resume [--session <id>] --prompt <file> [--dir <dir>]
+               [--model <name>] [--effort <level>] [--bedrock]
 
   --prompt   File holding the fully-rendered prompt. Required. Write it with the
              harness's file-writing tool; never build it by interpolating
@@ -28,9 +33,13 @@ Usage:
   --dir      Run codex from this directory (-C).
   --model    Leave unset unless asked; codex uses its configured model.
              `codex debug models` lists what this machine actually has.
-  --effort   Reasoning effort. Leave unset unless a hard pass warrants it.
-  --resume   Continue a session. Inherits its model, effort, and sandbox, so
-             those flags are rejected here rather than silently ignored.
+  --effort   Reasoning effort: low, medium, high, xhigh, or max.
+  --bedrock  Use Amazon Bedrock Mantle (OpenAI-compatible) instead of the
+             subscription. Needs valid AWS credentials (e.g. `aws sso login`)
+             and `uv`. Region: $AWS_REGION, default us-east-1. Model defaults to
+             openai.gpt-6-sol (Mantle ids have no `us.` prefix).
+  --resume   Continue a session. Pass the same --model, --effort, and --bedrock
+             as the initial run: codex does not restore them on resume.
   --session  Session id from a prior run. Valid only with --resume. Without it,
              --resume keeps the backward-compatible most-recent-session behavior.
 
@@ -46,6 +55,7 @@ model=""
 effort=""
 resume=0
 session=""
+bedrock=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -56,6 +66,7 @@ while [[ $# -gt 0 ]]; do
     --effort)  effort=${2:-}; shift 2 ;;
     --resume)  resume=1; shift ;;
     --session) session=${2:-}; shift 2 ;;
+    --bedrock) bedrock=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) printf 'codex-run: unknown argument: %s\n\n' "$1" >&2; usage >&2; exit 2 ;;
   esac
@@ -73,8 +84,8 @@ fi
 if [[ $sandbox != "read-only" && $sandbox != "workspace-write" ]]; then
   printf 'codex-run: --sandbox must be read-only or workspace-write, got: %s\n' "$sandbox" >&2; exit 2
 fi
-if (( resume )) && [[ -n $model || -n $effort ]]; then
-  printf 'codex-run: --resume inherits model and effort; drop --model/--effort\n' >&2; exit 2
+if [[ -n $effort && ! $effort =~ ^(low|medium|high|xhigh|max)$ ]]; then
+  printf 'codex-run: --effort must be low, medium, high, xhigh, or max, got: %s\n' "$effort" >&2; exit 2
 fi
 if (( ! resume )) && [[ -n $session ]]; then
   printf 'codex-run: --session requires --resume\n' >&2; exit 2
@@ -91,6 +102,29 @@ trap 'rm -f "$err"' EXIT
 cmd=(codex exec --skip-git-repo-check)
 [[ -n $dir ]] && cmd+=(-C "$dir")
 
+if (( bedrock )); then
+  if ! command -v uv >/dev/null 2>&1; then
+    printf 'codex-run: --bedrock needs uv on PATH to mint the Bedrock token\n' >&2; exit 127
+  fi
+  region=${AWS_REGION:-us-east-1}
+  if ! AWS_BEARER_TOKEN_BEDROCK=$(uv run --quiet --no-project --with aws-bedrock-token-generator \
+      python3 -c 'import sys; from aws_bedrock_token_generator import provide_token; print(provide_token(region=sys.argv[1]))' \
+      "$region" 2>"$err"); then
+    printf 'codex-run: could not mint a Bedrock token; is the AWS session valid (aws sso login)?\n' >&2
+    tail -n 5 "$err" >&2
+    exit 1
+  fi
+  export AWS_BEARER_TOKEN_BEDROCK
+  [[ -n $model ]] || model="openai.gpt-6-sol"
+  cmd+=(-c 'model_provider="bedrock_mantle"'
+        -c 'model_providers.bedrock_mantle.name="Amazon Bedrock Mantle"'
+        -c "model_providers.bedrock_mantle.base_url=\"https://bedrock-mantle.$region.api.aws/openai/v1\""
+        -c 'model_providers.bedrock_mantle.env_key="AWS_BEARER_TOKEN_BEDROCK"'
+        -c 'model_providers.bedrock_mantle.wire_api="responses"')
+fi
+[[ -n $model ]] && cmd+=(-m "$model")
+[[ -n $effort ]] && cmd+=(-c "model_reasoning_effort=\"$effort\"")
+
 if (( resume )); then
   if [[ -n $session ]]; then
     cmd+=(resume "$session")
@@ -103,8 +137,6 @@ if (( resume )); then
     status=$?
   fi
 else
-  [[ -n $model ]] && cmd+=(-m "$model")
-  [[ -n $effort ]] && cmd+=(--config "model_reasoning_effort=$effort")
   cmd+=(--sandbox "$sandbox" "$(<"$prompt")")
   if "${cmd[@]}" </dev/null 2>"$err"; then
     status=0
