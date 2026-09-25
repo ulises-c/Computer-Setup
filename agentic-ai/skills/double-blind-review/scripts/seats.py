@@ -49,9 +49,9 @@ def unavailable_reason(seat, today):
         return f"no adapter script for launcher '{launcher}'"
     if shutil.which(launcher) is None:
         return f"'{launcher}' not on PATH"
-    until = seat.get("until")
-    if until and today > datetime.date.fromisoformat(until):
-        return f"expired {until}"
+    expires = seat.get("expires")
+    if expires and today >= datetime.date.fromisoformat(expires):
+        return f"expired {expires}"
     if launcher == "hermes" and not hermes_profile_exists(seat["profile"]):
         return f"hermes profile '{seat['profile']}' missing"
     if seat.get("billing") == "bedrock" and not aws_session_ok():

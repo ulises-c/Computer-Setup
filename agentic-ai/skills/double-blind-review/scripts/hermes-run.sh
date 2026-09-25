@@ -4,7 +4,7 @@
 # `session id: <id>` on stderr, resume by explicit id.
 #   - a separate process per seat, because delegate_task children share one
 #     delegation model and cannot be resumed for round 2.
-#   - the seat's profile owns provider and model; memory and messaging toolsets
+#   - the seat's profile owns the provider (seats.json passes the model); memory and messaging toolsets
 #     are disabled there, so the reviewer inherits nothing from the orchestrator.
 #   - Hermes has no read-only sandbox. --dir must be a clean git worktree; the
 #     run fails if the reviewer left it dirty.
@@ -13,11 +13,13 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  hermes-run.sh --profile <name> --prompt <file> --dir <worktree> [--effort <level>]
+  hermes-run.sh --profile <name> --prompt <file> --dir <worktree> [--model <id>] [--effort <level>]
   hermes-run.sh --profile <name> --resume --session <id> --prompt <file> --dir <worktree>
-                [--effort <level>]
+                [--model <id>] [--effort <level>]
 
-  --profile  Hermes profile that pins this seat's provider and model.
+  --profile  Hermes profile that pins this seat's provider (and default model).
+  --model    Model id from seats.json; overrides the profile default. Pass it
+             on resume too.
   --prompt   File holding the fully-rendered prompt. Required.
   --dir      Clean git worktree at the pinned head. Required.
   --effort   none, minimal, low, medium, high, xhigh, max, or ultra.
@@ -31,6 +33,7 @@ profile=""
 prompt=""
 dir=""
 effort=""
+model=""
 resume=0
 session=""
 
@@ -40,6 +43,7 @@ while [[ $# -gt 0 ]]; do
     --prompt)  prompt=${2:-}; shift 2 ;;
     --dir)     dir=${2:-}; shift 2 ;;
     --effort)  effort=${2:-}; shift 2 ;;
+    --model)   model=${2:-}; shift 2 ;;
     --resume)  resume=1; shift ;;
     --session) session=${2:-}; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -74,6 +78,7 @@ err=$(mktemp)
 trap 'rm -f "$out" "$err"' EXIT
 
 cmd=(hermes -p "$profile" chat -Q --query-file "$prompt" --in "$dir" -t "terminal,file")
+[[ -n $model ]] && cmd+=(-m "$model")
 [[ -n $effort ]] && cmd+=(--reasoning "$effort")
 (( resume )) && cmd+=(--resume "$session")
 

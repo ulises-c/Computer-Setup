@@ -61,8 +61,8 @@ python3 <skill-dir>/scripts/seats.py --roster <work|personal> \
 It prints the chosen seats as JSON (launcher, adapter path, profile/model, billing,
 effort) plus every skipped candidate with its reason, and exits 1 when fewer families
 than required are available. Each family's candidates are tried in order; the first
-usable one wins (CLI present, Hermes profile present, `until` not passed, AWS session
-valid for Bedrock billing). Rosters: `work` prefers Bedrock (Hermes profile first, then
+usable one wins (CLI present, Hermes profile present, `expires` not reached, AWS
+session valid for Bedrock billing). Pass each seat's `model` to its adapter. Rosters: `work` prefers Bedrock (Hermes profile first, then
 the Bedrock-routed CLI, then the subscription until it lapses); `personal` excludes the
 orchestrator's own family and uses subscriptions. Effort is clamped to the roster's
 floor and ceiling. If `ok` is false, report the skipped reasons and stop: a one-sided
