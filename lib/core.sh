@@ -706,6 +706,19 @@ platform_docker_optional() {
   fi
 }
 
+# Address pools normalized to [{base,size}] so the daemon.json form
+# ("default-address-pools", lowercase keys) and the `docker info` form
+# (DefaultAddressPools, Base/Size) compare as strings. Shared by the server
+# setup step and verify.sh. docker_pools_live takes an optional prefix (sudo).
+docker_pools_from_file() {
+  jq -cS '(."default-address-pools" // []) | map({base, size})' "$1"
+}
+
+docker_pools_live() {
+  "$@" docker info --format '{{json .DefaultAddressPools}}' \
+    | jq -cS '(. // []) | map({base: .Base, size: .Size})'
+}
+
 # Echo the other repo setup scripts (those present on disk) for discoverability.
 # One list for all platforms — root verify.sh auto-detects, so nothing diverges.
 RELATED_SCRIPTS=(
@@ -953,6 +966,7 @@ linux_main() {
   if [[ "$SERVER_PROFILE" == true ]]; then
     printf '\n'
     platform_docker_optional
+    server_docker_daemon_step
     if [[ "$INCLUDE_OPTIONAL" == true ]]; then
       printf '\n==> Installing optional (low) packages...\n'
       platform_install_tier low

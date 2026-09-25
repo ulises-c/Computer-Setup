@@ -32,6 +32,95 @@ server_ups_step() {
   fi
 }
 
+# Pin Docker's address pools so compose networks never spill out of 172.16/12
+# into home-LAN space (#75). Merged, not copied: the host's daemon.json carries
+# other keys (e.g. the nvidia runtime) that must survive. "Up to date" means the
+# file matches AND the running daemon reports the pools, so a run interrupted
+# between install and restart is finished by the next run.
+server_docker_daemon_step() {
+  local src="$CONFIG_SRC_DIR/docker/daemon.json" dst="${DOCKER_DAEMON_JSON:-/etc/docker/daemon.json}"
+  local want current merged live exists=false file_ok=false bak=""
+  printf '\n==> Pinning Docker default-address-pools...\n'
+
+  if [[ "$DRY_RUN" == true ]]; then
+    printf '  [dry-run] merge %s into %s (dockerd --validate), restart docker if the file or the live pools differ, roll back if docker does not come back pinned\n' "$src" "$dst"
+    return 0
+  fi
+
+  if ! command -v dockerd &>/dev/null; then
+    printf 'warning: dockerd not found (snap or missing Docker install?); address pools not pinned\n' >&2
+    return 0
+  fi
+  # sudo throughout: the docker group from a same-run install is not active yet,
+  # and /etc/docker or daemon.json may be unreadable to the invoking user.
+  if ! sudo docker info >/dev/null 2>&1; then
+    printf 'warning: docker daemon not reachable; %s left alone — start docker, then re-run\n' "$dst" >&2
+    return 0
+  fi
+
+  want="$(docker_pools_from_file "$src")"
+  current='{}'
+  if sudo test -e "$dst"; then
+    exists=true
+    current="$(sudo cat "$dst")"
+    [[ -n "${current//[[:space:]]/}" ]] || current='{}'
+  fi
+  if ! merged="$(jq -S -n --argjson cur "$current" --slurpfile src "$src" '$cur * $src[0]' 2>/dev/null)"; then
+    printf 'warning: %s is not a JSON object; leaving it alone\n' "$dst" >&2
+    return 0
+  fi
+  [[ "$merged" == "$(jq -S . <<< "$current")" ]] && file_ok=true
+  live="$(docker_pools_live sudo)" || live=""
+  if [[ "$file_ok" == true && "$live" == "$want" ]]; then
+    printf '  %s already up to date and live\n' "$dst"
+    return 0
+  fi
+
+  if [[ "$file_ok" == false ]]; then
+    if ! dockerd --validate --config-file <(printf '%s\n' "$merged") >/dev/null; then
+      printf 'warning: merged daemon.json failed dockerd --validate; %s unchanged\n' "$dst" >&2
+      return 0
+    fi
+    if [[ "$exists" == true ]]; then
+      bak="$dst.bak.$(date +%Y%m%d_%H%M%S)"
+      sudo cp -p "$dst" "$bak"
+      # tee rewrites in place, keeping the file's owner and mode.
+      sudo tee "$dst" >/dev/null <<< "$merged"
+    else
+      sudo install -D -m 644 /dev/stdin "$dst" <<< "$merged"
+    fi
+    printf '  %s updated%s\n' "$dst" "${bak:+ (backup: $bak)}"
+  fi
+
+  printf '  Restarting docker — every container restarts and host DNS (AdGuard) drops briefly...\n'
+  if sudo systemctl restart docker && [[ "$(docker_pools_live sudo 2>/dev/null)" == "$want" ]]; then
+    printf '  docker restarted with the pinned pools. docker0 is re-addressed from the new pool;\n'
+    printf '  compose networks keep their old subnets until recreated — run verify.sh --profile server\n'
+    printf '  and see linux-server/README.md step 8.\n'
+    return 0
+  fi
+
+  printf 'error: docker did not come back with the pinned pools; rolling back\n' >&2
+  if [[ -n "$bak" ]]; then
+    sudo cp "$bak" "$dst"
+  elif [[ "$exists" == false ]]; then
+    sudo rm -f "$dst"
+  else
+    # The file was already pinned when this run started (an earlier run was
+    # interrupted before its restart), so there is no pre-pin state to return to.
+    printf 'error: %s was pinned before this run; no backup from this run — see %s.bak.*\n' "$dst" "$dst" >&2
+  fi
+  # A failed start trips docker.service's start limit; without reset-failed the
+  # rollback restart is refused ("Start request repeated too quickly").
+  sudo systemctl reset-failed docker
+  if sudo systemctl restart docker; then
+    printf 'error: docker is running again, but the pools are NOT pinned — journalctl -u docker\n' >&2
+  else
+    printf 'error: docker failed to start after rollback — journalctl -u docker\n' >&2
+  fi
+  return 1
+}
+
 # Server-only "step two": the headless service + dashboard layer that runs after
 # the shared base install (packages, shell, dotfiles, Tailscale, Docker engine).
 server_extras() {

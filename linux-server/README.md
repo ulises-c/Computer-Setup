@@ -148,6 +148,50 @@ In NPM admin (`http://<server-ip>:81`):
 
 > Requires enabling HTTPS certificates in the Tailscale admin console: `login.tailscale.com/admin/dns`
 
+### 8. Docker address pools
+
+`setup.sh` merges [`docker/daemon.json`](docker/daemon.json) into
+`/etc/docker/daemon.json`, preserving other keys such as the nvidia runtime and
+the file's mode, and restarts Docker. From then on, every new compose network
+gets a `/24` inside `172.16.0.0/12` (4096 networks). Without the pin, Docker's
+default pools spill into `192.168.0.0/16` once `172.17`–`172.31` fill, which
+collides with home-LAN space ([#75](https://github.com/ulises-c/Computer-Setup/issues/75)).
+
+**The first run after this change restarts Docker.** Every container stops and
+comes back (`restart: unless-stopped`), and host DNS on `:53` (AdGuard) drops for
+the duration, so the Pi resolver carries DNS meanwhile. Run it in a quiet moment.
+Later runs restart nothing unless the file or the running daemon's pools differ
+from the repo. If Docker does not come back with the pinned pools, the step
+restores the previous `daemon.json` (backup in `/etc/docker/daemon.json.bak.*`),
+clears systemd's start limit, restarts Docker on the old config, and exits
+non-zero.
+
+On that restart Docker rebuilds its default `docker0` bridge from the new pool,
+so `docker0` moves off `172.17.0.1`. `host.docker.internal` (`host-gateway`) is
+resolved each time a container starts, so the stacks that proxy through it follow
+the new address.
+
+Compose networks keep their old subnets until they are recreated. `verify.sh
+--profile server` names every IPv4 bridge outside `172.16.0.0/12` as
+`<network>=<subnet>`. For each one, find its project and recreate it:
+
+```sh
+docker network inspect <network> --format '{{index .Labels "com.docker.compose.project"}}'
+cd linux-server/<project> && docker compose down && docker compose up -d
+```
+
+`down` removes the project network, and `up` recreates it from the pinned pool.
+Bind-mounted state (`ts-state/`, app data) is untouched, so Tailscale sidecars
+come back as the same tailnet node with the same `<service>.<tailnet>.ts.net`
+name and 100.x address. Only the container-internal `172.x`/`192.168.x` address
+changes, and nothing addresses a container by that address.
+
+One caveat: a sidecar registered with an OAuth client secret is ephemeral by
+default. If it stays offline for more than roughly 30–60 minutes (for example, a
+recreate that fails and is left broken), Tailscale deletes it, and it re-registers
+with a new 100.x address. Appending `?ephemeral=false` to the secret in
+`TS_AUTHKEY` makes new registrations persistent.
+
 ---
 
 ## Docker services
