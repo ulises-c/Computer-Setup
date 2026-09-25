@@ -6,6 +6,13 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com). Remaining
 work lives in [TODO.md](TODO.md); the design rationale for the unified layout is
 in [UNIFICATION.md](UNIFICATION.md).
 
+## Unreleased — pnpm 12
+
+### Fixed
+- `setup.sh` no longer aborts on pnpm 12, which dropped
+  `pnpm config set --location=user`; the cooldown is now written with
+  `--location=global` (pnpm's per-user config).
+
 ## Unreleased — Immich
 
 ### Added
