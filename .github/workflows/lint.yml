@@ -82,6 +82,9 @@ jobs:
       - name: Test setup preflight helpers
         run: bash scripts/test-core-preflight.sh
 
+      - name: Test Docker address-pool step
+        run: bash scripts/test-docker-address-pools.sh
+
   zsh-syntax:
     runs-on: ubuntu-latest
     steps:

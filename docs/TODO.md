@@ -250,13 +250,15 @@ game browser but joining that entry fails, while a typed address works.
 
 - [ ] Pin `default-address-pools` to `172.16.0.0/12` in `/etc/docker/daemon.json`
       and recreate the six `192.168.x` networks — fixes the collision risk with no
-      service changes. `setup.sh --profile server` now deploys the pin and
-      `verify.sh` flags stray bridges; applying it on the live server and
-      recreating the networks (`linux-server/README.md` step 8) is still manual
+      service changes. `setup.sh --profile server` now deploys the pin (with
+      rollback) and `verify.sh` checks the file, the live daemon, and names stray
+      bridges; applying it on the live server and recreating the networks
+      (`linux-server/README.md` step 8) is still manual
 - [ ] Decide whether to collapse the per-project bridges onto one shared external
       network, and fold that into the `{service}.<tailnet>.ts.net` →
-      `<host>.<tailnet>.ts.net/{service}` rework (that rework removes ~18 sidecars
-      and tailnet nodes but no bridges on its own)
+      `<host>.<tailnet>.ts.net/{service}` rework
+      ([#86](https://github.com/ulises-c/Computer-Setup/issues/86); that rework
+      removes ~18 sidecars and tailnet nodes but no bridges on its own)
 - [ ] Re-test Dragonwilds LAN discovery afterwards; if it still advertises a
       bridge address, the only fixes left are `-MULTIHOME=<ip>` or direct connect
 

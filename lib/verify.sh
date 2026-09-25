@@ -286,25 +286,38 @@ verify_extras_server() {
     fi
   done
 
-  local pools_src="$SETUP_ROOT/linux-server/docker/daemon.json"
-  if jq -e --slurpfile want "$pools_src" \
-      '."default-address-pools" == $want[0]."default-address-pools"' \
-      /etc/docker/daemon.json &>/dev/null; then
-    check "docker default-address-pools match linux-server/docker/daemon.json" true
+  local want pools_file live
+  want="$(docker_pools_from_file "$SETUP_ROOT/linux-server/docker/daemon.json")"
+  if pools_file="$(docker_pools_from_file "${DOCKER_DAEMON_JSON:-/etc/docker/daemon.json}" 2>/dev/null)" && [[ "$pools_file" == "$want" ]]; then
+    check "docker default-address-pools in /etc/docker/daemon.json" true
   else
-    check "docker default-address-pools match linux-server/docker/daemon.json (run setup.sh --profile server)" false
+    check "docker default-address-pools in /etc/docker/daemon.json (missing, unreadable, or differs — run setup.sh --profile server)" false
   fi
 
-  local bridges stray
-  if mapfile -t bridges < <(docker network ls -q --filter driver=bridge 2>/dev/null) \
-      && [[ ${#bridges[@]} -gt 0 ]]; then
-    stray="$(docker network inspect --format '{{range .IPAM.Config}}{{println .Subnet}}{{end}}' "${bridges[@]}" 2>/dev/null \
-      | grep -E '^[0-9]+\.' | grep -vE '^172\.(1[6-9]|2[0-9]|3[01])\.' | sort -u | paste -sd' ' || true)"
-    if [[ -z "$stray" ]]; then
-      check "docker bridge networks all inside 172.16.0.0/12" true
-    else
-      check "docker bridge networks all inside 172.16.0.0/12 (recreate: $stray)" false
-    fi
+  if ! docker info >/dev/null 2>&1; then
+    check "docker daemon reachable (not installed, not running, or no docker group — log out and back in)" false
+    return 0
+  fi
+  if live="$(docker_pools_live 2>/dev/null)" && [[ "$live" == "$want" ]]; then
+    check "docker daemon running with the pinned address pools" true
+  else
+    check "docker daemon running with the pinned address pools (live: ${live:-unknown} — restart docker or re-run setup.sh --profile server)" false
+  fi
+
+  local ids listing stray
+  if ! ids="$(docker network ls -q --filter driver=bridge)" \
+      || ! listing="$(xargs -r docker network inspect \
+           --format '{{.Name}}{{range .IPAM.Config}} {{.Subnet}}{{end}}' <<< "$ids")"; then
+    check "docker IPv4 bridge networks inside 172.16.0.0/12 (could not list networks)" false
+    return 0
+  fi
+  stray="$(awk '{ for (i = 2; i <= NF; i++)
+                    if ($i ~ /^[0-9]+\./ && $i !~ /^172\.(1[6-9]|2[0-9]|3[01])\./) print $1 "=" $i }' \
+           <<< "$listing" | paste -sd' ')"
+  if [[ -z "$stray" ]]; then
+    check "docker IPv4 bridge networks inside 172.16.0.0/12" true
+  else
+    check "docker IPv4 bridge networks inside 172.16.0.0/12 (recreate, see linux-server/README.md step 8: $stray)" false
   fi
 }
 

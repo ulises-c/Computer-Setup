@@ -12,10 +12,21 @@ in [UNIFICATION.md](UNIFICATION.md).
 - `setup.sh --profile server` pins Docker's `default-address-pools` to
   `172.16.0.0/12` (`/24` each) by merging `linux-server/docker/daemon.json` into
   `/etc/docker/daemon.json` ([#75](https://github.com/ulises-c/Computer-Setup/issues/75)).
-  The merge keeps existing keys, is validated with `dockerd --validate` before
-  install, backs up the old file, and restarts Docker only when the file
-  changes. `verify.sh` checks the pin and lists any bridge network still outside
-  `172.16.0.0/12` that needs recreating.
+  The merge keeps existing keys and the file's mode, reads the file with sudo,
+  treats an empty file as `{}`, and is checked with `dockerd --validate` before
+  install. Docker is restarted only when the file or the running daemon's pools
+  differ, so a run interrupted before its restart is finished by the next one.
+  The first restart bounces every container and briefly drops host DNS, and
+  re-addresses `docker0` from the new pool. If Docker does not come back pinned,
+  the step restores the backup, clears systemd's start limit, restarts on the old
+  config, and fails.
+- `verify.sh --profile server` checks the pin in the file and in the running
+  daemon (`docker info`). It fails explicitly when Docker is unreachable or
+  networks cannot be listed, and names each IPv4 bridge still outside
+  `172.16.0.0/12` as `<network>=<subnet>`.
+- `scripts/test-docker-address-pools.sh` (run in CI) covers the merge,
+  idempotency, interrupted runs, rollback, empty/invalid files, an unreachable
+  daemon, and the verify checks against stubbed Docker and systemd.
 
 ## Unreleased — Codex hook parity
 
