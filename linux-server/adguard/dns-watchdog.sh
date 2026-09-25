@@ -131,8 +131,13 @@ if ! out="$("${action[@]}" 2>&1)"; then
 fi
 ran="${action[*]}"
 
-sleep 5
-if answers "${down[0]}"; then
+# AdGuard can take a while to bind :53 after a restart; give it ~30s before calling it failed.
+restored=false
+for _ in 1 2 3 4 5 6; do
+  sleep 5
+  if answers "${down[0]}"; then restored=true; break; fi
+done
+if [[ "$restored" == true ]]; then
   notify "AdGuard DNS restored" high warning "was silent ~${fails}min on ${down[*]}; ran: $ran"
   state_set fails 0
   state_set alerted 0

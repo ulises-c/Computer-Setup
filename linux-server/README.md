@@ -358,6 +358,9 @@ with a new 100.x address. Appending `?ephemeral=false` to the secret in
         `docker compose up -d adguardhome`. At most one attempt per 10 min
       - Alerts to ntfy (`server-dns`) on action, failure, and recovery; optional
         Uptime Kuma push. Settings live in `adguard/.env`
+      - Alerts go out while AdGuard is down, so `NTFY_URL`/`KUMA_PUSH_URL` must
+        resolve without it — `*.ts.net` names do via the host's Tailscale DNS
+        (`100.100.100.100`); check with `resolvectl query <host>`
 
 15. forgejo | [Codeberg](https://codeberg.org/forgejo/forgejo) | [Docs](https://forgejo.org/docs/)
     1. Lightweight self-hosted git service — GitHub-like web UI, SSH push/pull, repo mirroring; LAN/Tailscale only, no public exposure

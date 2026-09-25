@@ -17,6 +17,10 @@ in [UNIFICATION.md](UNIFICATION.md).
   and alerts ntfy on action, failure, and recovery. Covers the DNS gap called
   out for the Docker address-pool restart in
   [#85](https://github.com/ulises-c/Computer-Setup/pull/85).
+- After a recovery attempt it polls `:53` for up to ~30s before declaring
+  failure, so a slow AdGuard start sends "restored" rather than a false urgent
+  "still down". Alerts rely on `NTFY_URL` resolving without AdGuard, which a
+  `*.ts.net` name does via the host's Tailscale DNS.
 
 ## Unreleased — EcoFlow UPS disconnected
 
