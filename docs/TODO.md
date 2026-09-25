@@ -31,7 +31,12 @@ run leaves shadowed binaries to reconcile.
 
 ## Server UPS — EcoFlow `ups.load` (NUT master build)
 
-`linux-server/ups/` monitors the EcoFlow River 3 Plus over NUT, but `ups.load`
+**Parked (2026-09-25):** the EcoFlow is disconnected from the server and will
+move to another device. Its NUT config lives on, undeployed, in
+`linux-server/ups/ecoflow.ups.conf` + `udev-ecoflow.rules`; resume this on
+whichever host it lands on.
+
+NUT monitors the EcoFlow River 3 Plus, but `ups.load`
 shows empty. Root cause: the EcoFlow firmware exposes **no load percentage over
 USB HID** (confirmed by the `EcoFlow HID` subdriver author and EcoFlow support —
 see NUT PR #2837). The fix is NUT's **CDC serial companion**
@@ -49,7 +54,7 @@ Even the latest stable **2.8.5 lacks it**; the CDC feature landed post-2.8.5 in
 State before this was attempted (don't skip these notes):
 - `/dev/serial/by-id/usb-EcoFlow_EF-UPS_RIVER_3_Plus_...-if01` → `/dev/ttyACM0`
   already exists (the unit exposes the CDC ACM interface; group `dialout`).
-- `ups.conf` intentionally does **not** carry `ecoflow_cdc_port` yet — adding it
+- `ecoflow.ups.conf` intentionally does **not** carry `ecoflow_cdc_port` yet — adding it
   to the 2.8.4 driver makes `nut-driver@ecoflow` die in a restart loop
   (`result 'protocol'`). It must be added **after** the master build replaces the
   driver.
@@ -115,7 +120,7 @@ Caveats:
 
 ### Deferred ups.conf change (do this only after the master build is live)
 
-Add to the `[ecoflow]` stanza in `linux-server/ups/ups.conf` (substitute the
+Add to the `[ecoflow]` stanza in `linux-server/ups/ecoflow.ups.conf` (substitute the
 actual serial suffix from your unit):
 
 ```

@@ -1,0 +1,10 @@
+[Unit]
+Description=AdGuard DNS watchdog (restart adguardhome if :53 stops answering)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env bash @WATCHDOG_SCRIPT@
+StateDirectory=dns-watchdog
+TimeoutStartSec=180

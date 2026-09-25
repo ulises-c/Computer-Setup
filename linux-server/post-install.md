@@ -259,8 +259,7 @@ git remote set-url origin ssh://git@forgejo.<tailnet>.ts.net:22/<username>/<repo
 
 ### UPS (NUT) — host service, no UI
 
-Monitors two USB UPS units: the CyberPower (primary, clean shutdown on low
-battery) and an EcoFlow River 3 Plus (monitoring-only battery bank upstream).
+Monitors the CyberPower UPS over USB (clean shutdown on low battery).
 ntfy alerts on power events. Full runbook in [`ups/README.md`](ups/README.md).
 
 - [ ] Configure and deploy:
@@ -269,7 +268,7 @@ ntfy alerts on power events. Full runbook in [`ups/README.md`](ups/README.md).
   cp .env.example .env   # set UPSMON_PASSWORD (openssl rand -hex 16) + ntfy
   sudo bash setup.sh
   ```
-- [ ] Verify: `upsc cyberpower ups.status` and `upsc ecoflow ups.status` print `OL`
+- [ ] Verify: `upsc cyberpower ups.status` prints `OL`
 - [ ] Run `bash verify.sh --platform server` from the repo root
 - [ ] Start the PeaNUT dashboard (`docker compose up -d`, needs `TS_AUTHKEY` in
       `.env`) — graphs at `https://peanut.<tailnet>.ts.net/`, and the homepage

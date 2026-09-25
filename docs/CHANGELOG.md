@@ -6,6 +6,42 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com). Remaining
 work lives in [TODO.md](TODO.md); the design rationale for the unified layout is
 in [UNIFICATION.md](UNIFICATION.md).
 
+## Unreleased — AdGuard DNS watchdog
+
+### Added
+- `linux-server/adguard/dns-watchdog.sh` + `dns-watchdog.timer`, installed by
+  `linux-server/adguard/setup.sh`: probes host `:53` on loopback and the LAN IP
+  every minute. After two consecutive silent minutes, and only while public
+  resolvers still answer and the Docker daemon is up, it restarts `adguardhome`
+  (or `docker compose up -d` if stopped/removed), at most once per 10 minutes,
+  and alerts ntfy on action, failure, and recovery. Covers the DNS gap called
+  out for the Docker address-pool restart in
+  [#85](https://github.com/ulises-c/Computer-Setup/pull/85).
+- After a recovery attempt it polls `:53` for up to ~30s before declaring
+  failure, so a slow AdGuard start sends "restored" rather than a false urgent
+  "still down". Alerts rely on `NTFY_URL` resolving without AdGuard, which a
+  `*.ts.net` name does via the host's Tailscale DNS.
+
+## Unreleased — EcoFlow UPS disconnected
+
+### Changed
+- The EcoFlow River 3 Plus is disconnected from the server and moving to another
+  device, so `linux-server/ups/setup.sh` no longer deploys it: its stanza moved
+  out of `ups.conf` into the undeployed `ecoflow.ups.conf`, `udev-ecoflow.rules`
+  is kept but not installed, and `nut-driver@ecoflow` left `setup.sh`'s
+  enable/restart lists, `verify.sh`'s checks, and the homepage. Its driver had
+  been restart-looping on the missing device since 2026-09-09, and that failure
+  aborted `setup.sh --profile server` right after the Docker step.
+  `nut-driver-enumerator` drops the unit once the new `ups.conf` is deployed.
+  The `ups.load` TODO is parked, not dropped.
+
+## Unreleased — pnpm 12
+
+### Fixed
+- `setup.sh` no longer aborts on pnpm 12, which dropped
+  `pnpm config set --location=user`; the cooldown is now written with
+  `--location=global` (pnpm's per-user config).
+
 ## Unreleased — Immich
 
 ### Added

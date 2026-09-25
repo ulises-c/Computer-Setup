@@ -1,25 +1,28 @@
 # UPS (NUT)
 
-[Network UPS Tools](https://networkupstools.org/) with two USB UPS units wired
-in series:
+[Network UPS Tools](https://networkupstools.org/) monitoring one USB UPS:
 
 - **cyberpower** — CyberPower CST135UC2 (1500VA), `usbhid-ups`, standalone. This
   is the **primary** UPS: on power loss it pushes ntfy alerts; when the battery
   runs low it shuts the server down cleanly and tells the UPS to cut its outlets
   so everything restarts when wall power returns.
-- **ecoflow** — EcoFlow River 3 Plus, `usbhid-ups`, **monitoring-only** (no
-  shutdown wiring). Added as a battery bank upstream of the CyberPower.
+### EcoFlow River 3 Plus (parked)
 
-Wiring: `wall power -> EcoFlow -> CyberPower -> server`. The EcoFlow is on the
-wall frontier, so its `ups.status` is the early indicator of grid loss; the
-CyberPower steps in a moment later for the actual server supply.
+The EcoFlow used to sit upstream (`wall -> EcoFlow -> CyberPower -> server`) as
+a second, monitoring-only unit. It was disconnected from the server on
+2026-09-25 and is moving to another device, so `setup.sh` no longer deploys it.
+Its config stays here, undeployed:
 
-The EcoFlow needs NUT **2.8.4+**, which ships the dedicated `EcoFlow HID` 
-subdriver. Do **not** set `explore = 1` for it — that forces the generic EXPLORE
-subdriver, which then reports only identity and a constant `OB` with no
-battery/input data. The stanza in `ups.conf` mirrors EcoFlow's own "Power
-Manager" config (`usb_hid_ep_in/out = 1`, `ignorelb`,
-`override.battery.runtime.low = -1`).
+- [`ecoflow.ups.conf`](ecoflow.ups.conf) — the `[ecoflow]` stanza to append to
+  that host's `/etc/nut/ups.conf`
+- [`udev-ecoflow.rules`](udev-ecoflow.rules) — install as
+  `/etc/udev/rules.d/65-nut-usbups-ecoflow.rules` so the `nut` user can open the
+  device, then `udevadm control --reload && udevadm trigger`
+
+It needs NUT **2.8.4+** (the dedicated `EcoFlow HID` subdriver) and must **not**
+use `explore = 1`, which falls back to the generic subdriver and reports only a
+constant `OB`. The open `ups.load` work is parked in
+[`../../docs/TODO.md`](../../docs/TODO.md).
 
 ## Setup
 
@@ -43,8 +46,6 @@ Manager" config (`usb_hid_ep_in/out = 1`, `ignorelb`,
    ```sh
    upsc cyberpower ups.status   # expect: OL (on line power)
    upsc cyberpower               # full variable dump — charge, runtime, load
-   upsc ecoflow ups.status       # expect: OL (wall power present)
-   upsc ecoflow                  # charge, runtime, AC input state
    bash ../../verify.sh --platform server
    journalctl -u nut-monitor -f
    ```
@@ -105,16 +106,17 @@ docker compose up -d
 | Repo file | Deployed to | Purpose |
 |---|---|---|
 | `nut.conf` | `/etc/nut/nut.conf` | `MODE=standalone` (turns NUT on) |
-| `ups.conf` | `/etc/nut/ups.conf` | `usbhid-ups` drivers for both the CyberPower (primary) and EcoFlow (monitoring-only) |
+| `ups.conf` | `/etc/nut/ups.conf` | `usbhid-ups` driver for the CyberPower |
 | `upsd.conf` | `/etc/nut/upsd.conf` | upsd listens on loopback only |
 | `upsd.users.template` | `/etc/nut/upsd.users` | upsmon user (password from `.env`) |
 | `upsmon.conf.template` | `/etc/nut/upsmon.conf` | shutdown + notification policy |
 | `ups-notify.sh` | `/etc/nut/ups-notify.sh` | NOTIFYCMD → ntfy |
+| `ecoflow.ups.conf`, `udev-ecoflow.rules` | not deployed | parked EcoFlow config (see above) |
 | (rendered from `.env`) | `/etc/nut/ups-notify.env` | ntfy settings for the hook |
 
-Each unit gets its own systemd driver instance (`nut-driver@cyberpower`,
-`nut-driver@ecoflow`); `nut-server` and `nut-monitor` are shared. The homepage
-dashboard shows both via PeaNUT (`key: cyberpower` and `key: ecoflow`).
+The driver runs as the systemd instance `nut-driver@cyberpower`, alongside
+`nut-server` and `nut-monitor`. The homepage dashboard reads it via PeaNUT
+(`key: cyberpower`).
 
 Everything in `/etc/nut` is `root:nut 640` (the notify script `750`); secrets
 live only in the gitignored `.env` and the rendered `/etc/nut` files.

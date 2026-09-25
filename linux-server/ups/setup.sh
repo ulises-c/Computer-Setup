@@ -52,7 +52,7 @@ fi
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-cp "$SCRIPT_DIR/nut.conf" "$SCRIPT_DIR/ups.conf" "$SCRIPT_DIR/upsd.conf" "$SCRIPT_DIR/ups-notify.sh" "$SCRIPT_DIR/udev-ecoflow.rules" "$tmp/"
+cp "$SCRIPT_DIR/nut.conf" "$SCRIPT_DIR/ups.conf" "$SCRIPT_DIR/upsd.conf" "$SCRIPT_DIR/ups-notify.sh" "$tmp/"
 sed "s|@UPSMON_PASSWORD@|$UPSMON_PASSWORD|" "$SCRIPT_DIR/upsd.users.template" > "$tmp/upsd.users"
 sed "s|@UPSMON_PASSWORD@|$UPSMON_PASSWORD|" "$SCRIPT_DIR/upsmon.conf.template" > "$tmp/upsmon.conf"
 {
@@ -86,28 +86,13 @@ deploy "$tmp/upsmon.conf"     /etc/nut/upsmon.conf     640
 deploy "$tmp/ups-notify.env"  /etc/nut/ups-notify.env  640
 deploy "$tmp/ups-notify.sh"   /etc/nut/ups-notify.sh   750
 
-udev_dest=/etc/udev/rules.d/65-nut-usbups-ecoflow.rules
-udev_changed=false
-if [[ -f "$udev_dest" ]] && cmp -s "$tmp/udev-ecoflow.rules" "$udev_dest"; then
-  printf '  ✓ %s\n' "$udev_dest"
-else
-  run install -o root -g root -m 644 "$tmp/udev-ecoflow.rules" "$udev_dest"
-  udev_changed=true
-  changed=true
-  printf '  installed %s\n' "$udev_dest"
-fi
-if [[ "$udev_changed" == true ]]; then
-  run udevadm control --reload
-  run udevadm trigger --subsystem-match=usb
-fi
-
 log "Enabling NUT services..."
-run systemctl enable --now nut-driver@cyberpower.service nut-driver@ecoflow.service nut-server.service nut-monitor.service
+run systemctl enable --now nut-driver@cyberpower.service nut-server.service nut-monitor.service
 
 if [[ "$changed" == true ]]; then
   log "Configs changed — restarting NUT..."
   if [[ "$ups_conf_changed" == true ]]; then
-    run systemctl restart nut-driver@cyberpower.service nut-driver@ecoflow.service
+    run systemctl restart nut-driver@cyberpower.service
   fi
   run systemctl restart nut-server.service nut-monitor.service
 fi
@@ -115,13 +100,11 @@ fi
 if [[ "$DRY_RUN" == false ]]; then
   log "Verifying (drivers can take a few seconds to settle)..."
   sleep 3
-  for ups in cyberpower ecoflow; do
-    if status="$(upsc "$ups@localhost" ups.status 2>/dev/null)"; then
-      log "$ups ups.status: $status (OL = on line power)"
-    else
-      printf 'warning: upsc could not reach the %s UPS yet — check: journalctl -u nut-driver@%s -u nut-server\n' "$ups" "$ups" >&2
-    fi
-  done
+  if status="$(upsc cyberpower@localhost ups.status 2>/dev/null)"; then
+    log "cyberpower ups.status: $status (OL = on line power)"
+  else
+    printf 'warning: upsc could not reach the cyberpower UPS yet — check: journalctl -u nut-driver@cyberpower -u nut-server\n' >&2
+  fi
   log "Test a notification with:"
   printf '    sudo -u nut NOTIFYTYPE=ONBATT /etc/nut/ups-notify.sh "test event"\n'
 fi

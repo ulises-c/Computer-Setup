@@ -1,0 +1,11 @@
+[Unit]
+Description=Probe AdGuard DNS every minute
+
+[Timer]
+# Past boot, so dockerd has brought adguardhome up before the first probe.
+OnBootSec=3min
+OnUnitActiveSec=1min
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

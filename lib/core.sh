@@ -297,7 +297,7 @@ configure_pnpm() {
   local age_minutes=$((NPM_MIN_RELEASE_AGE * 24 * 60))
   if [[ "$DRY_RUN" == true ]]; then
     printf '  [dry-run] corepack enable && corepack prepare pnpm@latest --activate\n'
-    printf '  [dry-run] pnpm config set minimumReleaseAge %s --location=user\n' "$age_minutes"
+    printf '  [dry-run] pnpm config set minimumReleaseAge %s --location=global\n' "$age_minutes"
     return 0
   fi
   if ! command -v corepack &>/dev/null; then
@@ -309,7 +309,7 @@ configure_pnpm() {
   export PNPM_HOME="$HOME/.local/share/pnpm"
   export PATH="$PNPM_HOME/bin:$PATH"
   if command -v pnpm &>/dev/null; then
-    pnpm config set minimumReleaseAge "$age_minutes" --location=user
+    pnpm config set minimumReleaseAge "$age_minutes" --location=global
     printf '  ✓ pnpm enabled, minimumReleaseAge=%s min (%s-day cooldown)\n' "$age_minutes" "$NPM_MIN_RELEASE_AGE"
   else
     printf '  ⚠ pnpm not on PATH after corepack — skipped cooldown config\n'
