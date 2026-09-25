@@ -143,9 +143,11 @@ commits (`hermes-config backup-cron` does the same without committing).
   Override it with `HERMES_CONFIG_SYNC_CRON_BACKUP=personal|work|off`.
 - **Keyed by host:** one personal repo is shared by several machines, so each
   host rebuilds only its own directory.
-- **No-op runs stay silent:** runtime fields (`next_run_at`, `last_*`,
-  `fire_claim`, `repeat.completed`, ...) are dropped, so a run by itself never
-  makes a diff.
+- **No-op runs stay silent:** only configuration fields are kept (a whitelist:
+  `id`, `name`, `prompt`, `skills`, `schedule`, `repeat.times`, `enabled`,
+  `deliver`, ...). Scheduler runtime (`state`, `next_run_at`, `last_*`,
+  claims, `pending_slot`, `repeat.completed`, and any field Hermes adds
+  later) is dropped, so a run by itself never makes a diff.
 - **Redaction:** outside the work repo, chat IDs in `deliver` /
   `failure_deliver` become `platform:<redacted>` and `origin` is dropped, so a
   work Slack DM ID never reaches the personal repo. When restoring, re-pick
@@ -153,7 +155,12 @@ commits (`hermes-config backup-cron` does the same without committing).
 - **Left out:** a job or script with a possible secret, or (personal repo)
   one that names work, is not backed up. `sync` reports what it left out only
   when that set changes. It is not an error: one work job must not block
-  every other commit. Hidden files under `scripts/` are skipped.
+  every other commit. Hidden files under `scripts/` are skipped; symlinks are
+  never followed and are reported as left out.
+- **Fails safe:** an unreadable or unparsable `jobs.json`, a missing Hermes
+  root, or any copy/write error makes `sync` and `backup-cron` exit 1 and
+  leaves the repo's `cron/` exactly as it was, so a bad read never commits the
+  deletion of the last good backup.
 
 Restoring uses the normal CLI (`hermes cron create ...` from the saved
 fields). The snapshot is a record, not a file to copy over `jobs.json`.

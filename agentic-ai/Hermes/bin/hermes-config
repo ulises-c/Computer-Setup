@@ -708,13 +708,21 @@ cmd_pre_push() {
 
 # --- cron backup -------------------------------------------------------------
 # Snapshot every profile's cron jobs and scripts into <repo>/cron/<host>/<profile>/.
-# Keyed by host because one personal repo is shared by several machines. Runtime
-# fields (next/last run, claims, streaks) are dropped so a run by itself never
-# makes a diff. A job or script that names work (in the personal repo) or looks
-# like it holds a secret is left out, so one bad job cannot block every other
-# commit to the repo.
+# Keyed by host because one personal repo is shared by several machines. Only
+# the fields a user configures are kept (see CRON_CONFIG_FIELDS), so a scheduled
+# run by itself never makes a diff. A job or script that names work (in the
+# personal repo) or looks like it holds a secret is left out, so one bad job
+# cannot block every other commit to the repo. Any read or write error fails the
+# whole backup and leaves the repo's cron/ as it was: a half-read snapshot would
+# otherwise be committed as the deletion of the good one.
 
-CRON_RUNTIME_FIELDS='del(.last_run_at, .next_run_at, .last_status, .last_error, .last_delivery_error, .last_delivery_unverified, .failure_streak, .fire_claim, .monitor_state) | if (.repeat | type) == "object" then .repeat |= del(.completed) else . end'
+# Whitelist of what create_job/update_job in hermes-agent cron/jobs.py store as
+# configuration; everything else (state, next/last run, claims, pending slots,
+# dispatch and delivery bookkeeping, streaks, quota holds, fields added later)
+# is scheduler runtime and is dropped. paused_at/paused_reason stay: only a
+# pause or resume writes them, together with enabled, and the reason says why
+# the job is off. Of repeat, only times is configuration.
+CRON_CONFIG_FIELDS='with_entries(select(.key | IN("id", "name", "prompt", "skills", "skill", "model", "provider", "base_url", "script", "no_agent", "monitor_script", "monitor_url", "context_from", "schedule", "schedule_display", "repeat", "enabled", "paused_at", "paused_reason", "deliver", "failure_deliver", "origin", "enabled_toolsets", "workdir", "created_at", "attach_to_session", "reasoning_effort"))) | if (.repeat | type) == "object" then .repeat |= with_entries(select(.key == "times")) else . end'
 # Outside the work repo, chat IDs in delivery targets (a DM or channel in the
 # work Slack) become <redacted>; the platform name stays, so restoring a job
 # only needs the target re-picked. ($redact is a jq variable, not shell.)
@@ -744,53 +752,101 @@ cron_refuse() {
   return 1
 }
 
+cron_fail() { printf 'cron backup: %s\n' "$*" >&2; }
+
 # Rebuilds <dir>/cron/<host>/ from the live state. Prints nothing on success;
-# stores what it skipped in $SKIPPED_FILE for the caller to report.
+# stores what it skipped in $SKIPPED_FILE for the caller to report. Returns 1
+# with the reason on stderr on any error, before touching <dir>/cron. Callers
+# run it under `||`, where set -e is off, so every step is checked by hand.
 export_cron() {
-  local kind="$1" dir="$2" host root tmp home profile jobs n id why f rel out
+  local kind="$1" dir="$2" host root tmp rc=0
   host="${HERMES_CONFIG_SYNC_CRON_HOST:-$(hostname -s)}"
-  [[ -n "$host" && "$host" != */* && "$host" != .* ]] || die "bad cron backup host name: '$host'"
+  if [[ -z "$host" || "$host" == */* || "$host" == .* ]]; then cron_fail "bad cron backup host name: '$host'"; return 1; fi
   root="$(hermes_root)"
-  tmp="$(mktemp -d)"
-  : > "$tmp/skipped"
+  if [[ ! -d "$root" ]]; then cron_fail "Hermes root $root does not exist"; return 1; fi
+  tmp="$(mktemp -d)" || { cron_fail "cannot create a temp dir"; return 1; }
+  { snapshot_cron "$kind" "$host" "$root" "$tmp" && install_cron_snapshot "$dir" "$host" "$tmp"; } || rc=1
+  rm -rf "$tmp"
+  return "$rc"
+}
+
+# Builds $tmp/tree/<profile>/ and $tmp/skipped. Touches nothing outside $tmp.
+snapshot_cron() {
+  local kind="$1" host="$2" root="$3" tmp="$4" home profile jobs n i f label why rc out list rel redact=true
+  [[ "$kind" == work ]] && redact=false
+  : > "$tmp/skipped" || { cron_fail "cannot write to $tmp"; return 1; }
   for home in "$root" "$root"/profiles/*; do
     [[ -d "$home" ]] || continue
     if [[ "$home" == "$root" ]]; then profile=default; else profile="$(basename "$home")"; fi
     out="$tmp/tree/$profile"
     jobs="$home/cron/jobs.json"
-    n="$( { jq '.jobs | length' "$jobs" 2>/dev/null || printf 0; } | tail -1)"
+    n=0
+    if [[ -e "$jobs" || -L "$jobs" ]]; then
+      # An empty file makes jq print nothing and exit 0: that is corrupt too.
+      n="$(jq '.jobs | if type == "array" then length else error(".jobs is not an array") end' "$jobs")" || n=
+      [[ "$n" =~ ^[0-9]+$ ]] || { cron_fail "cannot read or parse $jobs"; return 1; }
+    fi
     if (( n > 0 )); then
-      mkdir -p "$tmp/jobs/$profile"
-      while IFS= read -r id; do
-        jq -S --arg id "$id" --argjson redact "$([[ "$kind" == work ]] && echo false || echo true)" \
-          ".jobs[] | select(.id == \$id) | $CRON_RUNTIME_FIELDS | $CRON_REDACT_TARGETS" "$jobs" > "$tmp/jobs/$profile/$id.json"
-        if why="$(cron_refuse "$kind" "$tmp/jobs/$profile/$id.json")"; then
-          printf '%s/%s job %s (%s): %s\n' "$host" "$profile" "$id" "$(jq -r '.name // ""' "$tmp/jobs/$profile/$id.json")" "$why" >> "$tmp/skipped"
-          rm -f "$tmp/jobs/$profile/$id.json"
-        fi
-      done < <(jq -r '.jobs[].id' "$jobs" | LC_ALL=C sort)
+      mkdir -p "$tmp/jobs/$profile" || { cron_fail "cannot create $tmp/jobs/$profile"; return 1; }
+      for (( i = 0; i < n; i++ )); do
+        f="$tmp/jobs/$profile/$(printf '%06d' "$i").json"
+        jq -S --argjson i "$i" --argjson redact "$redact" \
+          ".jobs[\$i] | $CRON_CONFIG_FIELDS | $CRON_REDACT_TARGETS" "$jobs" > "$f" \
+          || { cron_fail "cannot export job $i of $jobs"; return 1; }
+        label="$(jq -r '"\(.id // "?") (\(.name // ""))"' "$f")" || { cron_fail "cannot read back job $i of $jobs"; return 1; }
+        why="$(cron_refuse "$kind" "$f")" && rc=0 || rc=$?
+        case "$rc" in
+          0) { printf '%s/%s job %s: %s\n' "$host" "$profile" "$label" "$why" >> "$tmp/skipped" && rm -f "$f"; } \
+               || { cron_fail "cannot record left-out job $label"; return 1; } ;;
+          1) ;;
+          *) cron_fail "scan of job $label failed: $why"; return 1 ;;
+        esac
+      done
       if compgen -G "$tmp/jobs/$profile/*.json" >/dev/null; then
-        mkdir -p "$out"
-        jq -S -s '{jobs: .}' "$tmp/jobs/$profile"/*.json > "$out/jobs.json"
+        { mkdir -p "$out" && jq -S -s '{jobs: sort_by(.id | tostring)}' "$tmp/jobs/$profile"/*.json > "$out/jobs.json"; } \
+          || { cron_fail "cannot write the $profile jobs snapshot"; return 1; }
       fi
     fi
-    if [[ -d "$home/scripts" ]]; then
+    # Never follow a symlink (Hermes refuses ones that leave scripts/): a link,
+    # to a file or a dir, is left out and reported, and not descended into.
+    if [[ -L "$home/scripts" ]]; then
+      printf '%s/%s script dir scripts: symlink\n' "$host" "$profile" >> "$tmp/skipped" || { cron_fail "cannot write to $tmp"; return 1; }
+    elif [[ -d "$home/scripts" ]]; then
+      list="$(find -P "$home/scripts" -mindepth 1 -name '.*' -prune -o \( -type l -o -type f \) -print | LC_ALL=C sort)" \
+        || { cron_fail "cannot list $home/scripts"; return 1; }
       while IFS= read -r f; do
+        [[ -n "$f" ]] || continue
         rel="${f#"$home/scripts/"}"
-        if why="$(cron_refuse "$kind" "$f")"; then
-          printf '%s/%s script %s: %s\n' "$host" "$profile" "$rel" "$why" >> "$tmp/skipped"
+        if [[ -L "$f" ]]; then
+          printf '%s/%s script %s: symlink\n' "$host" "$profile" "$rel" >> "$tmp/skipped" || { cron_fail "cannot write to $tmp"; return 1; }
           continue
         fi
-        mkdir -p "$out/scripts/$(dirname "$rel")"
-        cp -L --preserve=mode "$f" "$out/scripts/$rel"
-      done < <(find -L "$home/scripts" -mindepth 1 -name '.*' -prune -o -type f -print | LC_ALL=C sort)
+        why="$(cron_refuse "$kind" "$f" "$rel")" && rc=0 || rc=$?
+        case "$rc" in
+          0) printf '%s/%s script %s: %s\n' "$host" "$profile" "$rel" "$why" >> "$tmp/skipped" \
+               || { cron_fail "cannot write to $tmp"; return 1; }
+             continue ;;
+          1) ;;
+          *) cron_fail "scan of script $rel failed: $why"; return 1 ;;
+        esac
+        { mkdir -p "$out/scripts/$(dirname "$rel")" && cp -P --preserve=mode "$f" "$out/scripts/$rel"; } \
+          || { cron_fail "cannot copy script $f"; return 1; }
+      done <<< "$list"
     fi
   done
-  rm -rf "$dir/cron/$host"
-  if [[ -d "$tmp/tree" ]]; then mkdir -p "$dir/cron"; mv "$tmp/tree" "$dir/cron/$host"; fi
+}
+
+# Replaces <dir>/cron/<host>/ with the snapshot in $tmp and hands the
+# left-out list to $SKIPPED_FILE. Everything that can fail on bad input has
+# already failed in snapshot_cron.
+install_cron_snapshot() {
+  local dir="$1" host="$2" tmp="$3"
+  mv "$tmp/skipped" "$SKIPPED_FILE" || { cron_fail "cannot write $SKIPPED_FILE"; return 1; }
+  rm -rf "$dir/cron/$host" || { cron_fail "cannot remove the old $dir/cron/$host"; return 1; }
+  if [[ -d "$tmp/tree" ]]; then
+    { mkdir -p "$dir/cron" && mv "$tmp/tree" "$dir/cron/$host"; } || { cron_fail "cannot move the snapshot into $dir/cron/$host"; return 1; }
+  fi
   rmdir "$dir/cron" 2>/dev/null || true
-  mv "$tmp/skipped" "$SKIPPED_FILE"
-  rm -rf "$tmp"
 }
 
 cmd_backup_cron() {
@@ -801,7 +857,10 @@ cmd_backup_cron() {
   dir="$(kind_dir "$kind")"
   [[ -d "$dir/.git" ]] || die "$kind repo not cloned; run: hermes-config install"
   SKIPPED_FILE="$(mktemp)"
-  export_cron "$kind" "$dir"
+  if ! export_cron "$kind" "$dir"; then
+    rm -f "$SKIPPED_FILE"
+    die "cron backup failed (see above); $dir/cron left as it was"
+  fi
   if [[ -s "$SKIPPED_FILE" ]]; then printf 'not backed up:\n'; sed 's/^/  /' "$SKIPPED_FILE"; fi
   rm -f "$SKIPPED_FILE"
   git -C "$dir" status --short -- cron
@@ -833,16 +892,23 @@ sync_repo() {
   fi
   if [[ "$kind" == "$(cron_backup_kind)" ]]; then
     SKIPPED_FILE="$dir/.git/hermes-cron-skipped.new"
-    export_cron "$kind" "$dir"
+    if ! export_cron "$kind" "$dir"; then
+      rm -f "$SKIPPED_FILE"
+      printf '%s: cron backup failed (see above); nothing committed or pushed\n' "$kind" >&2
+      return 1
+    fi
     # Report left-out jobs only when that set changes, not every night.
     seen="$dir/.git/hermes-cron-skipped"
     if ! cmp -s "$SKIPPED_FILE" "$seen" 2>/dev/null && [[ -s "$SKIPPED_FILE" || -e "$seen" ]]; then
       if [[ -s "$SKIPPED_FILE" ]]; then printf '%s: cron backup left out:\n' "$kind"; sed 's/^/  /' "$SKIPPED_FILE"
       else printf '%s: cron backup no longer leaves anything out\n' "$kind"; fi
     fi
-    mv "$SKIPPED_FILE" "$seen"
+    if ! mv "$SKIPPED_FILE" "$seen"; then printf '%s: cannot record the left-out list in %s\n' "$kind" "$seen" >&2; return 1; fi
   fi
-  git -C "$dir" add -A
+  if ! git -C "$dir" add -A; then
+    printf '%s: git add -A failed (a stale .git/index.lock?); nothing committed or pushed\n' "$kind" >&2
+    return 1
+  fi
   if ! git -C "$dir" diff --cached --quiet; then
     changes="$(git -C "$dir" diff --cached --name-status)"
     names="$(sed -nE 's#^[A-Z][0-9]*\t(.*\t)?skills/(.*/)?([^/]+)/(SKILL\.md|references/.*|templates/.*|scripts/.*|assets/.*)$#\3#p' <<< "$changes" | LC_ALL=C sort -u | paste -sd' ')"
