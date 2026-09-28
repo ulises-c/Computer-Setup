@@ -1,0 +1,1004 @@
+#!/usr/bin/env bash
+# Deterministic sync between Hermes and private config repos: a work repo, a
+# personal repo, or both (a repo is enabled when its REMOTE is set in .env), so
+# the same tool serves a work machine and a personal-only setup. The repos hold
+# user-authored skills and, in one of them, a backup of cron jobs and scripts.
+#
+# The repos are the source of truth: Hermes reads them through
+# skills.external_dirs, which also makes them read-only to the background
+# curator, so a skill only changes through a reviewed git commit.
+#
+# Classification (see README): Hermes-owned skills stay local; content naming
+# anything work-internal is work (hard block on the personal repo); otherwise a
+# skill follows where most of its edits happened (lib/provenance.py; a tie is
+# personal); the rest is personal. Only the content rule is enforced; the
+# rest are suggestions.
+set -euo pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+HERMES_CFG_DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
+ENV_FILE="${HERMES_CONFIG_SYNC_ENV:-$HERMES_CFG_DIR/.env}"
+HERMES_HOME_DIR="${HERMES_HOME:-$HOME/.hermes}"
+LOCAL_SKILLS="$HERMES_HOME_DIR/skills"
+KINDS=()
+
+# sk- needs a left boundary: "task-driven-development" would otherwise match.
+SECRET_PATTERNS='AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{30,}|glpat-[A-Za-z0-9_-]{20,}|xox[abeprs]-[A-Za-z0-9-]{10,}|xapp-[A-Za-z0-9-]{10,}|ATATT[A-Za-z0-9_=-]{20,}|(^|[^A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----'
+
+ERRORS=0
+die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
+err()  { printf '  [FAIL] %s\n' "$*" >&2; ERRORS=$(( ERRORS + 1 )); }
+ok()   { printf '  [ OK ] %s\n' "$*"; }
+warn() { printf '  [WARN] %s\n' "$*"; }
+section() { printf '\n=== %s ===\n' "$*"; }
+
+usage() {
+  cat <<'EOF'
+usage: hermes-config <command>
+
+  install              clone the enabled repos, install commit guards, refresh
+                       work terms (if configured), set skills.external_dirs
+  status               repo state, unadopted local skills with suggested target, collisions
+  verify               status checks as pass/fail; exit 1 on any failure
+  migrate [--apply]    plan (default) or perform adoption of every unadopted local skill
+  adopt <skill> <work|personal>
+                       move one local skill into a repo and stage it (no commit)
+  classify <skill>...  explain the suggested target for local skills
+  refresh-markers      regenerate the work-terms file from the Bitbucket workspace
+  scan [work|personal] secret scan + work-marker scan (personal) of the working tree
+  pull                 fast-forward the enabled repos from origin
+  push                 scan, then push the enabled repos (refuses uncommitted changes)
+  sync                 unattended: pull --ff-only, back up cron, commit all changes, push (cron entry point)
+  backup-cron          snapshot cron jobs + scripts into the backup repo (no commit)
+  hook <work|personal> pre-commit entry point (scans the index)
+  pre-push <work|personal>
+                       pre-push entry point (scans what the push publishes)
+EOF
+}
+
+kind_var() { local name="HERMES_CONFIG_SYNC_${1^^}_$2"; printf '%s' "${!name:-}"; }
+kind_dir() { kind_var "$1" DIR; }
+enabled()  { local k; for k in "${KINDS[@]}"; do [[ "$k" == "$1" ]] && return 0; done; return 1; }
+check_kind() {
+  [[ "${1:-}" == work || "${1:-}" == personal ]] || die "kind must be 'work' or 'personal'"
+  enabled "$1" || die "the $1 repo is not enabled (set HERMES_CONFIG_SYNC_${1^^}_REMOTE in $ENV_FILE)"
+}
+
+load_env() {
+  [[ -f "$ENV_FILE" ]] || die "missing $ENV_FILE (copy .env.example and fill it in)"
+  set -a
+  # shellcheck source=/dev/null
+  source "$ENV_FILE"
+  set +a
+  local k
+  for k in work personal; do
+    [[ -n "$(kind_var "$k" REMOTE)" ]] || continue
+    [[ -n "$(kind_dir "$k")" ]] || die "HERMES_CONFIG_SYNC_${k^^}_DIR is not set in $ENV_FILE"
+    KINDS+=("$k")
+  done
+  (( ${#KINDS[@]} )) || die "set HERMES_CONFIG_SYNC_WORK_REMOTE and/or HERMES_CONFIG_SYNC_PERSONAL_REMOTE in $ENV_FILE"
+  TERMS_FILE="${HERMES_CONFIG_SYNC_TERMS_FILE:-$HERMES_CFG_DIR/.work-terms}"
+  TERMS_FILE="${TERMS_FILE/#\~/$HOME}"
+  local re_err=""
+  if [[ -n "${HERMES_CONFIG_SYNC_WORK_MARKERS:-}" ]]; then
+    re_err="$(grep -E -e "$HERMES_CONFIG_SYNC_WORK_MARKERS" 2>&1 < /dev/null)" || (( $? == 1 )) || re_err="${re_err:-invalid}"
+    [[ -z "$re_err" ]] || die "HERMES_CONFIG_SYNC_WORK_MARKERS in $ENV_FILE is not a valid extended regex (ERE, no PCRE syntax such as (?i)): $re_err"
+  fi
+}
+
+skill_name() {
+  local md="$1" name
+  name="$(awk 'NR == 1 && $0 != "---" { exit }
+               NR > 1 && $0 == "---" { exit }
+               NR > 1 && /^name:/ { sub(/^name:[ \t]*/, ""); gsub(/^["'\'']|["'\'']$/, ""); print; exit }' "$md")"
+  printf '%s' "${name:-$(basename "$(dirname "$md")")}"
+}
+
+# "<name>\t<path relative to root>" for every skill under root. Hidden dirs
+# (.archive, .curator_backups, .git) are skipped by the path relative to root,
+# because root itself sits under ~/.hermes. find does not descend into
+# symlinked skill dirs, which belong to some other repo.
+list_skills() {
+  local root="$1" md rel
+  [[ -d "$root" ]] || return 0
+  while IFS= read -r md; do
+    rel="${md#"$root"/}"
+    [[ "/$rel" == */.* ]] && continue
+    printf '%s\t%s\n' "$(skill_name "$md")" "$(dirname "$rel")"
+  done < <(find "$root" -name SKILL.md | LC_ALL=C sort)
+}
+
+# Names Hermes itself owns: bundled, hub-installed, shipped in the source tree
+# now, or shipped at any point in its history. The last catches skills Hermes
+# later moved to optional-skills or made built-in, whose old seeded copies
+# still sit in ~/.hermes/skills looking user-authored.
+foreign_names() {
+  if [[ -n "${FOREIGN_CACHE+x}" ]]; then printf '%s\n' "$FOREIGN_CACHE"; return 0; fi
+  local src="${HERMES_CONFIG_SYNC_HERMES_SRC:-$HERMES_HOME_DIR/hermes-agent}" sub
+  {
+    if [[ -f "$LOCAL_SKILLS/.bundled_manifest" ]]; then cut -d: -f1 "$LOCAL_SKILLS/.bundled_manifest"; fi
+    if [[ -f "$LOCAL_SKILLS/.hub/lock.json" ]]; then jq -r '.installed | keys[]' "$LOCAL_SKILLS/.hub/lock.json"; fi
+    for sub in skills optional-skills; do
+      if [[ -d "$src/$sub" ]]; then find "$src/$sub" -name SKILL.md -printf '%h\n' | xargs -r -n1 basename; fi
+    done
+    if [[ -e "$src/.git" ]]; then
+      git -C "$src" log --all --format= --name-only -- ':(glob)skills/**/SKILL.md' ':(glob)optional-skills/**/SKILL.md' \
+        | sed -n 's#/SKILL\.md$##p' | xargs -r -n1 basename
+    fi
+  } | LC_ALL=C sort -u
+}
+
+# Local, user-authored skills that are not yet in a repo.
+unadopted() {
+  local foreign
+  foreign="$(foreign_names)"
+  list_skills "$LOCAL_SKILLS" | while IFS=$'\t' read -r name rel; do
+    grep -qxF "$name" <<< "$foreign" || printf '%s\t%s\n' "$name" "$rel"
+  done
+}
+
+repo_skills() { local k; for k in "${KINDS[@]}"; do list_skills "$(kind_dir "$k")/skills" | sed "s/^/$k\t/"; done; }
+
+# --- markers ---------------------------------------------------------------
+# Three sources, all optional: HERMES_CONFIG_SYNC_WORK_MARKERS (hand-written ERE,
+# case-insensitive), the generated terms file (whole-word, case-insensitive
+# fixed strings), and Jira issue refs built from HERMES_CONFIG_SYNC_JIRA_KEYS
+# (case-sensitive, so "ai-1" in prose does not match project AI).
+
+jira_ere() {
+  local keys
+  keys="$(tr -s ' ,' '\n' <<< "${HERMES_CONFIG_SYNC_JIRA_KEYS:-}" | sed '/^$/d' | paste -sd'|')"
+  if [[ -n "$keys" ]]; then printf '(^|[^A-Za-z0-9_])(%s)-[0-9]+' "$keys"; fi
+}
+
+markers_configured() { [[ -n "${HERMES_CONFIG_SYNC_WORK_MARKERS:-}" || -s "$TERMS_FILE" || -n "$(jira_ere)" ]]; }
+
+# The terms file is expected once a workspace or a terms path is configured;
+# scanning without it would pass every repo name.
+terms_missing() {
+  enabled personal && [[ -n "${HERMES_CONFIG_SYNC_TERMS_FILE:-}${HERMES_CONFIG_SYNC_BITBUCKET_WORKSPACE:-}" && ! -s "$TERMS_FILE" ]]
+}
+terms_error() { printf 'error: work terms file %s is missing or empty; run: hermes-config refresh-markers\n' "$TERMS_FILE" >&2; }
+require_terms() { if terms_missing; then terms_error; exit 1; fi; }
+
+# --- scanning ---------------------------------------------------------------
+# A scan copies what it checks into a stage: items/<n> holds one text (a file,
+# a blob, a commit message, a path list, a ref name) and labels maps <n> to
+# the name a report shows. Scanning copies, not the files, means a binary
+# file, a -diff attribute or a symlink (its target text) is read like any
+# text. A line with a \n, \r or \t escape (JSON, printf strings) is staged as
+# written and again with each escape as a space, joined on one line, so the
+# escape letter cannot hide a term's left boundary and line numbers hold.
+
+stage_new()  { STAGE="$(mktemp -d)" && STAGE_N=0 && mkdir "$STAGE/items" && : > "$STAGE/labels"; }
+stage_drop() { rm -rf "$STAGE"; }
+
+# A written-out tab, CR or newline (\t, \u000a, \x0d, ...) is a word boundary,
+# so a term right after one still counts as a whole word.
+ESCAPE_ERE='\\+([nrt]|u00(0[9aAdD])|x0[9aAdD])'
+
+# stage_add <label> <command...>: stages the command's output as one text.
+stage_add() {
+  local label="$1" item
+  shift
+  STAGE_N=$(( STAGE_N + 1 ))
+  printf -v item '%06d' "$STAGE_N"
+  printf '%s\t%s\n' "$item" "${label//$'\n'/ }" >> "$STAGE/labels"
+  "$@" | LC_ALL=C sed -E "/$ESCAPE_ERE/{h; s/$ESCAPE_ERE/ /g; H; x; s/\n/ /}" > "$STAGE/items/$item"
+}
+
+# stage_dir <dir> <repo path>: every file under dir (a symlink as its target)
+# and every name under it, as it would appear in a repo at <repo path>.
+stage_dir() {
+  local d="$1" prefix="$2" f
+  find "$d" -mindepth 1 -name .git -prune -o -print0 > "$STAGE/list" || return 2
+  printf '%s\n' "$prefix" > "$STAGE/paths"
+  while IFS= read -r -d '' f; do
+    printf '%s/%s\n' "$prefix" "${f#"$d"/}" >> "$STAGE/paths"
+    if [[ -L "$f" ]]; then stage_add "$f" readlink -- "$f" || return 2
+    elif [[ -f "$f" ]]; then stage_add "$f" cat -- "$f" || return 2
+    fi
+  done < <(LC_ALL=C sort -z "$STAGE/list")
+  stage_add path cat -- "$STAGE/paths"
+}
+
+# stage_git <dir> <index|tree>: the index (what is about to be committed) or
+# the tracked + untracked files, with their paths.
+stage_git() {
+  local dir="$1" mode="$2" meta path oid
+  : > "$STAGE/paths"
+  if [[ "$mode" == index ]]; then
+    git -C "$dir" ls-files -s -z > "$STAGE/list" || return 2
+    while IFS= read -r -d '' meta; do
+      path="${meta#*$'\t'}"
+      printf '%s\n' "$path" >> "$STAGE/paths"
+      read -r meta oid _ <<< "${meta%%$'\t'*}"
+      if [[ "$meta" != 160000 ]]; then stage_add "$path" git -C "$dir" cat-file blob "$oid" || return 2; fi
+    done < "$STAGE/list"
+  else
+    git -C "$dir" ls-files -z -co --exclude-standard --deduplicate > "$STAGE/list" || return 2
+    while IFS= read -r -d '' path; do
+      if [[ -L "$dir/$path" ]]; then stage_add "$path" readlink -- "$dir/$path" || return 2
+      elif [[ -f "$dir/$path" ]]; then stage_add "$path" cat -- "$dir/$path" || return 2
+      else continue
+      fi
+      printf '%s\n' "$path" >> "$STAGE/paths"
+    done < "$STAGE/list"
+  fi
+  stage_add path cat -- "$STAGE/paths"
+}
+
+# The message and a tag's name; the other headers (tree, parents, author,
+# committer, tagger, signature) are left out.
+object_message() { git -C "$1" cat-file "$2" "$3" | sed '1,/^$/{/^tag /!d}'; }
+
+# stage_outgoing <dir> <oid> <ref> <rev-list exclusions...>: what pushing oid
+# to ref publishes beyond the exclusions: every new blob, every path in a new
+# tree, new commit and tag messages (not the author or committer), the ref.
+stage_outgoing() {
+  local dir="$1" oid="$2" ref="$3" line type rest obj path name
+  shift 3
+  git -C "$dir" rev-list --objects "$oid" --not "$@" > "$STAGE/objects" || return 2
+  git -C "$dir" cat-file --batch-check='%(objecttype) %(objectname) %(rest)' < "$STAGE/objects" > "$STAGE/typed" || return 2
+  : > "$STAGE/paths"
+  while IFS= read -r line; do
+    type="${line%% *}" rest="${line#* }" path=""
+    obj="${rest%% *}"
+    if [[ "$rest" == *" "* ]]; then path="${rest#* }"; fi
+    case "$type" in
+      blob) stage_add "$path" git -C "$dir" cat-file blob "$obj" || return 2 ;;
+      tree)
+        git -C "$dir" ls-tree -z --name-only "$obj" > "$STAGE/entries" || return 2
+        while IFS= read -r -d '' name; do printf '%s\n' "${path:+$path/}$name" >> "$STAGE/paths"; done < "$STAGE/entries"
+        ;;
+      commit|tag) stage_add "$type ${obj:0:7}" object_message "$dir" "$type" "$obj" || return 2 ;;
+    esac
+  done < "$STAGE/typed"
+  stage_add path cat -- "$STAGE/paths" || return 2
+  stage_add "ref name" printf '%s\n' "$ref"
+}
+
+stage_file() { stage_add "$1" cat -- "$1" && stage_add path printf '%s\n' "${2:-}"; }
+
+# The grep runner for marker_hits / secret_hits: "label:line:text" per hit.
+# grep's rc (1 = no match, 2 = error); any warning also counts as an error,
+# since GNU grep only warns about some patterns it then misreads.
+stage_grep() {
+  local rc=0
+  grep -r -H -n -a "$@" -- "$STAGE/items" 2> "$STAGE/grep.err" | LC_ALL=C sort -s -t: -k1,1 | awk -v p="$STAGE/items/" '
+    NR == FNR { i = index($0, "\t"); label[substr($0, 1, i - 1)] = substr($0, i + 1); next }
+    { s = substr($0, length(p) + 1); i = index(s, ":"); hit = label[substr(s, 1, i - 1)] substr(s, i); if (!seen[hit]++) print hit }' "$STAGE/labels" - || rc=$?
+  if [[ -s "$STAGE/grep.err" ]]; then cat "$STAGE/grep.err" >&2; return 2; fi
+  return "$rc"
+}
+
+no_match_ok() { local rc=0; "$@" || rc=$?; if (( rc == 1 )); then rc=0; fi; return "$rc"; }
+
+# $@ = a grep runner (stage_grep). marker_hits prints "label:line:match" per
+# work-marker hit; secret_hits prints "label:line" (never the value). Both
+# return 0 whether or not they found hits and non-zero on a scanner error (a
+# bad regex, unreadable input, a missing terms file): every caller must treat
+# that as a failed scan, never as clean.
+marker_hits() {
+  local j
+  if terms_missing; then terms_error; return 2; fi
+  if [[ -n "${HERMES_CONFIG_SYNC_WORK_MARKERS:-}" ]]; then no_match_ok "$@" -o -i -E -e "$HERMES_CONFIG_SYNC_WORK_MARKERS" || return; fi
+  if [[ -s "$TERMS_FILE" ]]; then no_match_ok "$@" -o -i -w -F -f "$TERMS_FILE" || return; fi
+  j="$(jira_ere)"
+  if [[ -n "$j" ]]; then no_match_ok "$@" -o -E -e "$j" || return; fi
+}
+secret_hits() { no_match_ok "$@" -E -e "$SECRET_PATTERNS" | cut -d: -f1,2; }
+
+# run_scan <kind> <stage builder...>: stages what the builder adds, then sets
+# SCAN_SECRETS and (kind personal) SCAN_MARKERS. Non-zero on any error; the
+# caller must then treat the scan as failed.
+run_scan() {
+  local kind="$1" rc=0
+  shift
+  SCAN_SECRETS="" SCAN_MARKERS=""
+  if ! stage_new || ! "$@"; then rc=2
+  elif ! SCAN_SECRETS="$(secret_hits stage_grep)"; then rc=2
+  elif [[ "$kind" == personal ]] && ! SCAN_MARKERS="$(marker_hits stage_grep)"; then rc=2
+  fi
+  stage_drop
+  if (( rc )); then printf 'error: scanner error; the scan counts as failed\n' >&2; fi
+  return "$rc"
+}
+
+# Prints the last scan's hits for <kind>'s repo; 1 if there were any.
+report_hits() {
+  local rc=0
+  if [[ -n "$SCAN_SECRETS" ]]; then
+    printf 'possible secrets in %s repo (file:line, values not shown):\n%s\n' "$1" "$SCAN_SECRETS" >&2
+    rc=1
+  fi
+  if [[ -n "$SCAN_MARKERS" ]]; then
+    printf 'work markers in personal repo (move these to the work repo):\n%s\n' "$SCAN_MARKERS" >&2
+    rc=1
+  fi
+  return "$rc"
+}
+
+first_marker() { local hit="${1%%$'\n'*}"; hit="${hit##*:}"; printf '%s' "${hit#"${hit%%[[:alnum:]]*}"}"; }
+
+# The same markers for lib/provenance.py, which matches them against what the
+# user typed. Terms are escaped there (re.escape), not here.
+export_marker_regexes() {
+  HERMES_CONFIG_SYNC_MARK_CI="${HERMES_CONFIG_SYNC_WORK_MARKERS:-}"
+  HERMES_CONFIG_SYNC_MARK_CS="$(jira_ere)"
+  HERMES_CONFIG_SYNC_MARK_TERMS="$TERMS_FILE"
+  export HERMES_CONFIG_SYNC_MARK_CI HERMES_CONFIG_SYNC_MARK_CS HERMES_CONFIG_SYNC_MARK_TERMS
+}
+
+# stdin: skill names. stdout: "<name>\t<work edits>\t<classified edits>".
+provenance() {
+  if ! command -v python3 >/dev/null; then
+    while IFS= read -r n; do printf '%s\t0\t0\n' "$n"; done
+    return 0
+  fi
+  export_marker_regexes
+  local names=()
+  mapfile -t names
+  (( ${#names[@]} )) || return 0
+  python3 "$HERMES_CFG_DIR/lib/provenance.py" "${names[@]}"
+}
+
+# --- classification --------------------------------------------------------
+
+# "<name>\t<rel>\t<work|personal|SKIP:reason>\t<why>" for each unadopted skill.
+migration_plan() {
+  local list prov name rel src counts w t target why
+  list="$(unadopted)"
+  [[ -n "$list" ]] || return 0
+  prov="$(cut -f1 <<< "$list" | provenance)"
+  while IFS=$'\t' read -r name rel; do
+    src="$LOCAL_SKILLS/$rel"
+    counts="$(awk -F'\t' -v n="$name" '$1 == n { print $2 " " $3; exit }' <<< "$prov")"
+    read -r w t <<< "${counts:-0 0}"
+    if [[ -n "$(find "$src" -type l -print -quit)" ]]; then
+      target="SKIP:symlink" why="contains a symlink; replace it with the file it points to"
+    elif ! run_scan personal stage_dir "$src" "$rel"; then
+      target="SKIP:scan-error" why="the scan failed; see the error above"
+    elif [[ -n "$SCAN_SECRETS" ]]; then
+      target="SKIP:possible-secret" why="$(wc -l <<< "$SCAN_SECRETS") hit(s); see: hermes-config classify $name"
+    elif [[ -n "$SCAN_MARKERS" ]]; then
+      target=work why="content names '$(first_marker "$SCAN_MARKERS")'"
+    elif (( t > 0 && w * 2 > t )); then
+      target=work why="edits: $w/$t in work sessions"
+    else
+      target=personal why="edits: $w/$t in work sessions"
+      (( t )) || why="no work signal"
+    fi
+    if [[ "$target" == work ]] && ! enabled work; then target="SKIP:work"; fi
+    if [[ "$target" == personal ]] && ! enabled personal; then target=work; fi
+    printf '%s\t%s\t%s\t%s\n' "$name" "$rel" "$target" "$why"
+  done <<< "$list"
+}
+
+cmd_classify() {
+  (( $# )) || die "usage: hermes-config classify <skill>..."
+  local plan name row rel target why
+  plan="$(migration_plan)"
+  for name in "$@"; do
+    row="$(awk -F'\t' -v n="$name" '$1 == n' <<< "$plan")"
+    if [[ -z "$row" ]]; then printf '%s: not an unadopted local skill\n' "$name"; continue; fi
+    IFS=$'\t' read -r _ rel target why <<< "$row"
+    printf '%s → %s (%s)\n' "$name" "$target" "$why"
+    run_scan personal stage_dir "$LOCAL_SKILLS/$rel" "$rel" || continue
+    if [[ -n "$SCAN_MARKERS" ]]; then printf '%s\n' "$SCAN_MARKERS" | sed "s#^$LOCAL_SKILLS/##; s/^/  marker  /" | head -10; fi
+    if [[ -n "$SCAN_SECRETS" ]]; then printf '%s\n' "$SCAN_SECRETS" | sed "s#^$LOCAL_SKILLS/##; s/^/  secret  /"; fi
+  done
+}
+
+# --- repo scanning ---------------------------------------------------------
+
+# mode: index (what is about to be committed) or tree (tracked + untracked
+# files). 0 = clean, 1 = hits (reported), 2 = scanner error.
+scan_repo() {
+  run_scan "$1" stage_git "$2" "$3" || return 2
+  report_hits "$1"
+}
+
+# The push-time guard: what pushing <oid> to <ref> publishes that origin does
+# not have yet. Same return codes as scan_repo.
+scan_outgoing() {
+  run_scan "$1" stage_outgoing "$2" "$3" "$4" --remotes=origin || return 2
+  report_hits "$1"
+}
+
+# Fetch and push go only to the configured remote: origin's fetch URL and its
+# only push URL (after insteadOf / pushInsteadOf rewrites) must both be it.
+check_origin() {
+  local kind="$1" dir="$2" want var="HERMES_CONFIG_SYNC_${1^^}_REMOTE"
+  want="$(kind_var "$kind" REMOTE)"
+  if [[ "$(git -C "$dir" remote get-url origin 2>/dev/null)" != "$want" ]]; then
+    printf 'error: %s origin fetch URL is not %s; not fetching or pushing (check: git -C %s remote -v)\n' "$kind" "$var" "$dir" >&2
+    return 1
+  fi
+  if [[ "$(git -C "$dir" remote get-url --push --all origin 2>/dev/null)" != "$want" ]]; then
+    printf 'error: %s origin push URL is not %s (or there is more than one); not fetching or pushing (check: git -C %s remote -v)\n' "$kind" "$var" "$dir" >&2
+    return 1
+  fi
+}
+
+check_origins() {
+  local k dir rc=0
+  for k in "${KINDS[@]}"; do
+    dir="$(kind_dir "$k")"
+    if [[ -d "$dir/.git" ]] && ! check_origin "$k" "$dir"; then rc=1; fi
+  done
+  (( ! rc )) || exit 1
+}
+
+# Pushes exactly <oid> (the one that was scanned) to <branch> on origin.
+push_oid() {
+  local dir="$1" oid="$2" branch="$3" kind="$4"
+  check_origin "$kind" "$dir" || return 1
+  git -C "$dir" push --quiet origin "$oid:refs/heads/$branch" || return 1
+  git -C "$dir" config "branch.$branch.remote" origin && git -C "$dir" config "branch.$branch.merge" "refs/heads/$branch"
+}
+
+current_external_dirs() { hermes config get skills.external_dirs 2>/dev/null | sed -n 's/^- //p'; }
+norm_path() { realpath -m "${1/#\~/$HOME}"; }
+
+set_external_dirs() {
+  local want=() e k keep json
+  while IFS= read -r e; do
+    keep=1
+    for k in work personal; do
+      if [[ -n "$(kind_dir "$k")" && "$(norm_path "$e")" == "$(norm_path "$(kind_dir "$k")/skills")" ]]; then keep=0; fi
+    done
+    if (( keep )); then want+=("$e"); fi
+  done < <(current_external_dirs)
+  for k in "${KINDS[@]}"; do want+=("$(kind_dir "$k")/skills"); done
+  json="$(printf '%s\n' "${want[@]}" | jq -R . | jq -sc .)"
+  hermes config set skills.external_dirs "$json"
+}
+
+hook_path() {
+  local hook
+  hook="$(git -C "$1" rev-parse --git-path "hooks/$2")"
+  [[ "$hook" == /* ]] || hook="$1/$hook"
+  printf '%s' "$hook"
+}
+
+# write_hook <kind> <dir> <git hook> <hermes-config command>
+write_hook() {
+  local hook
+  hook="$(hook_path "$2" "$3")"
+  printf '#!/usr/bin/env bash\n# managed by hermes-config install\nexec %q %s %s "$@"\n' "$SELF" "$4" "$1" > "$hook"
+  chmod +x "$hook"
+}
+
+# --- commands --------------------------------------------------------------
+
+cmd_refresh_markers() {
+  local ws="${HERMES_CONFIG_SYNC_BITBUCKET_WORKSPACE:-}" netrc="${HERMES_CONFIG_SYNC_BITBUCKET_NETRC:-}"
+  local api="${HERMES_CONFIG_SYNC_BITBUCKET_API:-https://api.bitbucket.org/2.0}" url page tmp common n
+  [[ -n "$ws" ]] || die "HERMES_CONFIG_SYNC_BITBUCKET_WORKSPACE is not set in $ENV_FILE"
+  netrc="${netrc/#\~/$HOME}"
+  [[ -r "$netrc" ]] || die "HERMES_CONFIG_SYNC_BITBUCKET_NETRC ($netrc) is not readable"
+  tmp="$(mktemp)"
+  url="$api/repositories/$ws?pagelen=100&fields=next,values.slug"
+  while [[ -n "$url" ]]; do
+    page="$(curl -fsS --netrc-file "$netrc" "$url")" || { rm -f "$tmp"; die "Bitbucket request failed; terms file left unchanged"; }
+    jq -r '.values[].slug' <<< "$page" >> "$tmp"
+    url="$(jq -r '.next // empty' <<< "$page")"
+  done
+  tr ' ,' '\n' <<< "${HERMES_CONFIG_SYNC_EXTRA_TERMS:-}" >> "$tmp"
+  tr '[:upper:]' '[:lower:]' < "$tmp" | sed '/^$/d' \
+    | grep -vxF -f <(tr ' ,' '\n' <<< "${HERMES_CONFIG_SYNC_TERM_EXCLUDE:-}" | tr '[:upper:]' '[:lower:]' | sed '/^$/d') \
+    | LC_ALL=C sort -u > "$tmp.new" || true
+  rm -f "$tmp"
+  [[ -s "$tmp.new" ]] || { rm -f "$tmp.new"; die "no terms fetched; terms file left unchanged"; }
+  chmod 600 "$tmp.new"
+  mv "$tmp.new" "$TERMS_FILE"
+  n="$(wc -l < "$TERMS_FILE")"
+  printf 'Wrote %d work terms to %s\n' "$n" "$TERMS_FILE"
+  if [[ -r /usr/share/dict/words ]]; then
+    common="$(grep -ixF -f "$TERMS_FILE" /usr/share/dict/words | tr '[:upper:]' '[:lower:]' | LC_ALL=C sort -u | paste -sd' ' || true)"
+    if [[ -n "$common" ]]; then
+      warn "ordinary words among the terms (add to HERMES_CONFIG_SYNC_TERM_EXCLUDE if they flag general skills): $common"
+    fi
+  fi
+}
+
+cmd_install() {
+  local k dir remote email
+  for k in "${KINDS[@]}"; do
+    dir="$(kind_dir "$k")"; remote="$(kind_var "$k" REMOTE)"; email="$(kind_var "$k" GIT_EMAIL)"
+    if [[ ! -d "$dir/.git" ]]; then
+      mkdir -p "$(dirname "$dir")"
+      git clone "$remote" "$dir" || die "clone of the $k repo failed; create it on the server first"
+    else
+      check_origin "$k" "$dir" || exit 1
+    fi
+    mkdir -p "$dir/skills"
+    if [[ -n "$email" ]]; then git -C "$dir" config user.email "$email"; fi
+    write_hook "$k" "$dir" pre-commit hook
+    write_hook "$k" "$dir" pre-push pre-push
+    printf 'Ready: %s repo → %s\n' "$k" "$dir"
+  done
+  if [[ -n "${HERMES_CONFIG_SYNC_BITBUCKET_WORKSPACE:-}" ]]; then
+    ( cmd_refresh_markers ) || warn "work-terms refresh failed; keeping the existing file"
+  fi
+  write_cron_script
+  set_external_dirs
+}
+
+cmd_status() {
+  local k dir counts dirty plan
+  section repos
+  for k in "${KINDS[@]}"; do
+    dir="$(kind_dir "$k")"
+    if [[ ! -d "$dir/.git" ]]; then warn "$k: not cloned ($dir) — run: hermes-config install"; continue; fi
+    dirty="$(git -C "$dir" status --porcelain | wc -l)"
+    counts="$(git -C "$dir" rev-list --left-right --count '@{u}...HEAD' 2>/dev/null || printf 'n/a')"
+    printf '  %-9s %s  head=%s  behind/ahead=%s  uncommitted=%s  skills=%s\n' "$k" "$dir" \
+      "$(git -C "$dir" rev-parse --short HEAD 2>/dev/null || printf 'empty')" \
+      "${counts//$'\t'//}" "$dirty" "$(list_skills "$dir/skills" | wc -l)"
+  done
+  section "unadopted local skills (suggested target)"
+  plan="$(migration_plan)"
+  if [[ -n "$plan" ]]; then cut -f1,3,4 <<< "$plan" | column -t -s $'\t' | sed 's/^/  /'; else printf '  none\n'; fi
+  section "name collisions (Hermes refuses ambiguous names)"
+  collisions | sed 's/^/  /'
+}
+
+collisions() {
+  local repo local_names dup found=0
+  repo="$(repo_skills)"
+  local_names="$(list_skills "$LOCAL_SKILLS" | cut -f1)"
+  while IFS=$'\t' read -r kind name rel; do
+    [[ -n "$name" ]] || continue
+    if grep -qxF "$name" <<< "$local_names"; then
+      printf '%s: in %s repo (%s) and in %s\n' "$name" "$kind" "$rel" "$LOCAL_SKILLS"; found=1
+    fi
+  done <<< "$repo"
+  dup="$(cut -f2 <<< "$repo" | sed '/^$/d' | LC_ALL=C sort | uniq -d)"
+  if [[ -n "$dup" ]]; then printf '%s: present in both repos\n' "$dup"; found=1; fi
+  if (( ! found )); then printf 'none\n'; fi
+}
+
+cmd_verify() {
+  local k dir hook ext name rel md c age
+  section repos
+  for k in "${KINDS[@]}"; do
+    dir="$(kind_dir "$k")"
+    if [[ ! -d "$dir/.git" ]]; then err "$k repo not cloned at $dir"; continue; fi
+    if check_origin "$k" "$dir" 2>/dev/null; then ok "$k origin"; else err "$k origin mismatch (fetch or push URL is not the configured remote)"; fi
+    hook="$(hook_path "$dir" pre-commit)"
+    if grep -qE "hermes-config hook $k( \"\\\$@\")?\$" "$hook" 2>/dev/null; then ok "$k pre-commit guard"; else err "$k pre-commit guard missing"; fi
+    hook="$(hook_path "$dir" pre-push)"
+    if grep -qE "hermes-config pre-push $k \"\\\$@\"\$" "$hook" 2>/dev/null; then ok "$k pre-push guard"; else err "$k pre-push guard missing"; fi
+    if scan_repo "$k" "$dir" tree; then ok "$k scan clean"; else err "$k scan found problems"; fi
+    if [[ -n "$(git -C "$dir" status --porcelain)" ]]; then warn "$k has uncommitted changes"; fi
+    while IFS=$'\t' read -r name rel; do
+      md="$dir/skills/$rel/SKILL.md"
+      if [[ "$name" != "$(basename "$rel")" ]]; then err "$k: $rel/SKILL.md name '$name' differs from its directory"; fi
+      if ! grep -q '^description:' "$md"; then err "$k: $rel/SKILL.md has no description"; fi
+    done < <(list_skills "$dir/skills")
+  done
+  section markers
+  if [[ -n "${HERMES_CONFIG_SYNC_BITBUCKET_WORKSPACE:-}" ]]; then
+    if [[ -s "$TERMS_FILE" ]]; then
+      age=$(( ( $(date +%s) - $(stat -c %Y "$TERMS_FILE") ) / 86400 ))
+      if (( age > 30 )); then warn "work terms are $age days old; run: hermes-config refresh-markers"; else ok "work terms ($(wc -l < "$TERMS_FILE"), ${age}d old)"; fi
+    else
+      err "work terms missing; run: hermes-config refresh-markers"
+    fi
+  fi
+  if markers_configured; then ok "work markers configured"
+  elif enabled personal; then warn "no work markers configured; the personal repo guard only checks secrets"
+  fi
+  section config
+  ext="$(current_external_dirs | while IFS= read -r e; do norm_path "$e"; done)"
+  for k in "${KINDS[@]}"; do
+    if grep -qxF "$(norm_path "$(kind_dir "$k")/skills")" <<< "$ext"; then ok "external_dirs has $k"; else err "external_dirs is missing the $k repo"; fi
+  done
+  section collisions
+  c="$(collisions)"
+  if [[ "$c" == none ]]; then ok "no name collisions"; else while IFS= read -r line; do err "$line"; done <<< "$c"; fi
+  printf '\n'
+  if (( ERRORS )); then printf '%d check(s) failed\n' "$ERRORS" >&2; exit 1; fi
+  printf 'all checks passed\n'
+}
+
+cmd_adopt() {
+  local name="${1:-}" kind="${2:-}" rel src dest dir match hits
+  [[ -n "$name" ]] || die "usage: hermes-config adopt <skill> <work|personal>"
+  check_kind "$kind"
+  dir="$(kind_dir "$kind")"
+  [[ -d "$dir/.git" ]] || die "$kind repo not cloned; run: hermes-config install"
+  match="$(unadopted | awk -F'\t' -v n="$name" '$1 == n')"
+  [[ -n "$match" ]] || die "'$name' is not an unadopted local skill (see: hermes-config status)"
+  (( $(wc -l <<< "$match") == 1 )) || die "'$name' matches more than one local skill:"$'\n'"$match"
+  rel="$(cut -f2 <<< "$match")"
+  src="$LOCAL_SKILLS/$rel"
+  dest="$dir/skills/$rel"
+  if repo_skills | cut -f2 | grep -qxF "$name"; then die "'$name' already exists in a repo"; fi
+  [[ ! -e "$dest" ]] || die "$dest already exists"
+  hits="$(find "$src" -type l -printf '%P\n' | paste -sd' ')"
+  [[ -z "$hits" ]] || die "'$name' contains a symlink ($hits); replace it with the file it points to"
+  run_scan "$kind" stage_dir "$src" "$rel" || die "scan of $src failed; not adopting"
+  [[ -z "$SCAN_SECRETS" ]] || die "possible secret in $src (file:line): $(tr '\n' ' ' <<< "$SCAN_SECRETS")"
+  [[ -z "$SCAN_MARKERS" ]] || die "'$name' contains work markers ('$(first_marker "$SCAN_MARKERS")'); it can only go to the work repo"
+  mkdir -p "$(dirname "$dest")"
+  mv "$src" "$dest"
+  git -C "$dir" add -- "skills/$rel"
+  printf 'Adopted: %s → %s repo (skills/%s), staged\n' "$name" "$kind" "$rel"
+}
+
+cmd_migrate() {
+  local apply=0 plan name rel target why
+  [[ "${1:-}" == --apply ]] && apply=1
+  plan="$(migration_plan)"
+  [[ -n "$plan" ]] || { printf 'nothing to migrate\n'; return 0; }
+  if (( ! apply )); then
+    column -t -s $'\t' <<< "$plan"
+    printf '\ndry run; re-run with --apply to move these (SKIP rows are left in place).\n'
+    printf 'Override one suggestion with: hermes-config adopt <skill> <work|personal>\n'
+    return 0
+  fi
+  while IFS=$'\t' read -r name rel target why; do
+    case "$target" in
+      SKIP:*) printf 'Skipped: %s (%s: %s)\n' "$name" "${target#SKIP:}" "$why" ;;
+      *) cmd_adopt "$name" "$target" ;;
+    esac
+  done <<< "$plan"
+  printf '\nReview with: git -C <repo> diff --cached --stat, then commit in each repo.\n'
+}
+
+cmd_scan() {
+  local k rc=0
+  local kinds=("${KINDS[@]}")
+  if [[ -n "${1:-}" ]]; then check_kind "$1"; kinds=("$1"); fi
+  for k in "${kinds[@]}"; do
+    if scan_repo "$k" "$(kind_dir "$k")" tree; then printf '%s: clean\n' "$k"; else rc=1; fi
+  done
+  return "$rc"
+}
+
+cmd_pull() {
+  local k dir
+  check_origins
+  for k in "${KINDS[@]}"; do
+    dir="$(kind_dir "$k")"
+    git -C "$dir" fetch --quiet origin
+    if git -C "$dir" rev-parse --verify --quiet '@{u}' >/dev/null; then
+      git -C "$dir" merge --ff-only --quiet '@{u}'
+    fi
+    printf 'Pulled: %s @ %s\n' "$k" "$(git -C "$dir" rev-parse --short HEAD 2>/dev/null || printf 'empty')"
+  done
+}
+
+cmd_push() {
+  local k dir branch
+  local -A oids=() branches=()
+  check_origins
+  for k in "${KINDS[@]}"; do
+    dir="$(kind_dir "$k")"
+    [[ -z "$(git -C "$dir" status --porcelain)" ]] || die "$k repo has uncommitted changes; commit or discard first"
+    scan_repo "$k" "$dir" tree || die "$k scan failed; not pushing"
+    git -C "$dir" rev-parse --verify --quiet HEAD >/dev/null || continue
+    branch="$(git -C "$dir" symbolic-ref --short -q HEAD)" || die "$k repo is on a detached HEAD; check out a branch first"
+    oids[$k]="$(git -C "$dir" rev-parse HEAD)" branches[$k]="$branch"
+    scan_outgoing "$k" "$dir" "${oids[$k]}" "refs/heads/$branch" || die "$k scan failed; not pushing"
+  done
+  for k in "${KINDS[@]}"; do
+    dir="$(kind_dir "$k")"
+    [[ -n "${oids[$k]:-}" ]] || { printf 'Skipped: %s (no commits)\n' "$k"; continue; }
+    push_oid "$dir" "${oids[$k]}" "${branches[$k]}" "$k" || die "$k push failed"
+    printf 'Pushed: %s @ %s\n' "$k" "$(git -C "$dir" rev-parse --short "${oids[$k]}")"
+  done
+}
+
+cmd_hook() {
+  check_kind "${1:-}"
+  scan_repo "$1" "$PWD" index || die "commit blocked by hermes-config"
+}
+
+# stdin: "<local ref> <local oid> <remote ref> <remote oid>" per ref (githooks).
+cmd_pre_push() {
+  check_kind "${1:-}"
+  local kind="$1" url="${3:-}" refs=() line loid rref rc=0
+  # git passes <remote> <url>: the url is where the push really goes, after any
+  # pushurl or pushInsteadOf rewrite, also for `git push <other remote or url>`.
+  [[ -n "$url" && "$url" == "$(kind_var "$kind" REMOTE)" ]] \
+    || die "push blocked by hermes-config: the $kind repo only pushes to HERMES_CONFIG_SYNC_${kind^^}_REMOTE"
+  mapfile -t refs
+  for line in "${refs[@]}"; do
+    read -r _ loid rref _ <<< "$line"
+    [[ "$loid" =~ ^0+$ ]] && continue
+    scan_outgoing "$kind" "$PWD" "$loid" "$rref" || rc=1
+  done
+  (( ! rc )) || die "push blocked by hermes-config"
+}
+
+# --- cron backup -------------------------------------------------------------
+# Snapshot every profile's cron jobs and scripts into <repo>/cron/<host>/<profile>/.
+# Keyed by host because one personal repo is shared by several machines. Only
+# the fields a user configures are kept (see CRON_CONFIG_FIELDS), so a scheduled
+# run by itself never makes a diff. A job or script that names work (in the
+# personal repo) or looks like it holds a secret is left out, so one bad job
+# cannot block every other commit to the repo. Any read or write error fails the
+# whole backup and leaves the repo's cron/ as it was: a half-read snapshot would
+# otherwise be committed as the deletion of the good one.
+
+# Whitelist of what create_job/update_job in hermes-agent cron/jobs.py store as
+# configuration; everything else (state, next/last run, claims, pending slots,
+# dispatch and delivery bookkeeping, streaks, quota holds, fields added later)
+# is scheduler runtime and is dropped. paused_at/paused_reason stay: only a
+# pause or resume writes them, together with enabled, and the reason says why
+# the job is off. Of repeat, only times is configuration.
+CRON_CONFIG_FIELDS='with_entries(select(.key | IN("id", "name", "prompt", "skills", "skill", "model", "provider", "base_url", "script", "no_agent", "monitor_script", "monitor_url", "context_from", "schedule", "schedule_display", "repeat", "enabled", "paused_at", "paused_reason", "deliver", "failure_deliver", "origin", "enabled_toolsets", "workdir", "created_at", "attach_to_session", "reasoning_effort"))) | if (.repeat | type) == "object" then .repeat |= with_entries(select(.key == "times")) else . end'
+# Outside the work repo, chat IDs in delivery targets (a DM or channel in the
+# work Slack) become <redacted>; the platform name stays, so restoring a job
+# only needs the target re-picked. ($redact is a jq variable, not shell.)
+# shellcheck disable=SC2016
+CRON_REDACT_TARGETS='def redact: if type == "string" then split(",") | map(if test(":") then sub(":.*"; ":<redacted>") else . end) | join(",") else . end; if $redact then (.deliver |= redact) | (.failure_deliver |= redact) | (if .origin then .origin = "<redacted>" else . end) else . end'
+
+cron_backup_kind() {
+  local kind="${HERMES_CONFIG_SYNC_CRON_BACKUP:-}"
+  if [[ -z "$kind" ]]; then if enabled personal; then kind=personal; else kind=off; fi; fi
+  printf '%s' "$kind"
+}
+
+hermes_root() {
+  local root="${HERMES_CONFIG_SYNC_HERMES_ROOT:-$HERMES_HOME_DIR}"
+  if [[ "$root" == */profiles/* ]]; then root="${root%/profiles/*}"; fi
+  printf '%s' "$root"
+}
+
+# cron_refuse <kind> <file> [<relpath>]: whether the file (and the path it
+# will have in the repo) may go into <kind>'s repo. 0 = refuse (prints the
+# reason), 1 = allow, >= 2 = scanner error (the caller must not back it up).
+cron_refuse() {
+  local kind="$1" file="$2" rel="${3:-}"
+  run_scan "$kind" stage_file "$file" "$rel" || return 2
+  if [[ -n "$SCAN_SECRETS" ]]; then printf 'possible secret'; return 0; fi
+  if [[ -n "$SCAN_MARKERS" ]]; then printf "names '%s'" "$(first_marker "$SCAN_MARKERS")"; return 0; fi
+  return 1
+}
+
+cron_fail() { printf 'cron backup: %s\n' "$*" >&2; }
+
+# Rebuilds <dir>/cron/<host>/ from the live state. Prints nothing on success;
+# stores what it skipped in $SKIPPED_FILE for the caller to report. Returns 1
+# with the reason on stderr on any error, before touching <dir>/cron. Callers
+# run it under `||`, where set -e is off, so every step is checked by hand.
+export_cron() {
+  local kind="$1" dir="$2" host root tmp rc=0
+  host="${HERMES_CONFIG_SYNC_CRON_HOST:-$(hostname -s)}"
+  if [[ -z "$host" || "$host" == */* || "$host" == .* ]]; then cron_fail "bad cron backup host name: '$host'"; return 1; fi
+  root="$(hermes_root)"
+  if [[ ! -d "$root" ]]; then cron_fail "Hermes root $root does not exist"; return 1; fi
+  tmp="$(mktemp -d)" || { cron_fail "cannot create a temp dir"; return 1; }
+  { snapshot_cron "$kind" "$host" "$root" "$tmp" && install_cron_snapshot "$dir" "$host" "$tmp"; } || rc=1
+  rm -rf "$tmp"
+  return "$rc"
+}
+
+# Builds $tmp/tree/<profile>/ and $tmp/skipped. Touches nothing outside $tmp.
+snapshot_cron() {
+  local kind="$1" host="$2" root="$3" tmp="$4" home profile jobs n i f label why rc out list rel redact=true
+  [[ "$kind" == work ]] && redact=false
+  : > "$tmp/skipped" || { cron_fail "cannot write to $tmp"; return 1; }
+  for home in "$root" "$root"/profiles/*; do
+    [[ -d "$home" ]] || continue
+    if [[ "$home" == "$root" ]]; then profile=default; else profile="$(basename "$home")"; fi
+    out="$tmp/tree/$profile"
+    jobs="$home/cron/jobs.json"
+    n=0
+    if [[ -e "$jobs" || -L "$jobs" ]]; then
+      # An empty file makes jq print nothing and exit 0: that is corrupt too.
+      n="$(jq '.jobs | if type == "array" then length else error(".jobs is not an array") end' "$jobs")" || n=
+      [[ "$n" =~ ^[0-9]+$ ]] || { cron_fail "cannot read or parse $jobs"; return 1; }
+    fi
+    if (( n > 0 )); then
+      mkdir -p "$tmp/jobs/$profile" || { cron_fail "cannot create $tmp/jobs/$profile"; return 1; }
+      for (( i = 0; i < n; i++ )); do
+        f="$tmp/jobs/$profile/$(printf '%06d' "$i").json"
+        jq -S --argjson i "$i" --argjson redact "$redact" \
+          ".jobs[\$i] | $CRON_CONFIG_FIELDS | $CRON_REDACT_TARGETS" "$jobs" > "$f" \
+          || { cron_fail "cannot export job $i of $jobs"; return 1; }
+        label="$(jq -r '"\(.id // "?") (\(.name // ""))"' "$f")" || { cron_fail "cannot read back job $i of $jobs"; return 1; }
+        why="$(cron_refuse "$kind" "$f")" && rc=0 || rc=$?
+        case "$rc" in
+          0) { printf '%s/%s job %s: %s\n' "$host" "$profile" "$label" "$why" >> "$tmp/skipped" && rm -f "$f"; } \
+               || { cron_fail "cannot record left-out job $label"; return 1; } ;;
+          1) ;;
+          *) cron_fail "scan of job $label failed: $why"; return 1 ;;
+        esac
+      done
+      if compgen -G "$tmp/jobs/$profile/*.json" >/dev/null; then
+        { mkdir -p "$out" && jq -S -s '{jobs: sort_by(.id | tostring)}' "$tmp/jobs/$profile"/*.json > "$out/jobs.json"; } \
+          || { cron_fail "cannot write the $profile jobs snapshot"; return 1; }
+      fi
+    fi
+    # Never follow a symlink (Hermes refuses ones that leave scripts/): a link,
+    # to a file or a dir, is left out and reported, and not descended into.
+    if [[ -L "$home/scripts" ]]; then
+      printf '%s/%s script dir scripts: symlink\n' "$host" "$profile" >> "$tmp/skipped" || { cron_fail "cannot write to $tmp"; return 1; }
+    elif [[ -d "$home/scripts" ]]; then
+      list="$(find -P "$home/scripts" -mindepth 1 -name '.*' -prune -o \( -type l -o -type f \) -print | LC_ALL=C sort)" \
+        || { cron_fail "cannot list $home/scripts"; return 1; }
+      while IFS= read -r f; do
+        [[ -n "$f" ]] || continue
+        rel="${f#"$home/scripts/"}"
+        if [[ -L "$f" ]]; then
+          printf '%s/%s script %s: symlink\n' "$host" "$profile" "$rel" >> "$tmp/skipped" || { cron_fail "cannot write to $tmp"; return 1; }
+          continue
+        fi
+        why="$(cron_refuse "$kind" "$f" "$rel")" && rc=0 || rc=$?
+        case "$rc" in
+          0) printf '%s/%s script %s: %s\n' "$host" "$profile" "$rel" "$why" >> "$tmp/skipped" \
+               || { cron_fail "cannot write to $tmp"; return 1; }
+             continue ;;
+          1) ;;
+          *) cron_fail "scan of script $rel failed: $why"; return 1 ;;
+        esac
+        { mkdir -p "$out/scripts/$(dirname "$rel")" && cp -P --preserve=mode "$f" "$out/scripts/$rel"; } \
+          || { cron_fail "cannot copy script $f"; return 1; }
+      done <<< "$list"
+    fi
+  done
+}
+
+# Replaces <dir>/cron/<host>/ with the snapshot in $tmp and hands the
+# left-out list to $SKIPPED_FILE. Everything that can fail on bad input has
+# already failed in snapshot_cron.
+install_cron_snapshot() {
+  local dir="$1" host="$2" tmp="$3"
+  mv "$tmp/skipped" "$SKIPPED_FILE" || { cron_fail "cannot write $SKIPPED_FILE"; return 1; }
+  rm -rf "$dir/cron/$host" || { cron_fail "cannot remove the old $dir/cron/$host"; return 1; }
+  if [[ -d "$tmp/tree" ]]; then
+    { mkdir -p "$dir/cron" && mv "$tmp/tree" "$dir/cron/$host"; } || { cron_fail "cannot move the snapshot into $dir/cron/$host"; return 1; }
+  fi
+  rmdir "$dir/cron" 2>/dev/null || true
+}
+
+cmd_backup_cron() {
+  local kind dir
+  kind="$(cron_backup_kind)"
+  [[ "$kind" != off ]] || die "cron backup is off (set HERMES_CONFIG_SYNC_CRON_BACKUP=personal|work)"
+  check_kind "$kind"
+  dir="$(kind_dir "$kind")"
+  [[ -d "$dir/.git" ]] || die "$kind repo not cloned; run: hermes-config install"
+  SKIPPED_FILE="$(mktemp)"
+  if ! export_cron "$kind" "$dir"; then
+    rm -f "$SKIPPED_FILE"
+    die "cron backup failed (see above); $dir/cron left as it was"
+  fi
+  if [[ -s "$SKIPPED_FILE" ]]; then printf 'not backed up:\n'; sed 's/^/  /' "$SKIPPED_FILE"; fi
+  rm -f "$SKIPPED_FILE"
+  git -C "$dir" status --short -- cron
+}
+
+# Unattended commit + push for cron. Per enabled repo: fast-forward from
+# origin, stage everything, commit with a generated message (the pre-commit
+# guard still runs), push. Silent when nothing changed; one summary line per
+# repo that did; exit 1 with the reason on anything it will not do alone
+# (diverged history, a guard hit, a failed push). Never forces, never resets.
+cmd_sync() {
+  local lock_dir="${XDG_RUNTIME_DIR:-/tmp}" k dir rc=0
+  exec 9> "$lock_dir/hermes-config-sync.lock"
+  flock -n 9 || die "another hermes-config sync is running"
+  check_origins
+  for k in "${KINDS[@]}"; do
+    sync_repo "$k" "$(kind_dir "$k")" || rc=1
+  done
+  return "$rc"
+}
+
+sync_repo() {
+  local kind="$1" dir="$2" changes names msg body ahead parts=() seen oid branch
+  if [[ ! -d "$dir/.git" ]]; then printf '%s: not cloned at %s; run: hermes-config install\n' "$kind" "$dir" >&2; return 1; fi
+  if ! git -C "$dir" fetch --quiet origin; then printf '%s: fetch failed\n' "$kind" >&2; return 1; fi
+  if git -C "$dir" rev-parse --verify --quiet '@{u}' >/dev/null && ! git -C "$dir" merge --ff-only --quiet '@{u}' 2>/dev/null; then
+    printf '%s: local and origin have diverged, or uncommitted edits touch files that changed upstream; resolve by hand in %s\n' "$kind" "$dir" >&2
+    return 1
+  fi
+  if [[ "$kind" == "$(cron_backup_kind)" ]]; then
+    SKIPPED_FILE="$dir/.git/hermes-cron-skipped.new"
+    if ! export_cron "$kind" "$dir"; then
+      rm -f "$SKIPPED_FILE"
+      printf '%s: cron backup failed (see above); nothing committed or pushed\n' "$kind" >&2
+      return 1
+    fi
+    # Report left-out jobs only when that set changes, not every night.
+    seen="$dir/.git/hermes-cron-skipped"
+    if ! cmp -s "$SKIPPED_FILE" "$seen" 2>/dev/null && [[ -s "$SKIPPED_FILE" || -e "$seen" ]]; then
+      if [[ -s "$SKIPPED_FILE" ]]; then printf '%s: cron backup left out:\n' "$kind"; sed 's/^/  /' "$SKIPPED_FILE"
+      else printf '%s: cron backup no longer leaves anything out\n' "$kind"; fi
+    fi
+    if ! mv "$SKIPPED_FILE" "$seen"; then printf '%s: cannot record the left-out list in %s\n' "$kind" "$seen" >&2; return 1; fi
+  fi
+  if ! git -C "$dir" add -A; then
+    printf '%s: git add -A failed (a stale .git/index.lock?); nothing committed or pushed\n' "$kind" >&2
+    return 1
+  fi
+  if ! git -C "$dir" diff --cached --quiet; then
+    changes="$(git -C "$dir" diff --cached --name-status)"
+    names="$(sed -nE 's#^[A-Z][0-9]*\t(.*\t)?skills/(.*/)?([^/]+)/(SKILL\.md|references/.*|templates/.*|scripts/.*|assets/.*)$#\3#p' <<< "$changes" | LC_ALL=C sort -u | paste -sd' ')"
+    if [[ -n "$names" ]]; then parts+=("skills ($names)"); fi
+    if grep -qE $'^[A-Z][0-9]*\t(.*\t)?cron/' <<< "$changes"; then parts+=("cron backup"); fi
+    (( ${#parts[@]} )) || parts+=("config")
+    msg="chore: sync $(IFS=,; printf '%s' "${parts[*]}" | sed 's/,/, /g')"
+    body="Automated nightly commit by hermes-config sync."$'\n\n'"$changes"
+    # The body lists every changed path, a deleted one too, so it is checked
+    # before it becomes a commit that no later sync could push.
+    if ! run_scan "$kind" stage_add "commit message" printf '%s\n\n%s\n' "$msg" "$body"; then
+      git -C "$dir" reset --quiet
+      printf '%s: scan failed; changes left unstaged in %s\n' "$kind" "$dir" >&2
+      return 1
+    fi
+    if ! report_hits "$kind" 2>"$dir/.git/hermes-config-sync.err"; then
+      git -C "$dir" reset --quiet
+      printf '%s: commit blocked, changes left unstaged in %s:\n%s\n' "$kind" "$dir" "$(cat "$dir/.git/hermes-config-sync.err")" >&2
+      return 1
+    fi
+    if ! git -C "$dir" commit --quiet -m "$msg" -m "$body" 2>"$dir/.git/hermes-config-sync.err"; then
+      git -C "$dir" reset --quiet
+      printf '%s: commit blocked, changes left unstaged in %s:\n%s\n' "$kind" "$dir" "$(cat "$dir/.git/hermes-config-sync.err")" >&2
+      return 1
+    fi
+    printf '%s: committed %s — %s\n' "$kind" "$(git -C "$dir" rev-parse --short HEAD)" "$msg"
+  fi
+  git -C "$dir" rev-parse --verify --quiet HEAD >/dev/null || return 0
+  ahead="$(git -C "$dir" rev-list --count '@{u}..HEAD' 2>/dev/null || printf 'new')"
+  [[ "$ahead" != 0 ]] || return 0
+  oid="$(git -C "$dir" rev-parse HEAD)"
+  if ! branch="$(git -C "$dir" symbolic-ref --short -q HEAD)"; then printf '%s: detached HEAD; not pushing\n' "$kind" >&2; return 1; fi
+  if ! scan_repo "$kind" "$dir" tree || ! scan_outgoing "$kind" "$dir" "$oid" "refs/heads/$branch"; then printf '%s: scan failed; not pushing\n' "$kind" >&2; return 1; fi
+  if ! push_oid "$dir" "$oid" "$branch" "$kind"; then printf '%s: push failed\n' "$kind" >&2; return 1; fi
+  printf '%s: pushed %s commit(s) → %s\n' "$kind" "$ahead" "$(git -C "$dir" rev-parse --short "$oid")"
+}
+
+# Writes the cron entry point. Hermes cron only runs scripts inside
+# $HERMES_HOME/scripts/ and refuses symlinks that point out of it, so this is a
+# two-line wrapper, not a link.
+write_cron_script() {
+  local dst="$HERMES_HOME_DIR/scripts/hermes-config-sync.sh"
+  mkdir -p "$(dirname "$dst")"
+  printf '#!/usr/bin/env bash\n# managed by hermes-config install: nightly skill commit + push\nexec %q sync\n' "$SELF" > "$dst"
+  chmod 700 "$dst"
+  printf 'Cron script: %s\n' "$dst"
+}
+
+main() {
+  local cmd="${1:-}"
+  [[ -n "$cmd" ]] || { usage; exit 2; }
+  shift
+  case "$cmd" in
+    -h|--help|help) usage; return 0 ;;
+  esac
+  command -v jq >/dev/null || die "jq is required"
+  load_env
+  case "$cmd" in
+    status|verify|migrate|adopt|classify) FOREIGN_CACHE="$(foreign_names)" ;;
+  esac
+  case "$cmd" in
+    hook|pre-push|scan|push|sync|adopt|backup-cron) require_terms ;;
+    migrate) if [[ "${1:-}" == --apply ]]; then require_terms; fi ;;
+  esac
+  case "$cmd" in
+    install)  cmd_install ;;
+    status)   cmd_status ;;
+    verify)   cmd_verify ;;
+    migrate)  cmd_migrate "$@" ;;
+    adopt)    cmd_adopt "$@" ;;
+    classify) cmd_classify "$@" ;;
+    refresh-markers) cmd_refresh_markers ;;
+    scan)     cmd_scan "$@" ;;
+    pull)     cmd_pull ;;
+    push)     cmd_push ;;
+    sync)     cmd_sync ;;
+    backup-cron) cmd_backup_cron ;;
+    hook)     cmd_hook "$@" ;;
+    pre-push) cmd_pre_push "$@" ;;
+    *) usage >&2; exit 2 ;;
+  esac
+}
+
+main "$@"
