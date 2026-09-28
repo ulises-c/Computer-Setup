@@ -438,7 +438,7 @@ push_oid() {
   git -C "$dir" config "branch.$branch.remote" origin && git -C "$dir" config "branch.$branch.merge" "refs/heads/$branch"
 }
 
-current_external_dirs() { hermes config get skills.external_dirs 2>/dev/null | sed -n 's/^- //p'; }
+current_external_dirs() { hermes config get skills.external_dirs 2>/dev/null | sed -n 's/^[[:space:]]*- //p'; }
 norm_path() { realpath -m "${1/#\~/$HOME}"; }
 
 set_external_dirs() {
