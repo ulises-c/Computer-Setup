@@ -3,8 +3,8 @@
  * Claude / Codex subscription quota windows. Data comes from the local
  * `codeburn` CLI (npm i -g codeburn); nothing leaves the machine.
  *
- * `/codeburn` toggles the card; `/codeburn 120` sets the refresh interval in
- * seconds (minimum 30, default 60).
+ * Docks itself on load; `/codeburn` toggles it; `/codeburn 120` sets the
+ * refresh interval in seconds (minimum 30, default 60).
  */
 export default function register(sdk) {
   const { Box, Dialog, React, ShimmerRows, Text, defineWidgetApp, gauge, h } = sdk
@@ -130,7 +130,7 @@ export default function register(sdk) {
     )
   }
 
-  defineWidgetApp({
+  const app = defineWidgetApp({
     id: 'codeburn',
     help: 'AI spend today/month + Claude/Codex quota (arg: refresh seconds)',
     mode: 'ambient',
@@ -158,4 +158,7 @@ export default function register(sdk) {
       return h(Dialog, { width: WIDTH }, h(Card, { intervalS: state.intervalS, t }))
     }
   })
+
+  // Auto-dock instead of waiting for /codeburn; re-docks on every /widgets-reload.
+  sdk.openWidget(app, app.init(''))
 }
