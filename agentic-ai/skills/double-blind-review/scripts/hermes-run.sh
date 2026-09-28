@@ -8,14 +8,18 @@
 #     are disabled there, so the reviewer inherits nothing from the orchestrator.
 #   - Hermes has no read-only sandbox. --dir must be a clean git worktree; the
 #     run fails if the reviewer left it dirty.
+#   - a profile on the bedrock provider is refused (exit 5) when the AWS SSO
+#     session ends before --budget (aws-sso-gate.sh). The profile's .env wins
+#     over the shell, so its AWS_PROFILE is the one checked.
 set -euo pipefail
 
 usage() {
   cat <<'EOF'
 Usage:
   hermes-run.sh --profile <name> --prompt <file> --dir <worktree> [--model <id>] [--effort <level>]
+                [--budget <duration>]
   hermes-run.sh --profile <name> --resume --session <id> --prompt <file> --dir <worktree>
-                [--model <id>] [--effort <level>]
+                [--model <id>] [--effort <level>] [--budget <duration>]
 
   --profile  Hermes profile that pins this seat's provider (and default model).
   --model    Model id from seats.json; overrides the profile default. Pass it
@@ -23,12 +27,19 @@ Usage:
   --prompt   File holding the fully-rendered prompt. Required.
   --dir      Clean git worktree at the pinned head. Required.
   --effort   none, minimal, low, medium, high, xhigh, max, or ultra.
+  --budget   How long this run may take, e.g. 90m or 2h (default 2h). When the
+             profile's provider is bedrock the run is refused unless
+             aws-sso-ttl says the AWS SSO session lasts at least that long.
   --resume   Continue the seat's session; --session is required with it.
 
 Exit status is hermes's own; 3 when the worktree was modified; 4 when the model
-refused (safety/content filter), which hermes itself reports as success.
+refused (safety/content filter), which hermes itself reports as success; 5 when
+the AWS preflight refused the run.
 EOF
 }
+
+# shellcheck source=aws-sso-gate.sh
+source "$(dirname "${BASH_SOURCE[0]}")/aws-sso-gate.sh"
 
 profile=""
 prompt=""
@@ -37,6 +48,7 @@ effort=""
 model=""
 resume=0
 session=""
+budget=$AWS_SSO_GATE_DEFAULT_BUDGET
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -47,6 +59,7 @@ while [[ $# -gt 0 ]]; do
     --model)   model=${2:-}; shift 2 ;;
     --resume)  resume=1; shift ;;
     --session) session=${2:-}; shift 2 ;;
+    --budget)  budget=${2:-}; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) printf 'hermes-run: unknown argument: %s\n\n' "$1" >&2; usage >&2; exit 2 ;;
   esac
@@ -64,8 +77,19 @@ fi
 if (( ! resume )) && [[ -n $session ]]; then
   printf 'hermes-run: --session requires --resume\n' >&2; exit 2
 fi
+if ! aws_sso_budget_valid "$budget"; then
+  printf 'hermes-run: --budget must be a duration like 90m, 2h, 1h30m, or seconds, got: %s\n' "$budget" >&2; exit 2
+fi
 if ! command -v hermes >/dev/null 2>&1; then
   printf 'hermes-run: hermes not found on PATH\n' >&2; exit 127
+fi
+
+provider=$(hermes -p "$profile" config get model.provider 2>/dev/null) || provider=""
+if [[ $provider == bedrock ]]; then
+  unset AWS_BEARER_TOKEN_BEDROCK
+  profile_env="$HOME/.hermes/profiles/$profile/.env"
+  aws_profile=$(aws_sso_env_value "$profile_env" AWS_PROFILE) || aws_profile=""
+  aws_sso_gate hermes-run "$budget" "$aws_profile"
 fi
 
 dir=$(cd "$dir" && pwd)

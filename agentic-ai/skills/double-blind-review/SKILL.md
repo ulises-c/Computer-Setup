@@ -78,11 +78,19 @@ Every launcher has one script in `scripts/` with the same contract: prompt from 
 tool; never interpolate repo text into a command string. Pass the same `--model`,
 `--effort`, and `--bedrock` on resume: neither Codex nor Claude restores them.
 
+Bedrock seats pass `--budget <duration>` (default `2h`): the longest the run may
+take. The adapter checks `aws-sso-ttl --need <budget>` (installed separately)
+first and refuses with exit 5, naming the need and the time left, when the AWS SSO
+session would end mid-run. Set it from the observed run lengths above, and give
+round 2 its own budget. Bedrock seats run on the AWS SDK credential chain
+(`AWS_PROFILE`), which refreshes itself; the adapters drop `AWS_BEARER_TOKEN_BEDROCK`
+because a bearer token lives an hour at most.
+
 | Launcher | Script | Read-only guarantee |
 | --- | --- | --- |
-| hermes | `hermes-run.sh --profile <p> --dir <worktree>` | none built in: runs in a clean detached worktree and exits 3 if the reviewer dirtied it; exits 4 on a model refusal |
-| codex | `codex-run.sh [--bedrock]` | `--sandbox read-only` (Bedrock via Mantle keeps it); exit code only, no refusal signal |
-| claude | `claude-run.sh --dir <repo> [--bedrock --model us.…]` | plan mode + read-only tool allowlist; exits 4 on `stop_reason: refusal` |
+| hermes | `hermes-run.sh --profile <p> --dir <worktree> [--budget <d>]` | none built in: runs in a clean detached worktree and exits 3 if the reviewer dirtied it; exits 4 on a model refusal |
+| codex | `codex-run.sh [--bedrock [--budget <d>]]` | `--sandbox read-only` (Bedrock via Codex's built-in `amazon-bedrock` provider keeps it); exit code only, no refusal signal |
+| claude | `claude-run.sh --dir <repo> [--bedrock --model us.… [--budget <d>]]` | plan mode + read-only tool allowlist; exits 4 on `stop_reason: refusal` |
 | agy | not yet written | — |
 
 For the hermes launcher, create one detached worktree per seat at the pinned head
@@ -184,14 +192,16 @@ correct. Apply edits only on a separate explicit request.
 
 Run `scripts/seats.py` first; it checks every launcher it would use and names what is
 missing. Bedrock seats need a valid AWS session (`aws sts get-caller-identity`; renew
-with `aws sso login`) and, for Codex on Mantle, `uv`. Hermes seats need their profiles
-(`hermes profile list`).
+with `aws sso login`) and `aws-sso-ttl` on `PATH` (installed separately; not part of this repo).
+Hermes seats need their profiles (`hermes profile list`).
 
 ### When a seat fails
 
 Any non-zero adapter exit is a failed side, not a double-blind result: 3 (dirtied the
-worktree), 4 (model refused), or the CLI's own error. Also treat an empty or
-off-contract reply as failed.
+worktree), 4 (model refused), 5 (AWS SSO preflight refused: the session ends before the
+budget; every Bedrock seat shares that session, so renew the login and relaunch rather
+than re-resolving), or the CLI's own error. Also treat an empty or off-contract reply
+as failed.
 
 1. Tell the user which seat failed, the exit code, and the stderr tail.
 2. Ask before switching. Re-resolve with the failed candidate excluded, so the next

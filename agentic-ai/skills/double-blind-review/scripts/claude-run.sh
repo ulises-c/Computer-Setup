@@ -7,25 +7,36 @@
 #   - the prompt goes first; --allowedTools is variadic and would swallow it.
 #   - --bedrock sets CLAUDE_CODE_USE_BEDROCK so the run bills to AWS instead of
 #     the subscription. Bedrock model ids need an inference-profile prefix (us.).
+#     It runs on the AWS SDK credential chain: AWS_BEARER_TOKEN_BEDROCK is
+#     dropped because a bearer lives an hour at most, and the run is refused
+#     (exit 5) when the AWS SSO session ends before --budget (aws-sso-gate.sh).
 set -euo pipefail
 
 usage() {
   cat <<'EOF'
 Usage:
-  claude-run.sh --prompt <file> --dir <dir> [--model <name>] [--effort <level>] [--bedrock]
+  claude-run.sh --prompt <file> --dir <dir> [--model <name>] [--effort <level>]
+                [--bedrock [--budget <duration>]]
   claude-run.sh --resume --session <uuid> --prompt <file> --dir <dir>
-                [--model <name>] [--effort <level>] [--bedrock]
+                [--model <name>] [--effort <level>] [--bedrock [--budget <duration>]]
 
   --prompt   File holding the fully-rendered prompt. Required.
   --dir      Repository to review (the run's working directory). Required.
   --model    Leave unset for the subscription default. Required with --bedrock.
   --effort   low, medium, high, xhigh, or max.
   --bedrock  Bill through Amazon Bedrock with the caller's AWS credentials.
+  --budget   How long this run may take, e.g. 90m or 2h (default 2h). With
+             --bedrock the run is refused unless aws-sso-ttl says the AWS SSO
+             session lasts at least that long.
   --resume   Continue the session given by --session.
 
-Exit status is claude's own; 4 when the model refused.
+Exit status is claude's own; 4 when the model refused; 5 when the AWS preflight
+refused the run.
 EOF
 }
+
+# shellcheck source=aws-sso-gate.sh
+source "$(dirname "${BASH_SOURCE[0]}")/aws-sso-gate.sh"
 
 prompt=""
 dir=""
@@ -34,6 +45,7 @@ effort=""
 resume=0
 session=""
 bedrock=0
+budget=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -44,6 +56,7 @@ while [[ $# -gt 0 ]]; do
     --resume)  resume=1; shift ;;
     --session) session=${2:-}; shift 2 ;;
     --bedrock) bedrock=1; shift ;;
+    --budget)  budget=${2:-}; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) printf 'claude-run: unknown argument: %s\n\n' "$1" >&2; usage >&2; exit 2 ;;
   esac
@@ -67,8 +80,18 @@ fi
 if [[ -n $effort && ! $effort =~ ^(low|medium|high|xhigh|max)$ ]]; then
   printf 'claude-run: --effort must be low, medium, high, xhigh, or max, got: %s\n' "$effort" >&2; exit 2
 fi
+if [[ -n $budget ]] && (( ! bedrock )); then
+  printf 'claude-run: --budget requires --bedrock\n' >&2; exit 2
+fi
+budget=${budget:-$AWS_SSO_GATE_DEFAULT_BUDGET}
+if ! aws_sso_budget_valid "$budget"; then
+  printf 'claude-run: --budget must be a duration like 90m, 2h, 1h30m, or seconds, got: %s\n' "$budget" >&2; exit 2
+fi
 if ! command -v claude >/dev/null 2>&1; then
   printf 'claude-run: claude CLI not found on PATH\n' >&2; exit 127
+fi
+if (( bedrock )); then
+  aws_sso_gate claude-run "$budget"
 fi
 
 (( resume )) || session=$(</proc/sys/kernel/random/uuid)
@@ -91,6 +114,7 @@ cmd+=(--permission-mode plan --permission-prompts none
       "Bash(git show *)" "Bash(git status *)" "Bash(git rev-parse *)")
 
 if (( bedrock )); then
+  unset AWS_BEARER_TOKEN_BEDROCK
   export CLAUDE_CODE_USE_BEDROCK=1
   export AWS_REGION=${AWS_REGION:-us-east-1}
 fi
