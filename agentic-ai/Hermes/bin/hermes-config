@@ -976,7 +976,7 @@ main() {
   command -v jq >/dev/null || die "jq is required"
   load_env
   case "$cmd" in
-    status|verify|migrate|adopt|classify) FOREIGN_CACHE="$(foreign_names)" ;;
+    status|migrate|adopt|classify) FOREIGN_CACHE="$(foreign_names)" ;;
   esac
   case "$cmd" in
     hook|pre-push|scan|push|sync|adopt|backup-cron) require_terms ;;
