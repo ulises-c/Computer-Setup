@@ -169,6 +169,9 @@ if [[ -z "$LAN_CIDR" ]]; then
 fi
 if [[ -n "$LAN_CIDR" ]]; then
   run ufw allow proto udp from "$LAN_CIDR" to any port "$SERVER_PORT" comment 'dragonwilds (LAN)'
+  # The in-game browser resolves the LAN address only from this probe reply; without it
+  # clients fall back to the EOS-registered WAN address, which LAN clients cannot reach.
+  run ufw allow proto udp from "$LAN_CIDR" to any port 45453 comment 'dragonwilds LAN discovery'
 else
   printf 'warning: could not detect the LAN subnet — set LAN_CIDR in .env\n' >&2
 fi
