@@ -519,7 +519,224 @@ secondary backup.
 
 ## 4. Migration runbook
 
-TODO (part 2)
+An outline for the install handoff (`docs/HANDOFF.md`, written by the
+integration card). Run the server first, then the Pi: the Pi's neighbours
+point at server URLs. Steps marked HUMAN need the admin console or a phone.
+Commands run on the host being migrated, from the repo checkout (`<repo>`).
+
+Rules for every step:
+- Cut over one stack at a time, and verify it before the next one.
+- Run each apply with `--dry-run` first, and read the diff.
+- Do not delete an old node, revoke a key or delete `ts-state/` until the
+  soak (4.7) is over, except for the three Service names, which D3 forces.
+
+### 4.1 Admin console, before either host (HUMAN)
+
+1. DNS page (D5). Record every nameserver IP. On the server, get
+   `docker exec adguard-ts tailscale ip -4`; on the Pi,
+   `docker exec adguard-pi-ts tailscale ip -4`. If a nameserver matches one of
+   them, change it to that host node's tailnet IP now, before any sidecar is
+   removed.
+2. Access controls: add `tag:server` and `tag:pi` to `tagOwners` (D8). Leave
+   `tag:container` in place until 4.7. Service entries come later (4.3).
+3. Machines page: apply `tag:server` to the server's host node. This does not
+   re-authenticate the node, so its IP and device ID stay the same (the
+   tailscale-proxy `TAILSCALE_DEVICE_ID` keeps working). Then disable key
+   expiry for it (KB 1068). Confirm on the server:
+   `tailscale status --json | jq -r '.Self.Tags'` lists `tag:server`.
+
+### 4.2 Server: pre-flight and backups
+
+1. `git -C <repo> rev-parse HEAD`: record the pre-migration commit.
+2. `tailscale version` is 1.102.3 or later; `tailscale status --json` shows
+   `BackendState` `Running`.
+3. `tailscale serve status --json`: record it. Expected empty; if not, every
+   listener in it must survive the migration unchanged.
+4. Each new loopback port from 2.2 (2222, 3300, 8100–8105) is free:
+   `ss -ltnH 'sport = :<port>'` prints nothing. No host listener on the
+   tailnet registry ports (8443–8449).
+5. Backups, into `<backup-dir>` (outside the repo, `chmod 700`, root-owned):
+   - `sudo systemctl start backup.service`, then confirm it succeeded
+     (`journalctl -u backup.service`). This covers app data and every `.env`.
+   - `sudo tar -C <repo>/linux-server -czf <backup-dir>/ts-state-server.tgz */ts-state`.
+     The backup job excludes `ts-state/`; this tarball is what lets a stack
+     roll back to its old node identity.
+   - `tailscale serve status --json > <backup-dir>/serve-before.json` and
+     `tailscale serve get-config --all <backup-dir>/serve-services-before.json`.
+   - `/etc/cockpit/cockpit.conf` and `~/.config/systemd/user/tailscale-web.service`.
+6. `git -C <repo> checkout <migration-branch>`. Running containers are not
+   affected until each stack is brought up again.
+
+### 4.3 Server: cutover order
+
+Each stack step is: set the new `.env` keys (names from its `.env.example`),
+then `docker compose up -d --remove-orphans` in the stack directory. The
+`--remove-orphans` flag removes the old `<svc>-ts` container, which is no
+longer in the compose file. Then verify (4.5).
+
+1. nginx-proxy-manager (D7). Set `NPM_BIND_IP` to the LAN IP. It must go
+   first, so NPM no longer holds `0.0.0.0:443` when host serve starts.
+2. Node-level serve config:
+   `scripts/ts-serve-apply.sh linux-server/tailscale-serve/serve.json --services none --dry-run`,
+   then the same without `--dry-run`. From now on every new URL answers. A
+   URL whose stack is not cut over yet returns 502 until then, and the old
+   sidecar URL keeps working in parallel.
+3. Host-networked services, whose new URL works as soon as their config
+   changes: glances, ups (`peanut-ts` removed), homepage (`.env`: allowed
+   hosts, new hrefs), cockpit (deploy `cockpit.conf` with `UrlRoot` and
+   `Origins`, `sudo systemctl restart cockpit`), tailscale-web (install the
+   new unit, `systemctl --user daemon-reload && systemctl --user restart
+   tailscale-web`). The cockpit and tailscale-web stacks are deleted on the
+   new branch, so `--remove-orphans` cannot reach their sidecars; remove them
+   with `docker rm -f cockpit-ts tailscale-web-ts`.
+4. Stateless apps: openspeedtest, watchtower, speedtest-tracker, atvloadly,
+   filebrowser, portainer.
+5. Stateful or protocol-bearing apps: qbittorrent (WebUI bind in
+   `qBittorrent.conf` first), syncthing (peers reconnect on `22000`),
+   adguard (web UI only; DNS keeps serving), uptime-kuma.
+6. Neighbours: `KUMA_PUSH_URL` to loopback in `backup/.env` and
+   `forgejo/.env` (D10).
+7. The three Services, one at a time, in this order: ntfy, immich, forgejo.
+   For each `svc:X` (D3):
+   1. `docker compose up -d --remove-orphans` in its stack. The old node goes
+      offline; the outage starts.
+   2. HUMAN: Machines page, delete the old `X` machine.
+   3. HUMAN: Services page, Define a Service named `X`, with endpoint
+      `tcp:443` (forgejo: `tcp:443` and `tcp:22`). Access controls: add
+      `autoApprovers.services["svc:X"] = ["tag:server"]` and a grant from
+      `autogroup:member` to `svc:X` on the same ports (D8).
+   4. `scripts/ts-serve-apply.sh linux-server/tailscale-serve/serve.json --services svc:X --dry-run`,
+      then without `--dry-run`.
+   5. HUMAN: approve the host on the Services page if `autoApprovers` did not.
+   6. Verify from another tailnet device (4.5). The outage ends.
+   After ntfy: set `NTFY_URL` to loopback in `backup`, `dragonwilds`, `ups`
+   and `forgejo` `.env` (D10). After forgejo: `FORGEJO_RUNNER_API_URL` to
+   loopback, if `.env` overrides it.
+8. Reboot the server. NPM must come back with `NPM_BIND_IP` bound (D7), and
+   serve and Services must come back from the state file. Repeat the 4.5
+   checks.
+
+### 4.4 Pi: pre-flight, host node and cutover
+
+1. Pre-flight: record the commit; `ss -ltnH` for 80, 631, 3001, 8765 shows
+   the host services; backups: `sudo systemctl start pi-backup.service`, and
+   `ts-state-pi.tgz` from `linux-pi/*/ts-state` as on the server.
+2. Host node. If the Pi already runs a host tailscaled (the adguardhome-sync
+   container reaches the server's tailnet name today, which suggests it
+   does), apply `tag:pi` from the Machines page as in 4.1 step 3. If it has
+   none: the official Linux installer, then
+   `sudo tailscale up --advertise-tags=tag:pi --accept-dns=false` (HUMAN: open
+   the printed login URL). `--accept-dns=false` keeps the Pi's own resolver as
+   it is, so DNS on the Pi does not start to depend on Tailscale (the README's
+   resilience goal). Either way: `sudo tailscale set --operator=$USER`,
+   install `jq`, disable key expiry (HUMAN), and record
+   `tailscale serve status --json` into `<backup-dir>`.
+3. `git checkout <migration-branch>`, then
+   `scripts/ts-serve-apply.sh linux-pi/tailscale-serve/serve.json --dry-run`,
+   then without `--dry-run`. All four Pi backends are host services already,
+   so the new URLs answer at once.
+4. Stacks: homepage (`.env`), adguard (`--remove-orphans` removes
+   `adguard-pi-ts`; DNS on `:53` is not touched). The motioneye and cups
+   stacks are deleted on the new branch: `docker rm -f motioneye-ts cups-ts`,
+   remove the cups sidecar's bridge network (`docker network ls` shows it),
+   and rerun `linux-pi/cups/setup.sh` with the new alias.
+5. Check that `getent hosts <server>.<tailnet>.ts.net` resolves on the Pi and
+   from a container on it. The new name is in the same zone as the old
+   sidecar names, so it should. UNVERIFIED — fallback chosen: if it does not
+   resolve, stop here and fix the resolver before step 6.
+6. Neighbours: `adguardhome-sync` `ORIGIN_URL` and `backup` `KUMA_PUSH_URL`
+   to the server URLs from 2.3. Sync pauses between the server adguard
+   cutover and this step; the replica keeps its last-good config.
+7. Reboot the Pi, and repeat the checks.
+
+### 4.5 Verification per service
+
+Run from a tailnet device that is not the host (D10). `curl -sS -o /dev/null
+-w '%{http_code} %{redirect_url}\n' <url>` for the status; a redirect must stay
+on the same origin and under the mount.
+
+| Service | Probe (expected) | Also check |
+|---|---|---|
+| homepage | `/` 200 on each host | Widgets load (loopback URLs) |
+| glances | `/glances/api/4/status` 200 | Dashboard renders |
+| openspeedtest | `/openspeedtest/` 200 | A browser run with upload (body limit UNVERIFIED) |
+| qbittorrent | `/qbittorrent/api/v2/app/version` 401 or 403 before login | Login, then the same call 200 |
+| syncthing | `/syncthing/rest/noauth/health` 200 | GUI asks for the password; peers show connected |
+| watchtower | `/watchtower/v1/metrics` 401 without token | 200 with `Authorization: Bearer <token>` |
+| cockpit | `/cockpit-ui/` 200 | Browser login and a terminal (UNVERIFIED under a prefix) |
+| filebrowser | `/filebrowser/` 200 | Login; file list loads |
+| portainer | `/portainer/api/system/status` 200 | Login; container console (websocket, UNVERIFIED) |
+| tailscale-web | `/tailscale-web/` 200 | The manage flow (UNVERIFIED) |
+| adguard | `:8443/control/status` 401 or 403 without auth | Login; stats; `dig @<server-ip>` still resolves |
+| uptime-kuma | `:8444/` 200 or 302 to `/dashboard` | Login; push monitors still green |
+| speedtest-tracker | `:8445/admin/login` 200 | Assets load from `:8445` |
+| ups (PeaNUT) | `:8446/` 200 | UPS values shown |
+| nginx-proxy-manager | `:8447/` 200 | Admin login; LAN proxy hosts still work via `<server-ip>` |
+| atvloadly | `:8448/` 200 | Device list |
+| ntfy | `https://ntfy.<tailnet>.ts.net/v1/health` 200 | Publish a test message; the phone receives it |
+| immich | `https://immich.<tailnet>.ts.net/api/server/ping` 200 | Mobile app syncs with no change |
+| forgejo | `https://forgejo.<tailnet>.ts.net/api/v1/version` 200 | `git ls-remote` over HTTPS and SSH from a clone; the macOS runner shows online |
+| Pi motioneye | `/motioneye/` 200 | Camera streams |
+| Pi adguard | `:8443/control/status` 401 or 403 | `dig @<pi-lan-ip>` resolves |
+| Pi cups | `:8449/` 200 | Not 400 (Host / `ServerAlias`, UNVERIFIED with a port); admin asks for auth |
+
+On the host, for every stack: the backend listens on `127.0.0.1` only
+(`ss -ltnH 'sport = :<port>'`), the old node shows offline in
+`tailscale status`, and `tailscale serve status --json` matches the template.
+
+### 4.6 Rollback
+
+Per stack, while its old node still exists (every stack except a Service
+whose old node was deleted in step 7):
+`git checkout <pre-migration-commit> -- <host-dir>/<stack>`, then
+`docker compose up -d --remove-orphans`. The sidecar starts from its
+`ts-state/` and gets its old name back. Revert that stack's `.env` from the
+backup. The host serve handler can stay; it returns 502 until the stack is
+migrated again.
+
+Per Service, after its old node was deleted:
+`tailscale serve drain svc:X`, `tailscale serve clear svc:X`; HUMAN: delete
+the Service on the Services page, so the name is free; empty the stack's
+`ts-state/` (its node key belongs to the deleted node); restore the old stack
+as above. The sidecar re-authenticates with `TS_AUTHKEY` (this is why the
+OAuth client keeps its Auth Keys scope until 4.7).
+
+Global, per host: restore `serve-before.json` with
+`tailscale serve set-raw < <backup-dir>/serve-before.json` (or
+`tailscale serve reset` if it was empty), roll back every Service as above,
+`git checkout <pre-migration-commit>`, restore `cockpit.conf`, the
+tailscale-web unit and every `.env` from `<backup-dir>`, then bring up every
+stack with `--remove-orphans`. The host tags can stay.
+
+### 4.7 After a soak period (7 days with both hosts verified)
+
+- HUMAN: Machines page, delete every remaining old sidecar node on both hosts.
+- On each host: delete `*/ts-state/`, remove `TS_AUTHKEY` from every `.env`,
+  and delete `<backup-dir>/ts-state-*.tgz`.
+- HUMAN: remove the Auth Keys scope from the OAuth client that the sidecars
+  used. Keep its read scope: tailscale-proxy still uses the same client. Revoke
+  any reusable auth key made for sidecars (Settings, Keys).
+- HUMAN: remove `tag:container` from `tagOwners` (D8).
+- Follow-up in the repo: remove the `ts-state/` lines from `.gitignore` (6).
+
+### 4.8 Client-side updates (HUMAN)
+
+- Forgejo remotes and the macOS runner: no change (the Service keeps the
+  name). If SSH warns that the host IP changed, remove the old entry with
+  `ssh-keygen -R <old-ip>`; the host key itself is the same.
+- ntfy phone apps and the Immich mobile app: no change. Check that a test
+  notification arrives and a photo syncs.
+- Bookmarks and password-manager entries: every other URL moves from
+  `https://<svc>.<tailnet>.ts.net` to the front door in section 2. A
+  password manager that matches by host now sees all path-mounted apps on
+  one host name.
+- Cockpit on the LAN also needs the prefix now:
+  `https://<server-ip>:9090/cockpit-ui/`.
+- Uptime Kuma: edit each HTTP monitor to its new URL in the UI (its DB schema
+  is UNVERIFIED, so no SQL). Push monitors keep their tokens.
+- Syncthing peers that dial `tcp://syncthing.<tailnet>.ts.net:22000`: change
+  the address to `<server>.<tailnet>.ts.net` (UNVERIFIED whether any do).
+- Off-repo shell rc files or scripts that `curl` ntfy or a `*.ts.net` URL.
 
 ## 5. Work breakdown
 
