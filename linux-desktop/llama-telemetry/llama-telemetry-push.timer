@@ -1,0 +1,11 @@
+[Unit]
+Description=Sync llama-swap Activity every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+Persistent=true
+AccuracySec=10s
+Unit=llama-telemetry-push.service
+
+[Install]
+WantedBy=timers.target

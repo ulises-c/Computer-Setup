@@ -1,0 +1,13 @@
+[Unit]
+Description=Push llama-swap Activity metadata to the telemetry server over SSH
+Wants=network-online.target
+After=network-online.target llama-swap.service
+ConditionPathExists=%h/.local/share/llama-swap/activity.sqlite
+
+[Service]
+Type=oneshot
+UMask=0077
+EnvironmentFile=%h/.config/llama-telemetry/push.env
+WorkingDirectory=%h/github/Computer-Setup/linux-desktop/llama-telemetry
+ExecStart=/usr/bin/python3 %h/github/Computer-Setup/linux-desktop/llama-telemetry/push.py --source %h/.local/share/llama-swap/activity.sqlite --ssh-host ${TELEMETRY_SSH_HOST} --remote-script apps/llama-telemetry/ingest.py
+TimeoutStartSec=180
