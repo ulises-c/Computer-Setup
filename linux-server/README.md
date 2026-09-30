@@ -32,6 +32,7 @@ sudo tailscale up
 - [`../dotfiles/zsh_plugins.txt`](../dotfiles/zsh_plugins.txt) — shared antidote plugin list, deployed to `~/.zsh_plugins.txt` and pre-cloned by `setup.sh`
 - [`../dotfiles/tmux.conf`](../dotfiles/tmux.conf) — tmux config with mouse support, vi copy mode, and a status bar (shared across all platforms); copied to `~/.tmux.conf` by `setup.sh`
 - [`../packages.json`](../packages.json) — machine-readable package manifest (shared across all platforms)
+- [`llama-telemetry/`](llama-telemetry/README.md) — always-on, tailnet-only historical llama-swap dashboard; receives metadata over SSH from the desktop
 
 ## Next steps
 

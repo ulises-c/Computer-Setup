@@ -1,4 +1,6 @@
 .env
+linux-desktop/llama-telemetry/*.env
+linux-server/llama-telemetry/*.env
 .DS_Store
 Thumbs.db
 __pycache__/

@@ -31,7 +31,13 @@ bash verify.sh [--work] [--personal] [--optional] [--all]
 
 `verify.sh` mirrors `setup.sh`'s selection logic, so passing the same flags checks
 exactly what that install should have produced, plus runtime checks (login shell is
-zsh, pyenv Python, nvm Node, antidote, configs, tailscaled).
+zsh, pyenv Python, nvm, antidote, configs, tailscaled).
+
+## Local model telemetry
+
+[`llama-telemetry/`](llama-telemetry/README.md) persists llama-swap Activity and
+pushes metadata over SSH to the always-on server dashboard. It is separate from
+the base installer and requires a configured llama-swap service and SSH alias.
 
 ## Gaming
 
