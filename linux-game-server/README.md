@@ -1,0 +1,204 @@
+# Ubuntu game server
+
+A focused Ubuntu Server x86_64 deployment: the shared shell/dotfiles base,
+Docker, host Tailscale, Homepage, and the native RuneScape: Dragonwilds server.
+The initial target is Ubuntu Server 26.04 LTS.
+
+This is a separate service deployment entrypoint, not a fifth packages.json
+platform. Package selection and dotfile deployment reuse `lib/core.sh`; Docker
+address-pool setup and Antidote pre-cloning reuse `platforms/server.sh`. The
+Dragonwilds units, status scripts and update machinery are symlinked to
+`../linux-server/dragonwilds`, so fixes apply to both deployments.
+
+It does not install the NAS server's DNS resolver, storage services, NUT, reverse
+proxy, or entire container fleet. Do not run the root `setup.sh --profile server`
+on this host: that starts the existing home-server service set.
+
+## Bootstrap
+
+Run as your normal SSH/login user, not as root. It requests sudo when needed.
+
+```sh
+bash linux-game-server/setup.sh --dry-run
+bash linux-game-server/setup.sh
+```
+
+The shared manifest's high-priority apt base and medium-priority `terminal`
+packages are installed. Deployment prerequisites come from Ubuntu's archive;
+no old Ubuntu PPA or unsupported Docker convenience-script distro fallback is
+needed. SteamCMD comes from Valve's official distribution because a fresh
+26.04 installation need not have the `steamcmd` multiverse/i386 package enabled.
+SteamCMD and the game run as the login user, never as root. The script downloads
+and validates app 4019830 but deliberately does not start it or create a world.
+Bootstrap first enters persistent maintenance on a fresh/stopped host. A rerun
+fails before provisioning if the game is active, activating or deactivating;
+it never implicitly stops a running game. For an intentional update, explicitly
+run `bash linux-game-server/dragonwilds/maintenance.sh enter` first. Validation
+requires the guard and stopped game/update jobs, holds the maintenance lock for
+the whole operation, and rechecks after acquiring the SteamCMD lock. It leaves
+the guard in place, including on failure.
+
+Authenticate the host's own Tailscale node:
+
+```sh
+sudo tailscale up --operator="$USER"
+bash linux-game-server/homepage/serve.sh
+```
+
+Complete the login URL Tailscale prints. Serve may ask to enable HTTPS in the
+admin console. Homepage listens on `127.0.0.1:3000` only and is published at this
+host's tailnet HTTPS name by `tailscale serve --bg`; it is not a public Funnel
+and has no extra `homepage` sidecar identity to conflict with another server.
+For a local fallback, use `ssh -L 3000:127.0.0.1:3000 <game-server>` and visit
+`http://localhost:3000`. Host checks remain enabled. Homepage has no Docker
+socket mount. The native game's real state comes from the status JSON, not from
+whether the small nginx status container is running.
+
+## Migrate a running Dragonwilds world
+
+Do not copy an actively written `.sav` or run both hosts against the same world.
+Perform the cutover while nobody is playing. Preserve a rollback copy before
+starting the destination.
+
+1. Prepare the destination with the bootstrap above, and authenticate Tailscale.
+2. Deploy this standalone `maintenance.sh` helper on the source as well (it can
+   run without the new bootstrap or any shared-template changes). On the source,
+   explicitly enter maintenance. Keep the source install and all saves.
+
+   ```sh
+   bash linux-game-server/dragonwilds/maintenance.sh enter
+   bash linux-game-server/dragonwilds/maintenance.sh check
+   ss -uln
+   ```
+
+   The helper creates a root-owned `/var/lib/dragonwilds-maintenance/blocked`
+   marker and persistent `ConditionPathExists=!` systemd drop-ins for the game,
+   both update timers and both update services, then reloads systemd. Only after
+   starts are blocked does it stop timers, their in-flight services, and finally
+   the game (allowing SIGTERM to flush saves). It verifies inactive/failed states,
+   zero game/update process IDs, protected files and the loaded conditions. A
+   reboot cannot bypass the guard. Stopping timers alone does not stop running
+   update services; those can request a game restart through the existing polkit
+   grant. Runtime masks are not used, and the existing `/etc` service file is
+   never renamed or deleted. Do not proceed if `enter` or `check` fails; the guard
+   remains for investigation. Confirm no manually launched game process remains.
+
+3. Recheck maintenance on both hosts before copying. With the source confirmed
+   quiescent, securely copy its `RSDragonwilds/Saved/Config`
+   and `RSDragonwilds/Saved/SaveGames` to the corresponding destination directory
+   under `~/games/dragonwilds/RSDragonwilds/Saved/`. Preserve the config containing
+   `OwnerId`, `DefaultWorldName`, server identity and any password. These remain
+   outside the public repository. Never print or commit them. Compare SHA-256
+   hashes of every transferred file on both hosts.
+4. Validate that `DefaultWorldName` equals both the name inside the `.sav` and
+   its filename. The inherited `read-save-info.sh` can inspect the header. A
+   mismatch silently creates a fresh world and risks overwriting the import.
+5. Keep an additional stopped-world archive outside both Git checkouts. Restrict
+   copied config and archive permissions to the login user.
+6. Set the source hostname and paths in no tracked file. The destination's
+   `dragonwilds/.env` is generated with local paths and is ignored. Automatic
+   restarts default off until migration and a backup/restore path are verified.
+7. Before any destination startup, preserve the actual SSH listener and enable
+   UFW with default deny incoming. Check other needed listeners before enabling
+   it; for a fresh host whose actual SSH port is 22:
+
+   ```sh
+   sudo ufw allow 22/tcp
+   sudo ufw default deny incoming
+   sudo ufw enable
+   sudo ufw status verbose
+   ```
+
+   Substitute your actual port, not necessarily 22. Firewall rules saved while
+   UFW is inactive are not protection. Do not release either maintenance guard
+   to enable UFW. Optionally add LAN-only UDP 45453 for browser discovery:
+
+   ```sh
+   sudo ufw allow proto udp from <lan-cidr> to any port 45453 comment 'Dragonwilds LAN discovery'
+   ```
+
+8. Only after the stopped-world copy, hash checks and rollback archive are ready,
+   activate the destination as the login/game user:
+
+   ```sh
+   bash linux-game-server/dragonwilds/maintenance.sh check
+   SSH_PORT=22 bash linux-game-server/dragonwilds/activate.sh
+   ```
+
+   Set `SSH_PORT` to the actual listener; an SSH session can supply it through
+   `SSH_CONNECTION` instead. Activation requires confirmed maintenance, validates
+   nonempty OwnerId/server identity and a matching config/world filename/save
+   header, requires active UFW with default deny/reject incoming, and installs
+   and confirms an SSH-preserving rule. It then installs the inherited units
+   **while guarded**: their `enable --now` cannot start the game or update jobs.
+   It rechecks the guard, world and firewall before deliberately removing the
+   marker and explicitly starting the game, then the update timers. Startup
+   failure re-enters maintenance. Do not bypass this wrapper by running the
+   inherited setup script unguarded. Keep the source guarded throughout cutover.
+
+   The inherited installer allows the game's configured UDP port from the LAN
+   and `tailscale0`. No public router port-forward is configured. Tailscale ACLs
+   remain the access policy for tailnet clients. UDP 8888 is the game's beacon;
+   it is not opened by default. Do not assume browser entries or join codes
+   work remotely: see the current shared networking notes.
+
+9. Confirm world loading, not just an active process:
+
+   ```sh
+   systemctl status dragonwilds.service
+   journalctl -u dragonwilds.service --since '5 minutes ago'
+   bash linux-game-server/dragonwilds/dragonwilds-status.sh
+   curl -fsS http://127.0.0.1:8096/dragonwilds-status.json
+   ```
+
+   Expect `LoadGameFromSaveGame()`, no unexpected `NewGame()`, and UDP 7777.
+   Join via the LAN or Tailscale IP literal shown on Homepage. An actual player
+   connection is a separate acceptance check, not proven by a socket being open.
+
+## Rollback and backups
+
+Enter and check maintenance on the destination first, quiescing in-flight update
+services as well as timers and the game. Keep both hosts guarded while restoring.
+If the destination has never accepted players, retain the source's original
+stopped world. If players made progress, securely copy the destination's final
+flushed saves/config back with hash and world-name verification before releasing
+the source guard; otherwise rollback loses progress. Preserve a separate archive.
+Verify the source firewall/SSH access and original units before restarting it.
+
+```sh
+# Destination first:
+bash linux-game-server/dragonwilds/maintenance.sh enter
+bash linux-game-server/dragonwilds/maintenance.sh check
+# Source only, after restoration/checks:
+bash linux-game-server/dragonwilds/maintenance.sh leave
+sudo systemctl start dragonwilds.service
+sudo systemctl start dragonwilds-auto-update.timer dragonwilds-update-check.timer
+```
+
+`leave` waits for any validation holding the maintenance lock, confirms quiescence
+and removes only the marker. It starts nothing, removes no unit and does not
+change existing enablement; future boots follow that enablement once the guard
+is released. Never leave maintenance on the non-selected host. The persistent
+drop-ins remain inert without the marker and are reused next time. Never run
+both hosts at once. The helper controls these systemd units, not manually started
+game/SteamCMD processes, and does not prevent an administrator removing the guard.
+
+The NAS host's `linux-server/backup` does not automatically back up this new
+machine. Keep automatic game restarts off and arrange an off-host backup of
+`Saved/Config`, `Saved/SaveGames`, and the private deployment `.env`. Test a
+restore before treating this host as covered. The stopped migration archive is
+a rollback point, not recurring backup coverage.
+
+## Scope left for later
+
+- Scheduled off-host backups and a restore test.
+- A dedicated game-only Unix account (currently the same service-user pattern
+  as `linux-server`; a compromised game can access that user's files).
+- Optional Cockpit/Glances/uptime monitoring, independent from the game.
+- Full integration with root setup/verify profiles if another game platform
+  justifies changing the shared platform schema.
+
+See [the shared Dragonwilds guide](../linux-server/dragonwilds/README.md) for
+native-server operation, world import pitfalls, updates, and current networking
+limitations. Do not edit copied units by hand: edit shared templates and re-run
+this directory's inherited setup script.
