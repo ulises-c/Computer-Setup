@@ -496,8 +496,8 @@ What the script does not do:
   `tailscale serve --https=<port> off`, or `tailscale serve drain svc:X` and
   then `tailscale serve clear svc:X`. There is no prune mode.
 - Run from `setup.sh`. The apply is an install step (section 4) and needs a
-  logged-in, tagged node. `setup.sh`, `lib/` and `platforms/` do not change
-  in this migration.
+  logged-in, tagged node. No `setup.sh`, `lib/` or `platforms/` change is
+  needed for it.
 
 Write path: `set-raw` is an undocumented debug command that is still present
 in v1.102.3 [B Q2]. It has no ETag, so a write made by another admin between
@@ -683,6 +683,9 @@ on the same origin and under the mount.
 On the host, for every stack: the backend listens on `127.0.0.1` only
 (`ss -ltnH 'sport = :<port>'`), the old node shows offline in
 `tailscale status`, and `tailscale serve status --json` matches the template.
+Uptime Kuma HTTP monitors that use the front-door URLs are requests from the
+server to itself (D10, UNVERIFIED): a monitor that fails while the same URL
+works from another device moves to its loopback backend.
 
 ### 4.6 Rollback
 
@@ -717,7 +720,8 @@ stack with `--remove-orphans`. The host tags can stay.
   used. Keep its read scope: tailscale-proxy still uses the same client. Revoke
   any reusable auth key made for sidecars (Settings, Keys).
 - HUMAN: remove `tag:container` from `tagOwners` (D8).
-- Follow-up in the repo: remove the `ts-state/` lines from `.gitignore` (6).
+- Follow-up in the repo, after the soak: remove the `ts-state/` lines from
+  `.gitignore` (5.4).
 
 ### 4.8 Client-side updates (HUMAN)
 
@@ -740,7 +744,79 @@ stack with `--remove-orphans`. The host tags can stay.
 
 ## 5. Work breakdown
 
-TODO (part 2)
+Two implementer cards work in parallel on separate branches, and the
+integration card merges them (design, then server, then Pi). A file has
+exactly one owner. A card that needs text in a file it does not own puts that
+text in its handoff metadata under `needs_in_server_owned_files`, and the
+integration card applies it.
+
+### 5.1 Decisions both cards follow
+
+- Serve script: `scripts/ts-serve-apply.sh` (section 3), written by the server
+  card. The Pi card does not copy it and does not wait for it. It writes
+  `linux-pi/tailscale-serve/serve.json` and validates it with `jq -e .` and a
+  `sed` render of the two placeholders. The integration card dry-runs the
+  script against both templates.
+- Homepage links. Each homepage already has a variable that holds its own
+  host's name: `HOMEPAGE_VAR_HOMEPAGE_DOMAIN` on the server and
+  `HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN` on the Pi. Its value becomes the host
+  node's MagicDNS name, and every link to a path or registry port on that
+  host is built from it (`https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}/glances/`,
+  `https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}:8444/`). The per-service
+  `HOMEPAGE_VAR_<SVC>_DOMAIN` variables are removed, except
+  `HOMEPAGE_VAR_FORGEJO_DOMAIN`, `HOMEPAGE_VAR_NTFY_DOMAIN` and
+  `HOMEPAGE_VAR_IMMICH_DOMAIN` (Services). Cross-host links keep their
+  variables: the server's `HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN` and the Pi's
+  `HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN` now hold the other host node's name.
+- `.gitignore` keeps both `*/ts-state/` lines in this migration. The
+  directories stay on disk until the soak (4.7) for rollback, and they hold
+  node keys, so they must stay ignored. The backup scripts' `ts-state`
+  excludes stay too.
+- The tailscale-web unit gets its origin from
+  `EnvironmentFile=%h/.config/tailscale-web.env`
+  (`TAILSCALE_WEB_ORIGIN=https://<server>.<tailnet>.ts.net`), with a committed
+  `linux-server/tailscale-web.env.example`. The unit itself holds no host
+  name, so the `diff -q` in `platforms/server.sh` keeps working.
+  `server_extras` creates the env file when it is missing, filled from
+  `tailscale status --json` the same way it fills `TAILSCALE_HOSTNAME` today.
+- Changes to `docs/ONE_NODE_PER_HOST.md` for a deviation: the Pi card edits
+  only the 2.3 tables and 4.4; the server card edits everything else. Record
+  each deviation in the handoff metadata too.
+
+### 5.2 Server card (`feat/86-server`) owns
+
+| Files | Change |
+|---|---|
+| `scripts/ts-serve-apply.sh`, `scripts/test-ts-serve-apply.sh` | New (section 3) |
+| `.github/workflows/lint.yml` | One step that runs `scripts/test-ts-serve-apply.sh` |
+| `linux-server/tailscale-serve/serve.json` | New: every 2.2 row |
+| `linux-server/<stack>/` for the 19 stacks in 2.2 | Compose, `.env.example`, app config per 2.2; delete `ts-serve.json`; delete the `cockpit/` and `tailscale-web/` stacks except `cockpit/cockpit.conf.example` |
+| `linux-server/glances/.env.example` | `GLANCES_ALLOWED_HOSTS` example lists the server's MagicDNS name. The entrypoint bug (`allowed_hosts` vs `webui_allowed_hosts`, [A Findings]) is not fixed here; add it to `docs/TODO.md` |
+| `linux-server/backup/`, `linux-server/dragonwilds/`, `linux-server/forgejo/runner-status.sh` and its `.env.example` | Loopback defaults per D10 and 2.2 neighbours |
+| `linux-server/tailscale-web.service`, `linux-server/tailscale-web.env.example`, `platforms/server.sh` | 5.1. Run `bash scripts/dryrun-smoke.sh` |
+| `linux-server/HTTPS.md` | Rewritten for host serve: the section 3 mechanism, the 2.1 registry, how to add a service, the Service steps. The Pi part comes from the Pi card's metadata |
+| `linux-server/README.md`, `post-install.md`, `immich/README.md`, `ntfy/README.md`, `ups/README.md`, `backup/README.md`, `dragonwilds/README.md`, `dragonwilds/QUICK_START.md` | URLs, `TS_AUTHKEY` and sidecar text [C §9] |
+| `macOS/forgejo-runner/` (`lib.sh`, `verify.sh`, `.env.example`, `README.md`) | Comment wording only ("sidecar" becomes "Tailscale Service"); the URL does not change |
+| `AGENTS.md` | The `linux-pi/` layout line drops `ts-serve.json` |
+| `docs/TODO.md`, `docs/CHANGELOG.md` | TODO: close the #49 items D9 makes obsolete, reword the rest, add the glances bug and the post-soak `.gitignore` cleanup. CHANGELOG: one new entry for both hosts |
+
+### 5.3 Pi card (`feat/86-pi`) owns
+
+| Files | Change |
+|---|---|
+| `linux-pi/tailscale-serve/serve.json` | New: every 2.3 row |
+| `linux-pi/adguard/`, `linux-pi/homepage/` | Remove the sidecar, `ts-serve.json`, `TS_AUTHKEY`; homepage links per 5.1 |
+| `linux-pi/motioneye/`, `linux-pi/cups/docker-compose.yml`, `linux-pi/cups/ts-serve.json` | Delete (sidecar-only stacks) |
+| `linux-pi/cups/setup.sh`, `test-setup.sh`, `.env.example`, `README.md` | Drop `PINNED_SIDECAR_SUBNET`/`CUPS_SIDECAR_SUBNET` from the allow lists and validation; the alias becomes the Pi's MagicDNS name |
+| `linux-pi/adguardhome-sync/.env.example`, `linux-pi/backup/.env.example`, `linux-pi/backup/README.md` | 2.3 neighbours |
+| `linux-pi/README.md` | Host tailscaled and `tag:pi` (4.4), host serve instead of sidecars, the new URLs |
+
+### 5.4 Not in either card
+
+- Removing the `ts-state/` lines from `.gitignore`: after the soak, a
+  separate change.
+- The ACL least-privilege work (#49, D8).
+- A `setup.sh` profile for the Pi.
 
 ## 6. User-overridable defaults
 
