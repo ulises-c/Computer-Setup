@@ -1,3 +1,18 @@
+- Servers:
+    - main server:
+        icon: mdi-server
+        href: https://{{HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN}}/
+        description: NAS — storage, media and core services
+        siteMonitor: https://{{HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN}}
+    - pi:
+        icon: mdi-raspberry-pi
+        description: MotionEye, CUPS and backup DNS (this server)
+    - game server:
+        icon: mdi-controller
+        href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/
+        description: RuneScape Dragonwilds
+        siteMonitor: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}
+
 - Pi Services:
     - adguard (backup dns):
         icon: si-adguard
@@ -37,10 +52,3 @@
             - field: repo_size_bytes
               label: Repo size
               format: bytes
-
-- Main Server:
-    - server dashboard:
-        icon: mdi-server
-        href: https://{{HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN}}/
-        description: "{{HOMEPAGE_VAR_MAIN_HOSTNAME}} — primary home server"
-        siteMonitor: https://{{HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN}}

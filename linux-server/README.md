@@ -71,7 +71,7 @@ Start services in this order. Most just need `docker compose up -d`; exceptions 
 ```sh
 # Homepage — update .env with your server details first (see post-install.md)
 cd linux-server/homepage && cp .env.example .env
-# Existing .env: add new .env.example keys, including HOMEPAGE_VAR_PI_HOSTNAME.
+# Existing .env: add new .env.example keys, including HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN.
 # edit .env, then:
 docker compose up -d
 # Access at http://<server-ip>:3000 (or https://<tailscale-hostname> after HTTPS setup)

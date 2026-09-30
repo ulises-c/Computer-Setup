@@ -45,9 +45,10 @@ plus the backup AdGuard). These stacks surface it:
   already run on the Pi host, on `:8765` and `:631`). They add HTTPS front doors at
   `https://motioneye-pi.<tailnet>.ts.net` and `https://cups-pi.<tailnet>.ts.net`.
 
-The **main server's** homepage links to the Pi dashboard and pings it (a
-`siteMonitor` "Secondary Server (Pi)" card), driven by
-`HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN` in `linux-server/homepage/.env`.
+Every homepage (main server, Pi, game server) starts with the same "Servers"
+group: one card per server, linking to and `siteMonitor`-pinging the others,
+with the current server's own card left unlinked. The main server's pi card
+is driven by `HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN` in `linux-server/homepage/.env`.
 
 ### Sidecar → host hop (required for every Pi HTTPS front door)
 
@@ -151,12 +152,12 @@ Server and is not supported on the Pi yet.
    `docker compose up -d`. The Pi dashboard is available on the LAN at
    `http://<pi-lan-ip>:3001` and at
    `https://homepage-pi.<tailnet>.ts.net`, and the main server's homepage shows a
-   "Secondary Server (Pi)" card linking to it. (All Pi HTTPS front doors depend on
+   pi card in its "Servers" group linking to it. (All Pi HTTPS front doors depend on
    the sidecar→host hop above.)
 
    When upgrading an existing checkout, add new keys from `.env.example` to the
-   gitignored Homepage `.env`; the main-server card requires
-   `HOMEPAGE_VAR_MAIN_HOSTNAME`.
+   gitignored Homepage `.env`; the Servers cards require
+   `HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN` and `HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN`.
 
 ## Verification
 
