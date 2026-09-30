@@ -338,7 +338,7 @@ publishes.
 
 ## 3. Serve-config mechanism
 
-TODO (part 2)
+TODO (part 2, in progress)
 
 ## 4. Migration runbook
 
