@@ -439,8 +439,11 @@ The script refuses to apply, and exits non-zero, when:
 - a `Web` key `<host>:<port>` (node level or inside a Service) has no matching
   `TCP[<port>]` with `HTTPS: true`;
 - a `Proxy` target is not `http://127.0.0.1:<port>[/path]` or
-  `https+insecure://127.0.0.1:<port>[/path]`, or a `TCPForward` is not
-  `127.0.0.1:<port>` (loopback backends only, per D1);
+  `https+insecure://127.0.0.1:<port>[/path]`, a `TCPForward` is not
+  `127.0.0.1:<port>` (loopback backends only, per D1), or a handler uses
+  anything other than `Proxy` (`Path`, `Text`, `Redirect`);
+- a Service's `Web` key is not `<name>.${TS_MAGICDNS_SUFFIX}:<port>` for its
+  own `svc:<name>`;
 - a listener uses port 5252 (reserved for the web client [B Q4]).
 
 ### 3.5 Apply algorithm
@@ -522,7 +525,8 @@ secondary backup.
 An outline for the install handoff (`docs/HANDOFF.md`, written by the
 integration card). Run the server first, then the Pi: the Pi's neighbours
 point at server URLs. Steps marked HUMAN need the admin console or a phone.
-Commands run on the host being migrated, from the repo checkout (`<repo>`).
+Commands run on the host being migrated, from the repo checkout (`<repo>`);
+a few server steps also edit a gitignored `.env` on the Pi, over SSH.
 
 Rules for every step:
 - Cut over one stack at a time, and verify it before the next one.
@@ -552,19 +556,27 @@ Rules for every step:
    `BackendState` `Running`.
 3. `tailscale serve status --json`: record it. Expected empty; if not, every
    listener in it must survive the migration unchanged.
-4. Each new loopback port from 2.2 (2222, 3300, 8100–8105) is free:
-   `ss -ltnH 'sport = :<port>'` prints nothing. No host listener on the
-   tailnet registry ports (8443–8449).
-5. Backups, into `<backup-dir>` (outside the repo, `chmod 700`, root-owned):
+4. Every backend port in 2.2 is either free or held by the service that 2.2
+   says owns it (`ss -ltnpH 'sport = :<port>'`). In particular the new ports
+   2222, 3300 and 8100–8105 print nothing. No host listener on the tailnet
+   registry ports (8443–8449).
+5. On the Pi: `getent hosts <server>.<tailnet>.ts.net` resolves, on the host
+   and inside the adguardhome-sync container
+   (`docker exec adguardhome-sync nslookup <server>.<tailnet>.ts.net`). The
+   server's host node already has this name, and the Pi resolves the old
+   sidecar names in the same zone today, so it should. UNVERIFIED — fallback
+   chosen: if it does not resolve, fix the Pi's resolver before 4.3 step 5,
+   which points Pi `.env` values at the server's name.
+6. Backups, into `<backup-dir>` (outside the repo, `chmod 700`, root-owned):
    - `sudo systemctl start backup.service`, then confirm it succeeded
      (`journalctl -u backup.service`). This covers app data and every `.env`.
-   - `sudo tar -C <repo>/linux-server -czf <backup-dir>/ts-state-server.tgz */ts-state`.
+   - `cd <repo>/linux-server && sudo tar -czf <backup-dir>/ts-state-server.tgz */ts-state`.
      The backup job excludes `ts-state/`; this tarball is what lets a stack
      roll back to its old node identity.
    - `tailscale serve status --json > <backup-dir>/serve-before.json` and
      `tailscale serve get-config --all <backup-dir>/serve-services-before.json`.
    - `/etc/cockpit/cockpit.conf` and `~/.config/systemd/user/tailscale-web.service`.
-6. `git -C <repo> checkout <migration-branch>`. Running containers are not
+7. `git -C <repo> checkout <migration-branch>`. Running containers are not
    affected until each stack is brought up again.
 
 ### 4.3 Server: cutover order
@@ -575,7 +587,8 @@ then `docker compose up -d --remove-orphans` in the stack directory. The
 longer in the compose file. Then verify (4.5).
 
 1. nginx-proxy-manager (D7). Set `NPM_BIND_IP` to the LAN IP. It must go
-   first, so NPM no longer holds `0.0.0.0:443` when host serve starts.
+   first, so NPM no longer holds `0.0.0.0:443` when host serve starts. Its
+   tailnet admin URL is down until step 2.
 2. Node-level serve config:
    `scripts/ts-serve-apply.sh linux-server/tailscale-serve/serve.json --services none --dry-run`,
    then the same without `--dry-run`. From now on every new URL answers. A
@@ -583,7 +596,8 @@ longer in the compose file. Then verify (4.5).
    sidecar URL keeps working in parallel.
 3. Host-networked services, whose new URL works as soon as their config
    changes: glances, ups (`peanut-ts` removed), homepage (`.env`: allowed
-   hosts, new hrefs), cockpit (deploy `cockpit.conf` with `UrlRoot` and
+   hosts, new hrefs; keep `HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN` at its old value
+   until the Pi is migrated in 4.4), cockpit (deploy `cockpit.conf` with `UrlRoot` and
    `Origins`, `sudo systemctl restart cockpit`), tailscale-web (install the
    new unit, `systemctl --user daemon-reload && systemctl --user restart
    tailscale-web`). The cockpit and tailscale-web stacks are deleted on the
@@ -593,9 +607,13 @@ longer in the compose file. Then verify (4.5).
    filebrowser, portainer.
 5. Stateful or protocol-bearing apps: qbittorrent (WebUI bind in
    `qBittorrent.conf` first), syncthing (peers reconnect on `22000`),
-   adguard (web UI only; DNS keeps serving), uptime-kuma.
-6. Neighbours: `KUMA_PUSH_URL` to loopback in `backup/.env` and
-   `forgejo/.env` (D10).
+   adguard (web UI only; DNS keeps serving; right after it, set the Pi's
+   `linux-pi/adguardhome-sync/.env` `ORIGIN_URL` to the 2.3 value and restart
+   that container, so sync pauses only between the two), uptime-kuma.
+6. Right after uptime-kuma: `KUMA_PUSH_URL` to loopback in `backup/.env` and
+   `forgejo/.env` (D10), and on the Pi, `KUMA_PUSH_URL` in
+   `linux-pi/backup/.env` to the 2.3 value. Pushes to the old sidecar name
+   fail from the uptime-kuma cutover until this step.
 7. The three Services, one at a time, in this order: ntfy, immich, forgejo.
    For each `svc:X` (D3):
    1. `docker compose up -d --remove-orphans` in its stack. The old node goes
@@ -640,13 +658,13 @@ longer in the compose file. Then verify (4.5).
    stacks are deleted on the new branch: `docker rm -f motioneye-ts cups-ts`,
    remove the cups sidecar's bridge network (`docker network ls` shows it),
    and rerun `linux-pi/cups/setup.sh` with the new alias.
-5. Check that `getent hosts <server>.<tailnet>.ts.net` resolves on the Pi and
-   from a container on it. The new name is in the same zone as the old
-   sidecar names, so it should. UNVERIFIED — fallback chosen: if it does not
-   resolve, stop here and fix the resolver before step 6.
-6. Neighbours: `adguardhome-sync` `ORIGIN_URL` and `backup` `KUMA_PUSH_URL`
-   to the server URLs from 2.3. Sync pauses between the server adguard
-   cutover and this step; the replica keeps its last-good config.
+5. The Pi resolves the server's name: `getent hosts <server>.<tailnet>.ts.net`
+   was checked in 4.2 step 5; repeat it after the Pi's own tailscaled change.
+6. Neighbours: confirm `adguardhome-sync` `ORIGIN_URL` and `backup`
+   `KUMA_PUSH_URL` hold the 2.3 values (set during 4.3) and that the next
+   sync run and backup push succeed. Then set the server homepage's
+   `HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN` to the Pi host node's name and restart
+   the server homepage.
 7. Reboot the Pi, and repeat the checks.
 
 ### 4.5 Verification per service
