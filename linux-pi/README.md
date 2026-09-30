@@ -156,8 +156,8 @@ Server and is not supported on the Pi yet.
    the sidecar→host hop above.)
 
    When upgrading an existing checkout, add new keys from `.env.example` to the
-   gitignored Homepage `.env`; the main-server card requires
-   `HOMEPAGE_VAR_MAIN_HOSTNAME`.
+   gitignored Homepage `.env`; the Servers cards require
+   `HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN` and `HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN`.
 
 ## Verification
 
