@@ -6,11 +6,17 @@ The initial target is Ubuntu Server 26.04 LTS.
 
 This is a separate service deployment entrypoint, not a fifth packages.json
 platform. Package selection and dotfile deployment reuse `lib/core.sh`; Docker
-address-pool setup and Antidote pre-cloning reuse `platforms/server.sh`, with
-this directory's `docker/daemon.json`. Everything this host deploys lives under
-`linux-game-server/`; it never reads or changes `linux-server/`, so work here
-cannot alter the NAS host. The Dragonwilds scripts started as copies of the NAS
-host's and now evolve independently.
+address-pool setup and Antidote pre-cloning reuse `platforms/server.sh`.
+
+Files that are 1:1 with the NAS host are symlinks into `../linux-server`: the
+Dragonwilds unit templates, timers, status/update/player scripts,
+`read-save-info.sh`, the status container, and `docker/daemon.json`. A fix to one
+of those applies to both hosts, so change them only when the change is right for
+the NAS host too. Anything that differs on this host is a real file here instead
+of an edit under `linux-server/`: `dragonwilds/setup.sh` (it also opens the LAN
+discovery port), the Dragonwilds guide, and the maintenance, activation, install
+and backup helpers. `tests/test_isolation.py` checks that every symlink resolves
+into `linux-server/` and that no game-specific file references it.
 
 It does not install the NAS server's DNS resolver, storage services, NUT, reverse
 proxy, or entire container fleet. Do not run the root `setup.sh --profile server`
