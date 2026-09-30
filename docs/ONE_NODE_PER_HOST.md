@@ -605,44 +605,73 @@ Rules for every step:
    sidecar names in the same zone today, so it should. UNVERIFIED — fallback
    chosen: if it does not resolve, fix the Pi's resolver before 4.3 step 5,
    which points Pi `.env` values at the server's name.
-6. Backups. `<backup-dir>` is a directory outside the repo, owned by root,
-   mode `0700`. Every write into it and every read from it happens in a root
-   process, so no redirect runs in the unprivileged shell. Open one root shell
-   for the capture (`sudo -s` keeps the working directory and sets
-   `SUDO_USER`):
+6. Backups. `<backup-dir>` is a new directory outside the repo (for example
+   `/root/cs86-backup-<date>`). Its parent must exist and it must not exist
+   yet: the capture creates it as root, mode `0700`, and stops if it is
+   already there, so a stale file from an earlier run can never pass as this
+   run's backup. Every write into it and every read from it happens in a root
+   process, so no redirect runs in the unprivileged shell.
+
+   The capture is one non-interactive root script with
+   `set -euo pipefail`. Any failed step stops it before the last line, so
+   `capture-complete` exists only when every step succeeded. `sudo` sets
+   `SUDO_USER` to the operator:
 
    ```sh
-   sudo -s
-   B=<backup-dir>
-   install -d -m 700 -o root -g root "$B"
-   systemctl start backup.service        # oneshot: waits, exits non-zero on failure
-   cd <repo>/linux-server && tar -czf "$B/ts-state-server.tgz" */ts-state
-   tailscale serve status --json > "$B/serve-before.json"
-   tailscale serve get-config --all "$B/serve-services-before.json"
-   cp -a /etc/cockpit/cockpit.conf "$B/" || printf 'no cockpit.conf\n'
-   cp -a "$(getent passwd "$SUDO_USER" | cut -d: -f6)/.config/systemd/user/tailscale-web.service" "$B/"
-   exit
+   sudo bash -euo pipefail -c 'B="$1"; R="$2"
+   mkdir -m 700 -- "$B"
+   systemctl start backup.service
+   cd "$R/linux-server"
+   tar -czf "$B/ts-state-server.tgz" -- */ts-state
+   out=$(tailscale serve status --json)
+   [[ -n "$out" ]] || out="{}"
+   jq -e "if . == null then {} else . end | objects" <<< "$out" > "$B/serve-before.json"
+   if [[ "$(jq length "$B/serve-before.json")" == 0 ]]; then printf "empty\n"; else printf "config\n"; fi > "$B/serve-before.state"
+   rc=0; tailscale serve get-config --all "$B/serve-services-before.json" || rc=$?
+   printf "%s\n" "$rc" > "$B/serve-services-before.rc"
+   if [[ -e /etc/cockpit/cockpit.conf ]]; then cp -a /etc/cockpit/cockpit.conf "$B/"; else : > "$B/cockpit.conf.absent"; fi
+   home=$(getent passwd "${SUDO_USER:?}" | cut -d: -f6)
+   cp -a "$home/.config/systemd/user/tailscale-web.service" "$B/"
+   : > "$B/capture-complete"' _ <backup-dir> <repo>
    ```
 
-   - `backup.service` covers app data and every `<host-dir>/*/.env`.
+   - `backup.service` is a oneshot: `systemctl start` waits for it and exits
+     non-zero if it fails. It covers app data and every `<host-dir>/*/.env`.
    - The backup job excludes `ts-state/`; the tarball is what lets a stack
-     roll back to its old node identity.
-   - `serve-before.json` is the primary Serve backup (3.5). `get-config --all`
-     covers only Services; before the migration the node hosts none, so an
-     empty file or an error here is expected. Record which.
+     roll back to its old node identity. A glob that matches nothing makes
+     `tar` fail, which stops the capture.
+   - `serve-before.json` is the primary Serve backup (3.5). It is written only
+     when `tailscale serve status --json` exits 0 and prints a JSON object;
+     empty output or `null` is stored as `{}`, the same rule as 3.5 step 2. A
+     failed read, or output that is not a JSON object, stops the capture. The
+     `serve-before.state` file records the result: `empty` for a confirmed
+     empty config, `config` for anything else. Rollback (4.6) reads it.
+   - `get-config --all` covers only Services; before the migration the node
+     hosts none, so a non-zero exit is expected. Its exit code goes into
+     `serve-services-before.rc` and does not stop the capture.
+   - `cockpit.conf.absent` records that there was no `cockpit.conf`, so the
+     rollback knows to remove the new one instead of restoring a file.
 
-   Then check the backup, and do not start 4.3 unless it prints `backup-ok`:
+   Then check the backup, and do not start 4.3 unless it prints `backup-ok`.
+   The check runs with the same `set -euo pipefail`, so any failed test stops
+   it before the `printf`:
 
    ```sh
-   sudo bash -c 'B="$1"
-     [[ "$(stat -c "%a %U" "$B")" == "700 root" ]] &&
-     [[ "$(systemctl show -p Result --value backup.service)" == success ]] &&
-     tar -tzf "$B/ts-state-server.tgz" | grep -q "/ts-state/" &&
-     [[ -f "$B/serve-before.json" ]] &&
-     { [[ ! -s "$B/serve-before.json" ]] || jq -e . "$B/serve-before.json" >/dev/null; } &&
-     [[ -f "$B/tailscale-web.service" ]] &&
-     printf "backup-ok\n"' _ <backup-dir>
+   sudo bash -euo pipefail -c 'B="$1"
+   [[ "$(stat -c "%a %U" "$B")" == "700 root" ]]
+   [[ -f "$B/capture-complete" ]]
+   [[ "$(systemctl show -p Result --value backup.service)" == success ]]
+   [[ "$(tar -tzf "$B/ts-state-server.tgz")" == */ts-state/* ]]
+   n=$(jq -e "objects | length" "$B/serve-before.json")
+   state=$(<"$B/serve-before.state")
+   [[ ( "$state" == empty && "$n" == 0 ) || ( "$state" == config && "$n" != 0 ) ]]
+   [[ -f "$B/cockpit.conf" || -f "$B/cockpit.conf.absent" ]]
+   [[ -s "$B/tailscale-web.service" ]]
+   printf "backup-ok\n"' _ <backup-dir>
    ```
+
+   If either script stops, fix the cause and rerun both with a new
+   `<backup-dir>`.
 7. `git -C <repo> checkout <migration-branch>`. Running containers are not
    affected until each stack is brought up again.
 8. Create the render `.env` (3.3) from the live node, as the operator user
@@ -723,23 +752,29 @@ longer in the compose file. Then verify (4.5).
    it is, so DNS on the Pi does not start to depend on Tailscale (the README's
    resilience goal). Either way: `sudo tailscale set --operator=$USER`,
    install `jq`, disable key expiry (HUMAN).
-3. Backups, with the same rule as 4.2 step 6 (`<backup-dir>` on the Pi,
-   root-owned `0700`, every write in a root shell):
+3. Backups, with the same rules as 4.2 step 6 (a new `<backup-dir>` on the
+   Pi, created by root with mode `0700`, one fail-closed root script, the
+   same `serve-before.state` rule):
 
    ```sh
-   sudo -s
-   B=<backup-dir>
-   install -d -m 700 -o root -g root "$B"
+   sudo bash -euo pipefail -c 'B="$1"; R="$2"
+   mkdir -m 700 -- "$B"
    systemctl start pi-backup.service
-   cd <repo>/linux-pi && tar -czf "$B/ts-state-pi.tgz" */ts-state
-   tailscale serve status --json > "$B/serve-before.json"
-   tailscale serve get-config --all "$B/serve-services-before.json"
-   exit
+   cd "$R/linux-pi"
+   tar -czf "$B/ts-state-pi.tgz" -- */ts-state
+   out=$(tailscale serve status --json)
+   [[ -n "$out" ]] || out="{}"
+   jq -e "if . == null then {} else . end | objects" <<< "$out" > "$B/serve-before.json"
+   if [[ "$(jq length "$B/serve-before.json")" == 0 ]]; then printf "empty\n"; else printf "config\n"; fi > "$B/serve-before.state"
+   rc=0; tailscale serve get-config --all "$B/serve-services-before.json" || rc=$?
+   printf "%s\n" "$rc" > "$B/serve-services-before.rc"
+   : > "$B/capture-complete"' _ <backup-dir> <repo>
    ```
 
-   Then the same check as 4.2 step 6, with `pi-backup.service`,
-   `ts-state-pi.tgz`, and without the `tailscale-web.service` line. Do not
-   continue unless it prints `backup-ok`.
+   Then the same check as 4.2 step 6, with `pi-backup.service` and
+   `ts-state-pi.tgz`, and without the `cockpit.conf` and
+   `tailscale-web.service` lines. Do not continue unless it prints
+   `backup-ok`.
 4. `git checkout <migration-branch>`. Create
    `linux-pi/tailscale-serve/.env` as in 4.2 step 8. Then
    `scripts/ts-serve-apply.sh linux-pi/tailscale-serve/serve.json --dry-run`,
@@ -814,15 +849,25 @@ the Service on the Services page, so the name is free; empty the stack's
 as above. The sidecar re-authenticates with `TS_AUTHKEY` (this is why the
 OAuth client keeps its Auth Keys scope until 4.7).
 
-Global, per host: restore Serve from the backup in a root process
-(`sudo sh -c 'tailscale serve set-raw < "$1"' _ <backup-dir>/serve-before.json`,
-or `sudo tailscale serve reset` if that file was empty), roll back every
-Service as above, `git checkout <pre-migration-commit>`, restore
-`cockpit.conf` and the tailscale-web unit from `<backup-dir>` with
-`sudo install` (the unit back to the user's `~/.config/systemd/user/`, owned
-by that user), restore every `.env` from the restic snapshot taken in 4.2
-step 6, then bring up every stack with `--remove-orphans`. The host tags can
-stay.
+Global, per host: restore Serve from the backup in a root process, chosen by
+`serve-before.state`, never by the size of a file:
+
+```sh
+sudo bash -euo pipefail -c 'B="$1"
+[[ -f "$B/capture-complete" ]]
+case "$(<"$B/serve-before.state")" in
+  empty)  tailscale serve reset ;;
+  config) tailscale serve set-raw < "$B/serve-before.json" ;;
+  *)      exit 1 ;;
+esac' _ <backup-dir>
+```
+
+Then roll back every Service as above, `git checkout <pre-migration-commit>`,
+restore `cockpit.conf` (or, if `cockpit.conf.absent` is there, remove the new
+one) and the tailscale-web unit from `<backup-dir>` with `sudo install` (the
+unit back to the user's `~/.config/systemd/user/`, owned by that user),
+restore every `.env` from the restic snapshot taken in 4.2 step 6, then bring
+up every stack with `--remove-orphans`. The host tags can stay.
 
 ### 4.7 After a soak period (7 days with both hosts verified)
 
