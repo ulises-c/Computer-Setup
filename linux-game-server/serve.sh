@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Start this host's containers and publish every web UI on the host's own
-# tailnet name with `tailscale serve` (tailnet only, never Funnel).
+# Start this host's containers and publish every web UI under the host's own
+# tailnet name, https://<host>.<tailnet>.ts.net/<service> (issue #86), with
+# `tailscale serve` (tailnet only, never Funnel). Apps without base-path
+# support get a dedicated HTTPS port on the same name instead.
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly COMPOSE_DIRS=(homepage glances portainer watchtower uptime-kuma)
@@ -23,7 +25,7 @@ for dir in "${COMPOSE_DIRS[@]}"; do
 done
 
 if [[ -d /etc/cockpit ]]; then
-  printf '[WebService]\nOrigins = https://%s:10000 wss://%s:10000\nProtocolHeader = X-Forwarded-Proto\n' \
+  printf '[WebService]\nUrlRoot = /cockpit\nOrigins = https://%s wss://%s\nProtocolHeader = X-Forwarded-Proto\n' \
     "$domain" "$domain" | sudo tee /etc/cockpit/cockpit.conf >/dev/null
   sudo install -d -m 755 /etc/systemd/system/cockpit.socket.d
   printf '[Socket]\nListenStream=\nListenStream=127.0.0.1:9090\n' |
@@ -36,10 +38,14 @@ fi
 curl --fail --silent --show-error --retry 12 --retry-connrefused --retry-delay 2 \
   http://127.0.0.1:3000/ >/dev/null
 tailscale serve --bg --https=443 http://127.0.0.1:3000
-tailscale serve --bg --https=8443 http://127.0.0.1:61208
+# serve strips the mount path; Glances' web UI uses relative URLs, so no url_prefix.
+tailscale serve --bg --https=443 --set-path /glances http://127.0.0.1:61208
+if [[ -d /etc/cockpit ]]; then
+  # Cockpit needs the prefix kept (UrlRoot); a target path re-adds what serve strips.
+  tailscale serve --bg --https=443 --set-path /cockpit https+insecure://127.0.0.1:9090/cockpit
+fi
+# No reliable base path: Portainer ignores --base-url for some assets
+# (portainer#12615), and Uptime Kuma has none (uptime-kuma#147).
 tailscale serve --bg --https=9443 http://127.0.0.1:9000
 tailscale serve --bg --https=3443 http://127.0.0.1:3001
-if [[ -d /etc/cockpit ]]; then
-  tailscale serve --bg --https=10000 https+insecure://127.0.0.1:9090
-fi
 tailscale serve status

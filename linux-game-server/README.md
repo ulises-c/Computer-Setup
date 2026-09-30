@@ -56,24 +56,35 @@ bash linux-game-server/serve.sh
 ```
 
 Complete the login URL Tailscale prints. Serve may ask to enable HTTPS in the
-admin console. `serve.sh` starts every container and publishes each web UI on
-this host's own tailnet name with `tailscale serve --bg` (tailnet only, never
-Funnel). Unlike the NAS host there are no per-service sidecars, so nothing here
-claims a `homepage`, `glances` or similar tailnet name that the NAS already owns.
+admin console. `serve.sh` starts every container and publishes each web UI with
+`tailscale serve --bg` (tailnet only, never Funnel), following the one-node-per-
+host layout from [#86](https://github.com/ulises-c/Computer-Setup/issues/86):
+this host is a single tailnet node and services live under its name, so it claims
+no `homepage`, `glances` or similar name that the NAS host already owns.
 
-| Service | Listens on | Tailnet URL |
+| Service | Listens on | Tailnet URL (`https://<game-host>.<tailnet>.ts.net…`) |
 | --- | --- | --- |
-| Homepage | `127.0.0.1:3000` | `https://<game-host>.<tailnet>.ts.net/` |
-| Glances | `127.0.0.1:61208` | `…:8443` |
-| Portainer | `127.0.0.1:9000` | `…:9443` |
-| Uptime Kuma (this host) | `127.0.0.1:3001` | `…:3443` |
-| Cockpit (host service) | `127.0.0.1:9090` | `…:10000` |
+| Homepage | `127.0.0.1:3000` | `/` |
+| Glances | `127.0.0.1:61208` | `/glances/` |
+| Cockpit (host service) | `127.0.0.1:9090` | `/cockpit/` |
+| Portainer | `127.0.0.1:9000` | `:9443` (fallback) |
+| Uptime Kuma (this host) | `127.0.0.1:3001` | `:3443` (fallback) |
 | Watchtower | no listener | updates images daily at 03:00 |
+
+`serve --set-path` strips the mount path before proxying. Glances' web UI uses
+relative URLs, so it works stripped (keep the trailing `/` in links). Cockpit
+needs its prefix, so `serve.sh` sets `UrlRoot = /cockpit` and proxies to a target
+ending in `/cockpit`, which re-adds it. Portainer and Uptime Kuma use #86's
+documented fallback, a dedicated HTTPS port on the same name: Portainer's
+`--base-url` misses some assets
+([portainer#12615](https://github.com/portainer/portainer/issues/12615)) and
+Uptime Kuma has no base path
+([uptime-kuma#147](https://github.com/louislam/uptime-kuma/issues/147)).
 
 Everything binds loopback because Docker-published ports bypass ufw. Cockpit is
 installed without recommends (its recommends pull NetworkManager onto a
 networkd host); `serve.sh` moves its socket to loopback with a drop-in and
-allow-lists the tailnet origin in `/etc/cockpit/cockpit.conf`. `scaffold.py`
+writes `UrlRoot` and the tailnet origin to `/etc/cockpit/cockpit.conf`. `scaffold.py`
 writes this host's tailnet name to `homepage/.env` and `glances/.env`; the
 Servers and Shared services cards need the other hosts' domains added to
 `homepage/.env` by hand (see `homepage/.env.example`).

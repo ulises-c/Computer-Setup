@@ -62,7 +62,7 @@
 - Management:
     - glances:
         icon: si-glances
-        href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}:8443/
+        href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/glances/
         description: System monitor
         server: my-docker
         container: glances
@@ -84,7 +84,7 @@
         container: watchtower
     - cockpit:
         icon: mdi-monitor-dashboard
-        href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}:10000/
+        href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/cockpit/
         description: Server admin UI
         ping: https://127.0.0.1:9090
     - uptime kuma:

@@ -1,6 +1,6 @@
 services:
   # System monitor. Host networking so it sees the host's interfaces, bound to
-  # loopback so only Homepage and `tailscale serve` (HTTPS :8443) reach it.
+  # loopback so only Homepage and `tailscale serve` (/glances/) reach it.
   # Docker-published ports bypass ufw, so every service here binds 127.0.0.1.
   glances:
     image: nicolargo/glances:4.5.4-full
