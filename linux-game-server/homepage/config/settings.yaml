@@ -4,6 +4,9 @@ color: slate
 headerStyle: clean
 hideVersion: true
 layout:
+  Servers:
+    style: row
+    columns: 3
   Games:
     style: row
     columns: 1

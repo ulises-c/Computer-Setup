@@ -1,3 +1,18 @@
+- Servers:
+    - main server:
+        icon: mdi-server
+        href: https://{{HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN}}/
+        description: NAS — storage, media and core services
+        siteMonitor: https://{{HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN}}
+    - pi:
+        icon: mdi-raspberry-pi
+        href: https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}/
+        description: MotionEye, CUPS and backup DNS
+        siteMonitor: https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}
+    - game server:
+        icon: mdi-controller
+        description: RuneScape Dragonwilds (this server)
+
 - Games:
     - Dragonwilds:
         icon: mdi-sword-cross
