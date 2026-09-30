@@ -3,16 +3,18 @@ theme: dark
 color: slate
 headerStyle: clean
 hideVersion: true
+fullWidth: true
+
 layout:
+  Games:
+    style: row
+    columns: 2
   Servers:
     style: row
     columns: 3
-  Games:
-    style: row
-    columns: 1
-  Management:
-    style: row
-    columns: 4
-  Shared services:
+  Main server:
     style: row
     columns: 3
+  Game server:
+    style: row
+    columns: 2
