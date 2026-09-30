@@ -5,7 +5,8 @@ headerStyle: clean
 hideVersion: true
 
 layout:
+  Servers:
+    style: row
+    columns: 3
   Pi Services:
     style: column
-  Main Server:
-    style: row
