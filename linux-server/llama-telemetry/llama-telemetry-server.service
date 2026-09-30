@@ -1,0 +1,16 @@
+[Unit]
+Description=llama-swap historical telemetry dashboard
+After=network.target
+
+[Service]
+Type=simple
+UMask=0077
+WorkingDirectory=%h/apps/llama-telemetry
+EnvironmentFile=%h/.config/llama-telemetry/server.env
+ExecStart=/usr/bin/python3 %h/apps/llama-telemetry/server.py --host 127.0.0.1 --port 17483
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

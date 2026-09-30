@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Model telemetry</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="header">
+      <div><p class="eyebrow">LLAMA-SWAP / ACTIVITY</p><h1>Model telemetry</h1><p class="sub">Historical inference on your always-on server. Cached locally, visible while the inference host sleeps.</p></div>
+      <div class="live"><span class="dot"></span><span id="updated">Connecting</span></div>
+    </header>
+    <section class="controls" aria-label="Chart controls">
+      <div class="range" role="group" aria-label="Time range">
+        <button type="button" data-range="1d" class="selected" aria-pressed="true">1 day</button>
+        <button type="button" data-range="1w" aria-pressed="false">1 week</button>
+        <button type="button" data-range="1m" aria-pressed="false">1 month</button>
+        <button type="button" data-range="1y" aria-pressed="false">1 year</button>
+      </div>
+      <label class="model-filter">MODEL <select id="model"><option value="">All models</option></select></label>
+    </section>
+    <p id="error" role="alert" hidden></p>
+    <section class="summary" aria-label="Period totals">
+      <div class="stat"><span class="label">REQUESTS</span><strong id="requests">—</strong><span class="hint" id="errors">—</span></div>
+      <div class="stat"><span class="label">PROMPT TOKENS</span><strong id="input">—</strong><span class="hint">input in selected period</span></div>
+      <div class="stat"><span class="label">GENERATED TOKENS</span><strong id="output">—</strong><span class="hint">output in selected period</span></div>
+      <div class="stat"><span class="label">PEAK OUTPUT RATE</span><strong id="peak">—</strong><span class="hint">tokens/sec, busiest bucket</span></div>
+    </section>
+    <div id="legend" class="legend" aria-label="Model colors"></div>
+    <div class="charts">
+      <section class="chart"><div class="chart-head"><div><span class="label">01 / TRAFFIC</span><h2>Requests</h2></div><span class="unit">per interval</span></div><canvas id="chart-requests" role="img" aria-label="Requests over time"></canvas></section>
+      <section class="chart"><div class="chart-head"><div><span class="label">02 / THROUGHPUT</span><h2>Output tokens per second</h2></div><span class="unit">wall-clock · incl. idle</span></div><canvas id="chart-output_tps" role="img" aria-label="Output tokens per second over time"></canvas></section>
+      <section class="chart"><div class="chart-head"><div><span class="label">03 / GENERATION</span><h2>TG speed</h2></div><span class="unit">mean per-request · tok/s</span></div><canvas id="chart-tg_tps" role="img" aria-label="Token generation speed over time"></canvas><p class="coverage" id="tg-coverage"></p></section>
+      <section class="chart"><div class="chart-head"><div><span class="label">04 / PREFILL</span><h2>PP speed</h2></div><span class="unit">mean per-request · tok/s</span></div><canvas id="chart-pp_tps" role="img" aria-label="Prompt processing speed over time"></canvas><p class="coverage" id="pp-coverage"></p></section>
+    </div>
+    <footer><span>Source: llama-swap Activity · metadata only · pushed over SSH</span><span>PP/TG require response timing data; missing samples are omitted, never counted as zero.</span></footer>
+  </main>
+</body>
+</html>
