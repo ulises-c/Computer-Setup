@@ -77,3 +77,12 @@ linux-server/dragonwilds/status/
 # Immich — postgres data dir + the default ./library if UPLOAD_LOCATION is left local
 linux-server/immich/postgres/
 linux-server/immich/library/
+
+# Game-server runtime status and Homepage-generated files
+linux-game-server/dragonwilds/status/
+linux-game-server/homepage/config/logs/
+linux-game-server/homepage/config/custom.css
+linux-game-server/homepage/config/custom.js
+linux-game-server/homepage/config/docker.yaml
+linux-game-server/homepage/config/kubernetes.yaml
+linux-game-server/homepage/config/proxmox.yaml

@@ -1,0 +1,9 @@
+title: Game Server
+theme: dark
+color: slate
+headerStyle: clean
+hideVersion: true
+layout:
+  Games:
+    style: row
+    columns: 1
