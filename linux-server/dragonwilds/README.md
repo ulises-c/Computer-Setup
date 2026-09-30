@@ -313,9 +313,8 @@ the VPS address and joins worked. So there is nothing to configure on the server
 whatever public address its HTTPS leaves from is what gets advertised, and an EOS
 route can only work if UDP 7777 on that public address reaches the server.
 
-On the NAS host it is **not** a server firewall problem (ufw is inactive, see
-issue #81); a host with ufw active needs the discovery rule in
-[Server firewall](#server-firewall). Nor is it the Docker bridges (issue #75): the probe reply carries no address at all, just an ID
+It is **not** a firewall problem (ufw is inactive, see issue #81), and not the
+Docker bridges (issue #75): the probe reply carries no address at all, just an ID
 and the client's echoed nonce, so the bridges cannot leak into it.
 
 ### The same browser entry resolves differently per client
@@ -374,36 +373,6 @@ resolves through the probe reply the way the browser entry does. The captures
 point the other way: a code resolves through the EOS session, whose address is
 the WAN address, and nothing on the tailnet routes that. Consoles cannot run
 Tailscale or change a firewall, so none of this applies to them.
-
-### Server firewall
-
-With ufw active and default-deny incoming (the dedicated game host), the server
-needs **two** LAN-scoped inbound UDP rules, not one:
-
-| Port | Purpose | Without it |
-| --- | --- | --- |
-| `SERVER_PORT` (7777) | the game connection | nothing connects |
-| 45453 | the browser's LAN discovery probe | the browser entry falls back to the EOS (WAN) address |
-
-`setup.sh` adds both, from `LAN_CIDR` (auto-detected from the default route when
-empty). A host installed before the 45453 rule existed needs it added once:
-
-```bash
-sudo ufw allow proto udp from <lan-cidr> to any port 45453 comment 'dragonwilds LAN discovery'
-```
-
-The probe is a broadcast, and ufw drops unmatched broadcasts **without
-logging** them, so a missing rule leaves no `[UFW BLOCK]` line on the server.
-Its symptom is on the client: the entry is listed (EOS lists it by `OwnerId`),
-but joining it dials the WAN address. Typed Direct connect is unaffected, since
-it only needs `SERVER_PORT`.
-
-Server and client rules are independent; LAN browser joins need both sides
-to pass the exchange. The server must accept the probe (above); a client with a
-default-deny firewall must accept the reply (previous section). A Steam Deck or
-console has no active firewall, so only the server side applies to it. UDP 8888
-(the world-settings beacon) is not opened; whether any client feature needs it
-is untested.
 
 ### Options for avoiding a typed address
 
