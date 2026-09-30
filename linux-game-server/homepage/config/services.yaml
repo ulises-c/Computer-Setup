@@ -1,3 +1,47 @@
+- Servers:
+    - main server:
+        icon: mdi-server
+        href: https://{{HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN}}/
+        description: NAS — storage, media and core services
+        siteMonitor: https://{{HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN}}
+    - pi:
+        icon: mdi-raspberry-pi
+        href: https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}/
+        description: MotionEye, CUPS and backup DNS
+        siteMonitor: https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}
+    - game server:
+        icon: mdi-controller
+        description: RuneScape Dragonwilds (this server)
+
+- Game server:
+    - glances:
+        icon: si-glances
+        href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/glances/
+        description: System monitor
+        server: my-docker
+        container: glances
+        widget:
+          type: glances
+          url: http://127.0.0.1:61208
+          version: 4
+          metric: cpu
+    - portainer:
+        icon: si-portainer
+        href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}:9443/
+        description: Docker manager
+        server: my-docker
+        container: portainer
+    - watchtower:
+        icon: mdi-autorenew
+        description: Automatic container updates
+        server: my-docker
+        container: watchtower
+    - cockpit:
+        icon: mdi-monitor-dashboard
+        href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/cockpit/
+        description: Server admin UI
+        ping: https://127.0.0.1:9090
+
 - Games:
     - game server:
         icon: mdi-controller
@@ -73,21 +117,6 @@
               label: Build
               format: text
 
-- Servers:
-    - main server:
-        icon: mdi-server
-        href: https://{{HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN}}/
-        description: NAS — storage, media and core services
-        siteMonitor: https://{{HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN}}
-    - pi:
-        icon: mdi-raspberry-pi
-        href: https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}/
-        description: MotionEye, CUPS and backup DNS
-        siteMonitor: https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}
-    - game server:
-        icon: mdi-controller
-        description: RuneScape Dragonwilds (this server)
-
 - Main server:
     - uptime kuma:
         icon: si-uptimekuma
@@ -119,32 +148,3 @@
         href: https://{{HOMEPAGE_VAR_SYNCTHING_DOMAIN}}/
         description: File sync
         siteMonitor: https://{{HOMEPAGE_VAR_SYNCTHING_DOMAIN}}
-
-- Game server:
-    - glances:
-        icon: si-glances
-        href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/glances/
-        description: System monitor
-        server: my-docker
-        container: glances
-        widget:
-          type: glances
-          url: http://127.0.0.1:61208
-          version: 4
-          metric: cpu
-    - portainer:
-        icon: si-portainer
-        href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}:9443/
-        description: Docker manager
-        server: my-docker
-        container: portainer
-    - watchtower:
-        icon: mdi-autorenew
-        description: Automatic container updates
-        server: my-docker
-        container: watchtower
-    - cockpit:
-        icon: mdi-monitor-dashboard
-        href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/cockpit/
-        description: Server admin UI
-        ping: https://127.0.0.1:9090
