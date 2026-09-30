@@ -157,6 +157,29 @@ starting the destination.
 
 ## Rollback and backups
 
+The helper scripts are tracked here and may be copied to an older source host
+without running this machine's bootstrap:
+
+- `dragonwilds/maintenance.sh` — block starts and quiesce game/update units;
+  check the guard, or explicitly release it without starting anything.
+- `dragonwilds/activate.sh` — validate the imported world and firewall before
+  releasing destination maintenance and starting the game.
+- `dragonwilds/backup-save.py` — copy the configured world to `~/Downloads`
+  with a timestamp, mode 600, save-header checks and a SHA-256 sidecar.
+
+```sh
+python3 linux-game-server/dragonwilds/backup-save.py
+python3 linux-game-server/dragonwilds/backup-save.py \
+  --install-dir "$HOME/games/dragonwilds" --output-dir "$HOME/Downloads"
+```
+
+The backup helper never stops or modifies the game. It retries if the source
+changes and verifies the written copy, but those checks do not prove a live
+save is application-consistent. For a migration snapshot, enter and verify
+maintenance first and preserve `Saved/Config` as well. Restore a copied save
+under its original world name, not under the timestamped backup filename;
+`DefaultWorldName`, the filename and the name inside the save must agree.
+
 Enter and check maintenance on the destination first, quiescing in-flight update
 services as well as timers and the game. Keep both hosts guarded while restoring.
 If the destination has never accepted players, retain the source's original
