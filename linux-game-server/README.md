@@ -111,11 +111,8 @@ starting the destination.
 
    Substitute your actual port, not necessarily 22. Firewall rules saved while
    UFW is inactive are not protection. Do not release either maintenance guard
-   to enable UFW. Optionally add LAN-only UDP 45453 for browser discovery:
-
-   ```sh
-   sudo ufw allow proto udp from <lan-cidr> to any port 45453 comment 'Dragonwilds LAN discovery'
-   ```
+   to enable UFW. Activation opens the game port and LAN-only UDP 45453 (browser
+   discovery); without the latter, LAN clients cannot resolve the browser entry.
 
 8. Only after the stopped-world copy, hash checks and rollback archive are ready,
    activate the destination as the login/game user:
@@ -154,6 +151,43 @@ starting the destination.
    Expect `LoadGameFromSaveGame()`, no unexpected `NewGame()`, and UDP 7777.
    Join via the LAN or Tailscale IP literal shown on Homepage. An actual player
    connection is a separate acceptance check, not proven by a socket being open.
+
+## Joining on the LAN
+
+Unlike the NAS host, this host runs ufw with default-deny incoming, so LAN
+joins depend on its rules. `activate.sh` (through the inherited installer)
+allows, from `LAN_CIDR` only, UDP `SERVER_PORT` and UDP 45453, plus
+`SERVER_PORT` on `tailscale0`.
+
+| Route | Works on LAN | Requires |
+| --- | --- | --- |
+| Direct connect `<server-lan-ip>:7777` | ✅ | server UDP 7777 rule |
+| Browser entry (Worlds → search `ServerName`) | ✅ | server UDP 45453 rule, and a client that accepts the probe reply |
+| Join code | ❌ | resolves to the WAN address; the router has no NAT loopback |
+
+- **Use an IP literal** for Direct connect: the LAN address, or the tailnet
+  `100.x` address from a Tailscale client. The Homepage card shows both. They
+  change with a migration; players must use the new host's addresses.
+- **Browser entry not resolving:** check the server rule first, since ufw drops
+  the broadcast probe without logging it:
+
+  ```sh
+  sudo ufw status verbose | grep -E '7777|45453'
+  ```
+
+  A host activated before the 45453 rule was added to the installer needs it
+  once:
+
+  ```sh
+  sudo ufw allow proto udp from <lan-cidr> to any port 45453 comment 'dragonwilds LAN discovery'
+  ```
+
+  Then check the client: a Linux desktop with ufw needs the reply rule in the
+  [shared networking notes](../linux-server/dragonwilds/README.md#the-same-browser-entry-resolves-differently-per-client).
+  A Steam Deck has no active firewall, so it needs only the server rule.
+- **Join codes** change on every restart and do not work on this LAN; see the
+  shared notes. Consoles, which cannot type an IP, therefore need the browser
+  entry.
 
 ## Rollback and backups
 
