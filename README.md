@@ -44,6 +44,9 @@ For OS-specific software and install instructions, see:
   - Homepage dashboard (Docker) — system stats, running service cards with live Docker status
   - Tailscale web UI as a persistent systemd user service
 - [windows/README.md](windows/README.md)
+- [linux-game-server/README.md](linux-game-server/README.md) — focused Ubuntu game host
+  - Separate bootstrap reusing the server base, without the NAS/DNS/UPS fleet
+  - Private Homepage over host Tailscale Serve and native Dragonwilds world migration
 
 For the standardized workstation benchmark suite (Ubuntu 24.04), see
 [benchmarking/README.md](benchmarking/README.md).

@@ -1,0 +1,150 @@
+- Servers:
+    - main server:
+        icon: mdi-server
+        href: https://{{HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN}}/
+        description: NAS — storage, media and core services
+        siteMonitor: https://{{HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN}}
+    - pi:
+        icon: mdi-raspberry-pi
+        href: https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}/
+        description: MotionEye, CUPS and backup DNS
+        siteMonitor: https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}
+    - game server:
+        icon: mdi-controller
+        description: RuneScape Dragonwilds (this server)
+
+- Game server:
+    - glances:
+        icon: si-glances
+        href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/glances/
+        description: System monitor
+        server: my-docker
+        container: glances
+        widget:
+          type: glances
+          url: http://127.0.0.1:61208
+          version: 4
+          metric: cpu
+    - portainer:
+        icon: si-portainer
+        href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}:9443/
+        description: Docker manager
+        server: my-docker
+        container: portainer
+    - watchtower:
+        icon: mdi-autorenew
+        description: Automatic container updates
+        server: my-docker
+        container: watchtower
+    - cockpit:
+        icon: mdi-monitor-dashboard
+        href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/cockpit/
+        description: Server admin UI
+        ping: https://127.0.0.1:9090
+
+- Games:
+    - game server:
+        icon: mdi-controller
+        description: Overall game server health and activity
+        server: my-docker
+        container: dragonwilds-status
+        widget:
+          type: customapi
+          url: http://127.0.0.1:8096/dragonwilds-status.json
+          refreshInterval: 60000
+          display: list
+          mappings:
+            - field: status
+              label: Server
+              format: text
+            - field: players
+              label: Players
+              format: number
+            - field: uptime_seconds
+              label: Uptime
+              format: duration
+            - field: memory_bytes
+              label: Memory
+              format: bytes
+            - field: disk_free_bytes
+              label: Disk free
+              format: bytes
+            - field: update_status
+              label: Build
+              format: text
+    - Dragonwilds:
+        icon: mdi-sword-cross
+        description: RuneScape Dragonwilds — UDP 7777 (LAN + tailnet)
+        server: my-docker
+        container: dragonwilds-status
+        widget:
+          type: customapi
+          url: http://127.0.0.1:8096/dragonwilds-status.json
+          refreshInterval: 60000
+          display: list
+          mappings:
+            - field: status
+              label: Server
+              format: text
+            - field: players
+              label: Players
+              format: number
+            - field: player_names
+              label: Online
+              format: text
+            - field: join_code
+              label: Join code
+              format: text
+            - field: connect_lan
+              label: LAN
+              format: text
+            - field: connect_tailnet
+              label: Tailnet
+              format: text
+            - field: last_save
+              label: Last save
+              format: relativeDate
+            - field: uptime_seconds
+              label: Uptime
+              format: duration
+            - field: memory_bytes
+              label: Memory
+              format: bytes
+            - field: save_bytes
+              label: World size
+              format: bytes
+            - field: update_status
+              label: Build
+              format: text
+
+- Main server:
+    - uptime kuma:
+        icon: si-uptimekuma
+        href: https://{{HOMEPAGE_VAR_UPTIMEKUMA_DOMAIN}}/
+        description: Uptime monitor (network-wide, on the NAS)
+        siteMonitor: https://{{HOMEPAGE_VAR_UPTIMEKUMA_DOMAIN}}
+    - ntfy:
+        icon: si-ntfy
+        href: https://{{HOMEPAGE_VAR_NTFY_DOMAIN}}/
+        description: Push notifications
+        siteMonitor: https://{{HOMEPAGE_VAR_NTFY_DOMAIN}}
+    - forgejo:
+        icon: si-forgejo
+        href: https://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}/
+        description: Self-hosted git
+        siteMonitor: https://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}
+    - adguard home:
+        icon: si-adguard
+        href: https://{{HOMEPAGE_VAR_ADGUARD_DOMAIN}}/
+        description: DNS ad blocker
+        siteMonitor: https://{{HOMEPAGE_VAR_ADGUARD_DOMAIN}}
+    - immich:
+        icon: si-immich
+        href: https://{{HOMEPAGE_VAR_IMMICH_DOMAIN}}/
+        description: Photo + video backup
+        siteMonitor: https://{{HOMEPAGE_VAR_IMMICH_DOMAIN}}
+    - syncthing:
+        icon: si-syncthing
+        href: https://{{HOMEPAGE_VAR_SYNCTHING_DOMAIN}}/
+        description: File sync
+        siteMonitor: https://{{HOMEPAGE_VAR_SYNCTHING_DOMAIN}}

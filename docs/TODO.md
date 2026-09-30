@@ -277,6 +277,21 @@ torrents only). Before broader use, route all torrent traffic through a VPN.
 - [ ] Pick a provider — evaluate free Cloudflare WARP vs a paid WireGuard provider
 - [ ] Add the provider creds to `.env.example` / `.env`
 
+## linux-game-server
+
+Dedicated game host (`linux-game-server/`), currently Homepage and the native
+Dragonwilds server, migrated off the NAS host.
+
+- [ ] **Backups.** Add restic to the game host, snapshotting `Saved/SaveGames`,
+      `Saved/Config` and the private `.env` files into a repository on the NAS
+      host's backup drive, and test a restore. Keep the configuration under
+      `linux-game-server/`; the NAS side should only provide the target
+- [ ] After a verified restore, set `AUTO_UPDATE_RESTART=true` and configure
+      ntfy in `linux-game-server/dragonwilds/.env`
+- [ ] Reserve the game host's LAN address in the router's DHCP table so the
+      Direct-connect address and the Homepage card stay stable
+- [ ] Independent review of `feat/linux-game-server`, then open the PR
+
 ## linux-pi — Raspberry Pi 4
 
 Docker Compose service stacks now live under `linux-pi/`; base OS provisioning is
