@@ -47,9 +47,7 @@ deploy_dotfiles
 server_preclone_antidote
 run sudo systemctl enable --now docker
 # Docker group membership is root-equivalent; this bootstrap deliberately uses sudo instead.
-CONFIG_SRC_DIR="$SETUP_ROOT/linux-server"
 server_docker_daemon_step
-CONFIG_SRC_DIR="$SCRIPT_DIR"
 TAG_FILTER_ACTIVE=false
 platform_tailscale_step
 run sudo systemctl enable --now tailscaled

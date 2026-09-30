@@ -154,7 +154,7 @@ class SafetyTests(unittest.TestCase):
         (self.game / 'setup.sh').write_text('#!/bin/bash\nset -eu\n'
             'systemctl daemon-reload\nsystemctl enable --now dragonwilds.service\n'
             'systemctl enable --now dragonwilds-update-check.timer dragonwilds-auto-update.timer\n')
-        parser = Path(os.environ.get('COMPUTER_SETUP_ROOT', ROOT.parent)) / 'linux-server/dragonwilds/read-save-info.sh'
+        parser = ROOT / 'dragonwilds/read-save-info.sh'
         if parser.exists(): shutil.copyfile(parser, self.game / 'read-save-info.sh')
         setup = ROOT.joinpath('setup.sh').read_text().replace('source /etc/os-release', 'ID=ubuntu')
         setup = setup.replace('$(uname -m)', 'x86_64')
