@@ -820,72 +820,52 @@ integration card applies it.
 
 ## 6. User-overridable defaults
 
-TODO (part 2)
+Each item is a default the design picked where another choice also works. To
+change one, edit the listed sections before the implementer cards start, or
+record the change as a deviation afterwards (5.1).
 
-## Notes for part 2
+| # | Default | Alternatives | Cost of changing | Sections |
+|---|---|---|---|---|
+| O1 | Services: `svc:forgejo`, `svc:ntfy`, `svc:immich` | forgejo at `/forgejo/` with `ROOT_URL`; ntfy or immich on a registry port | Every clone's remote, the runner URL and the phones change; the Forgejo `/v2` registry needs its own root route | D3, D4, 2.2, 4.3 |
+| O2 | Service names reuse the old node names | New names (e.g. `git`) | No outage window for the delete-then-define step, but every client changes | D3, 4.3 |
+| O3 | Homepage owns `/` on each host | Homepage on a registry port and `/` redirects to it | One more port; root-absolute escapes from other apps land on a redirect instead of a 404 | D2, 2.2, 2.3 |
+| O4 | Tailnet port registry 8443–8449 and its order | Any other free ports | Bookmarks and monitors use these numbers | 2.1 |
+| O5 | New loopback ports 2222, 3300, 8100–8105 | Any free ports | None outside the host | 2.2 |
+| O6 | Mount names equal the stack directory name; `/cockpit-ui/` for cockpit | Shorter names (`/qbt/`, `/st/`) | App base-path settings must match | 2.2, 2.3 |
+| O7 | NPM bound to `NPM_BIND_IP` (the LAN IP) | A DHCP reservation plus the same bind; an interface-name firewall rule; test the all-interfaces bind live and keep it if self-traffic reaches serve | A DHCP change breaks the bind at boot | D7, 4.3 |
+| O8 | Host tags `tag:server`, `tag:pi`; ACL tightening deferred to #49 | Tighten grants in this change | A missed port breaks a service | D8, D9, 4.1 |
+| O9 | Same-host consumers use loopback | Use the front-door URLs once self-reach is verified live | Alerts depend on tailscaled | D10 |
+| O10 | Syncthing GUI on `0.0.0.0` inside its container | `insecureSkipHostcheck` in its config with a loopback bind | The same effect, but in off-repo config | 2.2 |
+| O11 | Serve apply via `set-raw` with a whole-listener replace | Imperative `tailscale serve --bg ... --set-path` commands per handler | Harder to diff, no single template | 3.5 |
+| O12 | No `.env` for serve: values come from `tailscale status --json` | `.env` overrides only | A stale copy can misroute | 3.3 |
+| O13 | Server first, Services last, in the order ntfy, immich, forgejo | Forgejo in its own maintenance window, on another day | None | 4.3 |
+| O14 | Soak of 7 days before deleting old nodes, `ts-state/` and the Auth Keys scope | Shorter or longer | Rollback gets harder after cleanup | 4.7 |
+| O15 | Uptime Kuma monitors are edited in the UI | A SQL update on `kuma.db` once its schema is checked | A bad update corrupts the DB | 4.8 |
+| O16 | Pi host node joins with `--accept-dns=false` if it is new | `--accept-dns=true` | The Pi's resolver depends on tailscaled | 4.4 |
+| O17 | tailscale-web origin from a user env file | A hard-coded origin in the unit on the host only (today's pattern) | The unit in the repo no longer matches the host | 5.1 |
+| O18 | Path-mounted apps share one origin, `https://<server>.<tailnet>.ts.net` | Move a sensitive app to a registry port or a Service | Uses a port or 1 of the 7 Services left | D2, 2.2 |
 
-Choices the user may want to override (turn these into section 6):
-- Which apps are Services (D3): forgejo, ntfy, immich. Alternatives: forgejo
-  on `/forgejo/` with `ROOT_URL`; ntfy/immich on ports.
-- Service names reuse the old node names `forgejo`, `ntfy`, `immich`, which
-  forces "delete the old node before defining the Service" (D3).
-- The homepage owns `/` on each host (D2).
-- The tailnet port registry 8443–8449 and the order of services in it (2.1).
-- New loopback backend ports 2222, 3300, 8100–8105 (2.2).
-- Mount names: `/cockpit-ui/` (forced off `/cockpit/`), `/tailscale-web/`,
-  `/openspeedtest/`, `/qbittorrent/` and the rest match the stack directory
-  name.
-- NPM bound to a LAN IP from `.env` (`NPM_BIND_IP`) instead of all interfaces
-  (D7). A DHCP change breaks it; a DHCP reservation or an interface-name
-  firewall rule are alternatives.
-- Host tags `tag:server` and `tag:pi` (D8); ACL tightening deferred to #49.
-- Same-host consumers use loopback (D10).
-- Syncthing GUI bound to `0.0.0.0` inside its container, which disables its
-  Host check (2.2).
+Accepted cost behind O18: a `Path=/` cookie or a localStorage entry from one
+path-mounted app is visible to the others [A]. Registry-port apps are separate
+origins for localStorage, but browsers do not isolate cookies by port, so a
+`Path=/` cookie on the host name reaches them too. Only the three Services
+have their own host name.
 
-What part 2 needs to know:
-- Serve config shape per host: one `Web["${TS_CERT_DOMAIN}:443"]` with the
-  path handlers and `/`; one `Web["${TS_CERT_DOMAIN}:<port>"]` per registry
-  port; matching `TCP` entries with `HTTPS: true`. Services use
-  `set-config --service=svc:<name>` [B Q2], so node-level and Service config
-  are applied by different commands.
-- Every serve write must keep unrelated listeners (the host may have its own
-  serve entries); the apply mechanism is the part 2 decision [B Q2].
-- Order matters for the three Services: stop the sidecar, delete its node,
-  then define and approve the Service (D3). For adguard, check the admin DNS
-  page first (D5). For NPM, rebind it before the host serves `:443` (D7).
-- The Pi has no `setup.sh` profile; its host tailscaled install and
-  `tailscale up --advertise-tags=tag:pi` are manual today (`linux-pi/README.md`
-  runbook).
-- Tagging the server re-authenticates it; key expiry stops (D8).
-- `linux-pi/cups/setup.sh` pins and validates the sidecar subnet
-  (`PINNED_SIDECAR_SUBNET`); removing it is a script change, not only `.env`.
-- The glances `allowed_hosts` vs `webui_allowed_hosts` bug and the syncthing
-  Host-check comment [A Findings] are separate bugs; 2.2 routes around the
-  second one, the first needs its own card.
-- All path-mounted apps share one origin, so a `Path=/` cookie or localStorage
-  entry from one app is visible to the others [A]. Port-based apps are
-  separate origins for localStorage, but browsers do not isolate cookies by
-  port, so a `Path=/` cookie on the host name is still shared with them. Only
-  the three Services have their own host name.
-- `NPM_BIND_IP` must exist when Docker starts NPM, or the publish fails; the
-  install must check that NPM comes back after a reboot (D7).
-- With `UrlRoot=/cockpit-ui`, direct LAN access to Cockpit also needs the
-  prefix (`https://<server-ip>:9090/cockpit-ui/`), and `Origins` must list any
-  LAN origin still in use.
-- The committed `linux-server/tailscale-web.service` runs a bare
-  `tailscale web`; the flags live only on the host today
-  (`tailscale-web/docker-compose.yml` comment). 2.2 gives the full `ExecStart`.
-- CUPS on `:8449` gets `Host: <pi-hostname>.<tailnet>.ts.net:8449`. Whether
-  `ServerAlias` matching ignores the port is UNVERIFIED; a 400 on install
-  means the alias needs the port form.
-- `runner-status.sh` defaults `FORGEJO_RUNNER_API_URL` to
-  `https://${FORGEJO_DOMAIN}/api/v1/admin/actions/runners`, a same-host call
-  to `svc:forgejo`. Under D10 it becomes
-  `http://127.0.0.1:3300/api/v1/admin/actions/runners` (a default change in
-  the script, not only `.env`).
-- Unverified on install: the Immich mobile app is not affected (it keeps its
-  root URL); Uptime Kuma self-checks through the host's own node (D10); the
-  cockpit login and the `tailscale web` manage flow under a prefix; portainer
-  websocket exec; watchtower callers with a path URL; the openspeedtest body
-  limit under serve [A unverified list].
+UNVERIFIED items and their fallbacks, in one place:
+- A Service claiming a live node's name (fallback: delete the node first; D3).
+- A tailnet nameserver pointing at a sidecar IP (fallback: check and repoint;
+  D5, 4.1).
+- NPM `0.0.0.0:443` vs serve for same-host traffic (fallback: `NPM_BIND_IP`;
+  D7).
+- A host reaching its own serve listener or Service VIP (fallback: loopback;
+  D10).
+- `Services` applied through `set-raw` (fallback: `tailscale serve
+  --service=...`; 3.5).
+- CUPS `ServerAlias` with a port-bearing `Host` (fallback: add the port form
+  if it returns 400; 4.5).
+- The Pi resolving the server's MagicDNS name (fallback: fix before the
+  neighbour step; 4.4).
+- From research [A]: cockpit login and the `tailscale web` manage flow under
+  a prefix, portainer websocket exec, watchtower callers with a path URL, the
+  openspeedtest body limit, the Uptime Kuma schema, Syncthing peers dialing a
+  sidecar name. Each has a check in 4.5 or 4.8.
