@@ -190,9 +190,11 @@ Rejected:
 - Keeping `tag:container` for host nodes: the name no longer means anything.
 
 Tagging costs [B Q6] ([KB 1068](https://tailscale.com/kb/1068/tags)): the host
-loses its user identity, key expiry is disabled, and a tagged device can SSH
-only to tagged devices (users can still SSH in). For always-on servers these
-are acceptable, and no expiry is an improvement.
+loses its user identity, and a tagged device can SSH only to tagged devices
+(users can still SSH in). Key expiry is disabled when the device
+re-authenticates with the tag; a tag applied from the admin console keeps the
+current expiry until it is disabled on the Machines page. For always-on
+servers these are acceptable, and no expiry is an improvement.
 
 ### D9. What happens to #49
 
