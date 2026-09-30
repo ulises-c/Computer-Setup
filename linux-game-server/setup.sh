@@ -29,7 +29,9 @@ fi
 
 run bash "$SCRIPT_DIR/dragonwilds/maintenance.sh" prepare
 
+# shellcheck disable=SC2034  # consumed by the sourced lib/core.sh and platforms/server.sh
 PLATFORM=server
+# shellcheck disable=SC2034  # consumed by the sourced lib/core.sh and platforms/server.sh
 CONFIG_SRC_DIR="$SCRIPT_DIR"
 TAG_FILTER_ACTIVE=true
 SELECTED_TAGS="$(core_csv_to_json terminal)"
