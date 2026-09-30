@@ -338,7 +338,182 @@ publishes.
 
 ## 3. Serve-config mechanism
 
-TODO (part 2, in progress)
+This section is the contract for the implementers. It was checked against the
+Tailscale v1.102.3 CLI source
+([serve_v2.go](https://github.com/tailscale/tailscale/blob/v1.102.3/cmd/tailscale/cli/serve_v2.go),
+[ipn/serve.go](https://github.com/tailscale/tailscale/blob/v1.102.3/ipn/serve.go))
+and [KB 1589](https://tailscale.com/kb/1589/tailscale-services-configuration-file).
+
+### 3.1 Files
+
+| Path | Owner | What |
+|---|---|---|
+| `scripts/ts-serve-apply.sh` | server card | The one apply script. Host-agnostic: it takes the template path as an argument. The Pi runs this same file from its checkout; there is no copy |
+| `scripts/test-ts-serve-apply.sh` | server card | Regression test with a stubbed `tailscale` on `PATH` (the `test-docker-address-pools.sh` pattern); a step in `.github/workflows/lint.yml` runs it. It covers render, each validation error, merge-preserves-unrelated-keys, the no-op re-apply, the conflict stop, `--services` selection, and that `--dry-run` calls no write command |
+| `linux-server/tailscale-serve/serve.json` | server card | Server template: every row of 2.2 |
+| `linux-pi/tailscale-serve/serve.json` | Pi card | Pi template: every row of 2.3 |
+
+The template has the `.json` extension, so pre-commit `check-json` validates
+it. Placeholders sit inside JSON strings, so the unrendered file is valid JSON.
+
+### 3.2 Template format
+
+The template is a raw `ipn.ServeConfig`: the JSON that
+`tailscale serve status --json` prints and today's `ts-serve.json` files use.
+Allowed top-level keys: `TCP`, `Web`, `Services`. Anything else
+(`AllowFunnel`, `Foreground`) is a validation error.
+
+Two placeholders, and no others:
+- `${TS_CERT_DOMAIN}`: the host node's MagicDNS name,
+  `<server>.<tailnet>.ts.net` (the same token containerboot fills today).
+- `${TS_MAGICDNS_SUFFIX}`: `<tailnet>.ts.net`. It is needed only for the
+  `Web` keys of Services, which the CLI builds as `<name>.<suffix>:<port>`
+  ([ipn/serve.go `SetWebHandler`](https://github.com/tailscale/tailscale/blob/v1.102.3/ipn/serve.go)).
+
+Excerpt of the server template (one path mount, one KEEP mount, one registry
+port, one Service; the implementer writes the full file from 2.2):
+
+```json
+{
+  "TCP": { "443": { "HTTPS": true }, "8443": { "HTTPS": true } },
+  "Web": {
+    "${TS_CERT_DOMAIN}:443": {
+      "Handlers": {
+        "/": { "Proxy": "http://127.0.0.1:3000" },
+        "/glances/": { "Proxy": "http://127.0.0.1:61208" },
+        "/cockpit-ui/": { "Proxy": "https+insecure://127.0.0.1:9090/cockpit-ui/" }
+      }
+    },
+    "${TS_CERT_DOMAIN}:8443": {
+      "Handlers": { "/": { "Proxy": "http://127.0.0.1:8100" } }
+    }
+  },
+  "Services": {
+    "svc:forgejo": {
+      "TCP": { "443": { "HTTPS": true }, "22": { "TCPForward": "127.0.0.1:2222" } },
+      "Web": {
+        "forgejo.${TS_MAGICDNS_SUFFIX}:443": {
+          "Handlers": { "/": { "Proxy": "http://127.0.0.1:3300" } }
+        }
+      }
+    }
+  }
+}
+```
+
+Why Services are in the raw config and not in a KB 1589 `set-config` file:
+in the file format the inbound listener type comes from the target's scheme,
+so `"tcp:443": "http://127.0.0.1:3300"` becomes a plain-HTTP listener on
+`:443`; only an `https://` target gets TLS
+(`serveTypeFromConfString`, serve_v2.go v1.102.3). Every backend here is plain
+HTTP on loopback, so `set-config` cannot express "HTTPS in, HTTP to the
+backend". The raw config can (`TCP[443].HTTPS=true` plus a `Proxy` handler),
+and it is also what the CLI writes for `tailscale serve --service=svc:X
+--https=443 http://127.0.0.1:P`.
+
+Adding a service later means adding one handler (or one registry port, or one
+Service) to the host's template and re-running the script. It adds no node.
+
+### 3.3 Rendering
+
+The values come from the live node, not from a `.env` file:
+`TS_CERT_DOMAIN` is `.Self.DNSName` without the trailing dot, and
+`TS_MAGICDNS_SUFFIX` is `.CurrentTailnet.MagicDNSSuffix`, both from
+`tailscale status --json`. If either variable is already set in the
+environment, the script uses that value instead (tests and dry-runs with
+placeholders). There is no `.env` for serve: both values are facts about the
+node, so a copy in a file can only go stale, and it would put the tailnet name
+on disk for no reason.
+
+Rendering is a literal string replacement of exactly those two tokens,
+followed by `jq -e .`. A `${` that is still present after rendering is an
+error.
+
+### 3.4 Validation (always, including `--dry-run`)
+
+The script refuses to apply, and exits non-zero, when:
+- the rendered file is not valid JSON, or it has a top-level key other than
+  `TCP`, `Web`, `Services`;
+- a `Web` key `<host>:<port>` (node level or inside a Service) has no matching
+  `TCP[<port>]` with `HTTPS: true`;
+- a `Proxy` target is not `http://127.0.0.1:<port>[/path]` or
+  `https+insecure://127.0.0.1:<port>[/path]`, or a `TCPForward` is not
+  `127.0.0.1:<port>` (loopback backends only, per D1);
+- a listener uses port 5252 (reserved for the web client [B Q4]).
+
+### 3.5 Apply algorithm
+
+```text
+scripts/ts-serve-apply.sh <template> [--services all|none|svc:a[,svc:b]] [--dry-run]
+```
+
+`--services` picks which Services from the template this run owns
+(default `all`). The migration uses `none` first and then adds one Service at
+a time (section 4), because a Service's name must be free before it is
+defined (D3). Services not picked are left exactly as they are.
+
+1. Preconditions: `jq` present; `tailscale version` is at or above the floor
+   (1.102.3, the verified version); `BackendState` is `Running`. If the picked
+   set has a Service, `.Self.Tags` must be non-empty (Services need a tagged
+   host, D8).
+2. Read the current config: `tailscale serve status --json` (treat empty
+   output or `null` as `{}`).
+3. Owned keys: every key of the rendered `TCP` and `Web`, plus `Services[X]`
+   for each picked `X`. Build the merged config: the current config with each
+   owned key replaced by the template's value as a whole (not a deep merge,
+   so a mount removed from the template disappears from that listener). The
+   template owns the whole `<host>:443` listener, so a mount someone added by
+   hand on it is removed; the dry-run diff shows that before any write. Every
+   other key is kept as it is: unrelated ports, other `Web` hosts, other
+   Services, `Foreground`, `AllowFunnel`.
+4. Conflict check: if an owned `TCP` port already exists with a different
+   type (HTTPS vs HTTP vs `TCPForward`), stop and name the port. tailscaled
+   would reject the change anyway ("cannot change the serve type in use by a
+   port", `validateServeConfigUpdate`), and the script must never silently
+   replace an unrelated listener. The user removes that listener by hand.
+5. If the merged config equals the current config (`jq -S` compare), print
+   `up to date` and exit 0 without writing.
+6. Otherwise write it: `tailscale serve set-raw < merged.json`. Then run
+   `tailscale serve advertise svc:X` for each picked Service (it is a no-op if
+   the Service is already advertised).
+7. Read back: `tailscale serve status --json` must contain the owned keys
+   exactly as rendered. If not, exit non-zero.
+
+`--dry-run` runs only the read-only commands (`tailscale version`,
+`tailscale status --json`, `tailscale serve status --json`). It prints the
+rendered template, the owned keys, a `diff` of current vs merged, the
+preserved keys, and the write commands it would run. It writes nothing. On a
+workstation, run it only with a stub `tailscale` on `PATH` and placeholder
+values in the environment, never against the workstation's own tailscaled.
+
+Run it as the tailscaled operator (`sudo tailscale set --operator=$USER`,
+which the server footer already prints) or with `sudo`.
+
+What the script does not do:
+- Remove a listener that was dropped from the template: that is a one-off
+  `tailscale serve --https=<port> off`, or `tailscale serve drain svc:X` and
+  then `tailscale serve clear svc:X`. There is no prune mode.
+- Run from `setup.sh`. The apply is an install step (section 4) and needs a
+  logged-in, tagged node. `setup.sh`, `lib/` and `platforms/` do not change
+  in this migration.
+
+Write path: `set-raw` is an undocumented debug command that is still present
+in v1.102.3 [B Q2]. It has no ETag, so a write made by another admin between
+steps 2 and 6 would be lost. On a single-admin host that is acceptable. The
+test in 3.1 pins its behaviour through the stub; if a future release removes
+it, the fallback is the imperative CLI (`tailscale serve --bg --https=443
+--set-path /glances/ http://127.0.0.1:61208`, one command per handler).
+Applying a `Services` map through `set-raw` goes through the same
+`SetServeConfig` call as the CLI, but it has not been run live.
+UNVERIFIED — fallback chosen: if the step 7 read-back or the Services page
+shows the Service as misconfigured, configure it with
+`tailscale serve --service=svc:X --https=443 http://127.0.0.1:P` (plus
+`--tcp=22 tcp://127.0.0.1:2222` for forgejo) and record the deviation.
+
+Backup and restore use the same format: `tailscale serve status --json` is a
+complete `ServeConfig`, and `tailscale serve set-raw < <backup>` restores it
+exactly. `tailscale serve get-config --all` covers only Services, so it is a
+secondary backup.
 
 ## 4. Migration runbook
 
