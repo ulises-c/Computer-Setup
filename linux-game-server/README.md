@@ -50,8 +50,10 @@ admin console. Homepage listens on `127.0.0.1:3000` only and is published at thi
 host's tailnet HTTPS name by `tailscale serve --bg`; it is not a public Funnel
 and has no extra `homepage` sidecar identity to conflict with another server.
 For a local fallback, use `ssh -L 3000:127.0.0.1:3000 <game-server>` and visit
-`http://localhost:3000`. Host checks remain enabled. Homepage has no Docker
-socket mount. The native game's real state comes from the status JSON, not from
+`http://localhost:3000`. Host checks remain enabled. Like `linux-server`,
+Homepage mounts the Docker socket read-only for container status badges; a
+read-only mount still grants full Docker API access, so keep Homepage
+tailnet-only. The native game's real state comes from the status JSON, not from
 whether the small nginx status container is running.
 
 ## Migrate a running Dragonwilds world

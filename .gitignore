@@ -83,6 +83,5 @@ linux-game-server/dragonwilds/status/
 linux-game-server/homepage/config/logs/
 linux-game-server/homepage/config/custom.css
 linux-game-server/homepage/config/custom.js
-linux-game-server/homepage/config/docker.yaml
 linux-game-server/homepage/config/kubernetes.yaml
 linux-game-server/homepage/config/proxmox.yaml

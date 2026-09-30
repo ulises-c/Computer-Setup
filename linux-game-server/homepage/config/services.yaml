@@ -1,7 +1,9 @@
 - Games:
     - Dragonwilds:
         icon: mdi-sword-cross
-        description: RuneScape Dragonwilds — native server, LAN + tailnet
+        description: RuneScape Dragonwilds — UDP 7777 (LAN + tailnet)
+        server: my-docker
+        container: dragonwilds-status
         widget:
           type: customapi
           url: http://127.0.0.1:8096/dragonwilds-status.json
