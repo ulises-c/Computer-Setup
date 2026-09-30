@@ -56,8 +56,6 @@ def unavailable_reason(seat, today):
         return f"hermes profile '{seat['profile']}' missing"
     if seat.get("billing") == "bedrock" and not aws_session_ok():
         return "AWS session invalid (run aws sso login)"
-    if launcher == "codex" and seat.get("bedrock") and shutil.which("uv") is None:
-        return "uv not on PATH (needed to mint the Bedrock token)"
     return None
 
 

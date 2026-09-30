@@ -6,6 +6,26 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com). Remaining
 work lives in [TODO.md](TODO.md); the design rationale for the unified layout is
 in [UNIFICATION.md](UNIFICATION.md).
 
+## Unreleased — Codex on Bedrock via the SDK chain, review-seat preflight
+
+### Changed
+- double-blind-review `codex-run.sh --bedrock` uses Codex's built-in
+  `amazon-bedrock` (Mantle) provider on the AWS SDK credential chain, which
+  refreshes itself, instead of a custom provider fed one bearer token minted
+  at launch (it lives an hour at most, so long reviews died mid-run). The
+  adapter drops `AWS_BEARER_TOKEN_BEDROCK`, which Codex prefers over the
+  chain, and refuses when `$CODEX_HOME/.env` or `auth.json` would supply a
+  Bedrock credential it cannot drop. `uv` is no longer needed.
+
+### Added
+- `--budget <duration>` (default 2h) on the Bedrock paths of `codex-run.sh`,
+  `claude-run.sh` and `hermes-run.sh` (bedrock-provider profiles, checked
+  against the profile's own `AWS_PROFILE`): the seat is refused with exit 5
+  and the `aws-sso-ttl` message when the AWS SSO session ends before the
+  budget, or when `aws-sso-ttl` is missing. `aws-sso-ttl` is not part of
+  this repo; install it separately and put it on `PATH`. The bats suite with
+  fake CLIs runs against it when found and skips otherwise.
+
 ## Unreleased — AdGuard DNS watchdog
 
 ### Added
