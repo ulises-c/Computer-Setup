@@ -1,7 +1,9 @@
 # Ubuntu game server
 
-A focused Ubuntu Server x86_64 deployment: the shared shell/dotfiles base,
-Docker, host Tailscale, Homepage, and the native RuneScape: Dragonwilds server.
+A focused Ubuntu Server x86_64 deployment: the shared shell/dotfiles base
+(zsh, tmux, fastfetch on SSH login), Docker, host Tailscale, Homepage, Glances,
+Portainer, Watchtower, Cockpit, Uptime Kuma, and the native RuneScape:
+Dragonwilds server.
 The initial target is Ubuntu Server 26.04 LTS.
 
 This is a separate service deployment entrypoint, not a fifth packages.json
@@ -50,13 +52,35 @@ Authenticate the host's own Tailscale node:
 
 ```sh
 sudo tailscale up --operator="$USER"
-bash linux-game-server/homepage/serve.sh
+bash linux-game-server/serve.sh
 ```
 
 Complete the login URL Tailscale prints. Serve may ask to enable HTTPS in the
-admin console. Homepage listens on `127.0.0.1:3000` only and is published at this
-host's tailnet HTTPS name by `tailscale serve --bg`; it is not a public Funnel
-and has no extra `homepage` sidecar identity to conflict with another server.
+admin console. `serve.sh` starts every container and publishes each web UI on
+this host's own tailnet name with `tailscale serve --bg` (tailnet only, never
+Funnel). Unlike the NAS host there are no per-service sidecars, so nothing here
+claims a `homepage`, `glances` or similar tailnet name that the NAS already owns.
+
+| Service | Listens on | Tailnet URL |
+| --- | --- | --- |
+| Homepage | `127.0.0.1:3000` | `https://<game-host>.<tailnet>.ts.net/` |
+| Glances | `127.0.0.1:61208` | `…:8443` |
+| Portainer | `127.0.0.1:9000` | `…:9443` |
+| Uptime Kuma (this host) | `127.0.0.1:3001` | `…:3443` |
+| Cockpit (host service) | `127.0.0.1:9090` | `…:10000` |
+| Watchtower | no listener | updates images daily at 03:00 |
+
+Everything binds loopback because Docker-published ports bypass ufw. Cockpit is
+installed without recommends (its recommends pull NetworkManager onto a
+networkd host); `serve.sh` moves its socket to loopback with a drop-in and
+allow-lists the tailnet origin in `/etc/cockpit/cockpit.conf`. `scaffold.py`
+writes this host's tailnet name to `homepage/.env` and `glances/.env`; the
+Servers and Shared services cards need the other hosts' domains added to
+`homepage/.env` by hand (see `homepage/.env.example`).
+
+The Homepage **Shared services** group links to single-instance services on the
+NAS host (its Uptime Kuma, ntfy, Forgejo, AdGuard, Immich, Syncthing); this
+host's own Uptime Kuma monitors local services only.
 For a local fallback, use `ssh -L 3000:127.0.0.1:3000 <game-server>` and visit
 `http://localhost:3000`. Host checks remain enabled.
 Homepage mounts the Docker socket read-only for container status badges; a
@@ -263,7 +287,6 @@ a rollback point, not recurring backup coverage.
 - Scheduled off-host backups and a restore test.
 - A dedicated game-only Unix account (the game runs as the login user; a
   compromised game can access that user's files).
-- Optional Cockpit/Glances/uptime monitoring, independent from the game.
 - Full integration with root setup/verify profiles if another game platform
   justifies changing the shared platform schema.
 

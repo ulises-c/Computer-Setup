@@ -10,3 +10,9 @@ layout:
   Games:
     style: row
     columns: 1
+  Management:
+    style: row
+    columns: 5
+  Shared services:
+    style: row
+    columns: 3

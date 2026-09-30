@@ -58,3 +58,74 @@
             - field: update_status
               label: Build
               format: text
+
+- Management:
+    - glances:
+        icon: si-glances
+        href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}:8443/
+        description: System monitor
+        server: my-docker
+        container: glances
+        widget:
+          type: glances
+          url: http://127.0.0.1:61208
+          version: 4
+          metric: cpu
+    - portainer:
+        icon: si-portainer
+        href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}:9443/
+        description: Docker manager
+        server: my-docker
+        container: portainer
+    - watchtower:
+        icon: mdi-autorenew
+        description: Automatic container updates
+        server: my-docker
+        container: watchtower
+    - cockpit:
+        icon: mdi-monitor-dashboard
+        href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}:10000/
+        description: Server admin UI
+        ping: https://127.0.0.1:9090
+    - uptime kuma:
+        icon: si-uptimekuma
+        href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}:3443/
+        description: Uptime monitor (this server)
+        server: my-docker
+        container: uptime-kuma
+        widget:
+          type: uptimekuma
+          url: http://127.0.0.1:3001
+          slug: default
+
+- Shared services:
+    - uptime kuma (nas):
+        icon: si-uptimekuma
+        href: https://{{HOMEPAGE_VAR_UPTIMEKUMA_DOMAIN}}/
+        description: Network-wide uptime monitor
+        siteMonitor: https://{{HOMEPAGE_VAR_UPTIMEKUMA_DOMAIN}}
+    - ntfy:
+        icon: si-ntfy
+        href: https://{{HOMEPAGE_VAR_NTFY_DOMAIN}}/
+        description: Push notifications
+        siteMonitor: https://{{HOMEPAGE_VAR_NTFY_DOMAIN}}
+    - forgejo:
+        icon: si-forgejo
+        href: https://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}/
+        description: Self-hosted git
+        siteMonitor: https://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}
+    - adguard home:
+        icon: si-adguard
+        href: https://{{HOMEPAGE_VAR_ADGUARD_DOMAIN}}/
+        description: DNS ad blocker
+        siteMonitor: https://{{HOMEPAGE_VAR_ADGUARD_DOMAIN}}
+    - immich:
+        icon: si-immich
+        href: https://{{HOMEPAGE_VAR_IMMICH_DOMAIN}}/
+        description: Photo + video backup
+        siteMonitor: https://{{HOMEPAGE_VAR_IMMICH_DOMAIN}}
+    - syncthing:
+        icon: si-syncthing
+        href: https://{{HOMEPAGE_VAR_SYNCTHING_DOMAIN}}/
+        description: File sync
+        siteMonitor: https://{{HOMEPAGE_VAR_SYNCTHING_DOMAIN}}
