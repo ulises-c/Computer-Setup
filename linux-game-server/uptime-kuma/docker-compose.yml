@@ -1,0 +1,12 @@
+services:
+  # This host's own uptime monitor, reached through `tailscale serve` (HTTPS :3443).
+  uptime-kuma:
+    image: louislam/uptime-kuma:latest
+    container_name: uptime-kuma
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3001"
+    environment:
+      - TZ=America/Los_Angeles
+    volumes:
+      - ./data:/app/data

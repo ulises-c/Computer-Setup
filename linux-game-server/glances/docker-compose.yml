@@ -1,0 +1,22 @@
+services:
+  # System monitor. Host networking so it sees the host's interfaces, bound to
+  # loopback so only Homepage and `tailscale serve` (HTTPS :8443) reach it.
+  # Docker-published ports bypass ufw, so every service here binds 127.0.0.1.
+  glances:
+    image: nicolargo/glances:4.5.4-full
+    container_name: glances
+    restart: unless-stopped
+    pid: host
+    privileged: true
+    network_mode: host
+    environment:
+      - GLANCES_OPT=-w -B 127.0.0.1
+      - GLANCES_ALLOWED_HOSTS=${GLANCES_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      - TZ=America/Los_Angeles
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /etc/os-release:/etc/os-release:ro
+      - ./entrypoint.sh:/entrypoint.sh:ro
+      - ./rename_disks.py:/rename_disks.py:ro
+      - /sys/class/block:/sys/class/block:ro
+    command: /bin/sh /entrypoint.sh

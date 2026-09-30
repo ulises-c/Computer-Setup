@@ -26,6 +26,9 @@ class ScaffoldTests(unittest.TestCase):
         self.host_patch = patch.object(scaffold, "allowed_hosts", return_value=["localhost", "game.example.test"])
         self.host_patch.start()
         self.addCleanup(self.host_patch.stop)
+        self.domain_patch = patch.object(scaffold, "tailnet_domain", return_value="game.example.test")
+        self.domain_patch.start()
+        self.addCleanup(self.domain_patch.stop)
 
     def test_private_files_and_shell_quoting(self):
         with patch.dict(os.environ, USER="game-user"):
@@ -59,8 +62,21 @@ class ScaffoldTests(unittest.TestCase):
         scaffold.main()
         self.assertIn("HOMEPAGE_ALLOWED_HOSTS=localhost,game.example.test\n", env.read_text())
 
+    def test_service_envs_are_private_and_not_overwritten(self):
+        scaffold.main()
+        homepage = (self.root / "homepage/.env").read_text()
+        glances = self.root / "glances/.env"
+        self.assertIn("HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN=game.example.test\n", homepage)
+        self.assertEqual(glances.read_text(), "GLANCES_ALLOWED_HOSTS=localhost,127.0.0.1,game.example.test\n")
+        self.assertEqual(glances.stat().st_mode & 0o777, 0o600)
+        glances.write_text("GLANCES_ALLOWED_HOSTS=custom\n")
+        scaffold.main()
+        self.assertEqual(glances.read_text(), "GLANCES_ALLOWED_HOSTS=custom\n")
+        self.assertEqual((self.root / "homepage/.env").read_text().count("HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN="), 1)
+
     def test_tailscale_self_null_keeps_local_hosts(self):
         self.host_patch.stop()
+        self.domain_patch.stop()
         with patch.object(scaffold.subprocess, 'run', side_effect=[
             subprocess.CompletedProcess([], 0),
             subprocess.CompletedProcess([], 0, stdout='{"Self": null}'),

@@ -39,6 +39,8 @@ core_prime_sudo
 run sudo apt-get update
 run sudo apt-get install -y ca-certificates curl jq git rsync python3 ufw polkitd \
   docker.io docker-compose-v2 lib32gcc-s1 lib32stdc++6
+# Without recommends: cockpit would otherwise pull NetworkManager onto a networkd host.
+run sudo apt-get install -y --no-install-recommends cockpit ncdu smartmontools lm-sensors
 apt_install_tier high
 apt_install_tier medium
 setup_bat_fd_symlinks
@@ -57,23 +59,25 @@ if [[ "$DRY_RUN" == true ]]; then
 else
   python3 "$SCRIPT_DIR/scaffold.py"
 fi
-run sudo docker compose -f "$SCRIPT_DIR/homepage/docker-compose.yml" config --quiet
-run sudo docker compose -f "$SCRIPT_DIR/homepage/docker-compose.yml" up -d
+for dir in homepage glances portainer watchtower uptime-kuma; do
+  run sudo docker compose -f "$SCRIPT_DIR/$dir/docker-compose.yml" config --quiet
+  run sudo docker compose -f "$SCRIPT_DIR/$dir/docker-compose.yml" up -d
+done
 run bash "$SCRIPT_DIR/dragonwilds/install.sh"
 
 if [[ "$DRY_RUN" == true ]]; then
   printf '[dry-run] once a migrated world is verified, install Dragonwilds units and LAN/tailnet firewall rules\n'
-  printf '[dry-run] publish homepage with tailscale serve after authentication\n'
+  printf '[dry-run] publish Homepage and the service UIs with tailscale serve after authentication\n'
   exit 0
 fi
 
 if [[ "$(tailscale status --json | jq -r .BackendState)" == Running ]]; then
   sudo tailscale set --operator="$(id -un)"
-  bash "$SCRIPT_DIR/homepage/serve.sh"
+  bash "$SCRIPT_DIR/serve.sh"
 else
   printf '\nAuthenticate Tailscale, then publish Homepage:\n'
   printf '  sudo tailscale up --operator=%s\n' "$(id -un)"
-  printf '  bash %s/homepage/serve.sh\n' "$SCRIPT_DIR"
+  printf '  bash %s/serve.sh\n' "$SCRIPT_DIR"
 fi
 printf '\nBase installed. Dragonwilds has NOT been started.\n'
 printf 'Complete the stopped-server migration in linux-game-server/README.md first.\n'

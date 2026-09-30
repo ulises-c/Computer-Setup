@@ -81,6 +81,7 @@ linux-server/immich/library/
 # Game-server runtime status and Homepage-generated files
 linux-game-server/dragonwilds/status/
 linux-game-server/homepage/config/logs/
+linux-game-server/uptime-kuma/data/
 linux-game-server/homepage/config/custom.css
 linux-game-server/homepage/config/custom.js
 linux-game-server/homepage/config/kubernetes.yaml

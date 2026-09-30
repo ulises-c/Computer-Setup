@@ -9,14 +9,20 @@ import subprocess
 ROOT = Path(__file__).resolve().parent
 
 
+def tailnet_domain():
+    if subprocess.run(["sh", "-c", "command -v tailscale"], capture_output=True).returncode != 0:
+        return ""
+    status = subprocess.run(["tailscale", "status", "--json"], capture_output=True, text=True)
+    if status.returncode != 0:
+        return ""
+    return (json.loads(status.stdout).get("Self") or {}).get("DNSName", "").rstrip(".")
+
+
 def allowed_hosts():
     hosts = ["localhost", "localhost:3000", "127.0.0.1", "127.0.0.1:3000", socket.gethostname()]
-    if subprocess.run(["sh", "-c", "command -v tailscale"], capture_output=True).returncode == 0:
-        status = subprocess.run(["tailscale", "status", "--json"], capture_output=True, text=True)
-        if status.returncode == 0:
-            domain = (json.loads(status.stdout).get("Self") or {}).get("DNSName", "").rstrip(".")
-            if domain:
-                hosts.append(domain)
+    domain = tailnet_domain()
+    if domain:
+        hosts.append(domain)
     return hosts
 
 
@@ -26,9 +32,21 @@ def write_private(path, content):
         file.write(content)
 
 
+def add_missing(path, values):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        write_private(path, "")
+    lines = path.read_text().splitlines()
+    keys = {line.partition("=")[0] for line in lines}
+    lines += [f"{key}={value}" for key, value in values.items() if value and key not in keys]
+    path.write_text("".join(f"{line}\n" for line in lines))
+    path.chmod(0o600)
+
+
 def main():
     homepage_env = ROOT / "homepage/.env"
     hosts = allowed_hosts()
+    domain = tailnet_domain()
     if not homepage_env.exists():
         write_private(homepage_env, f"HOMEPAGE_ALLOWED_HOSTS={','.join(hosts)}\n")
     else:
@@ -42,6 +60,10 @@ def main():
             lines.append("HOMEPAGE_ALLOWED_HOSTS=" + ",".join(hosts))
         homepage_env.write_text("\n".join(lines) + "\n")
         homepage_env.chmod(0o600)
+
+    add_missing(homepage_env, {"HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN": domain})
+    add_missing(ROOT / "glances/.env",
+                {"GLANCES_ALLOWED_HOSTS": ",".join(["localhost", "127.0.0.1"] + ([domain] if domain else []))})
 
     dragonwilds_env = ROOT / "dragonwilds/.env"
     if not dragonwilds_env.exists():
