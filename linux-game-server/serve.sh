@@ -7,7 +7,7 @@ set -euo pipefail
 # support get a dedicated HTTPS port on the same name instead.
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-readonly COMPOSE_DIRS=(homepage glances portainer watchtower uptime-kuma)
+readonly COMPOSE_DIRS=(homepage glances portainer watchtower)
 
 [[ "$(tailscale status --json | jq -r .BackendState)" == Running ]] || {
   printf 'error: authenticate this host with sudo tailscale up first\n' >&2
@@ -44,8 +44,8 @@ if [[ -d /etc/cockpit ]]; then
   # Cockpit needs the prefix kept (UrlRoot); a target path re-adds what serve strips.
   tailscale serve --bg --https=443 --set-path /cockpit https+insecure://127.0.0.1:9090/cockpit
 fi
-# No reliable base path: Portainer ignores --base-url for some assets
-# (portainer#12615), and Uptime Kuma has none (uptime-kuma#147).
+# Portainer ignores --base-url for some assets (portainer#12615), so it keeps a port.
 tailscale serve --bg --https=9443 http://127.0.0.1:9000
-tailscale serve --bg --https=3443 http://127.0.0.1:3001
+# Retired: this host no longer runs its own Uptime Kuma.
+tailscale serve --https=3443 off >/dev/null 2>&1 || true
 tailscale serve status

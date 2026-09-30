@@ -61,7 +61,7 @@ if [[ "$DRY_RUN" == true ]]; then
 else
   python3 "$SCRIPT_DIR/scaffold.py"
 fi
-for dir in homepage glances portainer watchtower uptime-kuma; do
+for dir in homepage glances portainer watchtower; do
   run sudo docker compose -f "$SCRIPT_DIR/$dir/docker-compose.yml" config --quiet
   run sudo docker compose -f "$SCRIPT_DIR/$dir/docker-compose.yml" up -d
 done

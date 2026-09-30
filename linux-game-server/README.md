@@ -2,7 +2,7 @@
 
 A focused Ubuntu Server x86_64 deployment: the shared shell/dotfiles base
 (zsh, tmux, fastfetch on SSH login), Docker, host Tailscale, Homepage, Glances,
-Portainer, Watchtower, Cockpit, Uptime Kuma, and the native RuneScape:
+Portainer, Watchtower, Cockpit, and the native RuneScape:
 Dragonwilds server.
 The initial target is Ubuntu Server 26.04 LTS.
 
@@ -68,18 +68,20 @@ no `homepage`, `glances` or similar name that the NAS host already owns.
 | Glances | `127.0.0.1:61208` | `/glances/` |
 | Cockpit (host service) | `127.0.0.1:9090` | `/cockpit/` |
 | Portainer | `127.0.0.1:9000` | `:9443` (fallback) |
-| Uptime Kuma (this host) | `127.0.0.1:3001` | `:3443` (fallback) |
 | Watchtower | no listener | updates images daily at 03:00 |
 
 `serve --set-path` strips the mount path before proxying. Glances' web UI uses
 relative URLs, so it works stripped (keep the trailing `/` in links). Cockpit
 needs its prefix, so `serve.sh` sets `UrlRoot = /cockpit` and proxies to a target
-ending in `/cockpit`, which re-adds it. Portainer and Uptime Kuma use #86's
-documented fallback, a dedicated HTTPS port on the same name: Portainer's
-`--base-url` misses some assets
-([portainer#12615](https://github.com/portainer/portainer/issues/12615)) and
-Uptime Kuma has no base path
-([uptime-kuma#147](https://github.com/louislam/uptime-kuma/issues/147)).
+ending in `/cockpit`, which re-adds it. Portainer uses #86's documented
+fallback, a dedicated HTTPS port on the same name, because its `--base-url`
+misses some assets
+([portainer#12615](https://github.com/portainer/portainer/issues/12615)).
+
+There is no Uptime Kuma here. It has no base-path support
+([uptime-kuma#147](https://github.com/louislam/uptime-kuma/issues/147)), and a
+monitor on the host it watches cannot report that host down, so the NAS host's
+instance monitors this server.
 
 Everything binds loopback because Docker-published ports bypass ufw. Cockpit is
 installed without recommends (its recommends pull NetworkManager onto a
@@ -90,8 +92,7 @@ Servers and Shared services cards need the other hosts' domains added to
 `homepage/.env` by hand (see `homepage/.env.example`).
 
 The Homepage **Shared services** group links to single-instance services on the
-NAS host (its Uptime Kuma, ntfy, Forgejo, AdGuard, Immich, Syncthing); this
-host's own Uptime Kuma monitors local services only.
+NAS host (its Uptime Kuma, ntfy, Forgejo, AdGuard, Immich, Syncthing).
 For a local fallback, use `ssh -L 3000:127.0.0.1:3000 <game-server>` and visit
 `http://localhost:3000`. Host checks remain enabled.
 Homepage mounts the Docker socket read-only for container status badges; a

@@ -12,7 +12,7 @@ layout:
     columns: 1
   Management:
     style: row
-    columns: 5
+    columns: 4
   Shared services:
     style: row
     columns: 3

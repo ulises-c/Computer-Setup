@@ -87,22 +87,12 @@
         href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/cockpit/
         description: Server admin UI
         ping: https://127.0.0.1:9090
-    - uptime kuma:
-        icon: si-uptimekuma
-        href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}:3443/
-        description: Uptime monitor (this server)
-        server: my-docker
-        container: uptime-kuma
-        widget:
-          type: uptimekuma
-          url: http://127.0.0.1:3001
-          slug: default
 
 - Shared services:
-    - uptime kuma (nas):
+    - uptime kuma:
         icon: si-uptimekuma
         href: https://{{HOMEPAGE_VAR_UPTIMEKUMA_DOMAIN}}/
-        description: Network-wide uptime monitor
+        description: Uptime monitor (network-wide, on the NAS)
         siteMonitor: https://{{HOMEPAGE_VAR_UPTIMEKUMA_DOMAIN}}
     - ntfy:
         icon: si-ntfy
