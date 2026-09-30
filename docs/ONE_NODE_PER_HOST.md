@@ -351,12 +351,24 @@ and [KB 1589](https://tailscale.com/kb/1589/tailscale-services-configuration-fil
 | Path | Owner | What |
 |---|---|---|
 | `scripts/ts-serve-apply.sh` | server card | The one apply script. Host-agnostic: it takes the template path as an argument. The Pi runs this same file from its checkout; there is no copy |
-| `scripts/test-ts-serve-apply.sh` | server card | Regression test with a stubbed `tailscale` on `PATH` (the `test-docker-address-pools.sh` pattern); a step in `.github/workflows/lint.yml` runs it. It covers render, each validation error, merge-preserves-unrelated-keys, the no-op re-apply, the conflict stop, `--services` selection, and that `--dry-run` calls no write command |
+| `scripts/test-ts-serve-apply.sh` | server card | Regression test with a stubbed `tailscale` on `PATH` (the `test-docker-address-pools.sh` pattern); a step in `.github/workflows/lint.yml` runs it. It covers render, the `.env` precedence and each render-value error of 3.3 (missing file fallback, malformed line, unknown key, empty key, unedited placeholder, drift), each validation error, merge-preserves-unrelated-keys, the no-op re-apply, the conflict stop, `--services` selection, and that `--dry-run` calls no write command |
 | `linux-server/tailscale-serve/serve.json` | server card | Server template: every row of 2.2 |
 | `linux-pi/tailscale-serve/serve.json` | Pi card | Pi template: every row of 2.3 |
+| `linux-server/tailscale-serve/.env.example` | server card | The two render keys (3.3), placeholder values only |
+| `linux-pi/tailscale-serve/.env.example` | Pi card | The same two keys for the Pi, placeholder values only |
+| `<host-dir>/tailscale-serve/.env` | nobody (host-local) | Gitignored by the repo-wide `.env` rule. Created on the host during the runbook (4.2, 4.4), mode `0600`. The backup jobs already collect every `<host-dir>/*/.env` |
 
 The template has the `.json` extension, so pre-commit `check-json` validates
 it. Placeholders sit inside JSON strings, so the unrendered file is valid JSON.
+
+Both `.env.example` files hold exactly:
+
+```sh
+TS_CERT_DOMAIN=<server>.<tailnet>.ts.net
+TS_MAGICDNS_SUFFIX=<tailnet>.ts.net
+```
+
+(`<pi-hostname>.<tailnet>.ts.net` in the Pi file.)
 
 ### 3.2 Template format
 
@@ -418,14 +430,39 @@ Service) to the host's template and re-running the script. It adds no node.
 
 ### 3.3 Rendering
 
-The values come from the live node, not from a `.env` file:
-`TS_CERT_DOMAIN` is `.Self.DNSName` without the trailing dot, and
-`TS_MAGICDNS_SUFFIX` is `.CurrentTailnet.MagicDNSSuffix`, both from
-`tailscale status --json`. If either variable is already set in the
-environment, the script uses that value instead (tests and dry-runs with
-placeholders). There is no `.env` for serve: both values are facts about the
-node, so a copy in a file can only go stale, and it would put the tailnet name
-on disk for no reason.
+The render values come from `.env` next to the template
+(`<template-dir>/.env`, e.g. `linux-server/tailscale-serve/.env`).
+
+Precedence, per key (highest first):
+1. The process environment (`TS_CERT_DOMAIN=... scripts/ts-serve-apply.sh ...`).
+   For the test and for workstation dry-runs with placeholders.
+2. `<template-dir>/.env`.
+3. Fallback, only when `<template-dir>/.env` does not exist: the live node,
+   from `tailscale status --json` (`TS_CERT_DOMAIN` is `.Self.DNSName`
+   without the trailing dot; `TS_MAGICDNS_SUFFIX` is
+   `.CurrentTailnet.MagicDNSSuffix`). The script prints
+   `warning: <template-dir>/.env not found; using values from tailscale status`
+   to stderr and continues.
+
+Parsing: the script reads `.env` as data and never sources it (it may run as
+root; the file is user-owned). It accepts blank lines, `#` comments and
+`KEY=value` lines, and strips one layer of matching quotes from the value (as
+`env_value` in `linux-server/backup/backup.sh` does).
+
+Errors (exit non-zero, before any write, also in `--dry-run`). Messages name
+the key and the file, never the value:
+- `.env` exists but a line is not blank, a comment, or `KEY=value`; or it
+  sets a key other than the two above (a typo must not pass silently).
+- `.env` exists but a key is missing or empty. A half-filled file is a
+  mistake, not a reason to fall back to the live node.
+- Format: `TS_MAGICDNS_SUFFIX` must match `^[a-z0-9-]+(\.[a-z0-9-]+)*\.ts\.net$`
+  (lower case, no scheme, no trailing dot); `TS_CERT_DOMAIN` must be exactly
+  one `[a-z0-9-]+` label followed by `.` and `TS_MAGICDNS_SUFFIX`. A value
+  that still contains `<` or `>` (an unedited `.env.example` copy) fails here.
+- Drift: after resolution, both values must equal the live node's values from
+  `tailscale status --json`. A mismatch stops the run and says which key
+  differs. So the `.env` can never misroute: it can only be right or rejected.
+  (Under the test's stub, the stub's status returns the placeholder values.)
 
 Rendering is a literal string replacement of exactly those two tokens,
 followed by `jq -e .`. A `${` that is still present after rendering is an
@@ -434,6 +471,7 @@ error.
 ### 3.4 Validation (always, including `--dry-run`)
 
 The script refuses to apply, and exits non-zero, when:
+- any render-value error from 3.3 occurs;
 - the rendered file is not valid JSON, or it has a top-level key other than
   `TCP`, `Web`, `Services`;
 - a `Web` key `<host>:<port>` (node level or inside a Service) has no matching
@@ -567,17 +605,55 @@ Rules for every step:
    sidecar names in the same zone today, so it should. UNVERIFIED — fallback
    chosen: if it does not resolve, fix the Pi's resolver before 4.3 step 5,
    which points Pi `.env` values at the server's name.
-6. Backups, into `<backup-dir>` (outside the repo, `chmod 700`, root-owned):
-   - `sudo systemctl start backup.service`, then confirm it succeeded
-     (`journalctl -u backup.service`). This covers app data and every `.env`.
-   - `cd <repo>/linux-server && sudo tar -czf <backup-dir>/ts-state-server.tgz */ts-state`.
-     The backup job excludes `ts-state/`; this tarball is what lets a stack
+6. Backups. `<backup-dir>` is a directory outside the repo, owned by root,
+   mode `0700`. Every write into it and every read from it happens in a root
+   process, so no redirect runs in the unprivileged shell. Open one root shell
+   for the capture (`sudo -s` keeps the working directory and sets
+   `SUDO_USER`):
+
+   ```sh
+   sudo -s
+   B=<backup-dir>
+   install -d -m 700 -o root -g root "$B"
+   systemctl start backup.service        # oneshot: waits, exits non-zero on failure
+   cd <repo>/linux-server && tar -czf "$B/ts-state-server.tgz" */ts-state
+   tailscale serve status --json > "$B/serve-before.json"
+   tailscale serve get-config --all "$B/serve-services-before.json"
+   cp -a /etc/cockpit/cockpit.conf "$B/" || printf 'no cockpit.conf\n'
+   cp -a "$(getent passwd "$SUDO_USER" | cut -d: -f6)/.config/systemd/user/tailscale-web.service" "$B/"
+   exit
+   ```
+
+   - `backup.service` covers app data and every `<host-dir>/*/.env`.
+   - The backup job excludes `ts-state/`; the tarball is what lets a stack
      roll back to its old node identity.
-   - `tailscale serve status --json > <backup-dir>/serve-before.json` and
-     `tailscale serve get-config --all <backup-dir>/serve-services-before.json`.
-   - `/etc/cockpit/cockpit.conf` and `~/.config/systemd/user/tailscale-web.service`.
+   - `serve-before.json` is the primary Serve backup (3.5). `get-config --all`
+     covers only Services; before the migration the node hosts none, so an
+     empty file or an error here is expected. Record which.
+
+   Then check the backup, and do not start 4.3 unless it prints `backup-ok`:
+
+   ```sh
+   sudo bash -c 'B="$1"
+     [[ "$(stat -c "%a %U" "$B")" == "700 root" ]] &&
+     [[ "$(systemctl show -p Result --value backup.service)" == success ]] &&
+     tar -tzf "$B/ts-state-server.tgz" | grep -q "/ts-state/" &&
+     [[ -f "$B/serve-before.json" ]] &&
+     { [[ ! -s "$B/serve-before.json" ]] || jq -e . "$B/serve-before.json" >/dev/null; } &&
+     [[ -f "$B/tailscale-web.service" ]] &&
+     printf "backup-ok\n"' _ <backup-dir>
+   ```
 7. `git -C <repo> checkout <migration-branch>`. Running containers are not
    affected until each stack is brought up again.
+8. Create the render `.env` (3.3) from the live node, as the operator user
+   (not root), with no world-readable window:
+
+   ```sh
+   cd <repo>/linux-server/tailscale-serve
+   (umask 077; tailscale status --json | jq -r '"TS_CERT_DOMAIN=\(.Self.DNSName | rtrimstr("."))\nTS_MAGICDNS_SUFFIX=\(.CurrentTailnet.MagicDNSSuffix)"' > .env)
+   ```
+
+   The 4.3 step 2 dry-run validates it (format and drift).
 
 ### 4.3 Server: cutover order
 
@@ -637,8 +713,7 @@ longer in the compose file. Then verify (4.5).
 ### 4.4 Pi: pre-flight, host node and cutover
 
 1. Pre-flight: record the commit; `ss -ltnH` for 80, 631, 3001, 8765 shows
-   the host services; backups: `sudo systemctl start pi-backup.service`, and
-   `ts-state-pi.tgz` from `linux-pi/*/ts-state` as on the server.
+   the host services.
 2. Host node. If the Pi already runs a host tailscaled (the adguardhome-sync
    container reaches the server's tailnet name today, which suggests it
    does), apply `tag:pi` from the Machines page as in 4.1 step 3. If it has
@@ -647,25 +722,42 @@ longer in the compose file. Then verify (4.5).
    the printed login URL). `--accept-dns=false` keeps the Pi's own resolver as
    it is, so DNS on the Pi does not start to depend on Tailscale (the README's
    resilience goal). Either way: `sudo tailscale set --operator=$USER`,
-   install `jq`, disable key expiry (HUMAN), and record
-   `tailscale serve status --json` into `<backup-dir>`.
-3. `git checkout <migration-branch>`, then
+   install `jq`, disable key expiry (HUMAN).
+3. Backups, with the same rule as 4.2 step 6 (`<backup-dir>` on the Pi,
+   root-owned `0700`, every write in a root shell):
+
+   ```sh
+   sudo -s
+   B=<backup-dir>
+   install -d -m 700 -o root -g root "$B"
+   systemctl start pi-backup.service
+   cd <repo>/linux-pi && tar -czf "$B/ts-state-pi.tgz" */ts-state
+   tailscale serve status --json > "$B/serve-before.json"
+   tailscale serve get-config --all "$B/serve-services-before.json"
+   exit
+   ```
+
+   Then the same check as 4.2 step 6, with `pi-backup.service`,
+   `ts-state-pi.tgz`, and without the `tailscale-web.service` line. Do not
+   continue unless it prints `backup-ok`.
+4. `git checkout <migration-branch>`. Create
+   `linux-pi/tailscale-serve/.env` as in 4.2 step 8. Then
    `scripts/ts-serve-apply.sh linux-pi/tailscale-serve/serve.json --dry-run`,
    then without `--dry-run`. All four Pi backends are host services already,
    so the new URLs answer at once.
-4. Stacks: homepage (`.env`), adguard (`--remove-orphans` removes
+5. Stacks: homepage (`.env`), adguard (`--remove-orphans` removes
    `adguard-pi-ts`; DNS on `:53` is not touched). The motioneye and cups
    stacks are deleted on the new branch: `docker rm -f motioneye-ts cups-ts`,
    remove the cups sidecar's bridge network (`docker network ls` shows it),
    and rerun `linux-pi/cups/setup.sh` with the new alias.
-5. The Pi resolves the server's name: `getent hosts <server>.<tailnet>.ts.net`
+6. The Pi resolves the server's name: `getent hosts <server>.<tailnet>.ts.net`
    was checked in 4.2 step 5; repeat it after the Pi's own tailscaled change.
-6. Neighbours: confirm `adguardhome-sync` `ORIGIN_URL` and `backup`
+7. Neighbours: confirm `adguardhome-sync` `ORIGIN_URL` and `backup`
    `KUMA_PUSH_URL` hold the 2.3 values (set during 4.3) and that the next
    sync run and backup push succeed. Then set the server homepage's
    `HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN` to the Pi host node's name and restart
    the server homepage.
-7. Reboot the Pi, and repeat the checks.
+8. Reboot the Pi, and repeat the checks.
 
 ### 4.5 Verification per service
 
@@ -722,18 +814,21 @@ the Service on the Services page, so the name is free; empty the stack's
 as above. The sidecar re-authenticates with `TS_AUTHKEY` (this is why the
 OAuth client keeps its Auth Keys scope until 4.7).
 
-Global, per host: restore `serve-before.json` with
-`tailscale serve set-raw < <backup-dir>/serve-before.json` (or
-`tailscale serve reset` if it was empty), roll back every Service as above,
-`git checkout <pre-migration-commit>`, restore `cockpit.conf`, the
-tailscale-web unit and every `.env` from `<backup-dir>`, then bring up every
-stack with `--remove-orphans`. The host tags can stay.
+Global, per host: restore Serve from the backup in a root process
+(`sudo sh -c 'tailscale serve set-raw < "$1"' _ <backup-dir>/serve-before.json`,
+or `sudo tailscale serve reset` if that file was empty), roll back every
+Service as above, `git checkout <pre-migration-commit>`, restore
+`cockpit.conf` and the tailscale-web unit from `<backup-dir>` with
+`sudo install` (the unit back to the user's `~/.config/systemd/user/`, owned
+by that user), restore every `.env` from the restic snapshot taken in 4.2
+step 6, then bring up every stack with `--remove-orphans`. The host tags can
+stay.
 
 ### 4.7 After a soak period (7 days with both hosts verified)
 
 - HUMAN: Machines page, delete every remaining old sidecar node on both hosts.
 - On each host: delete `*/ts-state/`, remove `TS_AUTHKEY` from every `.env`,
-  and delete `<backup-dir>/ts-state-*.tgz`.
+  and `sudo rm <backup-dir>/ts-state-*.tgz`.
 - HUMAN: remove the Auth Keys scope from the OAuth client that the sidecars
   used. Keep its read scope: tailscale-proxy still uses the same client. Revoke
   any reusable auth key made for sidecars (Settings, Keys).
@@ -808,6 +903,7 @@ integration card applies it.
 | `scripts/ts-serve-apply.sh`, `scripts/test-ts-serve-apply.sh` | New (section 3) |
 | `.github/workflows/lint.yml` | One step that runs `scripts/test-ts-serve-apply.sh` |
 | `linux-server/tailscale-serve/serve.json` | New: every 2.2 row |
+| `linux-server/tailscale-serve/.env.example` | New: the two render keys with placeholders (3.1, 3.3) |
 | `linux-server/<stack>/` for the 19 stacks in 2.2 | Compose, `.env.example`, app config per 2.2; delete `ts-serve.json`; delete the `cockpit/` and `tailscale-web/` stacks except `cockpit/cockpit.conf.example` |
 | `linux-server/glances/.env.example` | `GLANCES_ALLOWED_HOSTS` example lists the server's MagicDNS name. The entrypoint bug (`allowed_hosts` vs `webui_allowed_hosts`, [A Findings]) is not fixed here; add it to `docs/TODO.md` |
 | `linux-server/backup/`, `linux-server/dragonwilds/`, `linux-server/forgejo/runner-status.sh` and its `.env.example` | Loopback defaults per D10 and 2.2 neighbours |
@@ -823,6 +919,7 @@ integration card applies it.
 | Files | Change |
 |---|---|
 | `linux-pi/tailscale-serve/serve.json` | New: every 2.3 row |
+| `linux-pi/tailscale-serve/.env.example` | New: the two render keys with placeholders (3.1, 3.3) |
 | `linux-pi/adguard/`, `linux-pi/homepage/` | Remove the sidecar, `ts-serve.json`, `TS_AUTHKEY`; homepage links per 5.1 |
 | `linux-pi/motioneye/`, `linux-pi/cups/docker-compose.yml`, `linux-pi/cups/ts-serve.json` | Delete (sidecar-only stacks) |
 | `linux-pi/cups/setup.sh`, `test-setup.sh`, `.env.example`, `README.md` | Drop `PINNED_SIDECAR_SUBNET`/`CUPS_SIDECAR_SUBNET` from the allow lists and validation; the alias becomes the Pi's MagicDNS name |
@@ -855,7 +952,7 @@ record the change as a deviation afterwards (5.1).
 | O9 | Same-host consumers use loopback | Use the front-door URLs once self-reach is verified live | Alerts depend on tailscaled | D10 |
 | O10 | Syncthing GUI on `0.0.0.0` inside its container | `insecureSkipHostcheck` in its config with a loopback bind | The same effect, but in off-repo config | 2.2 |
 | O11 | Serve apply via `set-raw` with a whole-listener replace | Imperative `tailscale serve --bg ... --set-path` commands per handler | Harder to diff, no single template | 3.5 |
-| O12 | No `.env` for serve: values come from `tailscale status --json` | `.env` overrides only | A stale copy can misroute | 3.3 |
+| O12 | Render values from a gitignored `<host-dir>/tailscale-serve/.env` (committed `.env.example`), checked against `tailscale status --json`; the live node is the fallback only when that `.env` is missing | Live node only, no `.env` | A drifted `.env` is rejected, so only the extra file and the drift check go away | 3.3 |
 | O13 | Server first, Services last, in the order ntfy, immich, forgejo | Forgejo in its own maintenance window, on another day | None | 4.3 |
 | O14 | Soak of 7 days before deleting old nodes, `ts-state/` and the Auth Keys scope | Shorter or longer | Rollback gets harder after cleanup | 4.7 |
 | O15 | Uptime Kuma monitors are edited in the UI | A SQL update on `kuma.db` once its schema is checked | A bad update corrupts the DB | 4.8 |
