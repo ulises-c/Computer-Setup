@@ -11,12 +11,15 @@ ntfy + a homepage card. Mirrors the server's own backup architecture
 - **Homepage** `config/` — dashboard widgets, services, bookmarks
 - **MotionEye** `/etc/motioneye/` — camera configs (recordings excluded — large/disposable)
 - **CUPS** `/etc/cups/` — printer configs, PPD files
-- Every service's gitignored **`.env`** (secrets needed to restore)
+- Every service's gitignored **`.env`** (secrets needed to restore), including
+  `tailscale-serve/.env`
 
 Excluded as disposable/regenerable: AdGuard query/statistics databases in `work/`,
-MotionEye recordings, all `ts-state/`
-(Tailscale node keys — re-auth with `TS_AUTHKEY` regenerates them), Docker
-images/containers.
+MotionEye recordings, any `ts-state/` left over from the retired per-service
+Tailscale sidecars (node keys; kept on disk only until the post-migration soak,
+docs/ONE_NODE_PER_HOST.md 4.7), Docker images/containers. The host tailscaled
+state in `/var/lib/tailscale` is not backed up either: the serve config is
+reapplied from `tailscale-serve/serve.json`.
 
 ## How it works
 
