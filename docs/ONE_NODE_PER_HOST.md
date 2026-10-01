@@ -862,7 +862,7 @@ on the same origin and under the mount.
 | forgejo | `https://forgejo.<tailnet>.ts.net/api/v1/version` 200 | `git ls-remote` over HTTPS and SSH from a clone; the macOS runner shows online |
 | Pi motioneye | `/motioneye/` 200 | Camera streams |
 | Pi adguard | `:8443/control/status` 401 or 403 | `dig @<pi-lan-ip>` resolves |
-| Pi cups | `:8449/` 200 | Not 400 (Host / `ServerAlias`, UNVERIFIED with a port); admin asks for auth |
+| Pi cups | `:8449/` 200 (via the `127.0.0.1:8631` shim, 2.3) | `/printers/` lists the printers; `/admin/` asks for auth |
 
 On the host, for every stack: the backend listens on `127.0.0.1` only
 (`ss -ltnH 'sport = :<port>'`), the old node shows offline in
@@ -1005,8 +1005,9 @@ integration card applies it.
 | `linux-pi/tailscale-serve/serve.json` | New: every 2.3 row |
 | `linux-pi/tailscale-serve/.env.example` | New: the two render keys with placeholders (3.1, 3.3) |
 | `linux-pi/adguard/`, `linux-pi/homepage/` | Remove the sidecar, `ts-serve.json`, `TS_AUTHKEY`; homepage links per 5.1 |
-| `linux-pi/motioneye/`, `linux-pi/cups/docker-compose.yml`, `linux-pi/cups/ts-serve.json` | Delete (sidecar-only stacks) |
-| `linux-pi/cups/setup.sh`, `test-setup.sh`, `.env.example`, `README.md` | Drop `PINNED_SIDECAR_SUBNET`/`CUPS_SIDECAR_SUBNET` from the allow lists and validation; the alias becomes the Pi's MagicDNS name |
+| `linux-pi/motioneye/`, `linux-pi/cups/ts-serve.json` | Delete (sidecar-only) |
+| `linux-pi/cups/docker-compose.yml`, `linux-pi/cups/nginx.conf` | Replace the sidecar with the `cups-proxy` Host-rewrite shim on `127.0.0.1:8631` (2.3 deviation) |
+| `linux-pi/cups/setup.sh`, `test-setup.sh`, `.env.example`, `README.md` | Drop `PINNED_SIDECAR_SUBNET`/`CUPS_SIDECAR_SUBNET` from the allow lists and validation; `CUPS_SERVER_ALIAS` keeps only LAN names (no tailnet name, 2.3) |
 | `linux-pi/adguardhome-sync/.env.example`, `linux-pi/backup/.env.example`, `linux-pi/backup/README.md` | 2.3 neighbours |
 | `linux-pi/README.md` | Host tailscaled and `tag:pi` (4.4), host serve instead of sidecars, the new URLs |
 
@@ -1060,10 +1061,11 @@ UNVERIFIED items and their fallbacks, in one place:
   D10).
 - `Services` applied through `set-raw` (fallback: `tailscale serve
   --service=...`; 3.5).
-- CUPS `ServerAlias` with a port-bearing `Host` (fallback: add the port form
-  if it returns 400; 4.5).
 - The Pi resolving the server's MagicDNS name (fallback: fix before the
   neighbour step; 4.4).
+- The cups Host-rewrite shim on Pi hardware (spiked on amd64 only; the
+  `127.0.0.1:8631` check in 4.4 step 5 covers it). The `ServerAlias` route
+  is not a fallback: cupsd ignores it on loopback (2.3).
 - From research [A]: cockpit login and the `tailscale web` manage flow under
   a prefix, portainer websocket exec, watchtower callers with a path URL, the
   openspeedtest body limit, the Uptime Kuma schema, Syncthing peers dialing a
