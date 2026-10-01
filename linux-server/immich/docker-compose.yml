@@ -1,40 +1,19 @@
 services:
-  # Tailscale sidecar — joins the tailnet as `immich`, terminating HTTPS for
-  # https://immich.<tailnet>.ts.net (web UI, API, and the mobile app's server URL).
-  # See ../HTTPS.md. Immich can't be served under a sub-path, so it needs its own
-  # hostname like this even if other services move to path routing.
-  immich-ts:
-    image: tailscale/tailscale:latest
-    container_name: immich-ts
-    hostname: immich
-    environment:
-      - TS_AUTHKEY=${TS_AUTHKEY}
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_SERVE_CONFIG=/config/serve.json
-      # Requires TS_AUTHKEY to be allowed to apply tag:container (OAuth client, or
-      # a tag-scoped auth key). Drop this line if using an untagged personal key.
-      - TS_EXTRA_ARGS=--advertise-tags=tag:container
-    volumes:
-      - ./ts-state:/var/lib/tailscale
-      - ./ts-serve.json:/config/serve.json:ro
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    cap_add:
-      - NET_ADMIN
-    restart: unless-stopped
+  # Tailscale Service svc:immich, hosted by the server node
+  # (../tailscale-serve/serve.json): https://immich.<tailnet>.ts.net (web UI,
+  # API, and the mobile app's server URL) goes to 127.0.0.1:2283. Immich can't
+  # run under a sub-path, so it keeps its own name.
 
   # Adapted from Immich's release docker-compose.yml. Upstream loads the whole
-  # .env via env_file; here each container gets only the variables it needs, so
-  # TS_AUTHKEY never lands in the app's environment.
+  # .env via env_file; here each container gets only the variables it needs.
   immich-server:
     image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-v3}
     container_name: immich-server
-    # Share the sidecar's network namespace: tailscale serve proxies :443 to
-    # 127.0.0.1:2283. The sidecar sits on this project's bridge, so the default
-    # `database`, `redis`, and `immich-machine-learning` hostnames still resolve.
-    network_mode: service:immich-ts
+    # On the project's default network, so the `database`, `redis` and
+    # `immich-machine-learning` hostnames resolve.
+    ports:
+      - "127.0.0.1:2283:2283"
     depends_on:
-      - immich-ts
       - redis
       - database
     restart: unless-stopped
