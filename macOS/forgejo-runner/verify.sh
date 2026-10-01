@@ -64,7 +64,7 @@ if [[ -n "$configured_url" ]]; then
   else
     fail "instance NOT reachable: $configured_url (HTTP $code)"
     info "  fix: make sure the url's host matches the server's ROOT_URL"
-    info "  (served over HTTPS by the tailscale serve sidecar; see linux-server/forgejo/docker-compose.yml)"
+    info "  (served over HTTPS by the svc:forgejo Tailscale Service; see linux-server/HTTPS.md)"
     failures=$((failures + 1))
   fi
 fi

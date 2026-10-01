@@ -14,7 +14,7 @@ Wiring: `wall power -> EcoFlow -> CyberPower -> server`. The EcoFlow is on the
 wall frontier, so its `ups.status` is the early indicator of grid loss; the
 CyberPower steps in a moment later for the actual server supply.
 
-The EcoFlow needs NUT **2.8.4+**, which ships the dedicated `EcoFlow HID` 
+The EcoFlow needs NUT **2.8.4+**, which ships the dedicated `EcoFlow HID`
 subdriver. Do **not** set `explore = 1` for it — that forces the generic EXPLORE
 subdriver, which then reports only identity and a constant `OB` with no
 battery/input data. The stanza in `ups.conf` mirrors EcoFlow's own "Power
@@ -87,16 +87,15 @@ Manager" config (`usb_hid_ep_in/out = 1`, `ignorelb`,
 ## Dashboard (PeaNUT)
 
 [PeaNUT](https://github.com/Brandawg93/PeaNUT) serves a web dashboard with
-charge/load/runtime graphs at `https://peanut.<tailnet>.ts.net/` (Tailscale
-sidecar per [`../HTTPS.md`](../HTTPS.md), host-networked variant like glances —
-PeaNUT itself must stay on the host network to reach the loopback-only `upsd`)
+charge/load/runtime graphs at `https://<server>.<tailnet>.ts.net:8446` (host
+`tailscale serve`, see [`../HTTPS.md`](../HTTPS.md); PeaNUT stays on the host
+network to reach the loopback-only `upsd`, and serve proxies to its `:8097`)
 and feeds the homepage **ups** card (`type: peanut` widget via localhost).
 Auth is disabled (read-only stats on a trusted network, same posture as
 glances). Its runtime settings dir (`peanut-config/`) is gitignored.
 
 ```sh
 cd linux-server/ups
-# set TS_AUTHKEY in .env (same OAuth client secret as the other sidecars)
 docker compose up -d
 ```
 
