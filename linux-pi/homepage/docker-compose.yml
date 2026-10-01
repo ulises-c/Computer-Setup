@@ -1,30 +1,7 @@
 services:
-  # Decoupled Tailscale sidecar for the Pi's homepage — HTTPS at
-  # https://homepage-pi.<tailnet>.ts.net, proxying :443 -> the host's homepage on
-  # :3001 via host.docker.internal. Mirrors linux-server/homepage/homepage-ts.
-  homepage-pi-ts:
-    image: tailscale/tailscale:latest
-    container_name: homepage-pi-ts
-    hostname: homepage-pi
-    environment:
-      - TS_AUTHKEY=${TS_AUTHKEY}
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_SERVE_CONFIG=/config/serve.json
-      - TS_EXTRA_ARGS=--advertise-tags=tag:container
-    volumes:
-      - ./ts-state:/var/lib/tailscale
-      - ./ts-serve.json:/config/serve.json:ro
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    cap_add:
-      - NET_ADMIN
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    dns:
-      - 9.9.9.10
-      - 1.1.1.1
-    restart: unless-stopped
-
+  # Pi dashboard, host-networked on :3001. Host tailscale serve publishes it at
+  # the root of https://<pi-hostname>.<tailnet>.ts.net
+  # (../tailscale-serve/serve.json).
   homepage:
     image: ghcr.io/gethomepage/homepage:latest
     container_name: homepage
