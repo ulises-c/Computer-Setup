@@ -27,6 +27,7 @@ readonly POLKIT_RULE=/etc/polkit-1/rules.d/50-dragonwilds-restart.rules
 : "${SERVICE_USER:=${SUDO_USER:-$(id -un)}}"
 : "${STEAMCMD:=/usr/games/steamcmd}"
 : "${SERVER_PORT:=7777}"
+: "${MAX_PLAYERS:=6}"
 : "${LAN_CIDR:=}"
 
 # sed renders these into unit files, so a quoted path would break the templates.
@@ -42,6 +43,10 @@ fi
 
 if ! [[ "$SERVER_PORT" =~ ^[0-9]+$ ]] || (( SERVER_PORT < 1024 || SERVER_PORT > 65535 )); then
   printf 'error: SERVER_PORT must be a number from 1024 to 65535, got: %s\n' "$SERVER_PORT" >&2
+  exit 1
+fi
+if ! [[ "$MAX_PLAYERS" =~ ^[1-9][0-9]*$ ]]; then
+  printf 'error: MAX_PLAYERS must be a positive integer, got: %s\n' "$MAX_PLAYERS" >&2
   exit 1
 fi
 
@@ -100,6 +105,7 @@ render() {
       -e "s|@STEAMCMD@|$STEAMCMD|g" \
       -e "s|@APPID@|$APPID|g" \
       -e "s|@SERVER_PORT@|$SERVER_PORT|g" \
+      -e "s|@MAX_PLAYERS@|$MAX_PLAYERS|g" \
       -e "s|@STATUS_SCRIPT@|$SCRIPT_DIR/dragonwilds-status.sh|g" \
       -e "s|@STATUS_JSON@|$SCRIPT_DIR/status/dragonwilds-status.json|g" \
       -e "s|@UPDATE_CHECK_SCRIPT@|$SCRIPT_DIR/dragonwilds-update-check.sh|g" \

@@ -21,9 +21,11 @@ fi
 : "${DRAGONWILDS_INSTALL_DIR:=$HOME/games/dragonwilds}"
 : "${STATUS_JSON:=$SCRIPT_DIR/status/dragonwilds-status.json}"
 : "${SERVER_PORT:=7777}"
+: "${MAX_PLAYERS:=6}"
 : "${LATEST_BUILD_FILE:=$SCRIPT_DIR/status/.latest-build}"
 
 command -v jq >/dev/null || { printf 'error: jq not installed (apt install jq)\n' >&2; exit 1; }
+[[ "$MAX_PLAYERS" =~ ^[1-9][0-9]*$ ]] || { printf 'error: MAX_PLAYERS must be a positive integer\n' >&2; exit 1; }
 
 readonly UNIT=dragonwilds.service
 readonly APPID=4019830
@@ -74,7 +76,7 @@ since=""
 
 join_code=""
 players=0
-players_max=6
+players_max="$MAX_PLAYERS"
 player_names=""
 if [[ "$status" == running && -n "$since" ]]; then
   run_log="$(journalctl -u "$UNIT" --since "$since" --no-pager 2>/dev/null || true)"
