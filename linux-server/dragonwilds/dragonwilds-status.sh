@@ -95,6 +95,7 @@ fi
 
 server_name="$(ini_get ServerName)"
 world_name="$(ini_get DefaultWorldName)"
+join_password="$(ini_get WorldPassword)"
 [[ -n "$(ini_get OwnerId)" ]] && owner_configured=true || owner_configured=false
 [[ -n "$(ini_get WorldPassword)" ]] && world_password=true || world_password=false
 
@@ -167,6 +168,7 @@ jq -n \
   --arg status "$status" \
   --arg server_name "$server_name" \
   --arg world "$world_name" \
+  --arg join_password "$join_password" \
   --arg join_code "$join_code" \
   --arg online_capacity "$players/$players_max" \
   --arg player_names "$player_names" \
@@ -192,6 +194,7 @@ jq -n \
     server_name: $server_name,
     world: $world,
     join_code: $join_code,
+    join_password: $join_password,
     players: $players,
     players_max: $players_max,
     online_capacity: $online_capacity,

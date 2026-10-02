@@ -624,13 +624,18 @@ alongside it.
 `127.0.0.1:8096`, and homepage — host-networked — reads it via a `customapi`
 widget.
 
+The private Homepage card also displays `join_password` below the join code. Keep
+Homepage and port 8096 restricted to the tailnet; this field is intentionally
+secret-bearing.
+
 ```bash
 curl -s localhost:8096/dragonwilds-status.json | jq
 bash dragonwilds-status.sh        # regenerate by hand
 ```
 
 Fields: `status` (`running` / `starting` / `stopped` / `failed` / `unknown`),
-`server_name`, `world`, `join_code`, `players`, `players_max`, `online_capacity`,
+`server_name`, `world`, `join_code`, `join_password`, `players`, `players_max`,
+`online_capacity`,
 `player_names`,
 `connect_lan`, `connect_tailnet`, `memory_bytes`, `save_bytes`,
 `disk_free_bytes`, `uptime_seconds`, `listening`, `owner_configured`,

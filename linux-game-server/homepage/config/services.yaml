@@ -95,6 +95,9 @@
             - field: join_code
               label: Join code
               format: text
+            - field: join_password
+              label: Join pass
+              format: text
             - field: connect_lan
               label: LAN
               format: text
