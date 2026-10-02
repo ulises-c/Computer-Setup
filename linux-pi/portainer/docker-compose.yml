@@ -1,5 +1,5 @@
 services:
-  # Docker manager, reached through `tailscale serve` (HTTPS :9443).
+  # Docker manager, reached through host `tailscale serve` (HTTPS :9443).
   portainer:
     extends:
       file: ../../server-base/portainer/compose.yml

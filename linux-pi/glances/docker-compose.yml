@@ -1,5 +1,5 @@
 services:
-  # Base glances, loopback-only; Homepage and `tailscale serve` (/glances/) reach it.
+  # Base glances, loopback-only; Homepage and host `tailscale serve` (/glances/) reach it.
   glances:
     extends:
       file: ../../server-base/glances/compose.yml

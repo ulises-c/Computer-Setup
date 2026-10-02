@@ -1,0 +1,11 @@
+services:
+  # Docker manager shared by every server. Hosts extend this service, declare
+  # the portainer_data volume, and choose how it is reached: a loopback port
+  # behind host `tailscale serve`, or a sidecar's network namespace.
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data

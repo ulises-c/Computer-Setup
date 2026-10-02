@@ -54,7 +54,7 @@ jobs:
           bash scripts/check-python-syntax.sh "${files[@]}"
 
       - name: Test Glances disk aliases
-        working-directory: linux-server/glances
+        working-directory: server-base/glances
         run: python3 -m unittest -v test_rename_disks.py
 
   dryrun-smoke:

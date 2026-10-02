@@ -1,1 +1,0 @@
-../../linux-server/glances/entrypoint.sh

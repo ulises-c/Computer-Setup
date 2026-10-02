@@ -255,7 +255,7 @@
           url: http://localhost:61208
           version: 4
           # Persistent by-label disk names from the Glances rename patch
-          # (linux-server/glances); raw sd[abc] reorder across reboots.
+          # (server-base/glances); raw sd[abc] reorder across reboots.
           metric: disk:WD14TB
     - wd 14tb usage:
         icon: mdi-harddisk

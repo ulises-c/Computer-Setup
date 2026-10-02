@@ -24,22 +24,14 @@ services:
     restart: unless-stopped
 
   watchtower:
-    image: containrrr/watchtower:latest
-    container_name: watchtower
-    # Share the sidecar's netns: tailscale serve proxies :443 to the HTTP API on
-    # 127.0.0.1:8080. The docker socket is a file mount, unaffected by the netns.
+    extends:
+      file: ../../server-base/watchtower/compose.yml
+      service: watchtower
     network_mode: service:watchtower-ts
     depends_on:
       - watchtower-ts
-    restart: unless-stopped
     environment:
-      - WATCHTOWER_SCHEDULE=0 0 3 * * *   # 3am daily (6-field cron: sec min hr dom mon dow)
-      - WATCHTOWER_CLEANUP=true            # remove old images after updating
-      - DOCKER_API_VERSION=1.40            # override default 1.25 — incompatible with Docker 29.x
-      # HTTP API: metrics only (NOT the update endpoint), so the schedule above
-      # keeps running — only the update API disables periodic polls. Serves
-      # GET /v1/metrics on :8080, gated by the Bearer token below.
-      - WATCHTOWER_HTTP_API_METRICS=true
-      - WATCHTOWER_HTTP_API_TOKEN=${WATCHTOWER_API_TOKEN}
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      # Metrics only (NOT the update endpoint), so the schedule keeps running —
+      # only the update API disables periodic polls. GET /v1/metrics on :8080.
+      WATCHTOWER_HTTP_API_METRICS: "true"
+      WATCHTOWER_HTTP_API_TOKEN: "${WATCHTOWER_API_TOKEN}"
