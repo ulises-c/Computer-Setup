@@ -1,37 +1,13 @@
 services:
-  # HTTPS front door for the Pi's CUPS print server (host service on :631).
-  # Decoupled sidecar, proxying :443 -> host.docker.internal:631.
-  # https://cups-pi.<tailnet>.ts.net.
-  #
-  # cupsd must listen on the Docker bridge and allow its subnet; see ../README.md.
-  # Keep the exact cups-pi tailnet name in ServerAlias rather than using `*`.
-  cups-ts:
-    image: tailscale/tailscale:latest
-    container_name: cups-ts
-    hostname: cups-pi
-    environment:
-      - TS_AUTHKEY=${TS_AUTHKEY}
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_SERVE_CONFIG=/config/serve.json
-      - TS_EXTRA_ARGS=--advertise-tags=tag:container
-    volumes:
-      - ./ts-state:/var/lib/tailscale
-      - ./ts-serve.json:/config/serve.json:ro
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    cap_add:
-      - NET_ADMIN
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    dns:
-      - 9.9.9.10
-      - 1.1.1.1
+  # Tailnet front door for the Pi's host CUPS (:631):
+  # https://<pi-hostname>.<tailnet>.ts.net:8449 -> host tailscale serve ->
+  # 127.0.0.1:8631 (this shim) -> 127.0.0.1:631. See README.md for why serve
+  # cannot proxy to :631 directly. The mounted file replaces nginx's default
+  # server, so nothing here listens on :80, which the host AdGuard owns.
+  cups-proxy:
+    image: nginx:alpine
+    container_name: cups-proxy
+    network_mode: host
     restart: unless-stopped
-
-# Pin the bridge subnet so the host cupsd.conf `Allow <cidr>` rule can never drift
-# if this network is recreated. Must match the subnet allowed in /etc/cups/cupsd.conf.
-networks:
-  default:
-    ipam:
-      config:
-        - subnet: 172.21.0.0/16
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro

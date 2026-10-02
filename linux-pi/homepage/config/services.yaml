@@ -16,7 +16,7 @@
 - Pi Services:
     - adguard (backup dns):
         icon: si-adguard
-        href: https://{{HOMEPAGE_VAR_ADGUARD_PI_DOMAIN}}/
+        href: https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}:8443/
         description: Backup DNS resolver
         widget:
           type: adguard
@@ -25,14 +25,14 @@
           password: "{{HOMEPAGE_VAR_ADGUARD_PASS}}"
     - motioneye:
         icon: mdi-cctv
-        href: https://{{HOMEPAGE_VAR_MOTIONEYE_DOMAIN}}/
+        href: https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}/motioneye/
         description: Security cameras
-        siteMonitor: https://{{HOMEPAGE_VAR_MOTIONEYE_DOMAIN}}
+        siteMonitor: http://localhost:8765/
     - cups:
         icon: mdi-printer
-        href: https://{{HOMEPAGE_VAR_CUPS_DOMAIN}}/
+        href: https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}:8449/
         description: Print server
-        siteMonitor: https://{{HOMEPAGE_VAR_CUPS_DOMAIN}}
+        siteMonitor: http://localhost:8631/
     - backups:
         icon: mdi-backup-restore
         description: restic → main server (wd1tb + wd14tb)

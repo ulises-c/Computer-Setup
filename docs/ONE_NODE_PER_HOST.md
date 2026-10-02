@@ -326,7 +326,22 @@ or `:8080` (qbittorrent, watchtower), or collide with homepage on `:3000`
 | homepage | `https://<pi-hostname>.<tailnet>.ts.net/` | `http://127.0.0.1:3001` | `HOMEPAGE_ALLOWED_HOSTS` gains `<pi-hostname>.<tailnet>.ts.net`. Links to server services use the server's new URLs | Stays `network_mode: host`, `PORT=3001` | yes (`homepage-pi-ts`) |
 | motioneye | `/motioneye/` | `http://127.0.0.1:8765` (STRIP) | None [A #23] | Stack deleted (sidecar-only) | yes |
 | adguard | `https://<pi-hostname>.<tailnet>.ts.net:8443` | `http://127.0.0.1:80` | None | `adguardhome` stays `network_mode: host`; DNS unchanged (D5) | yes (`adguard-pi-ts`) |
-| cups | `:8449` | `http://127.0.0.1:631` | `CUPS_SERVER_ALIAS` swaps the old sidecar name for `<pi-hostname>.<tailnet>.ts.net`. `setup.sh` drops the pinned sidecar subnet from the allow lists; serve connects from `localhost`, which is already allowed for print and admin (admin still requires `@SYSTEM` auth) | Stack deleted (sidecar-only, including its pinned bridge network) | yes |
+| cups | `:8449` | `http://127.0.0.1:8631` (Host-rewrite shim → `127.0.0.1:631`) | `CUPS_SERVER_ALIAS` drops the old sidecar name and needs no tailnet name. `setup.sh` drops the pinned sidecar subnet from the allow lists; the shim connects from `localhost`, which is already allowed for print and admin (admin still requires `@SYSTEM` auth) | The sidecar and its pinned bridge network are deleted. New `cups-proxy` (nginx, host network, listens on `127.0.0.1:8631`, sends `Host: localhost`) | yes |
+
+Deviation (cups, Pi card): the design's `http://127.0.0.1:631` target cannot
+work. On a loopback connection cupsd accepts only `Host: localhost`,
+`127.0.0.1` or `[::1]` and never consults `ServerAlias`
+([`valid_host()`, scheduler/client.c v2.4.2](https://github.com/OpenPrinting/cups/blob/v2.4.2/scheduler/client.c)),
+while serve always dials loopback and passes the client's `Host` through
+unchanged ([serve.go v1.102.3](https://github.com/tailscale/tailscale/blob/v1.102.3/ipn/ipnlocal/serve.go)
+`r.Out.Host = r.In.Host`). A local spike (Debian 12, CUPS 2.4.2) returned 400
+for `Host: <pi-hostname>.<tailnet>.ts.net:8449` and for the port-less name
+even with that name in `ServerAlias`. Through the shim the same requests
+returned 200 for `/` and `/printers/`, 401 for `/admin/` without or with a
+wrong password, and 200 for `/admin/` with an `lpadmin` user. This also
+settles the UNVERIFIED "CUPS `ServerAlias` with a port-bearing `Host`" item:
+no alias form works from loopback. The shim adds one container but no node and
+no sidecar.
 
 Neighbours on the Pi:
 
@@ -335,8 +350,8 @@ Neighbours on the Pi:
 | adguardhome-sync | `ORIGIN_URL` becomes `https://<server>.<tailnet>.ts.net:8443`. `REPLICA1_URL` is LAN; unchanged |
 | backup | Status `127.0.0.1:8099` unchanged. `NTFY_URL` unchanged (`svc:ntfy`). `KUMA_PUSH_URL` becomes `https://<server>.<tailnet>.ts.net:8444/api/push/…` |
 
-Pi loopback ports after the change: 80, 631, 3001, 8099, 8765. No new
-publishes.
+Pi loopback ports after the change: 80, 631, 3001, 8099, 8631, 8765. The only
+new listener is the cups shim on `127.0.0.1:8631`.
 
 ## 3. Serve-config mechanism
 
@@ -755,7 +770,8 @@ longer in the compose file. Then verify (4.5).
 ### 4.4 Pi: pre-flight, host node and cutover
 
 1. Pre-flight: record the commit; `ss -ltnH` for 80, 631, 3001, 8765 shows
-   the host services.
+   the host services, and `ss -ltnH 'sport = :8631'` prints nothing (the new
+   cups shim's port).
 2. Host node. If the Pi already runs a host tailscaled (the adguardhome-sync
    container reaches the server's tailnet name today, which suggests it
    does), apply `tag:pi` from the Machines page as in 4.1 step 3. If it has
@@ -791,13 +807,36 @@ longer in the compose file. Then verify (4.5).
 4. `git checkout <migration-branch>`. Create
    `linux-pi/tailscale-serve/.env` as in 4.2 step 8. Then
    `scripts/ts-serve-apply.sh linux-pi/tailscale-serve/serve.json --dry-run`,
-   then without `--dry-run`. All four Pi backends are host services already,
-   so the new URLs answer at once.
-5. Stacks: homepage (`.env`), adguard (`--remove-orphans` removes
-   `adguard-pi-ts`; DNS on `:53` is not touched). The motioneye and cups
-   stacks are deleted on the new branch: `docker rm -f motioneye-ts cups-ts`,
-   remove the cups sidecar's bridge network (`docker network ls` shows it),
-   and rerun `linux-pi/cups/setup.sh` with the new alias.
+   then without `--dry-run`. Homepage, motioneye and adguard are host
+   services already, so their new URLs answer at once; `:8449` returns 502
+   until the cups shim starts in step 5.
+5. Stacks, each with `docker compose up -d --remove-orphans`: homepage
+   (`.env`: drop `TS_AUTHKEY` and the three per-service domain keys, set
+   `HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN` to the Pi node's name and
+   `HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN` to the server node's name; removes
+   `homepage-pi-ts`), adguard (removes `adguard-pi-ts`; the `adguardhome`
+   service definition is unchanged, so it is not recreated and DNS on `:53`
+   is not touched), cups (starts `cups-proxy` on `127.0.0.1:8631` and removes
+   `cups-ts`; `:8449` answers now). Then:
+   - The motioneye stack is deleted on the new branch:
+     `docker rm -f motioneye-ts`.
+   - Remove the old cups bridge network, which `--remove-orphans` leaves
+     behind: `docker network ls` shows it (the cups project's `default`
+     network), then `docker network rm` it.
+   - CUPS policy: in `linux-pi/cups/.env` delete `CUPS_SIDECAR_SUBNET` and
+     `TS_AUTHKEY`, and drop the old sidecar name from `CUPS_SERVER_ALIAS`
+     (the tailnet name is not needed, see 2.3). Then the reviewed installer
+     (`linux-pi/cups/README.md`): `bash test-setup.sh`,
+     `bash setup.sh --dry-run`, `sudo bash setup.sh --prepare-review`,
+     HUMAN review of the root-only diff, `sudo bash setup.sh --apply-reviewed
+     <source-sha256> <candidate-sha256>`. The new policy drops the sidecar
+     subnet from the allow lists. The `cupsd.conf.bak.<timestamp>` that the
+     apply writes is this step's rollback, together with the 4.6 stack
+     rollback of `linux-pi/cups`.
+   - On the Pi, verify the shim without the tailnet:
+     `curl -sS -o /dev/null -w '%{http_code}\n' -H 'Host: <pi-hostname>.<tailnet>.ts.net:8449' http://127.0.0.1:8631/`
+     prints `200`, and the same request to `http://127.0.0.1:631/` prints
+     `400` (the reason for the shim).
 6. The Pi resolves the server's name: `getent hosts <server>.<tailnet>.ts.net`
    was checked in 4.2 step 5; repeat it after the Pi's own tailscaled change.
 7. Neighbours: confirm `adguardhome-sync` `ORIGIN_URL` and `backup`
@@ -836,7 +875,7 @@ on the same origin and under the mount.
 | forgejo | `https://forgejo.<tailnet>.ts.net/api/v1/version` 200 | `git ls-remote` over HTTPS and SSH from a clone; the macOS runner shows online |
 | Pi motioneye | `/motioneye/` 200 | Camera streams |
 | Pi adguard | `:8443/control/status` 401 or 403 | `dig @<pi-lan-ip>` resolves |
-| Pi cups | `:8449/` 200 | Not 400 (Host / `ServerAlias`, UNVERIFIED with a port); admin asks for auth |
+| Pi cups | `:8449/` 200 (via the `127.0.0.1:8631` shim, 2.3) | `/printers/` lists the printers; `/admin/` asks for auth |
 
 On the host, for every stack: the backend listens on `127.0.0.1` only
 (`ss -ltnH 'sport = :<port>'`), the old node shows offline in
@@ -985,8 +1024,9 @@ integration card applies it.
 | `linux-pi/tailscale-serve/serve.json` | New: every 2.3 row |
 | `linux-pi/tailscale-serve/.env.example` | New: the two render keys with placeholders (3.1, 3.3) |
 | `linux-pi/adguard/`, `linux-pi/homepage/` | Remove the sidecar, `ts-serve.json`, `TS_AUTHKEY`; homepage links per 5.1 |
-| `linux-pi/motioneye/`, `linux-pi/cups/docker-compose.yml`, `linux-pi/cups/ts-serve.json` | Delete (sidecar-only stacks) |
-| `linux-pi/cups/setup.sh`, `test-setup.sh`, `.env.example`, `README.md` | Drop `PINNED_SIDECAR_SUBNET`/`CUPS_SIDECAR_SUBNET` from the allow lists and validation; the alias becomes the Pi's MagicDNS name |
+| `linux-pi/motioneye/`, `linux-pi/cups/ts-serve.json` | Delete (sidecar-only) |
+| `linux-pi/cups/docker-compose.yml`, `linux-pi/cups/nginx.conf` | Replace the sidecar with the `cups-proxy` Host-rewrite shim on `127.0.0.1:8631` (2.3 deviation) |
+| `linux-pi/cups/setup.sh`, `test-setup.sh`, `.env.example`, `README.md` | Drop `PINNED_SIDECAR_SUBNET`/`CUPS_SIDECAR_SUBNET` from the allow lists and validation; `CUPS_SERVER_ALIAS` keeps only LAN names (no tailnet name, 2.3) |
 | `linux-pi/adguardhome-sync/.env.example`, `linux-pi/backup/.env.example`, `linux-pi/backup/README.md` | 2.3 neighbours |
 | `linux-pi/README.md` | Host tailscaled and `tag:pi` (4.4), host serve instead of sidecars, the new URLs |
 
@@ -1040,10 +1080,11 @@ UNVERIFIED items and their fallbacks, in one place:
   D10).
 - `Services` applied through `set-raw` (fallback: `tailscale serve
   --service=...`; 3.5).
-- CUPS `ServerAlias` with a port-bearing `Host` (fallback: add the port form
-  if it returns 400; 4.5).
 - The Pi resolving the server's MagicDNS name (fallback: fix before the
   neighbour step; 4.4).
+- The cups Host-rewrite shim on Pi hardware (spiked on amd64 only; the
+  `127.0.0.1:8631` check in 4.4 step 5 covers it). The `ServerAlias` route
+  is not a fallback: cupsd ignores it on loopback (2.3).
 - From research [A]: cockpit login and the `tailscale web` manage flow under
   a prefix, portainer websocket exec, watchtower callers with a path URL, the
   openspeedtest body limit, the Uptime Kuma schema, Syncthing peers dialing a
