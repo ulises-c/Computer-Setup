@@ -1,0 +1,14 @@
+[Unit]
+Description=Game server backup (restic → main server over SSH)
+Wants=network-online.target
+After=network-online.target docker.service
+OnFailure=game-backup-failure.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env bash @BACKUP_SCRIPT@
+Environment=HOME=/root
+TimeoutStartSec=2h
+PrivateTmp=yes
+Nice=10
+IOSchedulingClass=idle

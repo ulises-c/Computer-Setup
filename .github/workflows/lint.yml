@@ -73,8 +73,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Test Pi backup failure status
-        run: bash linux-pi/backup/test-backup-failure.sh
+      - name: Test shared backup engine (failure status, sources, guards)
+        run: bash server-base/backup/test-backup.sh
 
       - name: Test CUPS policy rendering
         run: bash linux-pi/cups/test-setup.sh

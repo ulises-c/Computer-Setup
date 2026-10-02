@@ -63,7 +63,7 @@ else
   python3 "$SCRIPT_DIR/scaffold.py"
 fi
 run bash "$SETUP_ROOT/server-base/homepage/fetch-assets.sh" "$SCRIPT_DIR"
-for dir in homepage glances portainer watchtower; do
+for dir in homepage glances portainer watchtower backup; do
   run sudo docker compose -f "$SCRIPT_DIR/$dir/docker-compose.yml" config --quiet
   run sudo docker compose -f "$SCRIPT_DIR/$dir/docker-compose.yml" up -d
 done

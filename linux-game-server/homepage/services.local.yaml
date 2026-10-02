@@ -26,6 +26,25 @@
         href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/cockpit/
         description: Server admin UI
         ping: https://127.0.0.1:9090
+    - backups:
+        icon: sh-restic
+        description: restic → main server (wd1tb + wd14tb)
+        server: my-docker
+        container: backup-status
+        widget:
+          type: customapi
+          url: http://127.0.0.1:8099/backup-status.json
+          refreshInterval: 600000
+          mappings:
+            - field: status
+              label: Status
+              format: text
+            - field: last_run
+              label: Last run
+              format: relativeDate
+            - field: repo_size_bytes
+              label: Repo size
+              format: bytes
 
 - Games:
     - game server:

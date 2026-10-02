@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly game server backup
+
+[Timer]
+# 04:15 — offset from the main server's 03:30 and the Pi's 03:45 runs.
+OnCalendar=*-*-* 04:15:00
+Persistent=true
+RandomizedDelaySec=10m
+
+[Install]
+WantedBy=timers.target

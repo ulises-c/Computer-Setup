@@ -1,5 +1,5 @@
 [Unit]
-Description=Alert on server backup failure
+Description=Alert on game server backup failure
 
 [Service]
 Type=oneshot
