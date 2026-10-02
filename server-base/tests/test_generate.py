@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+import importlib.util
+import json
+from pathlib import Path
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+spec = importlib.util.spec_from_file_location("generate", ROOT / "homepage/generate.py")
+generate = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(generate)
+FLEET = json.loads((ROOT / "fleet.json").read_text())
+
+
+class GenerateTests(unittest.TestCase):
+    def test_outputs_are_current(self):
+        self.assertEqual(generate.main(["generate.py", "--check"]), 0)
+
+    def test_every_host_lists_every_server_and_only_its_own_unlinked(self):
+        names = [s["name"] for s in FLEET["servers"]]
+        for host in FLEET["hosts"]:
+            cards = [generate.server_card(s, host) for s in FLEET["servers"]]
+            self.assertEqual([next(iter(c)) for c in cards], names)
+            unlinked = [s["dir"] for s, c in zip(FLEET["servers"], cards) if "href" not in c[s["name"]]]
+            self.assertEqual(unlinked, [host])
+
+    def test_shared_services_only_on_other_hosts(self):
+        shared_dir = next(s["dir"] for s in FLEET["servers"] if s["key"] == FLEET["shared_services"]["host"])
+        group = f"- {FLEET['shared_services']['group']}:"
+        for host in FLEET["hosts"]:
+            text = (ROOT.parent / host / "homepage/config/services.yaml").read_text()
+            self.assertEqual(group in text, host != shared_dir, host)
+
+    def test_every_group_has_an_accent(self):
+        for host, cfg in FLEET["hosts"].items():
+            text = (ROOT.parent / host / "homepage/config/services.yaml").read_text()
+            groups = {line[2:-1] for line in text.splitlines() if line.startswith("- ") and line.endswith(":")}
+            nested = {line.strip()[2:-1] for line in text.splitlines()
+                      if line.startswith("    - ") and line.endswith(":") and not line.startswith("     ")}
+            headed = (groups | {g for g in nested if g in cfg["accents"]}) - {"Core"}
+            self.assertEqual(sorted(headed - set(cfg["accents"])), [], host)
+
+    def test_emitted_strings_are_quoted(self):
+        lines = generate.emit([{"g": [{"svc": {"description": "NAS: storage", "n": 4, "b": True}}]}])
+        self.assertIn('        description: "NAS: storage"', lines)
+        self.assertIn("        n: 4", lines)
+        self.assertIn("        b: true", lines)
+
+
+if __name__ == "__main__":
+    unittest.main()

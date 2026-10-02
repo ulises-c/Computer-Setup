@@ -1,0 +1,6 @@
+  Game server:
+    style: row
+    columns: 2
+  Games:
+    style: row
+    columns: 2

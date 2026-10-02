@@ -17,8 +17,6 @@ linux-server/adguard/conf/
 linux-server/filebrowser/database/
 linux-server/filebrowser/filebrowser.db
 
-linux-server/homepage/config/custom.css
-linux-server/homepage/config/custom.js
 linux-server/homepage/config/kubernetes.yaml
 linux-server/homepage/config/proxmox.yaml
 linux-server/homepage/config/logs/
@@ -59,8 +57,6 @@ linux-pi/*/ts-state/
 
 # Pi homepage — logs + files homepage auto-generates on first run
 linux-pi/homepage/config/logs/
-linux-pi/homepage/config/custom.css
-linux-pi/homepage/config/custom.js
 linux-pi/homepage/config/kubernetes.yaml
 linux-pi/homepage/config/proxmox.yaml
 
@@ -81,7 +77,8 @@ linux-server/immich/library/
 # Game-server runtime status and Homepage-generated files
 linux-game-server/dragonwilds/status/
 linux-game-server/homepage/config/logs/
-linux-game-server/homepage/config/custom.css
-linux-game-server/homepage/config/custom.js
 linux-game-server/homepage/config/kubernetes.yaml
 linux-game-server/homepage/config/proxmox.yaml
+
+# Homepage artwork fetched at deploy time (server-base/homepage/fetch-assets.sh)
+linux-*/homepage/assets/

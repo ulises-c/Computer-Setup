@@ -1,0 +1,97 @@
+/* Generated copy of server-base/homepage/custom.css. */
+/*
+ * Shared Homepage design system for every server (server-base/homepage).
+ * Each group gets an accent from server-base/fleet.json (custom.js sets
+ * data-accent on the group); cards, headings and charts take that accent.
+ * Status stays text ("Running", latency in ms), never colour alone.
+ */
+
+:root {
+  --accent: 148 163 184;
+}
+
+.services-group[data-accent="indigo"]  { --accent: 129 140 248; }
+.services-group[data-accent="blue"]    { --accent: 96 165 250; }
+.services-group[data-accent="teal"]    { --accent: 45 212 191; }
+.services-group[data-accent="emerald"] { --accent: 52 211 153; }
+.services-group[data-accent="amber"]   { --accent: 251 191 36; }
+.services-group[data-accent="orange"]  { --accent: 251 146 60; }
+.services-group[data-accent="rose"]    { --accent: 251 113 133; }
+.services-group[data-accent="cyan"]    { --accent: 34 211 238; }
+
+/* Glances/Recharts graphs draw with --color-500; tint them per group. */
+.services-group[data-accent] {
+  --color-500: var(--accent);
+}
+
+/* Group headings: accent bar + accent text. */
+.services-group[data-accent] .service-group-name {
+  align-items: center;
+  color: rgb(var(--accent));
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.services-group[data-accent] .service-group-name::before {
+  content: "";
+  display: inline-block;
+  width: 0.3rem;
+  height: 1.1em;
+  margin-right: 0.55rem;
+  border-radius: 9999px;
+  background: rgb(var(--accent));
+  box-shadow: 0 0 10px rgb(var(--accent) / 0.6);
+}
+
+/* Cards: left accent rule, faint accent wash, lift on hover. */
+.services-group[data-accent] .service-card {
+  border-left: 3px solid rgb(var(--accent) / 0.7);
+  background-image: linear-gradient(100deg, rgb(var(--accent) / 0.1), transparent 55%);
+  transition: transform 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+.services-group[data-accent] .service-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px -8px rgb(var(--accent) / 0.55);
+}
+
+/* Colour logos keep their own colours; give them a little depth. */
+.service-icon img {
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.45));
+}
+
+.service-name {
+  font-weight: 600;
+}
+
+/* Glances "info" pins the CPU model above its box, over the card description;
+   drop the box below the title so both stay readable. */
+.service-container.chart:has(> .bg-linear-to-br) {
+  margin-top: 1.25rem;
+}
+
+/* The game-world card shows the official key art behind its rows. The images
+   are fetched at deploy time (server-base/homepage/fetch-assets.sh). */
+#dragonwilds-world .service-card {
+  background-image:
+    linear-gradient(180deg, rgb(15 23 42 / 0.55), rgb(15 23 42 / 0.92) 60%),
+    url("/images/dragonwilds-hero.jpg");
+  background-size: cover;
+  background-position: center top;
+}
+
+#dragonwilds-world .service-title {
+  padding-right: 10rem;
+}
+
+#dragonwilds-world .service-title::after {
+  content: "";
+  position: absolute;
+  top: 1.1rem;
+  right: 0.75rem;
+  width: 9rem;
+  height: 2.75rem;
+  background: url("/images/dragonwilds-logo.png") right center / contain no-repeat;
+  opacity: 0.9;
+  pointer-events: none;
+}

@@ -34,7 +34,7 @@ PLATFORM=server
 # shellcheck disable=SC2034  # consumed by the sourced lib/core.sh and platforms/server.sh
 CONFIG_SRC_DIR="$SCRIPT_DIR"
 TAG_FILTER_ACTIVE=true
-SELECTED_TAGS="$(core_csv_to_json terminal)"
+SELECTED_TAGS="$(core_csv_to_json server-base)"
 export TAG_FILTER_ACTIVE SELECTED_TAGS
 
 core_prime_sudo
@@ -43,9 +43,10 @@ run sudo apt-get install -y ca-certificates curl jq git rsync python3 ufw polkit
   docker.io docker-compose-v2 lib32gcc-s1 lib32stdc++6
 # Without recommends: cockpit would otherwise pull NetworkManager onto a networkd host.
 run sudo apt-get install -y --no-install-recommends cockpit ncdu smartmontools lm-sensors
-apt_install_tier high
-apt_install_tier medium
-setup_bat_fd_symlinks
+platform_install_tier high
+platform_install_tier medium
+claude_code_step
+opencode_step
 set_default_shell
 deploy_dotfiles
 server_preclone_antidote
@@ -61,6 +62,7 @@ if [[ "$DRY_RUN" == true ]]; then
 else
   python3 "$SCRIPT_DIR/scaffold.py"
 fi
+run bash "$SETUP_ROOT/server-base/homepage/fetch-assets.sh" "$SCRIPT_DIR"
 for dir in homepage glances portainer watchtower; do
   run sudo docker compose -f "$SCRIPT_DIR/$dir/docker-compose.yml" config --quiet
   run sudo docker compose -f "$SCRIPT_DIR/$dir/docker-compose.yml" up -d
