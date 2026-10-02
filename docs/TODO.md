@@ -293,10 +293,10 @@ torrents only). Before broader use, route all torrent traffic through a VPN.
 Dedicated game host (`linux-game-server/`), currently Homepage and the native
 Dragonwilds server, migrated off the NAS host.
 
-- [ ] **Backups.** Add restic to the game host, snapshotting `Saved/SaveGames`,
-      `Saved/Config` and the private `.env` files into a repository on the NAS
-      host's backup drive, and test a restore. Keep the configuration under
-      `linux-game-server/`; the NAS side should only provide the target
+- [ ] **Backups.** `linux-game-server/backup/` (shared restic engine) is in the
+      repo; still to do: the SFTP target on the NAS host, `/root/.ssh` alias and
+      key, `backup/.env`, `sudo bash linux-game-server/backup/setup.sh`, a first
+      run, and a tested restore
 - [ ] After a verified restore, set `AUTO_UPDATE_RESTART=true` and configure
       ntfy in `linux-game-server/dragonwilds/.env`
 - [ ] Reserve the game host's LAN address in the router's DHCP table so the
@@ -311,7 +311,30 @@ still separate from the unified Ubuntu Server profile.
 - [x] Secondary AdGuard Home with config sync
 - [x] Pi Homepage dashboard and Tailscale front doors
 - [x] MotionEye, CUPS, and backup service configuration
-- [ ] Add a Debian/arm64 Pi platform to the root provisioning engine (no snap/PPA)
-- [ ] Add the shared headless zsh/Tailscale/Docker/SSH base without duplicating
-      `platforms/server.sh`
-- [ ] Run and record the complete provisioning and service verification on Pi hardware
+- [x] Shared headless base (server-base tools, dotfiles, Tailscale, Docker,
+      Glances/Portainer/Watchtower/Cockpit) via `linux-pi/setup.sh` on the shared
+      engine, without a fifth root platform
+- [ ] Run `linux-pi/setup.sh` and `serve.sh` on the Pi and record the result
+      (untested on hardware: Debian release, arm64 installers, Cockpit on the node)
+- [ ] Re-render the Pi backup units (`sudo bash linux-pi/backup/setup.sh`) and
+      confirm a nightly run with the shared engine
+
+## Server base (`server-base/`)
+
+Shared layer for every server; see [server-base/README.md](../server-base/README.md).
+
+- [ ] Deploy on the main server: `git pull`, `python3 server-base/homepage/generate.py --check`,
+      `bash server-base/homepage/fetch-assets.sh linux-server`, then
+      `docker compose up -d` in `homepage`, `glances`, `portainer`, `watchtower`
+      (recreates them from the base; config is otherwise identical) and revalidate Homepage
+- [ ] Main server: `sudo bash linux-server/backup/setup.sh` to re-render the failure
+      unit with `EnvironmentFile`, then check one nightly run on the shared engine
+- [ ] Game server: recreate Homepage with the assets mounts (`sudo docker compose up -d`
+      in `homepage/`) so the Dragonwilds icon and artwork load
+- [ ] Add `HOMEPAGE_VAR_MAIN_GLANCES_URL` to the game server and Pi Homepage `.env`
+      files (and the Pi's `HOMEPAGE_VAR_PI_NODE_DOMAIN` + Shared services domains)
+- [ ] Once #86 lands on the main server and Pi: point `MAIN_GLANCES_URL` /
+      `PI_HOMEPAGE_DOMAIN` at the host nodes and give the Pi's Servers card a
+      `glances_url` in `fleet.json`
+- [ ] Homepage UI ([#95](https://github.com/ulises-c/Computer-Setup/issues/95)):
+      check the shared design on a phone-width viewport and in the light theme

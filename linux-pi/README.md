@@ -5,6 +5,37 @@ compose up -d`). Mirrors the `linux-server/<service>/` layout: each folder is a
 Docker Compose stack with a committed `docker-compose.yml` / `.env.example` and
 gitignored runtime dirs (`conf/ work/ ts-state/`) + `.env`.
 
+## Base layer (`setup.sh`)
+
+The Pi runs the same base as every server ([`../server-base`](../server-base/README.md)):
+
+```bash
+bash linux-pi/setup.sh --dry-run
+bash linux-pi/setup.sh
+```
+
+It installs the `server-base` tool set (zsh, tmux, fastfetch, eza, fzf, ripgrep,
+bat, fd, zoxide, htop, ncdu, git/gh, Cockpit, claude-code, opencode) and the
+shared dotfiles through the root engine, then Tailscale and Docker if missing.
+Raspberry Pi OS has no snapd, so snap-only tools (micro) are skipped, and the
+script requires a release whose archive has fastfetch and eza (Debian 13+). It
+does not restart Docker to pin address pools (that drops the backup DNS); do
+that by hand in a maintenance window.
+
+`glances/`, `portainer/` and `watchtower/` extend the shared stacks, bound to
+loopback. `serve.sh` (driven by `serve.conf`) publishes them on the Pi's own
+tailnet node, the #86 layout: `https://<pi-hostname>.<tailnet>.ts.net/glances/`,
+`/cockpit/` and `:9443` (Portainer). Copy `glances/.env.example` to `.env` first.
+Homepage and the other Pi services keep their sidecars until #86 moves them.
+
+`homepage/config/{services,settings}.yaml` are generated from
+`homepage/*.local.yaml` (`python3 server-base/homepage/generate.py`); add
+`HOMEPAGE_VAR_PI_NODE_DOMAIN`, `HOMEPAGE_VAR_MAIN_GLANCES_URL` and the Shared
+services domains from `homepage/.env.example` to the existing `.env`, run
+`bash server-base/homepage/fetch-assets.sh linux-pi`, and recreate Homepage.
+`backup/backup.sh` and `setup.sh` are symlinks into the shared restic engine;
+`backup/sources.sh` lists the Pi's paths.
+
 ## Why this node exists
 
 The home network had a **single point of DNS failure**: the Ubuntu server ran the

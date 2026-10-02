@@ -6,6 +6,36 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com). Remaining
 work lives in [TODO.md](TODO.md); the design rationale for the unified layout is
 in [UNIFICATION.md](UNIFICATION.md).
 
+## Unreleased — Shared server base and cross-linked dashboards
+
+### Added
+- `server-base/`: one layer for every server. Base Glances, Portainer, Watchtower
+  and Homepage compose services that each host `extends`; `serve.sh` publishing
+  a host's routes from its `serve.conf` (one tailnet node per host); a shared
+  restic engine that hosts symlink and configure with `sources.sh`; and
+  `fleet.json` + `homepage/generate.py`, which render every host's Homepage
+  config so the Servers and Shared services groups cannot drift (`--check` in CI).
+- `server-base` tag in `packages.json` (shell, terminal tools, git/gh, Tailscale,
+  Docker, Cockpit, claude-code, opencode); opencode installs on servers via a new
+  `opencode_step`, zoxide gains a server apt entry.
+- Servers cards show each host's live Glances info, and the game server's card
+  shows world state, players and uptime from its status JSON, now served at
+  `/dragonwilds/` on its node.
+- Homepage design system: colour selfh.st logos, per-group accents (heading, card
+  rule and wash, tinted charts), and the official Dragonwilds icon, logo and key
+  art fetched from Steam at deploy time (not committed).
+- `linux-pi/setup.sh`: the Pi's base bootstrap on the shared engine, plus Glances,
+  Portainer and Watchtower on the Pi's own node.
+- Game server nightly restic backup to the main server, including a verified
+  live world copy.
+
+### Changed
+- Homepage is pinned to v2.4.0 on every host (the main server and Pi used `:latest`,
+  which resolved to v2.4.0).
+- Backups on the main server and Pi now share the Pi's hardened failure handling:
+  one alert from `OnFailure`, and a failed second copy marks the run "second copy
+  incomplete" instead of failing it.
+
 ## 2026-10-02 — RuneScape: Dragonwilds session configuration
 
 ### Changed
