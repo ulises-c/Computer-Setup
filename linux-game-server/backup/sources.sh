@@ -7,19 +7,25 @@ BACKUP_LABEL="Game server"
 BACKUP_UNIT=game-backup.service
 
 saved=""
-if [[ -f "$HOST_DIR/dragonwilds/.env" ]]; then
-  install_dir="$(env_value "$HOST_DIR/dragonwilds/.env" DRAGONWILDS_INSTALL_DIR)"
-  [[ "$install_dir" = /* ]] || die "DRAGONWILDS_INSTALL_DIR must be absolute in dragonwilds/.env"
-  saved="$install_dir/RSDragonwilds/Saved"
-  [[ -d "$saved" ]] || log "warning: Dragonwilds saves not found at $saved — not backed up"
-fi
+install_dir=""
+resolve_sources() {
+  if [[ -f "$HOST_DIR/dragonwilds/.env" ]]; then
+    install_dir="$(env_value "$HOST_DIR/dragonwilds/.env" DRAGONWILDS_INSTALL_DIR)"
+    if [[ "$install_dir" = /* ]]; then
+      saved="$install_dir/RSDragonwilds/Saved"
+      [[ -d "$saved" ]] || { log "warning: Dragonwilds saves not found at $saved — not backed up"; saved=""; }
+    else
+      log "warning: DRAGONWILDS_INSTALL_DIR is not an absolute path in dragonwilds/.env — world not backed up"
+    fi
+  fi
 
-# Worlds and server config only (OwnerId, identity, world password); the game
-# install comes back from steamcmd. The repository is encrypted.
-CANDIDATES+=("$HOST_DIR/homepage/config")
-if [[ -n "$saved" ]]; then
-  CANDIDATES+=("$saved/SaveGames" "$saved/Config")
-fi
+  # Worlds and server config only (OwnerId, identity, world password); the game
+  # install comes back from steamcmd. The repository is encrypted.
+  CANDIDATES+=("$HOST_DIR/homepage/config")
+  if [[ -n "$saved" ]]; then
+    CANDIDATES+=("$saved/SaveGames" "$saved/Config")
+  fi
+}
 
 # The game writes its world while running, so a raw file copy can be torn. Also
 # stage a header-checked, hash-verified copy taken while the file was stable.

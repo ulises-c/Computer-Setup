@@ -67,6 +67,10 @@ fi
 # re-adds it (Cockpit keeps its UrlRoot that way).
 for route in "${ROUTES[@]}"; do
   read -r port path target <<< "$route"
+  if [[ "$path" == /cockpit && ! -d /etc/cockpit ]]; then
+    printf 'warning: Cockpit is not installed; skipping /cockpit\n' >&2
+    continue
+  fi
   if [[ "$path" == / ]]; then
     tailscale serve --bg --https="$port" "$target"
   else

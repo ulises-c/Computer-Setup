@@ -4,8 +4,10 @@ set -euo pipefail
 # Nightly restic backup shared by every server (server-base/backup). Each host
 # runs it through a symlink in <host>/backup/, next to that host's .env and
 # sources.sh. sources.sh names the backup (BACKUP_NAME, BACKUP_LABEL,
-# BACKUP_UNIT), appends the host's paths to CANDIDATES, and may define a
-# stage_extra hook that writes into $STAGING_DIR. Snapshots those paths plus
+# BACKUP_UNIT) and defines resolve_sources, which appends the host's paths to
+# CANDIDATES, plus an optional stage_extra hook that writes into $STAGING_DIR.
+# Only those simple assignments run at source time, so a broken host path can
+# never stop the failure notifier. Snapshots those paths plus
 # consistent SQLite copies, a Portainer volume copy and every service .env,
 # prunes, optionally copies to a second repository, writes the status JSON
 # for the Homepage card and reports to ntfy / Uptime Kuma.
@@ -33,10 +35,13 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
 # Read one key from a service's .env without sourcing it (this runs as root, and
 # those files are user-owned). Strips one layer of matching quotes, since the
-# services themselves source the file and so accept KEY="value".
+# services themselves source the file and so accept KEY="value"; also tolerates
+# an `export ` prefix, CRLF endings and a trailing ` # comment`.
 env_value() {
   local v
-  v="$(grep -E "^$2=" "$1" | tail -1 | cut -d= -f2- || true)"
+  v="$(grep -E "^(export[[:space:]]+)?$2=" "$1" | tail -1 | cut -d= -f2- || true)"
+  v="${v%$'\r'}"
+  [[ "$v" == \"* || "$v" == \'* ]] || v="${v%%[[:space:]]#*}"
   if [[ "$v" =~ ^\"(.*)\"$ || "$v" =~ ^\'(.*)\'$ ]]; then
     v="${BASH_REMATCH[1]}"
   fi
@@ -92,11 +97,15 @@ validate_url() {
   [[ -z "$value" || "$value" =~ ^https?://[^[:space:]]+$ ]] || die "$name must be an http(s) URL without whitespace"
 }
 
-notification_config_valid() {
+# Checked per channel so one bad value cannot silence the other channel.
+ntfy_config_valid() {
   [[ -z "${NTFY_URL:-}" || "${NTFY_URL:-}" =~ ^https?://[^[:space:]]+$ ]] \
-    && [[ -z "$KUMA_PUSH_URL" || "$KUMA_PUSH_URL" =~ ^https?://[^[:space:]]+$ ]] \
     && [[ "$NTFY_TOPIC" != *$'\n'* && "$NTFY_TOPIC" != *$'\r'* ]] \
     && [[ "${NTFY_TOKEN:-}" != *$'\n'* && "${NTFY_TOKEN:-}" != *$'\r'* ]]
+}
+
+kuma_config_valid() {
+  [[ -z "$KUMA_PUSH_URL" || "$KUMA_PUSH_URL" =~ ^https?://[^[:space:]]+$ ]]
 }
 
 write_status() {
@@ -129,11 +138,15 @@ if [[ "${1:-}" == "notify-failure" ]]; then
       write_status failed || true
     fi
   fi
-  if notification_config_valid; then
+  if ntfy_config_valid; then
     notify "$BACKUP_LABEL backup FAILED" urgent rotating_light "systemd OnFailure — see: journalctl -u $BACKUP_UNIT"
+  else
+    printf 'warning: invalid ntfy configuration; failure status recorded without an ntfy alert\n' >&2
+  fi
+  if kuma_config_valid; then
     kuma_push down "systemd OnFailure — see journalctl -u $BACKUP_UNIT"
   else
-    printf 'warning: invalid notification configuration; failure status recorded without sending alerts\n' >&2
+    printf 'warning: invalid KUMA_PUSH_URL; failure status recorded without a Kuma push\n' >&2
   fi
   exit 0
 fi
@@ -170,6 +183,7 @@ if [[ -n "$BACKUP_MOUNT" ]]; then
 fi
 
 # --- resolve sources --------------------------------------------------------
+resolve_sources
 # shellcheck disable=SC2206
 [[ -n "${BACKUP_EXTRA_PATHS:-}" ]] && CANDIDATES+=(${BACKUP_EXTRA_PATHS})
 
@@ -210,8 +224,10 @@ if command -v docker >/dev/null && docker inspect -f '{{.State.Running}}' portai
   if [[ -n "$vol" && -d "$vol" ]]; then
     log "snapshotting portainer volume (brief stop)"
     docker stop portainer >/dev/null
-    cp -a "$vol" "$STAGING_DIR/portainer"
+    copied=true
+    cp -a "$vol" "$STAGING_DIR/portainer" || copied=false
     docker start portainer >/dev/null
+    [[ "$copied" == true ]] || die "copying the portainer volume failed (portainer restarted)"
   fi
 fi
 
@@ -259,6 +275,9 @@ if [[ -n "$SECOND_RESTIC_REPOSITORY" ]]; then
       mountpoint -q "$SECOND_BACKUP_MOUNT" && [[ -f "$SECOND_BACKUP_MOUNT/.backup-target-ok" ]] || return 1
     fi
     if ! restic -r "$SECOND_RESTIC_REPOSITORY" cat config >/dev/null 2>&1; then
+      # Only a verified local mount may be initialized: over SFTP an unreachable
+      # target and an empty mountpoint look the same as a new repository.
+      [[ -n "$SECOND_BACKUP_MOUNT" ]] || return 1
       log "initializing second repo at $SECOND_RESTIC_REPOSITORY"
       restic -r "$SECOND_RESTIC_REPOSITORY" init --copy-chunker-params --from-repo "$RESTIC_REPOSITORY" || return 1
     fi

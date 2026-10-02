@@ -144,9 +144,11 @@ restic init
 restic -r "$SECOND_RESTIC_REPOSITORY" init --copy-chunker-params --from-repo "$RESTIC_REPOSITORY"
 ```
 
-The script initializes the primary repository on first use. It never initializes the
-optional second repository automatically because an unreachable SFTP target and an
-uninitialized repository are not safely distinguishable.
+The shared engine (`server-base/backup/backup.sh`) initializes the primary
+repository on first use. It never initializes an SFTP second repository
+automatically, because an unreachable target and an uninitialized repository are
+not safely distinguishable; only a local second repository behind a verified
+`SECOND_BACKUP_MOUNT` is auto-initialized.
 
 ### 7. Status card server
 
@@ -195,8 +197,7 @@ Then put state back per service:
 - **Losing `RESTIC_PASSWORD` = unrecoverable backups.** Keep it secure.
 - The second copy is reported as incomplete if its target or an operation fails —
   don't rely on it as your only backup.
-- Staged `.env` copies live under `/root/pi-backup-staging` with mode `0700` and
-  are removed on normal exit. A forced kill can leave that root-only directory for
-  the next run to replace.
+- Staged `.env` copies live under `/var/tmp/pi-backup-staging` (private to the unit
+  through `PrivateTmp=yes`) with mode `0700` and are removed on normal exit.
 - The script skips missing source paths, so it's safe to enable before every
   service is deployed; coverage grows automatically as data dirs appear.

@@ -6,9 +6,11 @@ BACKUP_NAME=pi
 BACKUP_LABEL=Pi
 BACKUP_UNIT=pi-backup.service
 
-CANDIDATES+=(
-  "$HOST_DIR/adguard/conf"
-  "$HOST_DIR/homepage/config"
-  /etc/motioneye
-  /etc/cups
-)
+resolve_sources() {
+  CANDIDATES+=(
+    "$HOST_DIR/adguard/conf"
+    "$HOST_DIR/homepage/config"
+    /etc/motioneye
+    /etc/cups
+  )
+}

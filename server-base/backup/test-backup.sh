@@ -62,11 +62,22 @@ rm -f "$tmp/status.json"
 run_notifier not-a-url also-not-a-url
 [[ "$(jq -r '.status' "$tmp/status.json")" == failed ]] || fail "invalid notifier config blocked status"
 
-# Without EnvironmentFile, the failure path reads the notifier keys from .env.
-printf 'NTFY_URL=not-a-url\n' >"$pi/backup/.env"
+# Without EnvironmentFile, the failure path reads the notifier keys from .env,
+# tolerating `export`, inline comments and CRLF, and checks each channel alone.
+printf 'export NTFY_URL=not-a-url\nKUMA_PUSH_URL=https://kuma.example/push # heartbeat\r\n' >"$pi/backup/.env"
 err="$(STATUS_JSON="$tmp/status.json" bash "$pi/backup/backup.sh" notify-failure 2>&1)"
-grep -q 'invalid notification configuration' <<<"$err" || fail "notify-failure ignored .env notifier keys"
+grep -q 'invalid ntfy configuration' <<<"$err" || fail "notify-failure ignored .env notifier keys"
+if grep -q 'invalid KUMA_PUSH_URL' <<<"$err"; then fail "a bad ntfy URL suppressed the Kuma push"; fi
 rm "$pi/backup/.env"
+
+# A broken host path must not stop the failure notifier (game: relative install dir).
+game="$(make_host game linux-game-server)"
+mkdir -p "$game/dragonwilds"
+printf 'DRAGONWILDS_INSTALL_DIR=games/dragonwilds\n' >"$game/dragonwilds/.env"
+rm -f "$tmp/status.json"
+STATUS_JSON="$tmp/status.json" bash "$game/backup/backup.sh" notify-failure 2>/dev/null \
+  || fail "notify-failure died on a bad DRAGONWILDS_INSTALL_DIR"
+[[ "$(jq -r '.status' "$tmp/status.json")" == failed ]] || fail "game failure not recorded"
 
 # --- full run with stubbed tools -------------------------------------------
 stub="$tmp/stub"
@@ -118,9 +129,28 @@ done
 [[ "$backup_line" != *"$server/qbittorrent/config"* ]] || fail "absent path was backed up"
 grep -q 'sqlite snapshot: uptime-kuma/data/kuma.db' <<<"$out" || fail "sqlite db not staged"
 grep -q 'second copy incomplete' <<<"$out" || fail "unmounted second drive not reported"
+if grep -q '^init' "$tmp/restic.log"; then fail "second repo initialized on an unmounted drive"; fi
 [[ "$(jq -r '.status' "$server/backup/status/backup-status.json")" == success ]] || fail "status not success"
 [[ "$(jq -r '.snapshot' "$server/backup/status/backup-status.json")" == abc12345 ]] || fail "snapshot id not recorded"
 [[ ! -e "$tmp/staging" ]] || fail "staging dir left behind"
+
+# An SFTP second repo (no SECOND_BACKUP_MOUNT) that is unreachable is never initialized.
+cat >"$stub/restic" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$RESTIC_LOG"
+case "$*" in
+  *"-r sftp:"*"cat config"*) exit 1 ;;
+  *"snapshots latest"*) printf '[{"short_id":"abc12345"}]\n' ;;
+  *stats*) printf '{"total_size":2048}\n' ;;
+esac
+STUB
+sed -i.bak -e 's|^SECOND_RESTIC_REPOSITORY=.*|SECOND_RESTIC_REPOSITORY=sftp:target:/copy|' \
+  -e 's|^SECOND_BACKUP_MOUNT=.*|SECOND_BACKUP_MOUNT=|' "$server/backup/.env"
+: >"$tmp/restic.log"
+out="$(PATH="$stub:$PATH" RESTIC_LOG="$tmp/restic.log" bash "$server/backup/backup.sh" 2>&1)" \
+  || fail "sftp second-repo run failed: $out"
+if grep -q 'sftp:target:/copy init' "$tmp/restic.log"; then fail "unreachable SFTP second repo was initialized"; fi
+grep -q 'second copy incomplete' <<<"$out" || fail "unreachable SFTP second repo not reported"
 
 # The local-drive guard refuses an unlabelled target.
 rm "$drive/.backup-target-ok"
@@ -142,6 +172,7 @@ for host in linux-server linux-pi linux-game-server; do
     # shellcheck source=/dev/null
     source "$REPO/$host/backup/sources.sh"
     [[ -n "$BACKUP_NAME" && -n "$BACKUP_LABEL" && "$BACKUP_UNIT" == *.service ]]
+    resolve_sources
   ) || fail "$host/backup/sources.sh does not source cleanly"
 done
 

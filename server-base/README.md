@@ -105,7 +105,10 @@ consistent SQLite copies, a Portainer volume copy and every service `.env`, then
 prunes, optionally copies to a second repository, writes
 `<host>/backup/status/backup-status.json` for the Homepage card and alerts
 through ntfy / Uptime Kuma. A local-drive repository (`BACKUP_MOUNT`) must be
-mounted and carry a `.backup-target-ok` sentinel. Failure alerts come only from
+mounted and carry a `.backup-target-ok` sentinel; a second repository is only
+auto-initialized behind such a verified `SECOND_BACKUP_MOUNT`, never over SFTP.
+`sources.sh` does nothing but assign at source time (paths are resolved in
+`resolve_sources` after the guards), so a broken host path still alerts. Failure alerts come only from
 the `*-failure.service` `OnFailure` unit, which reads the notifier keys from the
 host's `.env` without sourcing it.
 
