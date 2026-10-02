@@ -5,7 +5,7 @@ services:
   # cannot proxy to :631 directly. The mounted file replaces nginx's default
   # server, so nothing here listens on :80, which the host AdGuard owns.
   cups-proxy:
-    image: nginx:alpine
+    image: nginx:1.31.6-alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2
     container_name: cups-proxy
     network_mode: host
     restart: unless-stopped

@@ -174,6 +174,44 @@ says `sudo`.
    Expected: a count of 1 or more, with `adguardhome-sync` and `backup`
    among the copied dirs.
 
+8. **Login gate** (design D8). Serve publishes every route on the host node
+   at once, and a path cannot be ACL'd on its own, so each app's login is
+   the only boundary. Before any cutover the apps still sit behind their old
+   sidecars, so probe those URLs (the same app instances). From any tailnet
+   device, with `T` set to the MagicDNS suffix:
+
+   ```sh
+   probe_auth() { while read -r want url; do
+     got=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$url" 2>/dev/null || true)
+     [[ ",$want," == *",$got,"* ]] && r=ok || r=FAIL
+     printf '%-4s %-3s want=%-7s %s\n' "$r" "$got" "$want" "${url/.$T/.<tailnet>}"
+   done; }
+   probe_auth <<EOF
+   401,403 https://qbittorrent.$T/api/v2/app/version
+   401,403 https://syncthing.$T/rest/system/status
+   401 https://watchtower.$T/v1/metrics
+   401,403 https://adguard.$T/control/status
+   401 https://portainer.$T/api/endpoints
+   EOF
+   # Default credentials must be refused. These send only the public
+   # fresh-install defaults from linux-server/README.md.
+   curl -sS -o /dev/null -w 'filebrowser default: %{http_code} (want 403)\n' -X POST \
+     -H 'Content-Type: application/json' -d '{"username":"admin","password":"admin"}' \
+     "https://filebrowser.$T/api/login"
+   curl -sS -o /dev/null -w 'npm default: %{http_code} (want 400/401, never 200)\n' -X POST \
+     -H 'Content-Type: application/json' -d '{"identity":"admin@example.com","secret":"changeme"}' \
+     "https://npm.$T/api/tokens"
+   curl -sS -o /dev/null -w 'portainer admin: %{http_code} (204 = set; 404 = first-run)\n' \
+     "https://portainer.$T/api/users/admin/check"
+   ```
+
+   HUMAN: confirm the Cockpit, Uptime Kuma, speedtest-tracker and atvloadly
+   logins are set (no first-run or default account). STOP on any `FAIL`, a
+   `200` from a default-credential line, or a Portainer `404`: set that app's
+   password first. Re-run the qbittorrent, syncthing, portainer and
+   filebrowser lines against the new front doors after each stack is cut
+   over (§4 functional checks).
+
 ### 1.1 Server: backups (design §4.2 step 6)
 
 `<backup-dir>`'s parent must exist, and `<backup-dir>` itself must not. The
@@ -300,6 +338,8 @@ Services, the probe passes only after §2.3 step 9.6. STOP on a mismatch, and
 either fix it or roll back that stack (§5.1) before starting the next one.
 
 ### 2.2 Server: apply the node-level serve config (design §3.5)
+
+Run the login gate (§1 step 8) first if it has not passed yet.
 
 ```sh
 cd <repo>
@@ -495,7 +535,11 @@ Run on the Pi, in its `<repo>`.
 4. **Checkout and serve.**
    `git checkout feat/86-one-node-per-host` at the approved head. Create
    `linux-pi/tailscale-serve/.env` with the command from §1.2 step 2 (in
-   `linux-pi/tailscale-serve`). Then:
+   `linux-pi/tailscale-serve`). Login gate first (design D8): on the Pi,
+   `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:80/control/status`
+   must print `401` or `403` (AdGuard), and HUMAN confirms the MotionEye admin
+   password is set. STOP otherwise. CUPS `/admin/` auth is checked in §4.
+   Then:
 
    ```sh
    scripts/ts-serve-apply.sh linux-pi/tailscale-serve/serve.json --dry-run

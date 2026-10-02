@@ -183,6 +183,16 @@ Choice:
   existing member-to-device rule stays, so host-published ports (Syncthing,
   DNS, SSH, Cockpit `:9090`, …) keep working over the tailnet.
 
+Accepted trade-off: per-service tailnet ACLs. A grant matches a destination
+host and port, never a URL path, so every path mount on a host's `:443`
+(portainer, cockpit, filebrowser, qbittorrent, syncthing, tailscale-web, …)
+shares one ACL boundary, and the registry-port apps share the host identity
+too. #49 can narrow ports but cannot rebuild a per-path rule. Today's policy
+already lets every member reach every device, so no rule in use is lost; each
+app's own login is the boundary (HANDOFF gates on it before serve applies).
+An app that later needs its own ACL moves to a Tailscale Service (#105), as forgejo,
+ntfy and immich already have.
+
 Rejected:
 - Least-privilege grants for the host nodes in the same change. A missed port
   would break a service in a way that looks like a migration bug; this stays
