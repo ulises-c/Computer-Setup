@@ -3,7 +3,8 @@
 Self-hosted photo and video backup — a Google Photos replacement with iOS/Android
 apps that back up the camera roll in the background, a timeline, face and object
 search, shared albums, and map view. Served at `https://immich.<tailnet>.ts.net/`
-through its own Tailscale sidecar, like the other services (see [`../HTTPS.md`](../HTTPS.md)).
+by the `svc:immich` Tailscale Service, which the server's own node hosts (see
+[`../HTTPS.md`](../HTTPS.md)).
 
 ## Why Immich
 
@@ -24,17 +25,16 @@ end-to-end encryption becomes a requirement.
 
 | container | role |
 | --- | --- |
-| `immich-ts` | Tailscale sidecar; `tailscale serve` proxies `:443` → `127.0.0.1:2283` |
-| `immich-server` | web UI + API, shares the sidecar's netns; Quick Sync via `/dev/dri` |
+| `immich-server` | web UI + API, published on `127.0.0.1:2283` (host `tailscale serve` proxies `svc:immich` `:443` there); Quick Sync via `/dev/dri` |
 | `immich-machine-learning` | face / CLIP search models (CPU); model cache in the `model-cache` volume |
 | `redis` (`immich-redis`) | Valkey job queue |
 | `database` (`immich-postgres`) | Postgres + VectorChord, data in `DB_DATA_LOCATION` (SSD) |
 
 Media goes to `UPLOAD_LOCATION` (the 14TB drive by default). Nothing is published
-on host ports — tailnet only, so phones need the Tailscale app running to back up.
+beyond loopback — tailnet only, so phones need the Tailscale app running to back up.
 
-Each container gets only the variables it needs (upstream uses `env_file: .env`,
-which would hand `TS_AUTHKEY` to the app). Every Immich container carries
+Each container gets only the variables it needs (upstream uses `env_file: .env`).
+Every Immich container carries
 `com.centurylinklabs.watchtower.enable=false`: Immich releases can include
 breaking changes, so upgrades are manual.
 
@@ -43,13 +43,15 @@ breaking changes, so upgrades are manual.
 ```sh
 cd linux-server/immich
 cp .env.example .env && chmod 600 .env
-# set TS_AUTHKEY and DB_PASSWORD (openssl rand -hex 24); check UPLOAD_LOCATION
+# set DB_PASSWORD (openssl rand -hex 24); check UPLOAD_LOCATION
 sudo mkdir -p /mnt/wd14tb/immich   # match UPLOAD_LOCATION
 docker compose up -d
-docker compose logs -f immich-ts   # watch the node join + cert provision
+curl -fsS http://127.0.0.1:2283/api/server/ping   # {"res":"pong"}
 ```
 
-Not in `setup.sh`'s auto-start loop — like Forgejo, it needs `.env` filled first.
+Then publish `svc:immich` with the serve apply script ([`../HTTPS.md`](../HTTPS.md)
+→ "Adding a Tailscale Service"). Not in `setup.sh`'s auto-start loop — like
+Forgejo, it needs `.env` filled first.
 
 ## First run
 
@@ -104,7 +106,6 @@ Immich still writes its own nightly database dump to `UPLOAD_LOCATION/backups/`
   --profile server` flags the stray subnet and `docker compose down && docker
   compose up -d` recreates it inside the pool.
 - Immich [can't be served under a sub-path](https://docs.immich.app/administration/reverse-proxy/),
-  so it keeps `immich.<tailnet>.ts.net` even if services move to
-  `<host>.<tailnet>.ts.net/<service>` routing.
-- If the sidecar is recreated, restart `immich-server` too — it holds the old
-  netns (see the netns gotcha in [`../HTTPS.md`](../HTTPS.md)).
+  so it is a Tailscale Service with its own name, `immich.<tailnet>.ts.net`,
+  rather than a path on the server's node. The Service keeps the name the old
+  sidecar node had, so phones need no change.

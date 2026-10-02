@@ -13,6 +13,9 @@
         description: RuneScape Dragonwilds
         siteMonitor: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}
 
+# Card hrefs are the tailnet front doors the browser follows. Widget url:s run
+# server-side in homepage (host-networked), so they call the loopback backend
+# instead (docs/ONE_NODE_PER_HOST.md D10).
 - Core:
     - Management:
         - homepage:
@@ -23,7 +26,7 @@
             container: homepage
         - portainer:
             icon: si-portainer
-            href: https://{{HOMEPAGE_VAR_PORTAINER_DOMAIN}}/
+            href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}/portainer/
             description: Docker manager
             server: my-docker
             container: portainer
@@ -34,19 +37,19 @@
             container: watchtower
         - cockpit:
             icon: mdi-monitor-dashboard
-            href: https://{{HOMEPAGE_VAR_COCKPIT_DOMAIN}}/
+            href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}/cockpit-ui/
             description: Server admin UI
             # cockpit stays a host service on :9090, so the local ping still works
             ping: https://localhost:9090
         - uptime kuma:
             icon: si-uptimekuma
-            href: https://{{HOMEPAGE_VAR_UPTIMEKUMA_DOMAIN}}/
+            href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}:8444/
             description: Uptime monitor
             server: my-docker
             container: uptime-kuma
             widget:
               type: uptimekuma
-              url: https://{{HOMEPAGE_VAR_UPTIMEKUMA_DOMAIN}}
+              url: http://127.0.0.1:3001
               slug: default
         - backups:
             icon: mdi-backup-restore
@@ -71,7 +74,7 @@
                   format: bytes
         - glances:
             icon: si-glances
-            href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+            href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}/glances/
             description: System monitor
             server: my-docker
             container: glances
@@ -86,24 +89,24 @@
     - Network:
         - nginx proxy manager:
             icon: si-nginxproxymanager
-            href: https://{{HOMEPAGE_VAR_NPM_DOMAIN}}/
+            href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}:8447/
             description: Reverse proxy + SSL
             server: my-docker
             container: nginx-proxy-manager
         - adguard home:
             icon: si-adguard
-            href: https://{{HOMEPAGE_VAR_ADGUARD_DOMAIN}}/
+            href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}:8443/
             description: DNS ad blocker
             server: my-docker
             container: adguardhome
             widget:
               type: adguard
-              url: https://{{HOMEPAGE_VAR_ADGUARD_DOMAIN}}
+              url: http://127.0.0.1:8100
               username: "{{HOMEPAGE_VAR_ADGUARD_USER}}"
               password: "{{HOMEPAGE_VAR_ADGUARD_PASS}}"
         - tailscale:
             icon: si-tailscale
-            href: https://{{HOMEPAGE_VAR_TAILSCALE_WEB_DOMAIN}}/
+            href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}/tailscale-web/
             description: Zero-config VPN
             widget:
               type: customapi
@@ -120,16 +123,16 @@
                   format: relativeDate
         - speedtest tracker:
             icon: mdi-speedometer
-            href: https://{{HOMEPAGE_VAR_SPEEDTEST_DOMAIN}}/
+            href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}:8445/
             description: ISP speed monitor
             server: my-docker
             container: speedtest-tracker
             widget:
               type: speedtest
-              url: https://{{HOMEPAGE_VAR_SPEEDTEST_DOMAIN}}
+              url: http://127.0.0.1:8104
         - lan speedtest:
             icon: mdi-speedometer-medium
-            href: https://{{HOMEPAGE_VAR_OPENSPEEDTEST_DOMAIN}}/
+            href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}/openspeedtest/
             # Tailnet HTTPS to match the other cards. Run actual LAN tests against the
             # LAN IP (http://<server-ip>:3030) so you measure the local network, not
             # the tailnet path.
@@ -144,7 +147,7 @@
             container: ntfy
         - ups:
             icon: mdi-battery-charging-high
-            href: https://{{HOMEPAGE_VAR_PEANUT_DOMAIN}}/
+            href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}:8446/
             description: NUT · CyberPower 1500VA
             server: my-docker
             container: peanut
@@ -164,7 +167,7 @@
             container: forgejo
             widget:
               type: gitea
-              url: https://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}
+              url: http://127.0.0.1:3300
               key: "{{HOMEPAGE_VAR_FORGEJO_TOKEN}}"
         - forgejo-runner:
             icon: mdi-robot
@@ -189,13 +192,13 @@
                   format: relativeDate
         - syncthing:
             icon: si-syncthing
-            href: https://{{HOMEPAGE_VAR_SYNCTHING_DOMAIN}}/
+            href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}/syncthing/
             description: File sync
             server: my-docker
             container: syncthing
             widget:
               type: customapi
-              url: https://{{HOMEPAGE_VAR_SYNCTHING_DOMAIN}}/rest/system/status
+              url: http://127.0.0.1:8384/rest/system/status
               headers:
                 X-API-Key: "{{HOMEPAGE_VAR_SYNCTHING_KEY}}"
               mappings:
@@ -216,37 +219,37 @@
             container: immich-server
             widget:
               type: immich
-              url: https://{{HOMEPAGE_VAR_IMMICH_DOMAIN}}
+              url: http://127.0.0.1:2283
               key: "{{HOMEPAGE_VAR_IMMICH_KEY}}"
               version: 2
         - filebrowser:
             icon: mdi-folder-network
-            href: https://{{HOMEPAGE_VAR_FILEBROWSER_DOMAIN}}/
+            href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}/filebrowser/
             description: Web file manager
             server: my-docker
             container: filebrowser
         - atvloadly:
             icon: mdi-television-play
-            href: https://{{HOMEPAGE_VAR_ATVLOADLY_DOMAIN}}/
+            href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}:8448/
             description: Apple TV IPA sideloader
             server: my-docker
             container: atvloadly
         - qbittorrent:
             icon: si-qbittorrent
-            href: https://{{HOMEPAGE_VAR_QBITTORRENT_DOMAIN}}/
+            href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}/qbittorrent/
             description: BitTorrent client
             server: my-docker
             container: qbittorrent
             widget:
               type: qbittorrent
-              url: https://{{HOMEPAGE_VAR_QBITTORRENT_DOMAIN}}
+              url: http://127.0.0.1:8080
               username: "{{HOMEPAGE_VAR_QBITTORRENT_USERNAME}}"
               password: "{{HOMEPAGE_VAR_QBITTORRENT_PASSWORD}}"
 
 - NAS:
     - wd 14tb r/w:
         icon: mdi-harddisk
-        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+        href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}/glances/
         description: I/O — /mnt/wd14tb
         server: my-docker
         container: glances
@@ -259,7 +262,7 @@
           metric: disk:WD14TB
     - wd 14tb usage:
         icon: mdi-harddisk
-        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+        href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}/glances/
         description: Capacity — /mnt/wd14tb
         server: my-docker
         container: glances
@@ -270,7 +273,7 @@
           metric: fs:/mnt/wd14tb
     - seagate 4tb r/w:
         icon: mdi-harddisk
-        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+        href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}/glances/
         description: I/O — /mnt/seagate4tb
         server: my-docker
         container: glances
@@ -281,7 +284,7 @@
           metric: disk:Seagate_4TB
     - seagate 4tb usage:
         icon: mdi-harddisk
-        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+        href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}/glances/
         description: Capacity — /mnt/seagate4tb
         server: my-docker
         container: glances
@@ -292,7 +295,7 @@
           metric: fs:/mnt/seagate4tb
     - wd 1tb r/w:
         icon: mdi-harddisk
-        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+        href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}/glances/
         description: I/O — /mnt/wd1tb
         server: my-docker
         container: glances
@@ -303,7 +306,7 @@
           metric: disk:WD_1TB
     - wd 1tb usage:
         icon: mdi-harddisk
-        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+        href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}/glances/
         description: Capacity — /mnt/wd1tb
         server: my-docker
         container: glances

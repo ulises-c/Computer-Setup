@@ -20,10 +20,10 @@ if [[ -f "$SCRIPT_DIR/.env" ]]; then
 fi
 
 : "${RUNNER_NAME:=m4-mini}"
-: "${FORGEJO_DOMAIN:?set FORGEJO_DOMAIN in .env}"
-# Endpoint that lists runners. Defaults to the instance (admin) scope; override
-# in .env if your token is org/repo-scoped instead.
-: "${FORGEJO_RUNNER_API_URL:=https://${FORGEJO_DOMAIN}/api/v1/admin/actions/runners}"
+# Endpoint that lists runners, on loopback because this runs on the server.
+# Defaults to the instance (admin) scope; override in .env if your token is
+# org/repo-scoped instead.
+: "${FORGEJO_RUNNER_API_URL:=http://127.0.0.1:3300/api/v1/admin/actions/runners}"
 : "${FORGEJO_RUNNER_API_TOKEN:?set FORGEJO_RUNNER_API_TOKEN in .env (a Forgejo token that can read runners)}"
 : "${STATUS_JSON:=$SCRIPT_DIR/runner-status/runner-status.json}"
 : "${STATE_FILE:=$SCRIPT_DIR/runner-status/.last-state}"

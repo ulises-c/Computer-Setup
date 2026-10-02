@@ -1,39 +1,21 @@
 services:
-  # Tailscale sidecar — fronts NPM's admin UI at https://npm.<tailnet>.ts.net.
-  # NPM is the non-tailnet edge: it must keep binding the host's :80/:443/:81, so
-  # it can't join a shared netns. This is the host-networked variant — the sidecar
-  # runs in its own netns and proxies to the host's :81 (admin UI) via
-  # host.docker.internal. NPM's :80/:443 proxying is unaffected. See ../HTTPS.md.
-  nginx-proxy-manager-ts:
-    image: tailscale/tailscale:latest
-    container_name: nginx-proxy-manager-ts
-    hostname: npm
-    environment:
-      - TS_AUTHKEY=${TS_AUTHKEY}
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_SERVE_CONFIG=/config/serve.json
-      # Requires TS_AUTHKEY to be allowed to apply tag:container (OAuth client, or
-      # a tag-scoped auth key). Drop this line if using an untagged personal key.
-      - TS_EXTRA_ARGS=--advertise-tags=tag:container
-    volumes:
-      - ./ts-state:/var/lib/tailscale
-      - ./ts-serve.json:/config/serve.json:ro
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    cap_add:
-      - NET_ADMIN
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    restart: unless-stopped
-
+  # NPM is the LAN HTTPS edge for clients that can't join the tailnet. Its
+  # admin UI is at https://<server>.<tailnet>.ts.net:8447 through host
+  # tailscale serve (../tailscale-serve/serve.json).
+  #
+  # Every publish is bound to NPM_BIND_IP (the server's LAN IP), never all
+  # interfaces: on 0.0.0.0, Docker's DNAT for :443 could catch the server's own
+  # requests to its tailnet name before host serve does
+  # (docs/ONE_NODE_PER_HOST.md D7).
   nginx-proxy-manager:
     image: jc21/nginx-proxy-manager:latest
     container_name: nginx-proxy-manager
     restart: unless-stopped
     ports:
-      - "80:80"      # HTTP proxy (redirects <hostname>.local → HTTPS)
-      - "443:443"     # HTTPS proxy
-      - "81:81"       # admin UI
+      - "${NPM_BIND_IP:?set NPM_BIND_IP in .env}:80:80"     # HTTP proxy (redirects <hostname>.local → HTTPS)
+      - "${NPM_BIND_IP:?set NPM_BIND_IP in .env}:443:443"   # HTTPS proxy
+      - "${NPM_BIND_IP:?set NPM_BIND_IP in .env}:81:81"     # admin UI, LAN
+      - "127.0.0.1:81:81"                                   # admin UI, serve backend
     volumes:
       - ./data:/data
       - ./letsencrypt:/etc/letsencrypt

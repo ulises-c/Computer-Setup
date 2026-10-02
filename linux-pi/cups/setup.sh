@@ -5,7 +5,6 @@ umask 077
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 CUPSD_CONF="${CUPSD_CONF:-/etc/cups/cupsd.conf}"
 CUPS_REVIEW_DIR="${CUPS_REVIEW_DIR:-/var/lib/cups-policy-review}"
-PINNED_SIDECAR_SUBNET="172.21.0.0/16"
 
 usage() {
   printf 'usage: bash setup.sh --dry-run | --prepare-review | --apply-reviewed <source-sha256> <candidate-sha256>\n' >&2
@@ -106,7 +105,6 @@ load_policy() {
 
   : "${CUPS_SERVER_ALIAS:?set CUPS_SERVER_ALIAS in .env}"
   : "${CUPS_LAN_SUBNET:?set CUPS_LAN_SUBNET in .env}"
-  CUPS_SIDECAR_SUBNET="${CUPS_SIDECAR_SUBNET:-$PINNED_SIDECAR_SUBNET}"
 
   [[ "$CUPS_SERVER_ALIAS" =~ ^[a-z0-9.-]+(\ [a-z0-9.-]+)*$ ]] \
     || fail 'CUPS_SERVER_ALIAS must contain only canonical lowercase hostnames separated by single spaces'
@@ -119,15 +117,10 @@ load_policy() {
     seen+="${seen:+ }$alias_name"
   done
 
-  validate_private_cidr "$CUPS_SIDECAR_SUBNET" || fail 'CUPS_SIDECAR_SUBNET must be a canonical private IPv4 CIDR'
-  [[ "$CUPS_SIDECAR_SUBNET" == "$PINNED_SIDECAR_SUBNET" ]] \
-    || fail 'CUPS_SIDECAR_SUBNET must match the Compose network pin'
   validate_private_cidr "$CUPS_LAN_SUBNET" || fail 'CUPS_LAN_SUBNET must be a canonical private IPv4 CIDR between /16 and /30'
-  [[ ! "$CUPS_LAN_SUBNET" =~ ^172\.21\. ]] \
-    || fail 'CUPS_LAN_SUBNET must not overlap the sidecar subnet'
 
-  CUPS_PRINT_ALLOW_FROM="localhost $CUPS_SIDECAR_SUBNET $CUPS_LAN_SUBNET"
-  CUPS_ADMIN_ALLOW_FROM="localhost $CUPS_SIDECAR_SUBNET"
+  CUPS_PRINT_ALLOW_FROM="localhost $CUPS_LAN_SUBNET"
+  CUPS_ADMIN_ALLOW_FROM="localhost"
 }
 
 location_count() {

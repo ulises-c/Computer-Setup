@@ -1,37 +1,7 @@
 services:
-  # Tailscale sidecar — joins the tailnet as `adguard`, terminating HTTPS for the
-  # web UI at https://adguard.<tailnet>.ts.net. See ../HTTPS.md.
-  #
-  # Decoupled from AdGuard (its OWN netns, NOT network_mode: service: like the
-  # old layout): the sidecar proxies to adguardhome over the shared bridge
-  # network. A sidecar failure now costs only the HTTPS UI — DNS keeps serving
-  # LAN clients, which is the whole point of a home DNS server.
-  adguard-ts:
-    image: tailscale/tailscale:latest
-    container_name: adguard-ts
-    hostname: adguard
-    environment:
-      - TS_AUTHKEY=${TS_AUTHKEY}
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_SERVE_CONFIG=/config/serve.json
-      # Requires TS_AUTHKEY to be allowed to apply tag:container (OAuth client, or
-      # a tag-scoped auth key). Drop this line if using an untagged personal key.
-      - TS_EXTRA_ARGS=--advertise-tags=tag:container
-    volumes:
-      - ./ts-state:/var/lib/tailscale
-      - ./ts-serve.json:/config/serve.json:ro
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    cap_add:
-      - NET_ADMIN
-    # Static public resolvers so this sidecar's OAuth bootstrap can resolve
-    # api.tailscale.com without depending on AdGuard — the same deadlock guard
-    # used by every sidecar. See HTTPS.md.
-    dns:
-      - 9.9.9.10
-      - 1.1.1.1
-    restart: unless-stopped
-
+  # Web UI at https://<server>.<tailnet>.ts.net:8443 through host tailscale
+  # serve (../tailscale-serve/serve.json). DNS never goes through serve: :53
+  # stays host-published for LAN and tailnet clients.
   adguardhome:
     image: adguard/adguardhome:latest
     container_name: adguardhome
@@ -39,9 +9,9 @@ services:
     ports:
       - "53:53/tcp"   # DNS — host-published for LAN clients
       - "53:53/udp"
-      # The web UI binds container :80 (unpublished — reached via the sidecar's
-      # serve proxy, so it never collides with NPM's host :80). First-run only:
-      # temporarily add "3003:3000/tcp" here to re-run the setup wizard.
+      # Web UI, loopback only (serve backend). First-run only: temporarily add
+      # "127.0.0.1:3003:3000/tcp" here to re-run the setup wizard.
+      - "127.0.0.1:8100:80"
     volumes:
       - ./work:/opt/adguardhome/work
       - ./conf:/opt/adguardhome/conf

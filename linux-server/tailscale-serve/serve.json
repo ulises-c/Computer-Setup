@@ -1,0 +1,74 @@
+{
+  "TCP": {
+    "443": { "HTTPS": true },
+    "8443": { "HTTPS": true },
+    "8444": { "HTTPS": true },
+    "8445": { "HTTPS": true },
+    "8446": { "HTTPS": true },
+    "8447": { "HTTPS": true },
+    "8448": { "HTTPS": true }
+  },
+  "Web": {
+    "${TS_CERT_DOMAIN}:443": {
+      "Handlers": {
+        "/": { "Proxy": "http://127.0.0.1:3000" },
+        "/glances/": { "Proxy": "http://127.0.0.1:61208" },
+        "/openspeedtest/": { "Proxy": "http://127.0.0.1:3030" },
+        "/qbittorrent/": { "Proxy": "http://127.0.0.1:8080" },
+        "/syncthing/": { "Proxy": "http://127.0.0.1:8384" },
+        "/watchtower/": { "Proxy": "http://127.0.0.1:8105" },
+        "/cockpit-ui/": { "Proxy": "https+insecure://127.0.0.1:9090/cockpit-ui/" },
+        "/filebrowser/": { "Proxy": "http://127.0.0.1:8102" },
+        "/portainer/": { "Proxy": "http://127.0.0.1:9000" },
+        "/tailscale-web/": { "Proxy": "http://127.0.0.1:8088" }
+      }
+    },
+    "${TS_CERT_DOMAIN}:8443": {
+      "Handlers": { "/": { "Proxy": "http://127.0.0.1:8100" } }
+    },
+    "${TS_CERT_DOMAIN}:8444": {
+      "Handlers": { "/": { "Proxy": "http://127.0.0.1:3001" } }
+    },
+    "${TS_CERT_DOMAIN}:8445": {
+      "Handlers": { "/": { "Proxy": "http://127.0.0.1:8104" } }
+    },
+    "${TS_CERT_DOMAIN}:8446": {
+      "Handlers": { "/": { "Proxy": "http://127.0.0.1:8097" } }
+    },
+    "${TS_CERT_DOMAIN}:8447": {
+      "Handlers": { "/": { "Proxy": "http://127.0.0.1:81" } }
+    },
+    "${TS_CERT_DOMAIN}:8448": {
+      "Handlers": { "/": { "Proxy": "http://127.0.0.1:8101" } }
+    }
+  },
+  "Services": {
+    "svc:forgejo": {
+      "TCP": {
+        "443": { "HTTPS": true },
+        "22": { "TCPForward": "127.0.0.1:2222" }
+      },
+      "Web": {
+        "forgejo.${TS_MAGICDNS_SUFFIX}:443": {
+          "Handlers": { "/": { "Proxy": "http://127.0.0.1:3300" } }
+        }
+      }
+    },
+    "svc:ntfy": {
+      "TCP": { "443": { "HTTPS": true } },
+      "Web": {
+        "ntfy.${TS_MAGICDNS_SUFFIX}:443": {
+          "Handlers": { "/": { "Proxy": "http://127.0.0.1:8103" } }
+        }
+      }
+    },
+    "svc:immich": {
+      "TCP": { "443": { "HTTPS": true } },
+      "Web": {
+        "immich.${TS_MAGICDNS_SUFFIX}:443": {
+          "Handlers": { "/": { "Proxy": "http://127.0.0.1:2283" } }
+        }
+      }
+    }
+  }
+}

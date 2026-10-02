@@ -1,35 +1,14 @@
 services:
-  # Tailscale sidecar — joins the tailnet as `portainer`, terminating HTTPS for
-  # https://portainer.<tailnet>.ts.net. See ../HTTPS.md for the full pattern.
-  portainer-ts:
-    image: tailscale/tailscale:latest
-    container_name: portainer-ts
-    hostname: portainer
-    environment:
-      - TS_AUTHKEY=${TS_AUTHKEY}
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_SERVE_CONFIG=/config/serve.json
-      # Requires TS_AUTHKEY to be allowed to apply tag:container (OAuth client, or
-      # a tag-scoped auth key). Drop this line if using an untagged personal key.
-      - TS_EXTRA_ARGS=--advertise-tags=tag:container
-    volumes:
-      - ./ts-state:/var/lib/tailscale
-      - ./ts-serve.json:/config/serve.json:ro
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    cap_add:
-      - NET_ADMIN
-    restart: unless-stopped
-
+  # https://<server>.<tailnet>.ts.net/portainer/ through host tailscale serve
+  # (../tailscale-serve/serve.json). Serve strips the mount, so the app answers
+  # at /; --base-url makes its links carry the prefix. 9000 is the plaintext
+  # UI (9443 is Portainer's own self-signed TLS, not needed behind serve).
   portainer:
     image: portainer/portainer-ce:latest
     container_name: portainer
-    # Share the sidecar's network namespace: tailscale serve proxies :443 to the
-    # plaintext HTTP UI on 127.0.0.1:9000 (9443 is Portainer's own self-signed
-    # TLS, not needed behind Tailscale).
-    network_mode: service:portainer-ts
-    depends_on:
-      - portainer-ts
+    command: --base-url /portainer
+    ports:
+      - "127.0.0.1:9000:9000"
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

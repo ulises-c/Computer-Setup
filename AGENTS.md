@@ -54,8 +54,12 @@ Claude-Code-only notes on top; keep cross-agent guidance here, not there.
 - `macOS/`, `linux-desktop/`, `linux-server/` — platform-specific configs,
   docs, and thin shim scripts that exec the root entrypoints. `linux-pi/` holds
   the Raspberry Pi node's Docker Compose service stacks (same
-  `<service>/{docker-compose.yml,.env.example,ts-serve.json}` layout as
-  `linux-server/`), not yet wired into `setup.sh`.
+  `<service>/{docker-compose.yml,.env.example}` layout as `linux-server/`),
+  not yet wired into `setup.sh`. Each host publishes its web services through
+  its own single Tailscale node: one serve template per host,
+  `<host-dir>/tailscale-serve/serve.json`, applied by
+  `scripts/ts-serve-apply.sh` (see `linux-server/HTTPS.md` and
+  `docs/ONE_NODE_PER_HOST.md`). There are no per-service Tailscale sidecars.
 - `scripts/dryrun-smoke.sh` — runs `setup.sh --dry-run` for every platform and
   asserts it exits clean with install actions; also run in CI.
 

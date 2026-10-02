@@ -6,6 +6,53 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com). Remaining
 work lives in [TODO.md](TODO.md); the design rationale for the unified layout is
 in [UNIFICATION.md](UNIFICATION.md).
 
+## Unreleased — One tailnet node per host ([#86](https://github.com/ulises-c/Computer-Setup/issues/86))
+
+### Changed
+- Every `linux-server` web service is published by host `tailscale serve` on
+  the server's own node instead of a per-service Tailscale sidecar. Adding a
+  service adds no node; adding a host adds one. Design and migration runbook:
+  `docs/ONE_NODE_PER_HOST.md`; reference: `linux-server/HTTPS.md`.
+- Front doors: path mounts on `https://<server>.<tailnet>.ts.net/<service>/`
+  (glances, openspeedtest, qbittorrent, syncthing, watchtower, cockpit at
+  `/cockpit-ui/`, filebrowser, portainer, tailscale-web), homepage at `/`, a
+  per-service HTTPS port for root-only apps (adguard `:8443`, uptime-kuma
+  `:8444`, speedtest-tracker `:8445`, PeaNUT `:8446`, NPM admin `:8447`,
+  atvloadly `:8448`), and Tailscale Services `svc:forgejo` (with git SSH on
+  `:22`), `svc:ntfy` and `svc:immich`, which keep their old names and URLs.
+- Apps publish on `127.0.0.1` only; base paths set where needed
+  (`FB_BASE_URL`, `--base-url /portainer`, Cockpit `UrlRoot`, `tailscale web
+  --prefix`). Non-HTTP ports (Syncthing, BitTorrent, openspeedtest LAN) move
+  from the sidecars to the apps.
+- NPM binds `:80`/`:443`/`:81` to `NPM_BIND_IP` (the LAN IP), off the tailnet IP.
+- Homepage links are built from `HOMEPAGE_VAR_HOMEPAGE_DOMAIN`; widgets, and
+  the ntfy / Uptime Kuma push URLs of the server's own jobs, use loopback.
+- `tailscale-web.service` reads its origin from `~/.config/tailscale-web.env`,
+  which `setup.sh --profile server` creates from `tailscale status`.
+- The Raspberry Pi is one node too (`tag:pi`): `linux-pi/tailscale-serve/serve.json`
+  publishes homepage at `/`, motioneye at `/motioneye/`, AdGuard on `:8443` and
+  CUPS on `:8449`. CUPS goes through a loopback Host-rewrite shim
+  (`linux-pi/cups`, `127.0.0.1:8631`), because cupsd rejects a non-localhost
+  `Host` from loopback.
+
+### Added
+- `scripts/ts-serve-apply.sh`: renders a host's serve template, validates it,
+  merges it into the live serve config without touching unrelated listeners,
+  and reads it back; `--dry-run` runs only read-only commands. Stubbed
+  regression test `scripts/test-ts-serve-apply.sh` runs in CI.
+- `linux-server/tailscale-serve/serve.json` (+ `.env.example`).
+- `linux-server/uptime-kuma/monitors.md`: every monitor's new URL and its
+  loopback fallback.
+
+### Removed
+- All server `<svc>-ts` sidecars, their `ts-serve.json` and `TS_AUTHKEY`, and
+  the sidecar-only `cockpit` and `tailscale-web` stacks
+  (`cockpit/cockpit.conf.example` stays). The `ts-state/` ignore rules stay
+  until the post-migration soak.
+- All Pi sidecars (`adguard-pi-ts`, `homepage-pi-ts`, `motioneye-ts`, `cups-ts`,
+  with its pinned bridge network), the sidecar-only `linux-pi/motioneye` stack,
+  and `CUPS_SIDECAR_SUBNET`.
+
 ## 2026-10-02 — RuneScape: Dragonwilds session configuration
 
 ### Changed

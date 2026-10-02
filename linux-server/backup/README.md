@@ -15,8 +15,9 @@ drive. Encrypted, deduplicated, pruned, and reported to ntfy + a homepage card.
   including `OwnerId`), resolved from `dragonwilds/.env`
 - Every service's gitignored **`.env`** (secrets needed to restore)
 
-Excluded as disposable/regenerable: qBittorrent downloads, all `ts-state/`
-(Tailscale node keys — re-auth with `TS_AUTHKEY` regenerates them), caches, and
+Excluded as disposable/regenerable: qBittorrent downloads, any leftover
+`ts-state/` (node keys of the retired per-service Tailscale sidecars; see
+`docs/ONE_NODE_PER_HOST.md` 4.7), caches, and
 the ~5.5 GB Dragonwilds game install (steamcmd re-downloads it).
 **Immich media is not backed up yet** (only `immich/.env`) — the library would
 outgrow the 1TB target; offsite image backup is tracked in
