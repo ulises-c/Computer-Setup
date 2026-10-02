@@ -49,14 +49,33 @@ Each host ends up as one tailnet node. Its web services are published by host
 
 - Secrets: never print a `.env` file, a token, an auth key or a password into
   chat, logs, commits or this file. To inspect a `.env`, list key names only:
-  `grep -oE '^[A-Z_][A-Z0-9_]*=' .env`. Use these helpers to edit one key
-  without echoing values:
+  `grep -oE '^[A-Z_][A-Z0-9_]*=' .env`. Use these helpers for every key
+  set or removal in this runbook (never `sed -i` a value), so no value is
+  echoed or reinterpreted:
 
   ```sh
-  setenv() { local f="$1" k="$2" v="$3"
-    if grep -q "^$k=" "$f"; then sed -i "s|^$k=.*|$k=$v|" "$f"; else printf '%s=%s\n' "$k" "$v" >> "$f"; fi; }
+  envrw() { local op="$1" f="$2" k="$3" t rc
+    [[ "$k" =~ ^[A-Za-z_][A-Za-z0-9_]*$ && -f "$f" ]] || { printf 'envrw: bad key or no file\n' >&2; return 1; }
+    t=$(mktemp) || return 1
+    OP="$op" K="$k" V="${4-}" awk 'BEGIN { p = ENVIRON["K"] "="; s = ENVIRON["OP"] == "set" }
+      index($0, p) == 1 { if (s && !d) print p ENVIRON["V"]; d = 1; next }
+      { print } END { if (s && !d) print p ENVIRON["V"] }' "$f" > "$t" && cat -- "$t" > "$f"
+    rc=$?; rm -f -- "$t"; return "$rc"; }
+  setenv() { [[ "$3" != *[\'$'\n']* ]] || { printf 'setenv: %s: value has a quote or newline; STOP\n' "$2" >&2; return 1; }
+    envrw set "$1" "$2" "'$3'"; }
+  delenv() { envrw del "$1" "$2"; }
   getkeys() { grep -oE '^[A-Z_][A-Z0-9_]*=' "$1" | tr -d = | paste -sd' '; }
   ```
+
+  `setenv` writes `KEY='value'`: bash `source`, Compose (`.env` and
+  `env_file:`), systemd `EnvironmentFile=` and the repo's own `.env` readers
+  all take a single-quoted value literally, so `&`, `|`, `\`, `$`, `#` and
+  spaces survive. It replaces the first `KEY=` line, drops later duplicates,
+  appends the key when absent, and rewrites the file in place, so mode, owner
+  and inode are kept. `delenv` removes every `KEY=` line. Both refuse a key
+  that isn't a plain name and a file that doesn't exist, and a failed write
+  (for example a root-owned `.env`; use the §1.1 copy to recover) leaves no
+  temp file behind. The temp file is `mktemp`'s mode 600.
 
 - Do not commit, push, delete branches or edit tracked files on the hosts.
   Per-stack rollback (`git checkout <pre-migration-commit> -- <path>`) is the
@@ -249,12 +268,16 @@ new compose files ignore it.
 | `~/.config/tailscale-web.env` (user file) | `TAILSCALE_WEB_ORIGIN` = `https://$NODE` | — | §2.3 step 3 |
 
 For a push URL, change only the scheme and host, and keep the token. The
-helper does nothing if the key is unset or empty, and never prints the token:
+helper takes the new base (default `http://127.0.0.1:3001`), does nothing if
+the key is unset or empty, and never prints the token:
 
 ```sh
-pushloop() { local f="$1" old
-  old=$(grep -oP '^KUMA_PUSH_URL=\K.*' "$f" | tail -1 | tr -d "\"'" || true)
-  [[ "$old" == */api/push/* ]] && setenv "$f" KUMA_PUSH_URL "http://127.0.0.1:3001/api/push/${old##*/api/push/}"; true; }
+pushloop() { local f="$1" base="${2:-http://127.0.0.1:3001}" old
+  old=$(grep -E '^KUMA_PUSH_URL=' "$f" | tail -1 | cut -d= -f2- || true)
+  if [[ "$old" =~ ^\"(.*)\"$ || "$old" =~ ^\'(.*)\'$ ]]; then old="${BASH_REMATCH[1]}"; fi
+  if [[ "$old" == */api/push/* ]]; then
+    setenv "$f" KUMA_PUSH_URL "$base/api/push/${old##*/api/push/}"
+  fi; }
 ```
 
 Pi `.env` files edited during the server cutover (on the Pi):
@@ -364,8 +387,10 @@ Expected: `applied …`, then `up to date`. A non-zero exit or
    - `uptime-kuma`: a stack step (`uptime-kuma-ts`).
 6. **Right after uptime-kuma**: `pushloop linux-server/adguard/.env`,
    `pushloop linux-server/backup/.env`, `pushloop linux-server/forgejo/.env`
-   (§2). On the Pi, set `KUMA_PUSH_URL` in `linux-pi/backup/.env` to the §2
-   value, keeping its token. These scripts read their `.env` on each run, so
+   (§2). On the Pi (with the §Conventions helpers defined there too):
+   `pushloop linux-pi/backup/.env "https://$SERVER_NODE:8444"`, where
+   `SERVER_NODE` holds the server node's name. These scripts read their
+   `.env` on each run, so
    nothing needs a restart. Check:
    `sudo systemctl start forgejo-runner-status.service dns-watchdog.service`
    exits 0. The scripts don't log push failures, so the proof is HUMAN: the
@@ -410,8 +435,8 @@ Expected: `applied …`, then `up to date`. A non-zero exit or
      `/etc/nut/ups-notify.env` picks it up. Publish a test:
      `curl -sS -d test http://127.0.0.1:8103/<a-test-topic>`, which should
      arrive on the phone (HUMAN).
-   - After **forgejo**: remove `FORGEJO_RUNNER_API_URL` from
-     `forgejo/.env`. The default is loopback.
+   - After **forgejo**: `delenv linux-server/forgejo/.env FORGEJO_RUNNER_API_URL`.
+     The default is loopback.
 10. **Reboot the server.** `sudo systemctl reboot`. After it is up: NPM is
     running bound to the LAN IP (`docker ps --filter name=nginx-proxy-manager`,
     and `ss` as in step 1), and
@@ -496,9 +521,10 @@ Run on the Pi, in its `<repo>`.
      the cups project's `default` network. If no container uses it
      (`docker network inspect -f '{{len .Containers}}' <net>` prints `0`),
      run `docker network rm <net>`.
-   - CUPS policy: in `linux-pi/cups/.env`, delete `CUPS_SIDECAR_SUBNET`, and
-     drop the old sidecar name from `CUPS_SERVER_ALIAS`, so only LAN names
-     remain. `chmod 600 .env`. Then in `linux-pi/cups`:
+   - CUPS policy: in `linux-pi/cups`, run `delenv .env CUPS_SIDECAR_SUBNET`,
+     and `setenv .env CUPS_SERVER_ALIAS '<LAN names>'` with the old sidecar
+     name dropped, so only LAN names remain. `chmod 600 .env`. Then in
+     `linux-pi/cups`:
      `bash test-setup.sh`, `bash setup.sh --dry-run` and
      `sudo bash setup.sh --prepare-review`. HUMAN: from a trusted terminal,
      not an LLM-controlled one, review
@@ -663,7 +689,8 @@ Do not start this early: the soak is what keeps rollback cheap.
 - HUMAN, Machines page: delete every remaining old sidecar node on both
   hosts (the offline `tag:container` nodes). **DESTRUCTIVE.**
 - On each host: `sudo find <repo>/<host-dir> -mindepth 2 -maxdepth 2 -type d -name ts-state`
-  lists them. Delete each, remove `TS_AUTHKEY` from every `.env`, and run
+  lists them. Delete each, run `delenv <stack>/.env TS_AUTHKEY` for every
+  `.env`, and run
   `sudo rm <backup-dir>/ts-state-*.tgz`. **DESTRUCTIVE.**
 - HUMAN: remove the Auth Keys scope from the OAuth client the sidecars used.
   Keep its read scope, because tailscale-proxy still uses it. Revoke any
