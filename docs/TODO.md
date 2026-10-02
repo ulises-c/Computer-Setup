@@ -338,3 +338,11 @@ Shared layer for every server; see [server-base/README.md](../server-base/README
       `glances_url` in `fleet.json`
 - [ ] Homepage UI ([#95](https://github.com/ulises-c/Computer-Setup/issues/95)):
       check the shared design on a phone-width viewport and in the light theme
+- [ ] Integrate with #86 / PR #102 (whichever merges second does this): one
+      serve mechanism (keep `scripts/ts-serve-apply.sh` + per-host `serve.json`,
+      move it under `server-base/`, convert the game server, add the Pi's
+      Glances/Cockpit/Portainer routes, drop `server-base/serve.sh`); re-apply
+      the base `extends` to the sidecar-free server compose files; move #102's
+      Homepage hrefs into `services.local.yaml` and point `MAIN_GLANCES_URL` /
+      the Pi card's `glances_url` at the host nodes; settle one Cockpit and
+      Portainer URL convention across hosts and the Homepage image pin
