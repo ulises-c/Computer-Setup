@@ -57,9 +57,9 @@
             - field: status
               label: Server
               format: text
-            - field: players
+            - field: online_capacity
               label: Players
-              format: number
+              format: text
             - field: uptime_seconds
               label: Uptime
               format: duration
@@ -72,7 +72,7 @@
             - field: update_status
               label: Build
               format: text
-    - Dragonwilds:
+    - Ollie-GS:
         icon: mdi-sword-cross
         description: RuneScape Dragonwilds — UDP 7777 (LAN + tailnet)
         server: my-docker
@@ -86,9 +86,9 @@
             - field: status
               label: Server
               format: text
-            - field: players
+            - field: online_capacity
               label: Players
-              format: number
+              format: text
             - field: player_names
               label: Online
               format: text

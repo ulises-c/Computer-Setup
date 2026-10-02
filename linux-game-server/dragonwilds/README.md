@@ -630,7 +630,8 @@ bash dragonwilds-status.sh        # regenerate by hand
 ```
 
 Fields: `status` (`running` / `starting` / `stopped` / `failed` / `unknown`),
-`server_name`, `world`, `join_code`, `players`, `players_max`, `player_names`,
+`server_name`, `world`, `join_code`, `players`, `players_max`, `online_capacity`,
+`player_names`,
 `connect_lan`, `connect_tailnet`, `memory_bytes`, `save_bytes`,
 `disk_free_bytes`, `uptime_seconds`, `listening`, `owner_configured`,
 `world_password`, `build`, `latest_build`, `update_status`, `update_checked`,

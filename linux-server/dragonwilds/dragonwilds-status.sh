@@ -74,6 +74,7 @@ since=""
 
 join_code=""
 players=0
+players_max=6
 player_names=""
 if [[ "$status" == running && -n "$since" ]]; then
   run_log="$(journalctl -u "$UNIT" --since "$since" --no-pager 2>/dev/null || true)"
@@ -167,6 +168,7 @@ jq -n \
   --arg server_name "$server_name" \
   --arg world "$world_name" \
   --arg join_code "$join_code" \
+  --arg online_capacity "$players/$players_max" \
   --arg player_names "$player_names" \
   --arg connect_lan "$connect_lan" \
   --arg connect_tailnet "$connect_tailnet" \
@@ -177,7 +179,7 @@ jq -n \
   --arg last_save "$last_save" \
   --arg updated "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --argjson players "$players" \
-  --argjson players_max 6 \
+  --argjson players_max "$players_max" \
   --argjson memory_bytes "$memory_bytes" \
   --argjson save_bytes "$save_bytes" \
   --argjson disk_free_bytes "$disk_free_bytes" \
@@ -192,6 +194,7 @@ jq -n \
     join_code: $join_code,
     players: $players,
     players_max: $players_max,
+    online_capacity: $online_capacity,
     player_names: $player_names,
     connect_lan: $connect_lan,
     connect_tailnet: $connect_tailnet,
