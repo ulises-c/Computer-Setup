@@ -57,3 +57,53 @@ The upstream repo is ~290 files, and 264 of them are benchmark result JSONs that
 no agent reads. The four files that matter total ~31 KB. A submodule would clone
 all of it, add a `.gitmodules` to a repo that has none, and require
 `--recurse-submodules` on every fresh clone — to deliver four markdown files.
+
+## ponytail
+
+| | |
+|---|---|
+| Source | <https://github.com/ulises-c/ponytail> (fork of `DietrichGebert/ponytail`) |
+| Pinned commit | `16f29800fd2681bdf24f3eb4ccffe38be3baec6b` (2026-07-15) |
+| Skill version | 4.8.4 |
+| License | MIT (copy in `skills/ponytail/LICENSE`) |
+| Vendored files | `skills/ponytail/`, `skills/ponytail-review/`, `skills/ponytail-audit/`, `skills/ponytail-debt/`, `skills/ponytail-gain/`, `skills/ponytail-help/` (`SKILL.md` only) |
+
+Lazy-senior-dev mode: YAGNI, standard library before custom code, native
+platform features before dependencies, no unrequested abstractions. The fork
+exists for the same reason as the simple-english one.
+
+Skills only, on purpose. The upstream repo also ships a native Hermes plugin
+(`plugin.yaml` + `__init__.py`) and Claude Code hooks. Both inject the ruleset
+before every LLM turn, coding or not. As plain skills, ponytail loads only when
+a task matches. The `/ponytail` mode switch and the `ponytail-*` slash commands
+are plugin features, so they are not available here. Ask for "ponytail",
+"ponytail review", and so on instead. `ponytail-gain` cites `benchmarks/`, which
+is not vendored. Its scoreboard figures are inline in the skill.
+
+The Laza Claude Code marketplace carries a separate patched build
+(`~/bitbucket/laza-claude-marketplace/plugins/ponytail/`, see its
+`PROVENANCE.md`). It is independent of this copy.
+
+### Refresh from the fork
+
+```bash
+# 1. Sync the fork with upstream first, then:
+git clone https://github.com/ulises-c/ponytail.git /tmp/ponytail
+cd /tmp/ponytail && git rev-parse HEAD    # record this as the new pin
+
+# 2. Copy each SKILL.md over the vendored copy
+AGENTIC=~/github/Computer-Setup/agentic-ai
+for s in /tmp/ponytail/skills/*/; do
+  n=$(basename "$s")
+  mkdir -p "$AGENTIC/skills/$n"
+  cp "$s/SKILL.md" "$AGENTIC/skills/$n/"
+done
+cp /tmp/ponytail/LICENSE "$AGENTIC/skills/ponytail/LICENSE"
+
+# 3. Update the pin, commit, and re-link
+bash "$AGENTIC/Claude/install.sh"
+bash "$AGENTIC/Claude/validate.sh"
+```
+
+If upstream adds or removes a skill directory, update the "Vendored files" row
+and delete stale directories by hand. The copy loop does not remove them.
