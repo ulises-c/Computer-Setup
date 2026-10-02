@@ -170,23 +170,33 @@ Core Arch/CachyOS support shipped in PR #18 (see CHANGELOG). Remaining:
 - [ ] Test `--personal` flag end-to-end
 - [ ] Create PR for CachyOS support
 
-## Per-service HTTPS rollout (linux-server)
+## HTTPS over Tailscale (linux-server) — [#86](https://github.com/ulises-c/Computer-Setup/issues/86)
 
-Every tailnet-facing service is converted (see CHANGELOG); the non-tailnet edge
-is what's left. Pattern and full rollout table in
+Every web service is published by host `tailscale serve` on one node per host
+(see CHANGELOG); the repo side is done and the live migration is the runbook in
+[ONE_NODE_PER_HOST.md](ONE_NODE_PER_HOST.md) section 4. Reference:
 [../linux-server/HTTPS.md](../linux-server/HTTPS.md).
 
+- [ ] Run the migration on the server, then the Pi (ONE_NODE_PER_HOST.md 4.1–4.6)
+- [ ] After the 7-day soak (4.7): delete the old sidecar nodes, `*/ts-state/`
+      and `TS_AUTHKEY` lines on each host, drop the Auth Keys scope from the
+      OAuth client, remove `tag:container` from `tagOwners`, and then remove the
+      `linux-server/*/ts-state/` and `linux-pi/*/ts-state/` lines from
+      `.gitignore` and the `ts-state` exclude from the backup scripts
+- [ ] Glances entrypoint writes `allowed_hosts` under `[outputs]`, but Glances
+      reads `webui_allowed_hosts` for its Host check, so `GLANCES_ALLOWED_HOSTS`
+      may not take effect (`linux-server/glances/entrypoint.sh`). Verify on the
+      server after the migration and fix the key if `/glances/` returns 400
 - [ ] Set up the NPM trusted-HTTPS edge (domain `ulises-c.me`, already owned):
       NPM wildcard Let's Encrypt cert for `*.home.ulises-c.me` via DNS-01, AdGuard
       rewrite `*.home.ulises-c.me` → LAN IP, then per-service proxy hosts. Not
       started — documented in HTTPS.md to pick up later.
-- [ ] Update Homepage hrefs to HTTPS as each service converts; a service's widget
-      `url:` must move to the HTTPS domain too (localhost stops resolving once the
-      host port is dropped)
 
 ## Server observability & hardening (post-HTTPS rollout) — [#49](https://github.com/ulises-c/Computer-Setup/issues/49)
 
-Improvements identified once every service was wired up with a Tailscale sidecar.
+Improvements identified once every service was wired up for HTTPS. #86 replaced
+the per-service sidecars with host `tailscale serve`, which made three items
+obsolete (closed below).
 
 ### Watchtower observability — "what updated, and when"
 
@@ -213,22 +223,23 @@ logs, not metrics. Build it up in layers:
 
 ### Broader improvements (from the post-rollout review)
 
-- [ ] **Pin the Tailscale sidecar image.** All 22 sidecars run
-      `tailscale/tailscale:latest` and watchtower auto-updates them — a bad release
-      could drop every HTTPS front door at once. Pin a stable tag (bump
-      deliberately) or exclude the sidecars from watchtower. Cheap, high-value.
-- [ ] **DRY the sidecar boilerplate.** 22 near-identical `<svc>-ts` blocks +
-      `ts-serve.json` (differ only by hostname/port). Use Compose `extends` from a
-      shared base so a global change (the image pin above, `TS_EXTRA_ARGS`) is one
-      edit, not 13. Medium effort — touches all stacks, needs live re-verify.
-- [ ] **One shared `TS_AUTHKEY`.** The same OAuth secret is copied into 22 `.env`
-      files; rotation/rebuild means editing all of them. Share one env file.
+- [x] ~~**Pin the Tailscale sidecar image.**~~ Obsolete with #86: no sidecars
+      are left, and the host tailscaled is updated by the package manager, not
+      watchtower.
+- [x] ~~**DRY the sidecar boilerplate.**~~ Obsolete with #86: one serve
+      template per host (`<host-dir>/tailscale-serve/serve.json`).
+- [x] ~~**One shared `TS_AUTHKEY`.**~~ Obsolete with #86: the host node
+      authenticates once; no stack carries an auth key.
 - [ ] **Validation script for the server stacks** (CI, like `dryrun-smoke.sh`):
-      assert every `linux-server/*/` has matching compose + `ts-serve.json` +
-      `.env.example`, valid YAML/JSON, serve port == container port, `ts-state/`
-      gitignored. Catches the drift that bit us mid-rollout (wrong port, stale config).
-- [ ] **Tighten the Tailscale ACL** — least-privilege for the `tag:container` nodes
-      (currently default allow-all).
+      every serve-template mount points at a port its compose file publishes on
+      `127.0.0.1`, no stack carries a `TS_AUTHKEY` or `ts-state/`, and every
+      `linux-server/*/` with a compose file has an `.env.example` when it reads
+      `.env`. `scripts/test-ts-serve-apply.sh` already covers the template's own
+      validation rules.
+- [ ] **Tighten the Tailscale ACL** — least-privilege grants for `tag:server`,
+      `tag:pi` and the three Services (`svc:forgejo`, `svc:ntfy`, `svc:immich`),
+      using the port list in [ONE_NODE_PER_HOST.md](ONE_NODE_PER_HOST.md)
+      section 2 (currently the default member-to-device rule).
 - [ ] **Forward-auth for the NPM public edge** (Authelia/Authentik) — bundle with the
       `*.home.ulises-c.me` NPM setup, since services like filebrowser/glances have
       weak/no auth once exposed off-tailnet.
@@ -239,11 +250,11 @@ The scheduled-maintenance outage took the whole LAN's DNS down and it couldn't
 self-heal — the server ran the only resolver, and a latent bootstrap deadlock
 kept the primary AdGuard from recovering.
 
-- [x] **Fix the bootstrap deadlock.** The primary AdGuard rides its Tailscale
-      sidecar's netns, and the sidecar's OAuth bootstrap needs DNS — so a cold
+- [x] **Fix the bootstrap deadlock.** The primary AdGuard rode its Tailscale
+      sidecar's netns, and the sidecar's OAuth bootstrap needed DNS — so a cold
       start deadlocked (sidecar needs DNS → DNS needs the sidecar). Pinned static
-      resolvers on `adguard-ts` (`dns: [9.9.9.10, 1.1.1.1]`) so bootstrap never
-      depends on AdGuard — `linux-server/adguard`.
+      resolvers on `adguard-ts` (`dns: [9.9.9.10, 1.1.1.1]`). #86 then removed
+      the sidecar entirely: AdGuard's DNS no longer depends on any tailscaled.
 - [x] **Secondary DNS on the Pi.** Kill the single point of failure: a backup
       AdGuard on `<pi-hostname>`, host-networked (independent of Tailscale) and
       config-synced from the primary, handed out as secondary DNS by the router —
@@ -271,10 +282,10 @@ game browser but joining that entry fails, while a typed address works.
       bridges; applying it on the live server and recreating the networks
       (`linux-server/README.md` step 8) is still manual
 - [ ] Decide whether to collapse the per-project bridges onto one shared external
-      network, and fold that into the `{service}.<tailnet>.ts.net` →
-      `<host>.<tailnet>.ts.net/{service}` rework
-      ([#86](https://github.com/ulises-c/Computer-Setup/issues/86); that rework
-      removes ~18 sidecars and tailnet nodes but no bridges on its own)
+      network. The `{service}.<tailnet>.ts.net` → `<host>.<tailnet>.ts.net/{service}`
+      rework ([#86](https://github.com/ulises-c/Computer-Setup/issues/86)) removed
+      the sidecars and their tailnet nodes, but no bridges: each project still
+      gets its own `<project>_default`
 - [ ] Re-test Dragonwilds LAN discovery afterwards; if it still advertises a
       bridge address, the only fixes left are `-MULTIHOME=<ip>` or direct connect
 

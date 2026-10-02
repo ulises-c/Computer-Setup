@@ -673,7 +673,17 @@ Rules for every step:
    If either script stops, fix the cause and rerun both with a new
    `<backup-dir>`.
 7. `git -C <repo> checkout <migration-branch>`. Running containers are not
-   affected until each stack is brought up again.
+   affected until each stack is brought up again, with two exceptions that
+   read the checkout live: homepage reloads its bind-mounted
+   `config/services.yaml` at once, so a card whose stack is not cut over yet
+   links to a URL that returns 502 and its widget (now on a loopback port)
+   shows an error until that stack's step; and `forgejo/runner-status.sh` now
+   defaults `FORGEJO_RUNNER_API_URL` to `http://127.0.0.1:3300/...`, which has
+   no listener until forgejo is cut over in 4.3 step 7. To keep the runner
+   card and its alerts honest meanwhile, set `FORGEJO_RUNNER_API_URL` in
+   `forgejo/.env` to the old
+   `https://forgejo.<tailnet>.ts.net/api/v1/admin/actions/runners` now, and
+   remove it after forgejo is verified.
 8. Create the render `.env` (3.3) from the live node, as the operator user
    (not root), with no world-readable window:
 
@@ -733,8 +743,11 @@ longer in the compose file. Then verify (4.5).
    5. HUMAN: approve the host on the Services page if `autoApprovers` did not.
    6. Verify from another tailnet device (4.5). The outage ends.
    After ntfy: set `NTFY_URL` to loopback in `backup`, `dragonwilds`, `ups`
-   and `forgejo` `.env` (D10). After forgejo: `FORGEJO_RUNNER_API_URL` to
-   loopback, if `.env` overrides it.
+   and `forgejo` `.env` (D10), then `sudo bash linux-server/ups/setup.sh` so
+   upsmon's `/etc/nut/ups-notify.env` picks it up (the others read their
+   `.env` on each run). After forgejo: remove the temporary
+   `FORGEJO_RUNNER_API_URL` override from 4.2 step 7 (the script's default is
+   loopback).
 8. Reboot the server. NPM must come back with `NPM_BIND_IP` bound (D7), and
    serve and Services must come back from the state file. Repeat the 4.5
    checks.
@@ -937,6 +950,12 @@ integration card applies it.
   name, so the `diff -q` in `platforms/server.sh` keeps working.
   `server_extras` creates the env file when it is missing, filled from
   `tailscale status --json` the same way it fills `TAILSCALE_HOSTNAME` today.
+  As implemented: while the node is logged out the env file can't be filled,
+  so the unit install is skipped with a message and the next `setup.sh` run
+  after `tailscale up` installs it. A changed unit is applied with
+  `enable` + `restart` (not `enable --now`, which leaves a running unit on its
+  old `ExecStart`). `server_extras` also fills `HOMEPAGE_VAR_HOMEPAGE_DOMAIN`
+  with the same name.
 - Changes to `docs/ONE_NODE_PER_HOST.md` for a deviation: the Pi card edits
   only the 2.3 tables and 4.4; the server card edits everything else. Record
   each deviation in the handoff metadata too.

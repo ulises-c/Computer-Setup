@@ -47,14 +47,12 @@ cd linux-server/homepage && docker compose restart
 | Variable | How to get the value |
 |---|---|
 | `HOMEPAGE_VAR_SERVER_IP` | Your server hostname (e.g. `<hostname>.local`) |
-| `HOMEPAGE_VAR_TAILSCALE_IP` | `tailscale ip -4` |
-| `HOMEPAGE_VAR_ADGUARD_USER` / `_PASS` | Set after AdGuard wizard (step 5 below) |
-| `HOMEPAGE_VAR_SYNCTHING_KEY` | Set after Syncthing is running (step 5 below) |
+| `HOMEPAGE_VAR_HOMEPAGE_DOMAIN` | The server node's MagicDNS name, same as `TAILSCALE_HOSTNAME`; setup.sh fills it. Every card link is built from it |
+| `HOMEPAGE_VAR_ADGUARD_USER` / `_PASS` | Set after AdGuard wizard (step 7 below) |
+| `HOMEPAGE_VAR_SYNCTHING_KEY` | Set after Syncthing is running (step 7 below) |
 | `HOSTNAME` | `hostname` |
 | `SERVER_IP` | `hostname -I \| awk '{print $1}'` |
 | `TAILSCALE_HOSTNAME` | `tailscale status --json \| jq -r '.Self.DNSName' \| sed 's/\.$//'` |
-
----
 
 ---
 
@@ -80,71 +78,81 @@ The Homepage Tailscale widget uses a local OAuth proxy to avoid 90-day key rotat
 
 ## 6. HTTPS
 
-- [ ] Enable HTTPS certificates in the Tailscale admin console: `login.tailscale.com/admin/dns`
-- [ ] Get a TLS cert:
-  ```sh
-  tailscale cert <your-tailscale-hostname>
-  # e.g. tailscale cert <hostname>.<tailnet>.ts.net
-  ```
-- [ ] In NPM admin (`http://<server-ip>:81`):
-  - **SSL Certificates → Add Custom Certificate** — paste `.crt` and `.key` file contents; save as e.g. "tailscale cert"
-  - **Proxy Hosts → Add** — domain: `<tailscale-hostname>`, forward to `http://<server-ip>:3000`, SSL: select the custom cert
-  - **Redirection Hosts → Add** — domain: `<hostname>.local`, scheme: https, forward to `<tailscale-hostname>`, HTTP code: 301
+Every web UI is published on the tailnet by host `tailscale serve` on the
+server's own node. Full reference: [`HTTPS.md`](HTTPS.md).
 
-> The Tailscale cert is valid for ~90 days. Renew by re-running `tailscale cert` and updating the cert in NPM.
+- [ ] Enable MagicDNS and HTTPS certificates in the Tailscale admin console: `login.tailscale.com/admin/dns`
+- [ ] Create the render `.env` and apply the node-level config (paths and registry ports):
+  ```sh
+  cd linux-server/tailscale-serve
+  (umask 077; tailscale status --json | jq -r '"TS_CERT_DOMAIN=\(.Self.DNSName | rtrimstr("."))\nTS_MAGICDNS_SUFFIX=\(.CurrentTailnet.MagicDNSSuffix)"' > .env)
+  cd ../..
+  scripts/ts-serve-apply.sh linux-server/tailscale-serve/serve.json --services none --dry-run
+  scripts/ts-serve-apply.sh linux-server/tailscale-serve/serve.json --services none
+  ```
+- [ ] Tailscale Services for forgejo, ntfy and immich: tag the node `tag:server`,
+      define each Service in the admin console, then apply it
+      (`--services svc:ntfy`, …). Steps in [`HTTPS.md`](HTTPS.md) → "Adding a Tailscale Service"
+- [ ] Cockpit: `sudo cp linux-server/cockpit/cockpit.conf.example /etc/cockpit/cockpit.conf`,
+      replace the `<...>` placeholders, `sudo systemctl restart cockpit`
+- [ ] NPM: set `NPM_BIND_IP` (the server's LAN IP) in `linux-server/nginx-proxy-manager/.env`,
+      then `docker compose up -d` there. NPM is the LAN HTTPS edge for clients
+      that can't join the tailnet; see [`HTTPS.md`](HTTPS.md) → "NPM — trusted HTTPS for non-tailnet clients"
+
+`<server>.<tailnet>.ts.net` below is the server's node (`TAILSCALE_HOSTNAME`).
 
 ---
 
 ## 7. First-login service setup
 
-### Portainer — http://\<server-ip\>:9000
+### Portainer — https://\<server\>.\<tailnet\>.ts.net/portainer/
 - [ ] Create admin account **within 5 minutes** — if you miss the window, restart the container
 
-### Filebrowser — http://\<server-ip\>:8080
+### Filebrowser — https://\<server\>.\<tailnet\>.ts.net/filebrowser/
 - [ ] Default login: `admin` / `admin` — change immediately
 - [ ] Optionally update `FB_ROOT` in `linux-server/filebrowser/.env` to limit the browsable path, then restart:
   ```sh
   cd linux-server/filebrowser && docker compose restart
   ```
 
-### Uptime Kuma — http://\<server-ip\>:3001
+### Uptime Kuma — https://\<server\>.\<tailnet\>.ts.net:8444
 - [ ] Create admin account on first visit
-- [ ] Add monitors for each service (use `http://localhost:<port>` for internal checks)
+- [ ] Add the monitors listed in [`uptime-kuma/monitors.md`](uptime-kuma/monitors.md)
 - [ ] Create a status page with slug `default` (used by the Homepage widget)
 
-### Nginx Proxy Manager — http://\<server-ip\>:81
+### Nginx Proxy Manager — http://\<server-ip\>:81 or https://\<server\>.\<tailnet\>.ts.net:8447
 - [ ] Default login: `admin@example.com` / `changeme` — change immediately
-- [ ] Configure HTTPS proxy and redirect (see step 6 above)
 
-### ntfy — http://\<server-ip\>:5080
+### ntfy — https://ntfy.\<tailnet\>.ts.net
 - [ ] Install the ntfy app on your phone, add your server URL, subscribe to a topic (e.g. `alerts`)
-- [ ] Configure Uptime Kuma and Watchtower to send notifications via ntfy
+- [ ] Configure Uptime Kuma and Watchtower to send notifications via ntfy.
+      Publishers on the server use `http://127.0.0.1:8103` (`NTFY_URL` in each `.env`)
 
-### AdGuard Home — https://adguard.\<tailnet\>.ts.net
-- [ ] Complete the setup wizard (temporarily map `"3003:3000/tcp"` on `adguardhome` to reach it):
-  - Web UI port → `80` (unpublished — served via the HTTPS sidecar)
+### AdGuard Home — https://\<server\>.\<tailnet\>.ts.net:8443
+- [ ] Complete the setup wizard (temporarily map `"127.0.0.1:3003:3000/tcp"` on
+      `adguardhome` and reach it over `ssh -L 3003:127.0.0.1:3003 <server>`):
+  - Web UI port → `80` (published as `127.0.0.1:8100`, the serve backend)
   - DNS port → `53`
   - Create admin credentials — then add them to `homepage/.env`
 - [ ] Point your router's DNS to `<server-ip>` for network-wide filtering
 
-### Forgejo — https://\<tailscale-hostname\>/
+### Forgejo — https://forgejo.\<tailnet\>.ts.net/
 
-Forgejo runs behind a Tailscale sidecar (HTTPS via `tailscale serve`), so it is
-reachable only on the tailnet at `https://forgejo.<tailnet>.ts.net/` — there is
-no `<server-ip>` host port.
+Forgejo is the `svc:forgejo` Tailscale Service, hosted by the server's node
+(HTTPS via `tailscale serve`). It is reachable only on the tailnet — the
+container publishes on `127.0.0.1` only.
 
 - [ ] Copy and edit the env file:
   ```sh
   cd linux-server/forgejo && cp .env.example .env
   # Set FORGEJO_DOMAIN to forgejo.<tailnet>.ts.net
-  # Set TS_AUTHKEY (tailscale.com/admin/settings/keys) so the sidecar can join
   # Optionally set FORGEJO_DATA_PATH to an external drive path
   ```
 - [ ] Start Forgejo:
   ```sh
   docker compose up -d
   ```
-- [ ] Open `https://forgejo.<tailnet>.ts.net/` and complete the setup wizard:
+- [ ] Apply `svc:forgejo` (step 6), then open `https://forgejo.<tailnet>.ts.net/` and complete the setup wizard:
   - Database: SQLite (pre-set)
   - SSH server domain and port: pre-filled from `.env` — verify they look correct
   - Application URL: should match `https://forgejo.<tailnet>.ts.net/`
@@ -153,8 +161,8 @@ no `<server-ip>` host port.
   - Top-right avatar → **Settings → Applications → Generate Token** — scope: all (or read-only is enough for the widget)
   - Add to `homepage/.env`:
     - `HOMEPAGE_VAR_FORGEJO_TOKEN=<token>`
-    - `HOMEPAGE_VAR_FORGEJO_DOMAIN=<tailscale-hostname>`
-  - Restart Homepage: `cd linux-server/homepage && docker compose restart`
+    - `HOMEPAGE_VAR_FORGEJO_DOMAIN=forgejo.<tailnet>.ts.net`
+  - Recreate Homepage: `cd linux-server/homepage && docker compose up -d`
 - [ ] Add your SSH public key to Forgejo:
   - **Settings → SSH / GPG Keys → Add Key** — paste `~/.ssh/id_ed25519.pub` (or your key from `create_ssh_key.sh`)
 
@@ -205,14 +213,15 @@ Optional — skip if you aren't running CI.
 The script's `kuma_push` fires on every run — wiring it up is config only, no
 code changes.
 
-- [ ] In Uptime Kuma (`https://uptime-kuma.<tailnet>.ts.net`): **Add New
+- [ ] In Uptime Kuma (`https://<server>.<tailnet>.ts.net:8444`): **Add New
       Monitor → Monitor Type: `Push`**. Name it e.g. `Forgejo runner (m4-mini)`.
 - [ ] Match the timer: **Heartbeat Interval 120s**, **Retries 2**, **Retry
       Interval 20s**. The retries give ~160s of slack before a down, so normal
       jitter on the 2-minute push doesn't trip a false alarm.
 - [ ] Save, then copy the generated push URL (through `/api/push/<token>` — the
       script appends its own `status`/`msg` params) into `KUMA_PUSH_URL` in
-      `forgejo/.env`.
+      `forgejo/.env`, with the host swapped for loopback:
+      `http://127.0.0.1:3001/api/push/<token>` (the script runs on the server).
 - [ ] Fire one push: `sudo systemctl start forgejo-runner-status.service`. The
       monitor goes green within a cycle.
 
@@ -244,7 +253,8 @@ git remote set-url origin ssh://git@forgejo.<tailnet>.ts.net:22/<username>/<repo
    - Interval: `24h` (or `0` to push only on demand)
    - When you're satisfied with Forgejo, delete the mirror and archive the GitHub repo
 
-### Syncthing — http://\<server-ip\>:8384
+### Syncthing — https://\<server\>.\<tailnet\>.ts.net/syncthing/
+- [ ] Set a GUI user and password on first visit (Actions → Settings → GUI)
 - [ ] Add volume mounts to `linux-server/syncthing/docker-compose.yml` for each folder to sync, then restart:
   ```sh
   cd linux-server/syncthing && docker compose restart
@@ -270,8 +280,8 @@ ntfy alerts on power events. Full runbook in [`ups/README.md`](ups/README.md).
   ```
 - [ ] Verify: `upsc cyberpower ups.status` prints `OL`
 - [ ] Run `bash verify.sh --platform server` from the repo root
-- [ ] Start the PeaNUT dashboard (`docker compose up -d`, needs `TS_AUTHKEY` in
-      `.env`) — graphs at `https://peanut.<tailnet>.ts.net/`, and the homepage
+- [ ] Start the PeaNUT dashboard (`docker compose up -d`) — graphs at
+      `https://<server>.<tailnet>.ts.net:8446`, and the homepage
       **ups** card goes live
 - [ ] Subscribe to the `server-ups` ntfy topic on your phone
 - [ ] Set BIOS **Restore on AC Power Loss → Power On**
@@ -307,22 +317,28 @@ Three drives are attached via a TerraMas Thunderbolt DAS enclosure:
 
 ## 9. Service reference
 
+`<server>` is the server's node, `<server>.<tailnet>.ts.net`. Routes are defined
+in [`tailscale-serve/serve.json`](tailscale-serve/serve.json); see [`HTTPS.md`](HTTPS.md).
+
 | Service | URL | Notes |
 |---|---|---|
-| Homepage | https://\<tailscale-hostname\> | Primary; or http://\<server-ip\>:3000 on LAN |
-| Portainer | http://\<server-ip\>:9000 | Create admin within 5 min |
-| Glances | http://\<server-ip\>:61208 | |
-| Speedtest Tracker | http://\<server-ip\>:8765 | |
-| Filebrowser | http://\<server-ip\>:8080 | Default: admin / admin |
-| Watchtower | — | Background only, no UI |
-| Uptime Kuma | http://\<server-ip\>:3001 | |
-| Nginx Proxy Manager | http://\<server-ip\>:81 | Default: admin@example.com / changeme |
-| ntfy | http://\<server-ip\>:5080 | |
-| Syncthing | http://\<server-ip\>:8384 | |
-| AdGuard Home | https://adguard.\<tailnet\>.ts.net/ | DNS published on host :53; no host web port |
-| Cockpit | https://\<server-ip\>:9090 | |
-| PeaNUT (UPS) | https://peanut.\<tailnet\>.ts.net/ | Tailscale sidecar; homepage ups card reads it via localhost :8097 |
-| Tailscale Web UI | http://localhost:8088 | After `tailscale up` |
+| Homepage | https://\<server\>/ | Or http://\<server-ip\>:3000 on LAN |
+| Portainer | https://\<server\>/portainer/ | Create admin within 5 min |
+| Glances | https://\<server\>/glances/ | Or http://\<server-ip\>:61208 on LAN |
+| Speedtest Tracker | https://\<server\>:8445 | |
+| Filebrowser | https://\<server\>/filebrowser/ | Default: admin / admin |
+| Watchtower | https://\<server\>/watchtower/v1/metrics | No UI; token-gated metrics only |
+| Uptime Kuma | https://\<server\>:8444 | Monitors: [`uptime-kuma/monitors.md`](uptime-kuma/monitors.md) |
+| Nginx Proxy Manager | https://\<server\>:8447 | Or http://\<server-ip\>:81 on LAN; default: admin@example.com / changeme |
+| ntfy | https://ntfy.\<tailnet\>.ts.net | Tailscale Service `svc:ntfy`; on the server: http://127.0.0.1:8103 |
+| Syncthing | https://\<server\>/syncthing/ | Sync ports :22000/:21027 on the host |
+| qBittorrent | https://\<server\>/qbittorrent/ | BitTorrent :6881 on the host |
+| OpenSpeedTest | https://\<server\>/openspeedtest/ | LAN tests: http://\<server-ip\>:3030 |
+| AdGuard Home | https://\<server\>:8443 | DNS published on host :53 |
+| Cockpit | https://\<server\>/cockpit-ui/ | Or https://\<server-ip\>:9090/cockpit-ui/ on LAN |
+| PeaNUT (UPS) | https://\<server\>:8446 | Homepage ups card reads it via localhost :8097 |
+| atvloadly | https://\<server\>:8448 | |
+| Tailscale Web UI | https://\<server\>/tailscale-web/ | Host user unit on 127.0.0.1:8088 |
 | Tailscale proxy | http://localhost:8089 | Internal — used by Homepage widget |
-| Immich | https://immich.\<tailnet\>.ts.net/ | Tailscale sidecar; excluded from watchtower; media on `UPLOAD_LOCATION`, not yet backed up (#87) |
-| Forgejo | https://forgejo.\<tailnet\>.ts.net/ | Tailscale sidecar (HTTPS via serve); Git over SSH on port 22 |
+| Immich | https://immich.\<tailnet\>.ts.net/ | Tailscale Service `svc:immich`; excluded from watchtower; media on `UPLOAD_LOCATION`, not yet backed up (#87) |
+| Forgejo | https://forgejo.\<tailnet\>.ts.net/ | Tailscale Service `svc:forgejo`; Git over SSH on the Service's port 22 |

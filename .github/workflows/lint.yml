@@ -85,6 +85,9 @@ jobs:
       - name: Test Docker address-pool step
         run: bash scripts/test-docker-address-pools.sh
 
+      - name: Test Tailscale Serve apply script
+        run: bash scripts/test-ts-serve-apply.sh
+
   zsh-syntax:
     runs-on: ubuntu-latest
     steps:

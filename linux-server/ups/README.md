@@ -88,16 +88,15 @@ constant `OB`. The open `ups.load` work is parked in
 ## Dashboard (PeaNUT)
 
 [PeaNUT](https://github.com/Brandawg93/PeaNUT) serves a web dashboard with
-charge/load/runtime graphs at `https://peanut.<tailnet>.ts.net/` (Tailscale
-sidecar per [`../HTTPS.md`](../HTTPS.md), host-networked variant like glances —
-PeaNUT itself must stay on the host network to reach the loopback-only `upsd`)
+charge/load/runtime graphs at `https://<server>.<tailnet>.ts.net:8446` (host
+`tailscale serve`, see [`../HTTPS.md`](../HTTPS.md); PeaNUT stays on the host
+network to reach the loopback-only `upsd`, and serve proxies to its `:8097`)
 and feeds the homepage **ups** card (`type: peanut` widget via localhost).
 Auth is disabled (read-only stats on a trusted network, same posture as
 glances). Its runtime settings dir (`peanut-config/`) is gitignored.
 
 ```sh
 cd linux-server/ups
-# set TS_AUTHKEY in .env (same OAuth client secret as the other sidecars)
 docker compose up -d
 ```
 

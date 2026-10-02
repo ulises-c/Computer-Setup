@@ -134,14 +134,27 @@ server_extras() {
   fi
 
   # ── Tailscale web service ───────────────────────────────────────────────────
+  # The unit reads its --origin from an env file, so the unit stays identical to
+  # the repo copy and the diff below keeps working.
   printf '\n'
   local service_dst="$HOME/.config/systemd/user/tailscale-web.service"
-  if [[ ! -f "$service_dst" ]] || ! diff -q "$CONFIG_SRC_DIR/tailscale-web.service" "$service_dst" &>/dev/null; then
+  local web_env="$HOME/.config/tailscale-web.env" ts_dns=""
+  if command -v tailscale &>/dev/null; then
+    ts_dns=$(tailscale status --json 2>/dev/null | jq -r '.Self.DNSName // empty' | sed 's/\.$//')
+  fi
+  if [[ ! -f "$web_env" && -n "$ts_dns" ]]; then
+    printf '==> Creating %s...\n' "$web_env"
+    run install -D -m 644 /dev/stdin "$web_env" <<< "TAILSCALE_WEB_ORIGIN=https://$ts_dns"
+  fi
+  if [[ ! -f "$web_env" && "$DRY_RUN" != true ]]; then
+    printf "==> Tailscale web service skipped — run 'tailscale up' then re-run setup.sh (needs %s)\n" "$web_env"
+  elif [[ ! -f "$service_dst" ]] || ! diff -q "$CONFIG_SRC_DIR/tailscale-web.service" "$service_dst" &>/dev/null; then
     printf '==> Installing Tailscale web service...\n'
     run mkdir -p "$HOME/.config/systemd/user"
     run cp "$CONFIG_SRC_DIR/tailscale-web.service" "$service_dst"
     run systemctl --user daemon-reload
-    run systemctl --user enable --now tailscale-web
+    run systemctl --user enable tailscale-web
+    run systemctl --user restart tailscale-web
   else
     printf '==> Tailscale web service already installed\n'
   fi
@@ -191,14 +204,11 @@ server_extras() {
     _fill_env HOSTNAME "$(hostname)"
     _fill_env SERVER_IP "$(hostname -I | awk '{print $1}')"
 
-    if command -v tailscale &>/dev/null; then
-      local ts_hostname
-      ts_hostname=$(tailscale status --json 2>/dev/null | jq -r '.Self.DNSName // empty' | sed 's/\.$//')
-      if [[ -n "$ts_hostname" ]]; then
-        _fill_env TAILSCALE_HOSTNAME "$ts_hostname"
-      else
-        printf "  TAILSCALE_HOSTNAME → (skipped — run 'tailscale up' then re-run setup.sh)\n"
-      fi
+    if [[ -n "$ts_dns" ]]; then
+      _fill_env TAILSCALE_HOSTNAME "$ts_dns"
+      _fill_env HOMEPAGE_VAR_HOMEPAGE_DOMAIN "$ts_dns"
+    else
+      printf "  TAILSCALE_HOSTNAME, HOMEPAGE_VAR_HOMEPAGE_DOMAIN → (skipped — run 'tailscale up' then re-run setup.sh)\n"
     fi
   fi
 
@@ -253,11 +263,15 @@ server_footer() {
   printf '       bash SSH_and_GPG/create_ssh_key.sh\n'
   printf '       bash SSH_and_GPG/create_gpg_key.sh\n'
   printf '\n'
-  printf '  4. Authenticate Tailscale, then re-run setup.sh to auto-fill TAILSCALE_HOSTNAME:\n'
+  printf '  4. Authenticate Tailscale, then re-run setup.sh to auto-fill TAILSCALE_HOSTNAME,\n'
+  printf '     HOMEPAGE_VAR_HOMEPAGE_DOMAIN and ~/.config/tailscale-web.env:\n'
   printf '       sudo tailscale up\n'
   printf '       bash setup.sh --profile server\n'
   printf '     Then fill in any remaining values in linux-server/homepage/.env and restart:\n'
   printf '       cd linux-server/homepage && docker compose restart\n'
+  printf '\n'
+  printf '  5. Publish the services on the tailnet (linux-server/HTTPS.md):\n'
+  printf '       scripts/ts-serve-apply.sh linux-server/tailscale-serve/serve.json --services none --dry-run\n'
   printf '\n'
   printf '================================================================\n'
   printf '\n'
