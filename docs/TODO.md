@@ -320,7 +320,7 @@ Docker Compose service stacks now live under `linux-pi/`; base OS provisioning i
 still separate from the unified Ubuntu Server profile.
 
 - [x] Secondary AdGuard Home with config sync
-- [x] Pi Homepage dashboard and Tailscale front doors
+- [x] Pi Homepage dashboard and host-serve front doors (one node, #86)
 - [x] MotionEye, CUPS, and backup service configuration
 - [ ] Add a Debian/arm64 Pi platform to the root provisioning engine (no snap/PPA)
 - [ ] Add the shared headless zsh/Tailscale/Docker/SSH base without duplicating

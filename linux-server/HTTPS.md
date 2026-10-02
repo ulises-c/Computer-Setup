@@ -84,8 +84,22 @@ openspeedtest's LAN `:3030`/`:3031`, NUT `:3493`, Dragonwilds UDP `:7777`.
 They stay published on the host, so tailnet peers reach them on the host
 node's IP as before.
 
+### Pi routes
+
 The Raspberry Pi uses the same mechanism and script with its own template,
-`../linux-pi/tailscale-serve/serve.json`; see `../linux-pi/README.md`.
+[`../linux-pi/tailscale-serve/serve.json`](../linux-pi/tailscale-serve/serve.json);
+see `../linux-pi/README.md`.
+
+| Service | Front door | Backend | App setting |
+|---|---|---|---|
+| homepage | `https://<pi-hostname>.<tailnet>.ts.net/` | `127.0.0.1:3001` (host network) | — |
+| motioneye | `/motioneye/` | `127.0.0.1:8765` (host service) | — |
+| adguard | `:8443` | `127.0.0.1:80` (host network) | — |
+| cups | `:8449` | `127.0.0.1:8631` cups-proxy shim → `127.0.0.1:631` | shim sets `Host: localhost` |
+
+The Pi's cups front door (`:8449`) proxies to a loopback Host-rewrite shim on
+`127.0.0.1:8631`, not to `:631`: cupsd rejects a non-localhost `Host` on
+loopback connections (see `../linux-pi/cups/README.md`).
 
 ## Prerequisites (one time)
 

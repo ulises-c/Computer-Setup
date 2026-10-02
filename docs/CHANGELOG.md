@@ -29,8 +29,11 @@ in [UNIFICATION.md](UNIFICATION.md).
   the ntfy / Uptime Kuma push URLs of the server's own jobs, use loopback.
 - `tailscale-web.service` reads its origin from `~/.config/tailscale-web.env`,
   which `setup.sh --profile server` creates from `tailscale status`.
-- The Raspberry Pi uses the same mechanism and apply script with its own
-  template, `linux-pi/tailscale-serve/serve.json` (the Pi change set).
+- The Raspberry Pi is one node too (`tag:pi`): `linux-pi/tailscale-serve/serve.json`
+  publishes homepage at `/`, motioneye at `/motioneye/`, AdGuard on `:8443` and
+  CUPS on `:8449`. CUPS goes through a loopback Host-rewrite shim
+  (`linux-pi/cups`, `127.0.0.1:8631`), because cupsd rejects a non-localhost
+  `Host` from loopback.
 
 ### Added
 - `scripts/ts-serve-apply.sh`: renders a host's serve template, validates it,
@@ -46,6 +49,9 @@ in [UNIFICATION.md](UNIFICATION.md).
   the sidecar-only `cockpit` and `tailscale-web` stacks
   (`cockpit/cockpit.conf.example` stays). The `ts-state/` ignore rules stay
   until the post-migration soak.
+- All Pi sidecars (`adguard-pi-ts`, `homepage-pi-ts`, `motioneye-ts`, `cups-ts`,
+  with its pinned bridge network), the sidecar-only `linux-pi/motioneye` stack,
+  and `CUPS_SIDECAR_SUBNET`.
 
 ## 2026-10-02 — RuneScape: Dragonwilds session configuration
 
