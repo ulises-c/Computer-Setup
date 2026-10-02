@@ -3,6 +3,17 @@
 Open work only. Completed work is recorded in [CHANGELOG.md](CHANGELOG.md); the
 unified-layout design rationale is in [UNIFICATION.md](UNIFICATION.md).
 
+## RuneScape: Dragonwilds follow-ups
+
+- [ ] Keep `MAX_PLAYERS=6` for normal operation; if testing 10 or 20, make a
+      fresh stopped-world backup, verify the startup log's effective capacity,
+      and test real joins beyond six before treating it as usable.
+- [ ] Retest the join-code route from a Tailscale client; the documented evidence
+      shows EOS can advertise the WAN address while direct tailnet-IP connect works.
+- [ ] Arrange recurring off-host backups for this host's `Saved/Config`,
+      `Saved/SaveGames`, and private deployment `.env`; the rename backup is only
+      a rollback point, not recurring coverage.
+
 ## Live-run cleanup & follow-ups (unification / dotfiles)
 
 Setup migrates install methods but never uninstalls the old copy, so each live

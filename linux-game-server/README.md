@@ -48,6 +48,12 @@ requires the guard and stopped game/update jobs, holds the maintenance lock for
 the whole operation, and rechecks after acquiring the SteamCMD lock. It leaves
 the guard in place, including on failure.
 
+`linux-game-server/dragonwilds/.env` is the deployment edit point. `MAX_PLAYERS=6`
+is rendered into the native systemd unit and reused by the Homepage status
+producer; leave it at 6 for the supported configuration. The dedicated-server
+README records the evidence and the procedure for any deliberate higher-capacity
+experiment.
+
 Authenticate the host's own Tailscale node:
 
 ```sh

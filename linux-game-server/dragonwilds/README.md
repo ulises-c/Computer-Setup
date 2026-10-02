@@ -13,6 +13,23 @@ resolve hostnames — see pain point 10.
 Bootstrap, migration and activation live in [the game-server guide](../README.md).
 This file explains how the server behaves and where the official guide is wrong.
 
+## Session snapshot — October 2, 2026
+
+The server was configured as follows during the rename and Homepage work:
+
+- Server display name: `Ollie-GS` (shortened to stay within the documented community
+  name-length guidance).
+- World name: `Main`; `DefaultWorldName`, the internal save header, and
+  `SaveGames/Main.sav` were made consistent.
+- A world join password is configured in the private `DedicatedServer.ini`; it is
+  shown as **Join pass** below **Join code** on the tailnet-only Homepage card. The
+  password value is not stored in Git or this documentation.
+- The card exposes `online_capacity` as `online/capacity`, plus the session join
+  code. The code is minted per server session, appears after the server finishes
+  loading, refreshes about once per minute, and is blank while the service is stopped.
+- The status timer may remain active while the game is stopped; the game and
+  auto-update jobs should remain stopped during maintenance.
+
 ---
 
 ## Pain points
@@ -197,6 +214,43 @@ the port publicly.
 Roughly 30 seconds of asset loading separate process start from the UDP socket
 opening. The status card reports `starting` until the port is actually bound
 rather than claiming the server is up.
+
+### 14. Capacity is an Unreal launch override, not a normal INI setting
+
+The current official dedicated-server guide documents a six-player limit, and the
+live build logged:
+
+```text
+Maximum allowed player number by this build is 6.
+```
+
+There is no ordinary `MaxPlayers` key in the live `DedicatedServer.ini`. The
+official server repository supports passing extra arguments to the launcher, and
+community server templates use this Unreal override:
+
+```text
+-ini:Game:[/Script/Engine.GameSession]:MaxPlayers=10
+```
+
+This repo now exposes the same override as `MAX_PLAYERS` in the private `.env`,
+with a committed example value of `6`. Both setup scripts render it into
+`dragonwilds.service`, and the status producer reads the same value so Homepage
+does not drift from the launch command. Changing it requires stopping the game,
+editing `.env`, and rerunning the installer or otherwise reinstalling the rendered
+unit; do not edit only the Homepage card.
+
+The evidence is mixed: 10-player operation has community reports using the
+override, while third-party hosting listings advertise 20-player plans. Neither
+is an official guarantee, and this host has not completed a reproducible 7+ player
+join test. Keep `MAX_PLAYERS=6` for normal operation; treat 10 or 20 as an
+unsupported experiment requiring a fresh backup, a stopped-world change, log
+verification, and real client joins.
+
+References:
+
+- [Jagex dedicated-server guide](https://runescapedragonwilds.help.jagex.com/hc/en-gb/articles/45365343055249-Dedicated-Servers-How-to-Guide)
+- [Official dedicated-server repository](https://github.com/runescape/rsdw-dedicated)
+- [Community `MaxPlayers` report](https://www.reddit.com/r/RSDragonwilds/comments/1iwxj0y/anyone_know_how_to_change_max_players_on_a/)
 
 ---
 

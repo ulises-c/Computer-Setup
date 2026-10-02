@@ -6,6 +6,30 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com). Remaining
 work lives in [TODO.md](TODO.md); the design rationale for the unified layout is
 in [UNIFICATION.md](UNIFICATION.md).
 
+## 2026-10-02 — RuneScape: Dragonwilds session configuration
+
+### Changed
+- Added the explicit Unreal launch override
+  `-ini:Game:[/Script/Engine.GameSession]:MaxPlayers=@MAX_PLAYERS@` to the shared
+  Dragonwilds systemd template. `MAX_PLAYERS=6` is now documented in both env
+  examples, validated by both installers, and reused by the status JSON so the
+  Homepage `online/capacity` row stays aligned with the launch command.
+- Recorded the server rename to `Ollie-GS`, the world rename to `Main`, the save
+  header/filename/config consistency requirement, and the private world-password
+  placement. Homepage shows the join pass below the per-session join code and is
+  intended to remain tailnet-only.
+
+### Notes
+- The live build and official guide report a six-player limit. Community reports
+  show the launch override being used for 10 players, and some commercial listings
+  advertise 20, but neither is an official guarantee and this host has not passed
+  a reproducible 7+ player join test. The committed default remains 6; higher
+  values are documented as unsupported experiments.
+- Join codes are minted per session, appear after asset loading, refresh through
+  the minute status timer, and are blank while the service is stopped. Direct
+  connect by LAN or tailnet IP remains the reliable route when EOS advertises an
+  unreachable WAN address.
+
 ## Unreleased — AdGuard DNS watchdog
 
 ### Added
