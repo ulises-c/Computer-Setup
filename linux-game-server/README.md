@@ -340,8 +340,9 @@ tested.
 `sudo bash linux-game-server/rgb/setup.sh` installs a timer that runs OpenRGB
 every 10 minutes as root (the case's HP TracerLED controller is a root-only
 HID device) and writes the detected devices and their active mode to
-`/var/lib/host-status/rgb.json`. `serve.sh` publishes that directory at
-`/host-status/`, and the Homepage top bar shows one RGB item per device.
+`/var/lib/host-status/rgb.json`. `serve.sh` publishes that one file at
+`/host-status/rgb.json`, and the Homepage top bar and the `rgb lighting` card
+show one entry per device (hidden once the data is over 30 minutes old).
 OpenRGB's CLI prints no colours, and for this controller the mode is the one
 OpenRGB last set, not one read back from the hardware.
 

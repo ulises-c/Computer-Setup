@@ -18,7 +18,10 @@ run() {
   if [[ "$DRY_RUN" == true ]]; then printf '[dry-run] %s\n' "$*"; else "$@"; fi
 }
 [[ "$DRY_RUN" == true || $EUID -eq 0 ]] || { printf 'error: run with sudo\n' >&2; exit 1; }
-command -v openrgb >/dev/null || { printf 'error: openrgb is not installed\n' >&2; exit 1; }
+command -v openrgb >/dev/null || [[ "$DRY_RUN" == true ]] || {
+  printf 'error: openrgb is not installed (https://openrgb.org/releases.html, or apt install openrgb)\n' >&2
+  exit 1
+}
 
 run install -D -o root -g root -m 755 "$HERE/rgb-status.py" /usr/local/libexec/rgb-status
 run install -o root -g root -m 644 "$HERE/rgb-status.service" "$HERE/rgb-status.timer" /etc/systemd/system/

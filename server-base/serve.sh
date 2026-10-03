@@ -65,6 +65,20 @@ if [[ -n "$WAIT_URL" ]]; then
   curl --fail --silent --show-error --retry 12 --retry-connrefused --retry-delay 2 "$WAIT_URL" >/dev/null
 fi
 
+# Retire first, so a route that fails to register below cannot leave an old
+# mount (e.g. one carrying a password) published.
+for port in "${RETIRED_PORTS[@]}"; do
+  tailscale serve --https="$port" off >/dev/null 2>&1 || true
+done
+for route in "${RETIRED_PATHS[@]}"; do
+  read -r port path <<< "$route"
+  tailscale serve --https="$port" --set-path "$path" off >/dev/null 2>&1 || true
+  if tailscale serve status 2>/dev/null | grep -qE "^\|-- $path( |$)"; then
+    printf 'error: %s is still served after switching it off\n' "$path" >&2
+    exit 1
+  fi
+done
+
 # serve strips the mount path before proxying; a target that ends in a path
 # re-adds it (Cockpit keeps its UrlRoot that way).
 for route in "${ROUTES[@]}"; do
@@ -73,17 +87,14 @@ for route in "${ROUTES[@]}"; do
     printf 'warning: Cockpit is not installed; skipping /cockpit\n' >&2
     continue
   fi
+  if [[ "$target" == /* && ! -e "$target" ]]; then
+    printf 'warning: %s does not exist yet; skipping %s\n' "$target" "$path" >&2
+    continue
+  fi
   if [[ "$path" == / ]]; then
     tailscale serve --bg --https="$port" "$target"
   else
     tailscale serve --bg --https="$port" --set-path "$path" "$target"
   fi
-done
-for port in "${RETIRED_PORTS[@]}"; do
-  tailscale serve --https="$port" off >/dev/null 2>&1 || true
-done
-for route in "${RETIRED_PATHS[@]}"; do
-  read -r port path <<< "$route"
-  tailscale serve --https="$port" --set-path "$path" off >/dev/null 2>&1 || true
 done
 tailscale serve status

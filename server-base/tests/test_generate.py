@@ -39,6 +39,23 @@ class GenerateTests(unittest.TestCase):
             headed = (groups | {g for g in nested if g in cfg["accents"]}) - {"Core"}
             self.assertEqual(sorted(headed - set(cfg["accents"])), [], host)
 
+    def test_top_bar_is_this_hosts_own_glances(self):
+        for host, cfg in FLEET["hosts"].items():
+            own = next(s for s in FLEET["servers"] if s["dir"] == host)
+            widgets = (ROOT.parent / host / "homepage/config/widgets.yaml").read_text()
+            self.assertIn(f'url: "{generate.LOCAL_GLANCES}"', widgets, host)
+            for disk in cfg["topbar"]["disks"]:
+                self.assertIn(f'- "{disk}"', widgets, host)
+            settings = (ROOT.parent / host / "homepage/config/settings.yaml").read_text()
+            self.assertIn(f'  glances: "{own["glances_url"]}"', settings, host)
+
+    def test_server_cards_carry_no_live_widgets(self):
+        for host in FLEET["hosts"]:
+            for server in FLEET["servers"]:
+                card = generate.server_card(server, host)[server["name"]]
+                for widget in card.get("widgets", []):
+                    self.assertEqual(widget["refreshInterval"], 3600000, (host, server["name"]))
+
     def test_emitted_strings_are_quoted(self):
         lines = generate.emit([{"g": [{"svc": {"description": "NAS: storage", "n": 4, "b": True}}]}])
         self.assertIn('        description: "NAS: storage"', lines)

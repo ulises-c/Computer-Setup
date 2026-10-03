@@ -39,16 +39,24 @@ case "$step" in
     [[ "$target" =~ ^[0-9.]+$ ]] || { printf 'error: target must be an IPv4 address\n' >&2; exit 1; }
     scanned="$(mktemp)"
     trap 'rm -f "$scanned"' EXIT
-    ssh-keyscan -q -t ed25519 "$target" >"$scanned"
-    got="$(ssh-keygen -lf "$scanned" | awk '{print $2}')"
+    ssh-keyscan -q -t ed25519 "$target" >"$scanned" || true
+    got=""
+    [[ -s "$scanned" ]] && got="$(ssh-keygen -lf "$scanned" | awk '{print $2}')"
     [[ "$got" == "$want" ]] || {
       printf 'error: %s presented %s, expected %s; refusing to trust it\n' "$target" "${got:-nothing}" "$want" >&2
       exit 1
     }
     touch /root/.ssh/known_hosts
-    grep -qF "$(cut -d' ' -f2- "$scanned")" /root/.ssh/known_hosts || cat "$scanned" >>/root/.ssh/known_hosts
+    ssh-keygen -F "$target" -f /root/.ssh/known_hosts >/dev/null || cat "$scanned" >>/root/.ssh/known_hosts
     chmod 600 /root/.ssh/known_hosts
-    if ! grep -qx "Host $alias" /root/.ssh/config 2>/dev/null; then
+    if grep -qx "Host $alias" /root/.ssh/config 2>/dev/null; then
+      # An existing alias pointing elsewhere is not rewritten silently.
+      awk -v a="Host $alias" '$0==a{f=1;next} /^Host /{f=0} f && $1=="HostName"{print $2}' /root/.ssh/config \
+        | grep -qx "$target" || {
+        printf 'error: %s in /root/.ssh/config points elsewhere; fix it by hand\n' "$alias" >&2
+        exit 1
+      }
+    else
       printf '\nHost %s\n    HostName %s\n    User restic-%s\n    IdentityFile %s\n    IdentitiesOnly yes\n    StrictHostKeyChecking yes\n' \
         "$alias" "$target" "$name" "$key" >>/root/.ssh/config
       chmod 600 /root/.ssh/config
@@ -64,6 +72,11 @@ case "$step" in
     source "$env_file"
     set +a
     export RESTIC_REPOSITORY RESTIC_PASSWORD RESTIC_FROM_PASSWORD="$RESTIC_PASSWORD"
+    # Only SFTP repositories on the chrooted target are created here; a local
+    # path in .env must never become a repository on this host's root disk.
+    for repo in "$RESTIC_REPOSITORY" "${SECOND_RESTIC_REPOSITORY:-}"; do
+      [[ -z "$repo" || "$repo" == sftp:* ]] || { printf 'error: %s is not an sftp: repository\n' "$repo" >&2; exit 1; }
+    done
     if restic cat config >/dev/null 2>&1; then
       printf 'primary repository already initialized\n'
     else

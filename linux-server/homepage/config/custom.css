@@ -95,12 +95,3 @@
   opacity: 0.9;
   pointer-events: none;
 }
-
-/* Top bar extras (custom.js): RGB colour swatch. */
-.topbar-swatch {
-  width: 0.75rem;
-  height: 0.75rem;
-  margin-left: 0.25rem;
-  border-radius: 9999px;
-  box-shadow: 0 0 6px currentColor;
-}

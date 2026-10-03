@@ -100,6 +100,13 @@ Host pi-backup-target
 
 Use `sftp:pi-backup-target:/primary` and `sftp:pi-backup-target:/copy` for the
 repository URLs in `.env` (paths inside the account's chroot).
+An existing `.env` that still points at `/mnt/wd1tb/restic-pi` and
+`/mnt/wd14tb/restic-pi-copy` must switch to these paths once `sftp-target.sh`
+has chrooted the account (the absolute paths no longer exist for it).
+
+The bind mounts start at boot. If a drive is attached after boot (its fstab
+entry is `nofail`), start them by hand on the main server:
+`sudo systemctl start srv-restic-pi-primary.mount srv-restic-pi-copy.mount`.
 
 ### 4. Server-side setup
 

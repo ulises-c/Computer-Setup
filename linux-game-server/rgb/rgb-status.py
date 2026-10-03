@@ -43,7 +43,8 @@ def main():
     try:
         run = subprocess.run(["openrgb", "--noautoconnect", "--list-devices"],
                              capture_output=True, text=True, timeout=180, check=False)
-        devices, error = parse(run.stdout), None
+        devices = parse(run.stdout)
+        error = None if run.returncode == 0 else f"openrgb exited {run.returncode}"
     except (OSError, subprocess.TimeoutExpired) as exc:
         devices, error = [], str(exc)
     doc = {"updated": int(time.time()), "devices": devices}
