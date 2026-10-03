@@ -60,12 +60,14 @@ if [[ "$DRY_RUN" == true ]]; then
   printf '[dry-run] write %s: Match User %s, ForceCommand internal-sftp\n' "$dropin" "$user"
   exit 0
 fi
-if [[ -n "$pubkey" ]]; then
-  printf 'restrict %s\n' "$pubkey" | install -o "$user" -g "$user" -m 600 /dev/stdin "$home/.ssh/authorized_keys"
-fi
-
 tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
+# Via a temp file: uutils install (Ubuntu 26.04) fails reading /dev/stdin onto
+# an existing destination.
+if [[ -n "$pubkey" ]]; then
+  printf 'restrict %s\n' "$pubkey" >"$tmp"
+  install -o "$user" -g "$user" -m 600 "$tmp" "$home/.ssh/authorized_keys"
+fi
 printf 'Match User %s\n    ForceCommand internal-sftp\n    AllowTcpForwarding no\n    AllowAgentForwarding no\n    X11Forwarding no\n    PermitTTY no\n    PasswordAuthentication no\n' \
   "$user" >"$tmp"
 install -m 644 "$tmp" "$dropin"
