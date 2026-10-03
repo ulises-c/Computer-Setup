@@ -15,6 +15,12 @@
         href: "https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}/"
         description: "MotionEye, CUPS and backup DNS"
         siteMonitor: "https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}"
+        widgets:
+          - type: "glances"
+            url: "{{HOMEPAGE_VAR_PI_GLANCES_URL}}"
+            version: 4
+            metric: "info"
+            refreshInterval: 10000
     - game server:
         icon: "/icons/dragonwilds.ico"
         href: "https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/"
@@ -26,20 +32,6 @@
             version: 4
             metric: "info"
             refreshInterval: 10000
-          - type: "customapi"
-            url: "https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/dragonwilds/dragonwilds-status.json"
-            refreshInterval: 60000
-            display: "list"
-            mappings:
-              - field: "status"
-                label: "World"
-                format: "text"
-              - field: "online_capacity"
-                label: "Players"
-                format: "text"
-              - field: "uptime_seconds"
-                label: "Uptime"
-                format: "duration"
 
 - Core:
     - Management:

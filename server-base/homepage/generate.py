@@ -71,8 +71,9 @@ def server_card(server, this_dir):
         card["siteMonitor"] = f"https://{domain}"
         if server.get("glances_url"):
             widgets.append(glances_info(server["glances_url"]))
-    if server.get("status"):
-        widgets.append(status_widget(server["status"], server["status"]["local_url" if local else "remote_url"]))
+    # Host-specific status (e.g. game world, players) stays on that host's own dashboard.
+    if local and server.get("status"):
+        widgets.append(status_widget(server["status"], server["status"]["url"]))
     if widgets:
         card["widgets"] = widgets
     return {server["name"]: card}

@@ -32,20 +32,6 @@
             version: 4
             metric: "info"
             refreshInterval: 10000
-          - type: "customapi"
-            url: "https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/dragonwilds/dragonwilds-status.json"
-            refreshInterval: 60000
-            display: "list"
-            mappings:
-              - field: "status"
-                label: "World"
-                format: "text"
-              - field: "online_capacity"
-                label: "Players"
-                format: "text"
-              - field: "uptime_seconds"
-                label: "Uptime"
-                format: "duration"
 
 - Management:
     - glances:

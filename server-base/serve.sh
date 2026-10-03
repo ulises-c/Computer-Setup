@@ -12,6 +12,7 @@ set -euo pipefail
 #   COMPOSE_DIRS  compose directories under <host-dir> to `up -d`
 #   ROUTES        "<https-port> <mount-path> <target>" entries
 #   RETIRED_PORTS HTTPS ports whose serve config is switched off
+#   RETIRED_PATHS "<https-port> <path>" mounts that are switched off
 #   PRE_SERVE     optional command run from <host-dir> first (e.g. a scaffold)
 #   WAIT_URL      optional loopback URL that must answer before serving
 
@@ -19,6 +20,7 @@ host_dir="$(cd -- "${1:?usage: bash serve.sh <host-dir>}" && pwd)"
 COMPOSE_DIRS=()
 ROUTES=()
 RETIRED_PORTS=()
+RETIRED_PATHS=()
 PRE_SERVE=()
 WAIT_URL=""
 # shellcheck source=/dev/null
@@ -79,5 +81,9 @@ for route in "${ROUTES[@]}"; do
 done
 for port in "${RETIRED_PORTS[@]}"; do
   tailscale serve --https="$port" off >/dev/null 2>&1 || true
+done
+for route in "${RETIRED_PATHS[@]}"; do
+  read -r port path <<< "$route"
+  tailscale serve --https="$port" --set-path "$path" off >/dev/null 2>&1 || true
 done
 tailscale serve status

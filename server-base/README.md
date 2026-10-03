@@ -63,10 +63,9 @@ python3 server-base/homepage/generate.py --check  # CI: fail if stale
 Every dashboard starts with the same **Servers** group: one card per server in
 the same order, the current host's card unlinked and marked "(this server)",
 the others linked and `siteMonitor`-pinged. Each card shows that host's live
-Glances `info` (OS, kernel, CPU/RAM/swap); the game server's card adds the
-Dragonwilds world state, players and uptime from its status JSON, served on its
-node at `/dragonwilds/` (the same tailnet audience as its Homepage, which
-already shows the join password). Hosts other than the main server end with a
+Glances `info` (OS, kernel, CPU/RAM/swap). Host-specific status, like the
+Dragonwilds world, players and uptime, appears only on that host's own card on
+its own dashboard. Hosts other than the main server end with a
 **Shared services** group linking the main server's single-instance services.
 
 Homepage caches `settings.yaml` in its static page. After changing it, use the

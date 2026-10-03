@@ -16,7 +16,7 @@
       "icon": "sh-raspberry-pi.svg",
       "description": "MotionEye, CUPS and backup DNS",
       "domain_var": "PI_HOMEPAGE_DOMAIN",
-      "glances_url": null
+      "glances_url": "{{HOMEPAGE_VAR_PI_GLANCES_URL}}"
     },
     {
       "key": "game",
@@ -27,8 +27,7 @@
       "domain_var": "GAME_HOMEPAGE_DOMAIN",
       "glances_url": "https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/glances",
       "status": {
-        "local_url": "http://127.0.0.1:8096/dragonwilds-status.json",
-        "remote_url": "https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/dragonwilds/dragonwilds-status.json",
+        "url": "http://127.0.0.1:8096/dragonwilds-status.json",
         "mappings": [
           {"field": "status", "label": "World", "format": "text"},
           {"field": "online_capacity", "label": "Players", "format": "text"},

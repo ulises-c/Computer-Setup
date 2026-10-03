@@ -82,12 +82,12 @@ no `homepage`, `glances` or similar name that the NAS host already owns.
 | Glances | `127.0.0.1:61208` | `/glances/` |
 | Cockpit (host service) | `127.0.0.1:9090` | `/cockpit/` |
 | Portainer | `127.0.0.1:9000` | `:9443` (fallback) |
-| Dragonwilds status JSON | `127.0.0.1:8096` | `/dragonwilds/dragonwilds-status.json` |
+| Dragonwilds status JSON | `127.0.0.1:8096` | not served (this Homepage only) |
 | Watchtower | no listener | updates images daily at 03:00 |
 
-The status JSON route feeds the game server's card on the other servers'
-dashboards. It has the same tailnet audience as this Homepage, which already
-shows the join password.
+The status JSON (which includes the join password) is read only by this host's
+Homepage over loopback; the other dashboards show just this host's Glances
+info. `serve.sh` switches off the old `/dragonwilds` mount.
 
 `serve --set-path` strips the mount path before proxying. Glances' web UI uses
 relative URLs, so it works stripped (keep the trailing `/` in links). Cockpit

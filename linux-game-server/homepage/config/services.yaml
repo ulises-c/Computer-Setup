@@ -17,6 +17,12 @@
         href: "https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}/"
         description: "MotionEye, CUPS and backup DNS"
         siteMonitor: "https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}"
+        widgets:
+          - type: "glances"
+            url: "{{HOMEPAGE_VAR_PI_GLANCES_URL}}"
+            version: 4
+            metric: "info"
+            refreshInterval: 10000
     - game server:
         icon: "/icons/dragonwilds.ico"
         description: "RuneScape: Dragonwilds (this server)"

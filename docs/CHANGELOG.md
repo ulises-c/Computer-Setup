@@ -18,9 +18,9 @@ in [UNIFICATION.md](UNIFICATION.md).
 - `server-base` tag in `packages.json` (shell, terminal tools, git/gh, Tailscale,
   Docker, Cockpit, claude-code, opencode); opencode installs on servers via a new
   `opencode_step`, zoxide gains a server apt entry.
-- Servers cards show each host's live Glances info, and the game server's card
-  shows world state, players and uptime from its status JSON, now served at
-  `/dragonwilds/` on its node.
+- Servers cards show each host's live Glances info (the Pi's once its Glances is
+  on its node, via `PI_GLANCES_URL`); host-specific status such as the
+  Dragonwilds world and players stays on that host's own dashboard.
 - Homepage design system: colour selfh.st logos, per-group accents (heading, card
   rule and wash, tinted charts), and the official Dragonwilds icon, logo and key
   art fetched from Steam at deploy time (not committed).
