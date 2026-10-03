@@ -7,120 +7,100 @@
         description: "NAS — storage, media and core services"
         siteMonitor: "https://{{HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN}}"
         widgets:
-          - type: "glances"
-            url: "{{HOMEPAGE_VAR_MAIN_GLANCES_URL}}"
-            version: 4
-            metric: "info"
-            refreshInterval: 10000
           - type: "customapi"
-            url: "{{HOMEPAGE_VAR_MAIN_GLANCES_URL}}/api/4/uptime"
-            refreshInterval: 60000
+            url: "{{HOMEPAGE_VAR_MAIN_GLANCES_URL}}/api/4/system"
+            refreshInterval: 3600000
             display: "list"
             mappings:
-              - label: "Uptime"
-                format: "text"
+              - field: "linux_distro"
+                label: "OS"
+              - field: "os_version"
+                label: "Kernel"
+              - field: "hostname"
+                label: "Hostname"
           - type: "customapi"
-            url: "{{HOMEPAGE_VAR_MAIN_GLANCES_URL}}/api/4/sensors"
-            refreshInterval: 30000
-            display: "dynamic-list"
+            url: "{{HOMEPAGE_VAR_MAIN_GLANCES_URL}}/api/4/quicklook"
+            refreshInterval: 3600000
+            display: "list"
             mappings:
-              name: "label"
-              label: "value"
-              suffix: "°C"
-              limit: 4
+              - field: "cpu_name"
+                label: "CPU"
+              - field: "cpu_log_core"
+                label: "Threads"
           - type: "customapi"
-            url: "{{HOMEPAGE_VAR_MAIN_GLANCES_URL}}/api/4/fs"
-            refreshInterval: 60000
-            display: "dynamic-list"
+            url: "{{HOMEPAGE_VAR_MAIN_GLANCES_URL}}/api/4/mem"
+            refreshInterval: 3600000
+            display: "list"
             mappings:
-              name: "alias"
-              label: "percent"
-              suffix: "% used"
-              limit: 6
+              - field: "total"
+                label: "RAM"
+                format: "bytes"
     - pi:
         icon: "sh-raspberry-pi.svg"
         href: "https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}/"
         description: "MotionEye, CUPS and backup DNS"
         siteMonitor: "https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}"
         widgets:
-          - type: "glances"
-            url: "{{HOMEPAGE_VAR_PI_GLANCES_URL}}"
-            version: 4
-            metric: "info"
-            refreshInterval: 10000
           - type: "customapi"
-            url: "{{HOMEPAGE_VAR_PI_GLANCES_URL}}/api/4/uptime"
-            refreshInterval: 60000
+            url: "{{HOMEPAGE_VAR_PI_GLANCES_URL}}/api/4/system"
+            refreshInterval: 3600000
             display: "list"
             mappings:
-              - label: "Uptime"
-                format: "text"
+              - field: "linux_distro"
+                label: "OS"
+              - field: "os_version"
+                label: "Kernel"
+              - field: "hostname"
+                label: "Hostname"
           - type: "customapi"
-            url: "{{HOMEPAGE_VAR_PI_GLANCES_URL}}/api/4/sensors"
-            refreshInterval: 30000
-            display: "dynamic-list"
+            url: "{{HOMEPAGE_VAR_PI_GLANCES_URL}}/api/4/quicklook"
+            refreshInterval: 3600000
+            display: "list"
             mappings:
-              name: "label"
-              label: "value"
-              suffix: "°C"
-              limit: 4
+              - field: "cpu_name"
+                label: "CPU"
+              - field: "cpu_log_core"
+                label: "Threads"
           - type: "customapi"
-            url: "{{HOMEPAGE_VAR_PI_GLANCES_URL}}/api/4/fs"
-            refreshInterval: 60000
-            display: "dynamic-list"
+            url: "{{HOMEPAGE_VAR_PI_GLANCES_URL}}/api/4/mem"
+            refreshInterval: 3600000
+            display: "list"
             mappings:
-              name: "alias"
-              label: "percent"
-              suffix: "% used"
-              limit: 6
+              - field: "total"
+                label: "RAM"
+                format: "bytes"
     - game server:
-        icon: "/icons/dragonwilds.ico"
-        description: "RuneScape: Dragonwilds (this server)"
+        icon: "sh-steam.svg"
+        description: "Dedicated game servers (this server)"
         widgets:
-          - type: "glances"
-            url: "http://127.0.0.1:61208"
-            version: 4
-            metric: "info"
-            refreshInterval: 10000
           - type: "customapi"
-            url: "http://127.0.0.1:61208/api/4/uptime"
-            refreshInterval: 60000
+            url: "http://127.0.0.1:61208/api/4/system"
+            refreshInterval: 3600000
             display: "list"
             mappings:
-              - label: "Uptime"
-                format: "text"
+              - field: "linux_distro"
+                label: "OS"
+              - field: "os_version"
+                label: "Kernel"
+              - field: "hostname"
+                label: "Hostname"
           - type: "customapi"
-            url: "http://127.0.0.1:61208/api/4/sensors"
-            refreshInterval: 30000
-            display: "dynamic-list"
-            mappings:
-              name: "label"
-              label: "value"
-              suffix: "°C"
-              limit: 4
-          - type: "customapi"
-            url: "http://127.0.0.1:61208/api/4/fs"
-            refreshInterval: 60000
-            display: "dynamic-list"
-            mappings:
-              name: "alias"
-              label: "percent"
-              suffix: "% used"
-              limit: 6
-          - type: "customapi"
-            url: "http://127.0.0.1:8096/dragonwilds-status.json"
-            refreshInterval: 60000
+            url: "http://127.0.0.1:61208/api/4/quicklook"
+            refreshInterval: 3600000
             display: "list"
             mappings:
-              - field: "status"
-                label: "World"
-                format: "text"
-              - field: "online_capacity"
-                label: "Players"
-                format: "text"
-              - field: "uptime_seconds"
-                label: "World uptime"
-                format: "duration"
+              - field: "cpu_name"
+                label: "CPU"
+              - field: "cpu_log_core"
+                label: "Threads"
+          - type: "customapi"
+            url: "http://127.0.0.1:61208/api/4/mem"
+            refreshInterval: 3600000
+            display: "list"
+            mappings:
+              - field: "total"
+                label: "RAM"
+                format: "bytes"
 
 - Game server:
     - glances:

@@ -62,10 +62,14 @@ python3 server-base/homepage/generate.py --check  # CI: fail if stale
 
 Every dashboard starts with the same **Servers** group: one card per server in
 the same order, the current host's card unlinked and marked "(this server)",
-the others linked and `siteMonitor`-pinged. Each card shows that host's live
-Glances `info` (OS, kernel, CPU/RAM/swap). Host-specific status, like the
-Dragonwilds world, players and uptime, appears only on that host's own card on
-its own dashboard. Hosts other than the main server end with a
+the others linked and `siteMonitor`-pinged. Cards show only fixed facts read
+from each host's Glances (OS, kernel, hostname, CPU, threads, RAM). Live data
+is in the top bar (`widgets.yaml`, also generated): CPU/load, memory, each
+disk in the host's `topbar.disks`, CPU temperature and uptime, for that host
+only. Glances reports just the filesystems and sensors chosen by
+`GLANCES_{FS,SENSORS}_{SHOW,ALIAS}` in the host's glances compose file.
+Service status (game worlds etc.) belongs in the host's own groups. Hosts
+other than the main server end with a
 **Shared services** group linking the main server's single-instance services.
 
 Homepage caches `settings.yaml` in its static page. After changing it, use the

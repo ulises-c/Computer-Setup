@@ -49,46 +49,34 @@ def emit(node, indent=0):
     return lines
 
 
-def glances_info(url):
-    return {"type": "glances", "url": url, "version": 4, "metric": "info", "refreshInterval": 10000}
-
-
-def health_widgets(base):
-    """Uptime, temperatures and disk usage from the host's Glances REST API."""
+def spec_widgets(base):
+    """The host's fixed facts (OS, kernel, hostname, CPU, RAM) from its Glances API."""
     api = f"{base}/api/4"
+    slow = 3600000
     return [
-        {"type": "customapi", "url": f"{api}/uptime", "refreshInterval": 60000, "display": "list",
-         "mappings": [{"label": "Uptime", "format": "text"}]},
-        {"type": "customapi", "url": f"{api}/sensors", "refreshInterval": 30000, "display": "dynamic-list",
-         "mappings": {"name": "label", "label": "value", "suffix": "°C", "limit": 4}},
-        {"type": "customapi", "url": f"{api}/fs", "refreshInterval": 60000, "display": "dynamic-list",
-         "mappings": {"name": "alias", "label": "percent", "suffix": "% used", "limit": 6}},
+        {"type": "customapi", "url": f"{api}/system", "refreshInterval": slow, "display": "list",
+         "mappings": [{"field": "linux_distro", "label": "OS"}, {"field": "os_version", "label": "Kernel"},
+                      {"field": "hostname", "label": "Hostname"}]},
+        {"type": "customapi", "url": f"{api}/quicklook", "refreshInterval": slow, "display": "list",
+         "mappings": [{"field": "cpu_name", "label": "CPU"}, {"field": "cpu_log_core", "label": "Threads"}]},
+        {"type": "customapi", "url": f"{api}/mem", "refreshInterval": slow, "display": "list",
+         "mappings": [{"field": "total", "label": "RAM", "format": "bytes"}]},
     ]
-
-
-def status_widget(status, url):
-    return {"type": "customapi", "url": url, "refreshInterval": 60000, "display": "list", "mappings": status["mappings"]}
 
 
 def server_card(server, this_dir):
     local = server["dir"] == this_dir
     domain = f"{{{{HOMEPAGE_VAR_{server['domain_var']}}}}}"
     card = {"icon": server["icon"]}
-    widgets = []
     if local:
         card["description"] = f"{server['description']} (this server)"
-        widgets += [glances_info(LOCAL_GLANCES), *health_widgets(LOCAL_GLANCES)]
+        card["widgets"] = spec_widgets(LOCAL_GLANCES)
     else:
         card["href"] = f"https://{domain}/"
         card["description"] = server["description"]
         card["siteMonitor"] = f"https://{domain}"
         if server.get("glances_url"):
-            widgets += [glances_info(server["glances_url"]), *health_widgets(server["glances_url"])]
-    # Host-specific status (e.g. game world, players) stays on that host's own dashboard.
-    if local and server.get("status"):
-        widgets.append(status_widget(server["status"], server["status"]["url"]))
-    if widgets:
-        card["widgets"] = widgets
+            card["widgets"] = spec_widgets(server["glances_url"])
     return {server["name"]: card}
 
 
@@ -134,6 +122,18 @@ def render_settings(fleet, host_dir, local_text):
     return head + servers + local_text.rstrip("\n") + "\n" + tail
 
 
+def render_widgets(fleet, host_dir):
+    """Top bar: this host's live stats only, from its own Glances."""
+    top = fleet["hosts"][host_dir]["topbar"]
+    widgets = [
+        {"glances": {"url": LOCAL_GLANCES, "version": 4, "label": top["label"], "cpu": True, "mem": True,
+                     "cputemp": True, "cpuSensorLabel": "CPU", "uptime": True, "disk": top["disks"],
+                     "expanded": True}},
+        {"datetime": {"text_size": "xl", "format": {"timeStyle": "short", "dateStyle": "short", "hourCycle": "h23"}}},
+    ]
+    return "\n".join(emit(widgets)) + "\n"
+
+
 def render_js(fleet, host_dir):
     accents = json.dumps(fleet["hosts"][host_dir]["accents"], sort_keys=True)
     return (HERE / "custom.js.in").read_text().replace("@ACCENTS@", accents)
@@ -148,6 +148,7 @@ def outputs(fleet):
         yield cfg / "services.yaml", header + render_services(fleet, host_dir, (hp / "services.local.yaml").read_text())
         header = HEADER.format(local=f"{host_dir}/homepage/settings.local.yaml")
         yield cfg / "settings.yaml", header + render_settings(fleet, host_dir, (hp / "settings.local.yaml").read_text())
+        yield cfg / "widgets.yaml", HEADER.format(local="this host's topbar entry") + render_widgets(fleet, host_dir)
         yield cfg / "custom.css", "/* Generated copy of server-base/homepage/custom.css. */\n" + css
         yield cfg / "custom.js", "// Generated from server-base/homepage/custom.js.in.\n" + render_js(fleet, host_dir)
 

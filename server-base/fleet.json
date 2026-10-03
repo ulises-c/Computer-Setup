@@ -22,18 +22,10 @@
       "key": "game",
       "dir": "linux-game-server",
       "name": "game server",
-      "icon": "/icons/dragonwilds.ico",
-      "description": "RuneScape: Dragonwilds",
+      "icon": "sh-steam.svg",
+      "description": "Dedicated game servers",
       "domain_var": "GAME_HOMEPAGE_DOMAIN",
-      "glances_url": "https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/glances",
-      "status": {
-        "url": "http://127.0.0.1:8096/dragonwilds-status.json",
-        "mappings": [
-          {"field": "status", "label": "World", "format": "text"},
-          {"field": "online_capacity", "label": "Players", "format": "text"},
-          {"field": "uptime_seconds", "label": "World uptime", "format": "duration"}
-        ]
-      }
+      "glances_url": "https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/glances"
     }
   ],
   "shared_services": {
@@ -52,14 +44,17 @@
   "hosts": {
     "linux-server": {
       "title": "Home Server",
+      "topbar": {"label": "main server", "disks": ["/etc/hostname", "/mnt/seagate4tb", "/mnt/wd14tb", "/mnt/wd1tb"]},
       "accents": {"Servers": "indigo", "Management": "blue", "Network": "teal", "Storage": "amber", "NAS": "orange"}
     },
     "linux-pi": {
       "title": "Pi — Secondary Server",
+      "topbar": {"label": "pi", "disks": ["/etc/hostname"]},
       "accents": {"Servers": "indigo", "Management": "blue", "Pi Services": "emerald", "Shared services": "cyan"}
     },
     "linux-game-server": {
       "title": "Game Server",
+      "topbar": {"label": "game server", "disks": ["/etc/hostname"]},
       "accents": {"Servers": "indigo", "Game server": "blue", "Games": "rose", "Shared services": "cyan"}
     }
   }
