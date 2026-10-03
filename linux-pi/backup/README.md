@@ -24,9 +24,9 @@ The Pi pushes a restic repository over SFTP to the main server's DAS, with an
 optional second copy for redundancy:
 
 ```
-Pi (restic) ──SFTP──> Main Server (restic-pi user)
-                      ├── /mnt/wd1tb/restic-pi     (primary)
-                      └── /mnt/wd14tb/restic-pi-copy (second copy)
+Pi (restic) ──SFTP──> Main Server (restic-pi, chrooted to /srv/restic/pi)
+                      ├── /primary → /mnt/wd1tb/restic-pi       (bind mount)
+                      └── /copy    → /mnt/wd14tb/restic-pi-copy (bind mount)
 ```
 
 The second copy uses `restic copy --from-repo` (same pattern as the server's
@@ -98,34 +98,23 @@ Host pi-backup-target
     IdentityFile /root/.ssh/backup
 ```
 
-Use `sftp:pi-backup-target:/mnt/...` for the repository URLs in `.env`.
+Use `sftp:pi-backup-target:/primary` and `sftp:pi-backup-target:/copy` for the
+repository URLs in `.env` (paths inside the account's chroot).
 
 ### 4. Server-side setup
 
-The main server needs a dedicated SFTP user for Pi backups. Create it manually
-or pass this to the server's LLM agent:
+On the main server, with the Pi's public key copied over:
 
 ```sh
-# On the main server:
-sudo useradd -m -s /bin/false restic-pi
-sudo passwd restic-pi   # set a strong password (or use key-only auth)
-
-# Create the restic repo dirs:
-sudo mkdir -p /mnt/wd1tb/restic-pi /mnt/wd14tb/restic-pi-copy
-sudo chown restic-pi:restic-pi /mnt/wd1tb/restic-pi /mnt/wd14tb/restic-pi-copy
+sudo -S -p '' bash server-base/backup/sftp-target.sh pi /tmp/pi-backup.pub
 ```
 
-The user **must** have:
-- Shell: `/bin/false` (silent — `/usr/sbin/nologin` outputs a message that
-  corrupts the SFTP protocol stream)
-- SFTP access via `ForceCommand internal-sftp` in sshd_config:
-
-```
-Match User restic-pi
-    ForceCommand internal-sftp
-    AllowTcpForwarding no
-    X11Forwarding no
-```
+It creates the SFTP-only `restic-pi` account (shell `/bin/false`; `nologin`
+corrupts the SFTP stream), chroots it to `/srv/restic/pi`, bind-mounts the two
+repositories there as `/primary` and `/copy` (systemd mount units that only
+come up while their drive is mounted), and writes its own sshd `Match` drop-in.
+It checks with `sshd -T` that the drop-in binds only that account. Re-running
+it without the key keeps the existing authorized key.
 
 ### 5. Configure
 

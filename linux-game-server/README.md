@@ -321,7 +321,8 @@ stopped-server snapshot. One-time setup:
    `/tmp/game-backup.pub`).
 2. Copy that public key to the main server, then there:
    `sudo bash server-base/backup/sftp-target.sh game /tmp/game-backup.pub`
-   (SFTP-only `restic-game` account, `/mnt/wd1tb/restic-game` and
+   (SFTP-only `restic-game` account chrooted to `/srv/restic/game`, where
+   `/primary` and `/copy` are bind mounts of `/mnt/wd1tb/restic-game` and
    `/mnt/wd14tb/restic-game-copy`; the Pi's account is untouched).
 3. On this host: `sudo bash server-base/backup/sftp-client.sh linux-game-server connect <server-lan-ip> <server-ed25519-sha256>`
    (pins the host key, writes the `game-backup-target` alias, creates

@@ -106,6 +106,8 @@ prunes, optionally copies to a second repository, writes
 through ntfy / Uptime Kuma. A local-drive repository (`BACKUP_MOUNT`) must be
 mounted and carry a `.backup-target-ok` sentinel; a second repository is only
 auto-initialized behind such a verified `SECOND_BACKUP_MOUNT`, never over SFTP.
+SFTP clients get a chrooted account from `sftp-target.sh` (run on the main
+server) and their key, host pin, alias and repositories from `sftp-client.sh`.
 `sources.sh` does nothing but assign at source time (paths are resolved in
 `resolve_sources` after the guards), so a broken host path still alerts. Failure alerts come only from
 the `*-failure.service` `OnFailure` unit, which reads the notifier keys from the
