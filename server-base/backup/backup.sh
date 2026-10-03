@@ -292,7 +292,17 @@ fi
 
 log "backing up ${#SOURCES[@]} source paths + staging"
 BACKUP_SHARED_LOCK_FD=""
-if [[ -n "$BACKUP_SHARED_LOCK_PATH" ]]; then
+shared_lock_dir_in_sources=false
+for s in "${SOURCES[@]}"; do
+  if [[ -n "$BACKUP_SHARED_LOCK_PATH" && "$s" == "${BACKUP_SHARED_LOCK_PATH%/*}" ]]; then
+    shared_lock_dir_in_sources=true
+  fi
+done
+# Coordination only guards the lock's own directory: when that directory is not
+# being backed up (writer not installed on this host yet), there is nothing to protect.
+if [[ -n "$BACKUP_SHARED_LOCK_PATH" && "$shared_lock_dir_in_sources" == false ]]; then
+  log "shared backup lock directory not present; skipping coordination: ${BACKUP_SHARED_LOCK_PATH%/*}"
+elif [[ -n "$BACKUP_SHARED_LOCK_PATH" ]]; then
   command -v flock >/dev/null || die "flock is required for coordinated player-log backups"
   [[ -f "$BACKUP_SHARED_LOCK_PATH" && ! -L "$BACKUP_SHARED_LOCK_PATH" ]] \
     || die "shared backup lock is missing or not a regular file: $BACKUP_SHARED_LOCK_PATH"

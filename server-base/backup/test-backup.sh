@@ -111,6 +111,8 @@ EOF
 chmod +x "$stub"/*
 
 server="$(make_host server linux-server)"
+player_log="$tmp/player-log"
+sed -i.bak "s|/var/lib/dragonwilds/player-log|$player_log|g" "$server/backup/sources.sh"
 drive="$tmp/drive"
 mkdir -p "$drive" "$server/uptime-kuma/data" "$server/homepage/config" "$server/ntfy" "$server/forgejo" \
   "$tmp/forgejo-data"
@@ -152,6 +154,21 @@ if grep -q '^init' "$tmp/restic.log"; then fail "second repo initialized on an u
 [[ "$(jq -r '.status' "$server/backup/status/backup-status.json")" == success ]] || fail "status not success"
 [[ "$(jq -r '.snapshot' "$server/backup/status/backup-status.json")" == abc12345 ]] || fail "snapshot id not recorded"
 [[ ! -e "$tmp/staging" ]] || fail "staging dir left behind"
+grep -q 'skipping coordination' <<<"$out" || fail "absent player-log dir did not skip lock coordination"
+
+# Once the player-log dir is backed up, its lock must exist and be root-owned 0600.
+mkdir -p "$player_log"
+if out="$(PATH="$stub:$PATH" RESTIC_LOG="$tmp/restic.log" bash "$server/backup/backup.sh" 2>&1)"; then
+  fail "missing shared lock did not stop the backup"
+fi
+grep -q 'shared backup lock is missing' <<<"$out" || fail "missing shared lock not reported: $out"
+touch "$player_log/.backup.lock"
+chmod 644 "$player_log/.backup.lock"
+if [[ "$(id -u)" != 0 ]] \
+  && out="$(PATH="$stub:$PATH" RESTIC_LOG="$tmp/restic.log" bash "$server/backup/backup.sh" 2>&1)"; then
+  fail "non-root shared lock did not stop the backup"
+fi
+rm -rf "$player_log"
 
 # An SFTP second repo (no SECOND_BACKUP_MOUNT) that is unreachable is never initialized.
 cat >"$stub/restic" <<'STUB'
