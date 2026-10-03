@@ -720,6 +720,67 @@ Fields: `status` (`running` / `starting` / `stopped` / `failed` / `unknown`),
 `world_password`, `build`, `latest_build`, `update_status`, `update_checked`,
 `last_save`, `updated`.
 
+### Player history
+
+`dragonwilds-player-log.timer` runs a root-owned parser every minute. It reads
+only new records from the Dragonwilds journal and stores its private output
+outside the checkout and outside the public status directory:
+
+```text
+/var/lib/dragonwilds/player-log/players.json  # one aggregate record per identity
+/var/lib/dragonwilds/player-log/events.jsonl  # bounded join/leave audit history
+/var/lib/dragonwilds/player-log/state.json    # journal cursor and correlation state
+```
+
+`players.json` keeps a stable player ID when the journal exposes one, otherwise
+uses an explicit normalized-name fallback. It records names seen, first/last
+seen, join count, and IP history as moderation evidence; IP is never used as
+the primary identity. `events.jsonl` retains sanitized join/leave events for 90
+days by default and never stores raw journal messages, passwords, or join codes.
+The aggregate summary is retained independently of event expiry and is included
+in the encrypted backup source list. Treat this directory as sensitive:
+restrict access to root and the standard `adm` administrator group, and do not publish it through
+nginx or Homepage.
+The parser applies bounded journal, event, player, name, IP, and port limits. If
+the durable cursor state is missing while an aggregate summary remains, it fails
+closed rather than replaying the journal and risking duplicate joins; restore the
+directory from backup before restarting the timer. The summary, event history,
+cursor state, and transaction files are treated as one generation; a missing
+event file or malformed nested summary also fails closed rather than silently
+recreating history.
+
+Restore player history only while the host is in maintenance. The backup/parser
+lock is shared: the parser takes it exclusively, and restic takes it shared while
+reading the source. Restore into a staging directory first, then copy while the
+exclusive lock is held, preserving the live lock inode:
+
+```bash
+bash maintenance.sh enter
+restic restore latest --target /tmp/dragonwilds-restore
+sudo flock -x /var/lib/dragonwilds/player-log/.backup.lock -c \
+  'rsync -a --delete --numeric-ids --exclude=.backup.lock \
+   /tmp/dragonwilds-restore/var/lib/dragonwilds/player-log/ \
+   /var/lib/dragonwilds/player-log/'
+sudo chown -R root:adm /var/lib/dragonwilds/player-log
+sudo chmod 2750 /var/lib/dragonwilds/player-log
+sudo chmod 640 /var/lib/dragonwilds/player-log/events.jsonl /var/lib/dragonwilds/player-log/players.json
+sudo chmod 600 /var/lib/dragonwilds/player-log/state.json /var/lib/dragonwilds/player-log/.backup.lock
+bash maintenance.sh check
+bash maintenance.sh leave
+```
+
+Do not restore directly over the live directory, replace `.backup.lock`, or
+restart the player-log timer until `maintenance.sh check` succeeds.
+
+Useful checks:
+
+```bash
+sudo systemctl status dragonwilds-player-log.timer
+sudo journalctl -u dragonwilds-player-log.service
+sudo jq . /var/lib/dragonwilds/player-log/players.json
+sudo tail -n 20 /var/lib/dragonwilds/player-log/events.jsonl
+```
+
 ### Update checking
 
 `dragonwilds-update-check.timer` runs every two hours on even hours, asking Steam
