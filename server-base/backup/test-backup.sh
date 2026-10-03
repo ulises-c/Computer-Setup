@@ -195,4 +195,11 @@ if PATH="$stub:$PATH" RESTIC_LOG="$tmp/restic.log" bash "$server/backup/backup.s
 fi
 if grep -q '^init' "$tmp/restic.log"; then fail "unreachable SFTP primary was initialized"; fi
 
+# Every host's .env.example must survive `source` (sftp-client.sh sources a
+# fresh copy before the user edits it): no bare < > placeholders.
+for example in "$REPO"/linux-*/backup/.env.example; do
+  # shellcheck source=/dev/null
+  (cd "$tmp" && set -a && source "$example") 2>/dev/null || fail "$example is not safe to source"
+done
+
 printf 'backup engine tests: PASSED\n'

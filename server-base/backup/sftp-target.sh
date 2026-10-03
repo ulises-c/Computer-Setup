@@ -56,7 +56,12 @@ run install -d -o "$user" -g "$user" -m 700 "$home/.ssh"
 # sshd requires every component of ChrootDirectory to be root-owned and not
 # group/other-writable. The bind targets stay root-owned while unmounted, so a
 # missing drive makes the backup fail instead of writing to the root disk.
-run install -d -o root -g root -m 755 /srv/restic "$chroot_dir" "$chroot_dir/primary" "$chroot_dir/copy"
+run install -d -o root -g root -m 755 /srv/restic "$chroot_dir"
+# Only touch an unmounted mountpoint: once bound, the path is the client's repo
+# root, and install -d would hand it back to root.
+for name in primary copy; do
+  mountpoint -q "$chroot_dir/$name" || run install -d -o root -g root -m 755 "$chroot_dir/$name"
+done
 if [[ -z "$pubkey" && "$DRY_RUN" == false && ! -s "$home/.ssh/authorized_keys" ]]; then
   printf 'error: %s has no authorized key; pass the client public key\n' "$user" >&2
   exit 1
