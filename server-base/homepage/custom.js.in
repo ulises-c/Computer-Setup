@@ -53,6 +53,9 @@
   const render = () => {
     const row = document.querySelector(".information-widget-glances > div");
     if (!row) return;
+    // The widget links to its (loopback) API URL; point it at the browsable Glances.
+    const link = row.closest("a");
+    if (link && extras.glances && link.getAttribute("href") !== extras.glances) link.setAttribute("href", extras.glances);
     let box = row.querySelector(":scope > .topbar-extras");
     if (!box) {
       box = document.createElement("div");
