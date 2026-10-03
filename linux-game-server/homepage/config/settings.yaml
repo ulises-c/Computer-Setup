@@ -10,6 +10,7 @@ cardBlur: "sm"
 useEqualHeights: true
 topbarExtras:
   glances: "https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/glances"
+  rgb: "/host-status/rgb.json"
 
 layout:
   Servers:

@@ -335,6 +335,16 @@ stopped-server snapshot. One-time setup:
 Keep automatic game restarts off until a restore from this repository has been
 tested.
 
+## RGB status on Homepage
+
+`sudo bash linux-game-server/rgb/setup.sh` installs a timer that runs OpenRGB
+every 10 minutes as root (the case's HP TracerLED controller is a root-only
+HID device) and writes the detected devices and their active mode to
+`/var/lib/host-status/rgb.json`. `serve.sh` publishes that directory at
+`/host-status/`, and the Homepage top bar shows one RGB item per device.
+OpenRGB's CLI prints no colours, and for this controller the mode is the one
+OpenRGB last set, not one read back from the hardware.
+
 ## Scope left for later
 
 - A tested restore from the game server's restic repository.
