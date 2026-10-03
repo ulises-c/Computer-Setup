@@ -4,3 +4,6 @@ services:
     extends:
       file: ../../server-base/glances/compose.yml
       service: glances
+    environment:
+      GLANCES_SENSORS_SHOW: "^cpu_thermal 0$$"
+      GLANCES_SENSORS_ALIAS: "cpu_thermal 0:CPU"

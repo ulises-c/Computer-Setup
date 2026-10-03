@@ -12,6 +12,31 @@
             version: 4
             metric: "info"
             refreshInterval: 10000
+          - type: "customapi"
+            url: "{{HOMEPAGE_VAR_MAIN_GLANCES_URL}}/api/4/uptime"
+            refreshInterval: 60000
+            display: "list"
+            mappings:
+              - label: "Uptime"
+                format: "text"
+          - type: "customapi"
+            url: "{{HOMEPAGE_VAR_MAIN_GLANCES_URL}}/api/4/sensors"
+            refreshInterval: 30000
+            display: "dynamic-list"
+            mappings:
+              name: "label"
+              label: "value"
+              suffix: "°C"
+              limit: 4
+          - type: "customapi"
+            url: "{{HOMEPAGE_VAR_MAIN_GLANCES_URL}}/api/4/fs"
+            refreshInterval: 60000
+            display: "dynamic-list"
+            mappings:
+              name: "alias"
+              label: "percent"
+              suffix: "% used"
+              limit: 6
     - pi:
         icon: "sh-raspberry-pi.svg"
         description: "MotionEye, CUPS and backup DNS (this server)"
@@ -21,6 +46,31 @@
             version: 4
             metric: "info"
             refreshInterval: 10000
+          - type: "customapi"
+            url: "http://127.0.0.1:61208/api/4/uptime"
+            refreshInterval: 60000
+            display: "list"
+            mappings:
+              - label: "Uptime"
+                format: "text"
+          - type: "customapi"
+            url: "http://127.0.0.1:61208/api/4/sensors"
+            refreshInterval: 30000
+            display: "dynamic-list"
+            mappings:
+              name: "label"
+              label: "value"
+              suffix: "°C"
+              limit: 4
+          - type: "customapi"
+            url: "http://127.0.0.1:61208/api/4/fs"
+            refreshInterval: 60000
+            display: "dynamic-list"
+            mappings:
+              name: "alias"
+              label: "percent"
+              suffix: "% used"
+              limit: 6
     - game server:
         icon: "/icons/dragonwilds.ico"
         href: "https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/"
@@ -32,6 +82,31 @@
             version: 4
             metric: "info"
             refreshInterval: 10000
+          - type: "customapi"
+            url: "https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/glances/api/4/uptime"
+            refreshInterval: 60000
+            display: "list"
+            mappings:
+              - label: "Uptime"
+                format: "text"
+          - type: "customapi"
+            url: "https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/glances/api/4/sensors"
+            refreshInterval: 30000
+            display: "dynamic-list"
+            mappings:
+              name: "label"
+              label: "value"
+              suffix: "°C"
+              limit: 4
+          - type: "customapi"
+            url: "https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/glances/api/4/fs"
+            refreshInterval: 60000
+            display: "dynamic-list"
+            mappings:
+              name: "alias"
+              label: "percent"
+              suffix: "% used"
+              limit: 6
 
 - Management:
     - glances:

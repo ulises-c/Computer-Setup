@@ -53,6 +53,19 @@ def glances_info(url):
     return {"type": "glances", "url": url, "version": 4, "metric": "info", "refreshInterval": 10000}
 
 
+def health_widgets(base):
+    """Uptime, temperatures and disk usage from the host's Glances REST API."""
+    api = f"{base}/api/4"
+    return [
+        {"type": "customapi", "url": f"{api}/uptime", "refreshInterval": 60000, "display": "list",
+         "mappings": [{"label": "Uptime", "format": "text"}]},
+        {"type": "customapi", "url": f"{api}/sensors", "refreshInterval": 30000, "display": "dynamic-list",
+         "mappings": {"name": "label", "label": "value", "suffix": "°C", "limit": 4}},
+        {"type": "customapi", "url": f"{api}/fs", "refreshInterval": 60000, "display": "dynamic-list",
+         "mappings": {"name": "alias", "label": "percent", "suffix": "% used", "limit": 6}},
+    ]
+
+
 def status_widget(status, url):
     return {"type": "customapi", "url": url, "refreshInterval": 60000, "display": "list", "mappings": status["mappings"]}
 
@@ -64,13 +77,13 @@ def server_card(server, this_dir):
     widgets = []
     if local:
         card["description"] = f"{server['description']} (this server)"
-        widgets.append(glances_info(LOCAL_GLANCES))
+        widgets += [glances_info(LOCAL_GLANCES), *health_widgets(LOCAL_GLANCES)]
     else:
         card["href"] = f"https://{domain}/"
         card["description"] = server["description"]
         card["siteMonitor"] = f"https://{domain}"
         if server.get("glances_url"):
-            widgets.append(glances_info(server["glances_url"]))
+            widgets += [glances_info(server["glances_url"]), *health_widgets(server["glances_url"])]
     # Host-specific status (e.g. game world, players) stays on that host's own dashboard.
     if local and server.get("status"):
         widgets.append(status_widget(server["status"], server["status"]["url"]))

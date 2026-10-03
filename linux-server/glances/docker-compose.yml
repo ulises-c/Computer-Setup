@@ -36,6 +36,10 @@ services:
     environment:
       # The sidecar proxies via host.docker.internal, so bind all interfaces.
       GLANCES_OPT: "-w"
+      GLANCES_FS_SHOW: "^/etc/hostname$$,^/mnt/.+"
+      GLANCES_FS_ALIAS: "/etc/hostname:system,/mnt/seagate4tb:media 4TB,/mnt/wd14tb:backup 14TB,/mnt/wd1tb:backup 1TB"
+      GLANCES_SENSORS_SHOW: "^Package id 0$$,^Composite$$"
+      GLANCES_SENSORS_ALIAS: "Package id 0:CPU,Composite:NVMe"
     volumes:
       # NAS mounts (read-only) so glances `fs:` can report capacity.
       - /mnt:/mnt:ro

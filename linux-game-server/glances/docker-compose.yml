@@ -4,3 +4,6 @@ services:
     extends:
       file: ../../server-base/glances/compose.yml
       service: glances
+    environment:
+      GLANCES_SENSORS_SHOW: "^Package id 0$$,^Composite$$"
+      GLANCES_SENSORS_ALIAS: "Package id 0:CPU,Composite:NVMe"

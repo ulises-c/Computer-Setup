@@ -12,6 +12,31 @@
             version: 4
             metric: "info"
             refreshInterval: 10000
+          - type: "customapi"
+            url: "{{HOMEPAGE_VAR_MAIN_GLANCES_URL}}/api/4/uptime"
+            refreshInterval: 60000
+            display: "list"
+            mappings:
+              - label: "Uptime"
+                format: "text"
+          - type: "customapi"
+            url: "{{HOMEPAGE_VAR_MAIN_GLANCES_URL}}/api/4/sensors"
+            refreshInterval: 30000
+            display: "dynamic-list"
+            mappings:
+              name: "label"
+              label: "value"
+              suffix: "°C"
+              limit: 4
+          - type: "customapi"
+            url: "{{HOMEPAGE_VAR_MAIN_GLANCES_URL}}/api/4/fs"
+            refreshInterval: 60000
+            display: "dynamic-list"
+            mappings:
+              name: "alias"
+              label: "percent"
+              suffix: "% used"
+              limit: 6
     - pi:
         icon: "sh-raspberry-pi.svg"
         href: "https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}/"
@@ -23,6 +48,31 @@
             version: 4
             metric: "info"
             refreshInterval: 10000
+          - type: "customapi"
+            url: "{{HOMEPAGE_VAR_PI_GLANCES_URL}}/api/4/uptime"
+            refreshInterval: 60000
+            display: "list"
+            mappings:
+              - label: "Uptime"
+                format: "text"
+          - type: "customapi"
+            url: "{{HOMEPAGE_VAR_PI_GLANCES_URL}}/api/4/sensors"
+            refreshInterval: 30000
+            display: "dynamic-list"
+            mappings:
+              name: "label"
+              label: "value"
+              suffix: "°C"
+              limit: 4
+          - type: "customapi"
+            url: "{{HOMEPAGE_VAR_PI_GLANCES_URL}}/api/4/fs"
+            refreshInterval: 60000
+            display: "dynamic-list"
+            mappings:
+              name: "alias"
+              label: "percent"
+              suffix: "% used"
+              limit: 6
     - game server:
         icon: "/icons/dragonwilds.ico"
         description: "RuneScape: Dragonwilds (this server)"
@@ -32,6 +82,31 @@
             version: 4
             metric: "info"
             refreshInterval: 10000
+          - type: "customapi"
+            url: "http://127.0.0.1:61208/api/4/uptime"
+            refreshInterval: 60000
+            display: "list"
+            mappings:
+              - label: "Uptime"
+                format: "text"
+          - type: "customapi"
+            url: "http://127.0.0.1:61208/api/4/sensors"
+            refreshInterval: 30000
+            display: "dynamic-list"
+            mappings:
+              name: "label"
+              label: "value"
+              suffix: "°C"
+              limit: 4
+          - type: "customapi"
+            url: "http://127.0.0.1:61208/api/4/fs"
+            refreshInterval: 60000
+            display: "dynamic-list"
+            mappings:
+              name: "alias"
+              label: "percent"
+              suffix: "% used"
+              limit: 6
           - type: "customapi"
             url: "http://127.0.0.1:8096/dragonwilds-status.json"
             refreshInterval: 60000
