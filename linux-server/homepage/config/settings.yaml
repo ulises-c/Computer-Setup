@@ -8,6 +8,8 @@ hideVersion: true
 fullWidth: true
 cardBlur: "sm"
 useEqualHeights: true
+topbarExtras:
+  glances: "{{HOMEPAGE_VAR_MAIN_GLANCES_URL}}"
 
 layout:
   Servers:

@@ -113,6 +113,11 @@ def render_settings(fleet, host_dir, local_text):
         "cardBlur": "sm",
         "useEqualHeights": True,
     }
+    own = next(s for s in fleet["servers"] if s["dir"] == host_dir)
+    extras = {"glances": own["glances_url"]}
+    if host.get("topbar", {}).get("rgb"):
+        extras["rgb"] = host["topbar"]["rgb"]
+    base["topbarExtras"] = extras
     head = "\n".join(emit(base)) + "\n\nlayout:\n"
     servers = "  Servers:\n    style: row\n    columns: 3\n"
     shared_dir = next(s["dir"] for s in fleet["servers"] if s["key"] == fleet["shared_services"]["host"])

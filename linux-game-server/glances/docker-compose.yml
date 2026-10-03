@@ -4,6 +4,12 @@ services:
     extends:
       file: ../../server-base/glances/compose.yml
       service: glances
+    # The Ubuntu variant: NVML (libnvidia-ml, glibc) cannot load in the Alpine
+    # image. The host's driver library is bound in; privileged already exposes
+    # /dev/nvidia*. After a driver upgrade, recreate the container.
+    image: nicolargo/glances:ubuntu-4.5.4-full
     environment:
       GLANCES_SENSORS_SHOW: "^Package id 0$$,^Composite$$"
       GLANCES_SENSORS_ALIAS: "Package id 0:CPU,Composite:NVMe"
+    volumes:
+      - /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1:/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1:ro
