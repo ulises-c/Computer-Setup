@@ -31,7 +31,7 @@
         "mappings": [
           {"field": "status", "label": "World", "format": "text"},
           {"field": "online_capacity", "label": "Players", "format": "text"},
-          {"field": "uptime_seconds", "label": "Uptime", "format": "duration"}
+          {"field": "uptime_seconds", "label": "World uptime", "format": "duration"}
         ]
       }
     }

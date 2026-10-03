@@ -119,7 +119,7 @@
                 label: "Players"
                 format: "text"
               - field: "uptime_seconds"
-                label: "Uptime"
+                label: "World uptime"
                 format: "duration"
 
 - Game server:
