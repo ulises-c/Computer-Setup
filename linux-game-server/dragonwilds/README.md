@@ -751,7 +751,10 @@ recreating history.
 
 Restore player history only while the host is in maintenance. The backup/parser
 lock is shared: the parser takes it exclusively, and restic takes it shared while
-reading the source. Restore into a staging directory first, then copy while the
+reading the source. A parser run that cannot get the lock within 20 seconds
+skips and catches up from its journal cursor on the next tick. A backup with no
+player-log directory on disk skips coordination; once the directory exists, a
+missing or non-root `0600` lock fails the backup. Restore into a staging directory first, then copy while the
 exclusive lock is held, preserving the live lock inode:
 
 ```bash

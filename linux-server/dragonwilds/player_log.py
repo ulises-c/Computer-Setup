@@ -19,6 +19,7 @@ import selectors
 import stat
 import subprocess
 import sys
+import time
 from collections import deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -51,6 +52,8 @@ REMOTE_RE = re.compile(
 )
 JOIN_RE = re.compile(r"Join succeeded:\s*(?P<name>.+?)\s*$")
 MAX_COUNT = 10**12
+# Stays under the unit's TimeoutStartSec so a nightly backup skips a run instead of failing it.
+LOCK_WAIT_SECONDS = 20
 MAX_FUTURE_TIMESTAMP_SKEW_US = 7 * 24 * 60 * 60 * 1_000_000
 MAX_JOURNAL_RECORDS = 8192
 MAX_JOURNAL_OUTPUT_BYTES = 8 * 1024 * 1024
@@ -934,6 +937,22 @@ def _sanitize_state(state: Any) -> dict[str, Any]:
     return clean
 
 
+
+class BackupInProgress(RuntimeError):
+    pass
+
+
+def _lock_exclusive(fd: int) -> None:
+    deadline = time.monotonic() + LOCK_WAIT_SECONDS
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except BlockingIOError:
+            if time.monotonic() >= deadline:
+                raise BackupInProgress("player-log is locked by a backup; skipping this run") from None
+            time.sleep(0.5)
+
 class PlayerLog:
     def __init__(self, root: Path, retention_days: int = 90) -> None:
         if isinstance(retention_days, bool) or not isinstance(retention_days, int):
@@ -956,7 +975,7 @@ class PlayerLog:
             raise RuntimeError(f"player-log root is not a directory: {self.root}")
         os.chmod(self.root, 0o2750)
         with self._open_lock() as lock:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            _lock_exclusive(lock.fileno())
             try:
                 self._recover_transaction()
             finally:
@@ -1041,7 +1060,7 @@ class PlayerLog:
 
     def commit(self, events: Iterable[dict[str, Any]], state: dict[str, Any]) -> None:
         with self._open_lock() as lock:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            _lock_exclusive(lock.fileno())
             try:
                 self._commit_locked(events, state)
             finally:
@@ -1453,6 +1472,9 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
+    except BackupInProgress as error:
+        print(f"player-log: {error}")
+        raise SystemExit(0)
     except (OSError, RuntimeError) as error:
         print(f"error: {error}", file=sys.stderr)
         raise SystemExit(1)

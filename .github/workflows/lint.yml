@@ -60,6 +60,10 @@ jobs:
       - name: Test server-base Homepage generator (outputs current, cross-links)
         run: python3 server-base/tests/test_generate.py -v
 
+      - name: Test game server (Dragonwilds, player log, backups)
+        working-directory: linux-game-server/tests
+        run: python3 -m unittest discover -v -p 'test_*.py'
+
   dryrun-smoke:
     runs-on: ubuntu-latest
     steps:

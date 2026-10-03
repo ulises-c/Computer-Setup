@@ -20,6 +20,18 @@ SESSION_3 = "session:" + "3" * 32
 
 
 class PlayerLogTests(unittest.TestCase):
+    def test_commit_skips_when_backup_holds_lock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = PlayerLog(root)
+            with open(root / ".backup.lock", "r+") as backup_lock, \
+                    mock.patch.object(player_log, "LOCK_WAIT_SECONDS", 0):
+                player_log.fcntl.flock(backup_lock.fileno(), player_log.fcntl.LOCK_SH)
+                with self.assertRaises(player_log.BackupInProgress):
+                    log.commit([], {})
+            self.assertFalse((root / "state.json").exists())
+            log.commit([], {})
+
     def test_parses_join_and_leave_without_retaining_raw_messages(self):
         records = [
             {
