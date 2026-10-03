@@ -29,6 +29,7 @@ readonly POLKIT_RULE=/etc/polkit-1/rules.d/50-dragonwilds-restart.rules
 : "${SERVER_PORT:=7777}"
 : "${MAX_PLAYERS:=6}"
 : "${LAN_CIDR:=}"
+: "${BACKUP_UNIT:=backup.service}"
 
 # sed renders these into unit files, so a quoted path would break the templates.
 if ! [[ "$SCRIPT_DIR" =~ ^/[[:alnum:]_./-]+$ ]]; then
@@ -62,8 +63,12 @@ fi
 SERVICE_GROUP="$(id -gn "$SERVICE_USER")"
 : "${DRAGONWILDS_INSTALL_DIR:=$(getent passwd "$SERVICE_USER" | cut -d: -f6)/games/dragonwilds}"
 
-if ! [[ "$DRAGONWILDS_INSTALL_DIR" =~ ^/[[:alnum:]_./-]+$ ]]; then
+if ! [[ "$DRAGONWILDS_INSTALL_DIR" =~ ^/[[:alnum:]_./-]+$ && "$DRAGONWILDS_INSTALL_DIR" != *//* && "$DRAGONWILDS_INSTALL_DIR" != */./* && "$DRAGONWILDS_INSTALL_DIR" != */. && "$DRAGONWILDS_INSTALL_DIR" != */../* && "$DRAGONWILDS_INSTALL_DIR" != */.. && "$DRAGONWILDS_INSTALL_DIR" != */ ]]; then
   printf 'error: unsupported character in install path: %s\n' "$DRAGONWILDS_INSTALL_DIR" >&2
+  exit 1
+fi
+if [[ "$BACKUP_UNIT" != backup.service ]]; then
+  printf 'error: BACKUP_UNIT must be backup.service, got: %s\n' "$BACKUP_UNIT" >&2
   exit 1
 fi
 
@@ -106,6 +111,7 @@ render() {
       -e "s|@APPID@|$APPID|g" \
       -e "s|@SERVER_PORT@|$SERVER_PORT|g" \
       -e "s|@MAX_PLAYERS@|$MAX_PLAYERS|g" \
+      -e "s|@BACKUP_UNIT@|$BACKUP_UNIT|g" \
       -e "s|@STATUS_SCRIPT@|$SCRIPT_DIR/dragonwilds-status.sh|g" \
       -e "s|@STATUS_JSON@|$SCRIPT_DIR/status/dragonwilds-status.json|g" \
       -e "s|@UPDATE_CHECK_SCRIPT@|$SCRIPT_DIR/dragonwilds-update-check.sh|g" \
@@ -117,6 +123,7 @@ render() {
 }
 
 render "$SCRIPT_DIR/dragonwilds.service.template" dragonwilds.service
+render "$SCRIPT_DIR/dragonwilds-pre-update-backup.service.template" dragonwilds-pre-update-backup.service
 render "$SCRIPT_DIR/dragonwilds-status.service.template" dragonwilds-status.service
 render "$SCRIPT_DIR/dragonwilds-update-check.service.template" dragonwilds-update-check.service
 render "$SCRIPT_DIR/dragonwilds-auto-update.service.template" dragonwilds-auto-update.service
@@ -127,7 +134,8 @@ if command -v systemd-analyze >/dev/null; then
   # first-time setup run before the game is installed.
   verify_units=()
   [[ "$game_installed" == true ]] && verify_units+=("$tmp/dragonwilds.service")
-  systemd-analyze verify "${verify_units[@]}" "$tmp/dragonwilds-status.service" \
+  systemd-analyze verify "${verify_units[@]}" "$tmp/dragonwilds-pre-update-backup.service" \
+    "$tmp/dragonwilds-status.service" \
     "$tmp/dragonwilds-update-check.service" "$tmp/dragonwilds-auto-update.service" \
     "$SCRIPT_DIR/dragonwilds-status.timer" "$SCRIPT_DIR/dragonwilds-update-check.timer" \
     "$SCRIPT_DIR/dragonwilds-auto-update.timer"
@@ -138,6 +146,7 @@ if [[ "$DRY_RUN" == true ]]; then
   printf '[dry-run] install polkit rule %s\n' "$POLKIT_RULE"
 else
   install -o root -g root -m 644 "$tmp/dragonwilds.service" "$UNIT_DIR/dragonwilds.service"
+  install -o root -g root -m 644 "$tmp/dragonwilds-pre-update-backup.service" "$UNIT_DIR/dragonwilds-pre-update-backup.service"
   install -o root -g root -m 644 "$tmp/dragonwilds-status.service" "$UNIT_DIR/dragonwilds-status.service"
   install -o root -g root -m 644 "$SCRIPT_DIR/dragonwilds-status.timer" "$UNIT_DIR/dragonwilds-status.timer"
   install -o root -g root -m 644 "$tmp/dragonwilds-update-check.service" "$UNIT_DIR/dragonwilds-update-check.service"

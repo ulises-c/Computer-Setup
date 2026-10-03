@@ -1,10 +1,13 @@
-// Lets the Dragonwilds auto-updater restart its own game server without root —
-// that one verb on that one unit, for the service user only.
+// Lets the Dragonwilds user invoke only the root-owned update/backup entrypoints:
+// restart the game service, or run the pre-update backup gate directly from the
+// maintenance installer. The backup executor is installed outside the checkout.
 polkit.addRule(function(action, subject) {
   if (action.id == "org.freedesktop.systemd1.manage-units" &&
-      action.lookup("unit") == "dragonwilds.service" &&
-      action.lookup("verb") == "restart" &&
-      subject.user == "@USER@") {
+      subject.user == "@USER@" &&
+      ((action.lookup("unit") == "dragonwilds.service" &&
+        action.lookup("verb") == "restart") ||
+       (action.lookup("unit") == "dragonwilds-pre-update-backup.service" &&
+        action.lookup("verb") == "start"))) {
     return polkit.Result.YES;
   }
 });

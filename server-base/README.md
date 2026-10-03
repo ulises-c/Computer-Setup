@@ -106,8 +106,9 @@ refresh button (bottom right) or `curl http://127.0.0.1:<port>/api/revalidate`.
 `backup/backup.sh` snapshots the paths a host's `sources.sh` lists, plus
 consistent SQLite copies, a Portainer volume copy and every service `.env`, then
 prunes, optionally copies to a second repository, writes
-`<host>/backup/status/backup-status.json` for the Homepage card and alerts
-through ntfy / Uptime Kuma. A local-drive repository (`BACKUP_MOUNT`) must be
+`/var/lib/computer-setup-backup/<unit>/backup-status.json` for the Homepage card
+and alerts through ntfy / Uptime Kuma. The status directory is root-owned; the
+status container mounts it read-only. A local-drive repository (`BACKUP_MOUNT`) must be
 mounted and carry a `.backup-target-ok` sentinel; a second repository is only
 auto-initialized behind such a verified `SECOND_BACKUP_MOUNT`, never over SFTP.
 SFTP clients get a chrooted account from `sftp-target.sh` (run on the main
@@ -124,5 +125,7 @@ host's `.env` without sourcing it.
 | game server | main server over SFTP | `game-backup.service` |
 
 Install or re-render a host's units with `sudo bash <host>/backup/setup.sh`
-(`--dry-run` to preview). `bash server-base/backup/test-backup.sh` runs the
-engine against every host's `sources.sh` with stubbed restic.
+(`--dry-run` to preview). Setup captures the Dragonwilds install path into the
+root-owned unit; changing `dragonwilds/.env` requires rerunning both setup
+scripts. `bash server-base/backup/test-backup.sh` runs the engine against every
+host's `sources.sh` with stubbed restic.

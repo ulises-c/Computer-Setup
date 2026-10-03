@@ -28,6 +28,16 @@ in [UNIFICATION.md](UNIFICATION.md).
   Portainer and Watchtower on the Pi's own node.
 - Game server nightly restic backup to the main server, including a verified
   live world copy.
+- Dragonwilds restarts now wait for the host backup service after the old game
+  process flushes its world, before SteamCMD can apply a build. The gate skips
+  fresh installs with no save and fails closed once a configured world exists;
+  it replaces an already-running nightly backup with a fresh post-shutdown run,
+  and the start timeout is five hours for the observed long patches. Backup units
+  now execute root-owned bundles rather than scripts from the writable checkout;
+  fixed Dragonwilds paths and root-owned backup status state prevent user-owned
+  runtime files from redirecting privileged backup work. The standalone installer
+  now uses the same gate for existing worlds, and the copied world helper is
+  hash-pinned in the rendered backup unit.
 
 ### Changed
 - Homepage is pinned to v2.4.0 on every host (the main server and Pi used `:latest`,

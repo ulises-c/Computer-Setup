@@ -13,7 +13,21 @@ set -euo pipefail
 # for the Homepage card and reports to ntfy / Uptime Kuma.
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
-HOST_DIR="$(dirname -- "$SCRIPT_DIR")"
+HOST_DIR="${BACKUP_HOST_DIR:-$(dirname -- "$SCRIPT_DIR")}"
+readonly UNIT_SCRIPT_DIR="$SCRIPT_DIR"
+readonly UNIT_HOST_DIR="$HOST_DIR"
+readonly UNIT_BACKUP_HOST_DIR_SET="${BACKUP_HOST_DIR+x}"
+readonly UNIT_BACKUP_HOST_DIR="${BACKUP_HOST_DIR-}"
+readonly UNIT_BACKUP_SAVE_SCRIPT_SET="${BACKUP_SAVE_SCRIPT+x}"
+readonly UNIT_BACKUP_SAVE_SCRIPT="${BACKUP_SAVE_SCRIPT-}"
+readonly UNIT_BACKUP_SAVE_SCRIPT_SHA256_SET="${BACKUP_SAVE_SCRIPT_SHA256+x}"
+readonly UNIT_BACKUP_SAVE_SCRIPT_SHA256="${BACKUP_SAVE_SCRIPT_SHA256-}"
+readonly UNIT_BACKUP_DRAGONWILDS_INSTALL_DIR_SET="${BACKUP_DRAGONWILDS_INSTALL_DIR+x}"
+readonly UNIT_BACKUP_DRAGONWILDS_INSTALL_DIR="${BACKUP_DRAGONWILDS_INSTALL_DIR-}"
+readonly UNIT_BACKUP_FORGEJO_DATA_PATH_SET="${BACKUP_FORGEJO_DATA_PATH+x}"
+readonly UNIT_BACKUP_FORGEJO_DATA_PATH="${BACKUP_FORGEJO_DATA_PATH-}"
+readonly UNIT_STATUS_JSON_SET="${STATUS_JSON+x}"
+readonly UNIT_STATUS_JSON="${STATUS_JSON-}"
 
 if [[ "${1:-}" != "notify-failure" && -f "$SCRIPT_DIR/.env" ]]; then
   set -a
@@ -21,6 +35,24 @@ if [[ "${1:-}" != "notify-failure" && -f "$SCRIPT_DIR/.env" ]]; then
   source "$SCRIPT_DIR/.env"
   set +a
 fi
+
+# These values are rendered into the root-owned systemd unit and may not be
+# overridden by the bundle's .env. In particular, never let a stale helper path
+# or world path redirect a root backup into the writable checkout.
+SCRIPT_DIR="$UNIT_SCRIPT_DIR"
+HOST_DIR="$UNIT_HOST_DIR"
+if [[ "$UNIT_BACKUP_HOST_DIR_SET" == x ]]; then BACKUP_HOST_DIR="$UNIT_BACKUP_HOST_DIR"; fi
+if [[ "$UNIT_BACKUP_SAVE_SCRIPT_SET" == x ]]; then BACKUP_SAVE_SCRIPT="$UNIT_BACKUP_SAVE_SCRIPT"; fi
+if [[ "$UNIT_BACKUP_SAVE_SCRIPT_SHA256_SET" == x ]]; then
+  BACKUP_SAVE_SCRIPT_SHA256="$UNIT_BACKUP_SAVE_SCRIPT_SHA256"
+fi
+if [[ "$UNIT_BACKUP_DRAGONWILDS_INSTALL_DIR_SET" == x ]]; then
+  BACKUP_DRAGONWILDS_INSTALL_DIR="$UNIT_BACKUP_DRAGONWILDS_INSTALL_DIR"
+fi
+if [[ "$UNIT_BACKUP_FORGEJO_DATA_PATH_SET" == x ]]; then
+  BACKUP_FORGEJO_DATA_PATH="$UNIT_BACKUP_FORGEJO_DATA_PATH"
+fi
+if [[ "$UNIT_STATUS_JSON_SET" == x ]]; then STATUS_JSON="$UNIT_STATUS_JSON"; fi
 
 HOSTTAG="$(hostname)"
 SNAPSHOT_ID=""
@@ -41,9 +73,12 @@ env_value() {
   local v
   v="$(grep -E "^(export[[:space:]]+)?$2=" "$1" | tail -1 | cut -d= -f2- || true)"
   v="${v%$'\r'}"
-  [[ "$v" == \"* || "$v" == \'* ]] || v="${v%%[[:space:]]#*}"
-  if [[ "$v" =~ ^\"(.*)\"$ || "$v" =~ ^\'(.*)\'$ ]]; then
+  if [[ "$v" =~ ^\"([^\"]*)\"[[:space:]]*(#.*)?$ ]]; then
     v="${BASH_REMATCH[1]}"
+  elif [[ "$v" =~ ^\'([^\']*)\'[[:space:]]*(#.*)?$ ]]; then
+    v="${BASH_REMATCH[1]}"
+  else
+    v="${v%%[[:space:]]#*}"
   fi
   printf '%s' "$v"
 }

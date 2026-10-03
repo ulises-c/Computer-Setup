@@ -158,8 +158,12 @@ sudo docker compose up -d
 sudo bash setup.sh
 ```
 
-`setup.sh` renders the service units with the current checkout path, installs them,
-and enables the timer. Re-run it after moving the checkout.
+`setup.sh` installs a root-owned executor bundle under
+`/usr/local/libexec/computer-setup-backup/pi-backup`, renders the service units,
+and enables the timer. Status is kept under
+`/var/lib/computer-setup-backup/pi-backup/` and mounted read-only by the status
+container. Re-run it after changing `.env`, backup source code, or moving the
+checkout.
 
 ### 9. Run + verify
 

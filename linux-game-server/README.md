@@ -332,6 +332,12 @@ stopped-server snapshot. One-time setup:
    `sudo bash linux-game-server/backup/setup.sh`,
    `sudo systemctl start game-backup.service`, and check the Homepage card.
 
+   The backup setup installs a root-owned executor bundle under
+   `/usr/local/libexec/computer-setup-backup/game`; the systemd unit does not run
+   backup code directly from this writable checkout. Re-run the setup after
+   changing `backup/.env`, `dragonwilds/.env`, or the backup source code; the
+   Dragonwilds install path is captured into the root-owned unit.
+
 Keep automatic game restarts off until a restore from this repository has been
 tested.
 

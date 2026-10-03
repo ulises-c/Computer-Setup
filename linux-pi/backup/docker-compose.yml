@@ -10,4 +10,4 @@ services:
     ports:
       - "127.0.0.1:8099:80"
     volumes:
-      - ./status:/usr/share/nginx/html:ro
+      - /var/lib/computer-setup-backup/pi-backup:/usr/share/nginx/html:ro

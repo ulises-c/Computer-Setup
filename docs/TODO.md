@@ -10,9 +10,11 @@ unified-layout design rationale is in [UNIFICATION.md](UNIFICATION.md).
       and test real joins beyond six before treating it as usable.
 - [ ] Retest the join-code route from a Tailscale client; the documented evidence
       shows EOS can advertise the WAN address while direct tailnet-IP connect works.
-- [ ] Arrange recurring off-host backups for this host's `Saved/Config`,
-      `Saved/SaveGames`, and private deployment `.env`; the rename backup is only
-      a rollback point, not recurring coverage.
+- [x] Nightly off-host backups cover this host's `Saved/Config`,
+      `Saved/SaveGames`, private deployment `.env`, and a verified live world
+      copy through `linux-game-server/backup/`.
+- [ ] Test a restore from the game server's restic repository before enabling
+      automatic restarts.
 
 ## Live-run cleanup & follow-ups (unification / dotfiles)
 
@@ -293,10 +295,11 @@ torrents only). Before broader use, route all torrent traffic through a VPN.
 Dedicated game host (`linux-game-server/`), currently Homepage and the native
 Dragonwilds server, migrated off the NAS host.
 
-- [ ] **Backups.** `linux-game-server/backup/` (shared restic engine) is in the
-      repo; still to do: the SFTP target on the NAS host, `/root/.ssh` alias and
-      key, `backup/.env`, `sudo bash linux-game-server/backup/setup.sh`, a first
-      run, and a tested restore
+- [x] **Backups.** `linux-game-server/backup/` uses the shared restic engine and
+      is deployed to the NAS SFTP target; the nightly service has completed a
+      successful run. A tested restore remains open below.
+- [ ] **Backup restore.** Restore a game snapshot and verify the world loads
+      before enabling automatic restarts.
 - [ ] After a verified restore, set `AUTO_UPDATE_RESTART=true` and configure
       ntfy in `linux-game-server/dragonwilds/.env`
 - [ ] Reserve the game host's LAN address in the router's DHCP table so the

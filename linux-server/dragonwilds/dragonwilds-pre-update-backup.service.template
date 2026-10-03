@@ -1,0 +1,16 @@
+[Unit]
+Description=Back up Dragonwilds before starting or updating it
+After=network-online.target
+Wants=network-online.target
+
+# Fresh installs have no world to protect yet. Once a world exists, the backup
+# command must succeed; a missing unit or failed backup therefore blocks the game
+# start rather than allowing an unprotected update.
+ConditionPathExistsGlob=@INSTALL_DIR@/RSDragonwilds/Saved/SaveGames/*.sav
+
+[Service]
+Type=oneshot
+ExecStartPre=/usr/bin/bash -c 'if [[ -e /run/dragonwilds/stop-failure ]]; then printf "error: previous Dragonwilds stop was unclean (%s); remove /run/dragonwilds/stop-failure after investigation\n" "$(< /run/dragonwilds/stop-failure)" >&2; exit 1; fi'
+ExecStart=/usr/bin/systemctl restart --wait @BACKUP_UNIT@
+ExecStartPost=/usr/bin/rm -f /run/dragonwilds/stop-failure
+TimeoutStartSec=2h30min

@@ -10,25 +10,49 @@ BACKUP_UNIT=backup.service
 : "${SECOND_BACKUP_MOUNT:=/mnt/wd14tb}"
 
 resolve_sources() {
-  # Forgejo's data dir may be relocated to an external drive via its own .env.
-  forgejo_data="$HOST_DIR/forgejo/data"
-  if [[ -f "$HOST_DIR/forgejo/.env" ]]; then
-    fdp="$(env_value "$HOST_DIR/forgejo/.env" FORGEJO_DATA_PATH)"
-    if [[ -n "${fdp:-}" ]]; then
-      [[ "$fdp" = /* ]] && forgejo_data="$fdp" || forgejo_data="$HOST_DIR/forgejo/$fdp"
-    fi
-  fi
+  # Forgejo's data dir is captured into the root-owned unit during setup;
+  # never reread the checkout-owned Forgejo .env as root at backup time.
+  forgejo_data="${BACKUP_FORGEJO_DATA_PATH:-}"
+  [[ -n "$forgejo_data" ]] || die "BACKUP_FORGEJO_DATA_PATH is not rendered into backup.service"
+  [[ "$forgejo_data" =~ ^/[[:alnum:]_./-]+$ && "$forgejo_data" != *//* && "$forgejo_data" != */./* && "$forgejo_data" != */. && "$forgejo_data" != */../* && "$forgejo_data" != */.. && "$forgejo_data" != */ ]] \
+    || die "invalid fixed Forgejo data path"
 
-  # Dragonwilds worlds live outside the repo; its .env says where the install is.
+  # Dragonwilds worlds live outside the repo; setup renders the fixed install
+  # path into the root-owned systemd unit rather than rereading a user-owned .env.
   dragonwilds_saved=""
-  if [[ -f "$HOST_DIR/dragonwilds/.env" ]]; then
-    dwd="$(env_value "$HOST_DIR/dragonwilds/.env" DRAGONWILDS_INSTALL_DIR)"
-    if [[ -n "${dwd:-}" ]]; then
-      # A relative value would otherwise resolve against systemd's CWD and be
-      # silently skipped by the -e filter — a backup script must not lose a path quietly.
-      [[ "$dwd" = /* ]] || dwd="$HOST_DIR/dragonwilds/$dwd"
-      dragonwilds_saved="$dwd/RSDragonwilds/Saved"
-      [[ -d "$dragonwilds_saved" ]] || log "warning: Dragonwilds saves not found at $dragonwilds_saved — not backed up"
+  dwd="${BACKUP_DRAGONWILDS_INSTALL_DIR:-}"
+  [[ -n "$dwd" ]] || die "BACKUP_DRAGONWILDS_INSTALL_DIR is not rendered into backup.service"
+  [[ "$dwd" =~ ^/[[:alnum:]_./-]+$ && "$dwd" != *//* && "$dwd" != */./* && "$dwd" != */. && "$dwd" != */../* && "$dwd" != */.. && "$dwd" != */ ]] \
+    || die "invalid fixed Dragonwilds install path"
+  command -v systemctl >/dev/null || die "systemctl is required to verify the Dragonwilds install path"
+  configured_game_install_dir="$(systemctl show dragonwilds.service --property=WorkingDirectory --value 2>/dev/null)" \
+    || die "could not read dragonwilds.service WorkingDirectory"
+  [[ -n "$configured_game_install_dir" && "$configured_game_install_dir" == "$dwd" ]] \
+    || die "game and main-server backup Dragonwilds install paths differ; rerun both setup scripts"
+  if [[ -n "$dwd" ]]; then
+    dragonwilds_saved="$dwd/RSDragonwilds/Saved"
+    [[ -d "$dragonwilds_saved" ]] || log "warning: Dragonwilds saves not found at $dragonwilds_saved — not backed up"
+    if compgen -G "$dragonwilds_saved/SaveGames/*.sav" >/dev/null; then
+      config="$dragonwilds_saved/Config/LinuxServer/DedicatedServer.ini"
+      [[ -r "$config" ]] || die "Dragonwilds save exists but DedicatedServer.ini is missing"
+      python3 - "$config" "$dragonwilds_saved/SaveGames" <<'PY'
+import configparser
+from pathlib import Path
+import sys
+
+config_path = Path(sys.argv[1])
+save_dir = Path(sys.argv[2])
+try:
+    config = configparser.ConfigParser(interpolation=None)
+    config.read(config_path)
+    world = config['/Script/Dominion.DedicatedServerSettings']['DefaultWorldName'].strip()
+    if not world or world in ('.', '..') or '/' in world or '\\' in world or '\n' in world:
+        raise ValueError()
+    if not (save_dir / f'{world}.sav').is_file():
+        raise ValueError()
+except (OSError, KeyError, ValueError, configparser.Error):
+    raise SystemExit('invalid Dragonwilds config/world; refusing an unverified backup')
+PY
     fi
   fi
 

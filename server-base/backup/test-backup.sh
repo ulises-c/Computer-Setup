@@ -103,6 +103,11 @@ cat >"$stub/mountpoint" <<'EOF'
 [[ "$2" != */unmounted ]]
 EOF
 printf '#!/usr/bin/env bash\nexit 1\n' >"$stub/docker"
+cat >"$stub/systemctl" <<'EOF'
+#!/usr/bin/env bash
+[[ "${1:-}" == show ]] || exit 1
+printf '%s\n' "$BACKUP_DRAGONWILDS_INSTALL_DIR"
+EOF
 chmod +x "$stub"/*
 
 server="$(make_host server linux-server)"
@@ -114,6 +119,14 @@ printf 'x' >"$server/uptime-kuma/data/kuma.db"
 printf 'title: test\n' >"$server/homepage/config/settings.yaml"
 printf 'FORGEJO_DATA_PATH="%s"\n' "$tmp/forgejo-data" >"$server/forgejo/.env"
 printf 'NTFY_BASE_URL=x\n' >"$server/ntfy/.env"
+
+# Quoted notifier values with inline comments must be parsed like shell .env values.
+cat >"$tmp/quoted-notifier.env" <<'EOF'
+NTFY_URL="https://ntfy.example" # comment
+EOF
+quoted_ntfy="$(bash -c 'eval "$(sed -n "/^env_value()/,/^CANDIDATES=()/p" "$1")"; env_value "$2" NTFY_URL' bash "$REPO/server-base/backup/backup.sh" "$tmp/quoted-notifier.env")"
+[[ "$quoted_ntfy" == https://ntfy.example ]] || fail "quoted notifier value with inline comment was misparsed"
+
 cat >"$server/backup/.env" <<EOF
 RESTIC_REPOSITORY=$drive/restic
 RESTIC_PASSWORD=test
@@ -121,6 +134,8 @@ BACKUP_MOUNT=$drive
 SECOND_RESTIC_REPOSITORY=$tmp/unmounted/restic-copy
 SECOND_BACKUP_MOUNT=$tmp/unmounted
 STAGING_DIR=$tmp/staging
+BACKUP_DRAGONWILDS_INSTALL_DIR=$server/dragonwilds/games/dragonwilds
+BACKUP_FORGEJO_DATA_PATH=$tmp/forgejo-data
 EOF
 
 out="$(PATH="$stub:$PATH" RESTIC_LOG="$tmp/restic.log" bash ${TEST_TRACE:+-x} "$server/backup/backup.sh" 2>&1)" \
@@ -170,8 +185,23 @@ for host in linux-server linux-pi linux-game-server; do
     HOST_DIR="$tmp/bare-$host"
     # shellcheck disable=SC2034  # consumed by the sourced sources.sh
     CANDIDATES=()
+    if [[ "$host" == linux-game-server || "$host" == linux-server ]]; then
+      # shellcheck disable=SC2034  # consumed by the sourced backup sources.sh
+      BACKUP_DRAGONWILDS_INSTALL_DIR="$HOST_DIR/no-game"
+    fi
+    if [[ "$host" == linux-server || "$host" == linux-game-server ]]; then
+      # shellcheck disable=SC2329  # invoked indirectly by the sourced sources.sh
+      systemctl() { printf '%s\n' "$BACKUP_DRAGONWILDS_INSTALL_DIR"; }
+    fi
+    if [[ "$host" == linux-server ]]; then
+      # shellcheck disable=SC2034  # consumed by the sourced backup sources.sh
+      BACKUP_FORGEJO_DATA_PATH="$HOST_DIR/forgejo/data"
+    fi
+    # shellcheck disable=SC2329  # invoked indirectly by the sourced sources.sh
     log() { :; }
+    # shellcheck disable=SC2329  # invoked indirectly by the sourced sources.sh
     die() { exit 1; }
+    # shellcheck disable=SC2329  # invoked indirectly by the sourced sources.sh
     env_value() { :; }
     # shellcheck source=/dev/null
     source "$REPO/$host/backup/sources.sh"
@@ -180,14 +210,76 @@ for host in linux-server linux-pi linux-game-server; do
   ) || fail "$host/backup/sources.sh does not source cleanly"
 done
 
+# A repointed game path must fail rather than backing up a different tree.
+if bash -c '
+  set -euo pipefail
+  HOST_DIR="$1"
+  BACKUP_DRAGONWILDS_INSTALL_DIR="$1/world-a"
+  CANDIDATES=()
+  log() { :; }
+  die() { return 1; }
+  systemctl() { printf "%s/world-b\\n" "$1"; }
+  source "$2/linux-game-server/backup/sources.sh"
+  resolve_sources
+' bash "$tmp/path-drift" "$REPO" >/dev/null 2>&1; then
+  fail "game backup accepted a path drift from dragonwilds.service"
+fi
+
+# A changed root-owned helper must fail its pinned-hash check before Python runs.
+bundle="$tmp/root-bundle"
+mkdir -p "$bundle"
+printf '#!/usr/bin/env python3\\n' >"$bundle/backup-save.py"
+if bash -c '
+  set -euo pipefail
+  SCRIPT_DIR="$1"
+  HOST_DIR="$2"
+  BACKUP_DRAGONWILDS_INSTALL_DIR="$2/world"
+  BACKUP_SAVE_SCRIPT="$1/backup-save.py"
+  BACKUP_SAVE_SCRIPT_SHA256=0000000000000000000000000000000000000000000000000000000000000000
+  STAGING_DIR="$2/staging"
+  source "$3/linux-game-server/backup/sources.sh"
+  log() { :; }
+  die() { return 1; }
+  world_exists=true
+  saved="$2/world/RSDragonwilds/Saved"
+  install_dir="$2/world"
+  stage_extra
+' bash "$bundle" "$tmp/hash-test" "$REPO" >/dev/null 2>&1; then
+  fail "game backup accepted a changed helper hash"
+fi
+
+# A main-server Dragonwilds save without its config must fail the source
+# resolver, rather than silently backing up only the .sav and reporting success.
+invalid_server="$tmp/server-invalid"
+mkdir -p "$invalid_server/dragonwilds/games/dragonwilds/RSDragonwilds/Saved/SaveGames"
+printf 'DRAGONWILDS_INSTALL_DIR=%s\n' "$invalid_server/dragonwilds/games/dragonwilds" \
+  >"$invalid_server/dragonwilds/.env"
+touch "$invalid_server/dragonwilds/games/dragonwilds/RSDragonwilds/Saved/SaveGames/Main.sav"
+if bash -c '
+  set -euo pipefail
+  HOST_DIR="$1"
+  BACKUP_DRAGONWILDS_INSTALL_DIR="$1/dragonwilds/games/dragonwilds"
+  CANDIDATES=()
+  log() { :; }
+  die() { printf "%s\\n" "$*" >&2; return 1; }
+  env_value() { sed -n "s/^$2=//p" "$1" | tail -1; }
+  source "$2/linux-server/backup/sources.sh"
+  resolve_sources
+' bash "$invalid_server" "$REPO" >/dev/null 2>&1; then
+  fail "main Dragonwilds backup accepted a save without DedicatedServer.ini"
+fi
+
 # An unreachable SFTP primary fails the run instead of trying `restic init`.
 cat >"$server/backup/.env" <<EOF2
 RESTIC_REPOSITORY=sftp:target:/primary
 RESTIC_PASSWORD=test
 BACKUP_MOUNT=$drive
 STAGING_DIR=$tmp/staging
+BACKUP_DRAGONWILDS_INSTALL_DIR=$server/dragonwilds/games/dragonwilds
+BACKUP_FORGEJO_DATA_PATH=$tmp/forgejo-data
 EOF2
 touch "$drive/.backup-target-ok"
+# shellcheck disable=SC2016  # the generated stub expands RESTIC_LOG at runtime
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >>"$RESTIC_LOG"\nexit 1\n' >"$stub/restic"
 : >"$tmp/restic.log"
 if PATH="$stub:$PATH" RESTIC_LOG="$tmp/restic.log" bash "$server/backup/backup.sh" >/dev/null 2>&1; then

@@ -35,7 +35,8 @@ elif name == 'systemctl':
         values = {'LoadState': 'not-found' if state.get('absent') else 'loaded',
                   'ActiveState': active, 'MainPID': '17' if active == 'active' else '0',
                   'ControlPID': '17' if active in ('activating', 'deactivating') else '0',
-                  'Job': '0', 'NeedDaemonReload': 'no'}
+                  'Job': '0', 'NeedDaemonReload': 'no',
+                  'WorkingDirectory': os.environ.get('DRAGONWILDS_INSTALL_DIR', '')}
         print(values[prop])
     elif args[0] == 'daemon-reload':
         state['loaded_guard'] = marker.exists()
@@ -50,6 +51,9 @@ elif name == 'systemctl':
         save()
     elif args[0] in ('start', 'enable'):
         for unit in (x for x in args[1:] if x.endswith(('.service', '.timer'))):
+            if args[0] == 'start' and unit == 'dragonwilds-pre-update-backup.service':
+                log('backup gate ' + unit)
+                continue
             if marker.exists() and state.get('loaded_guard'):
                 log('blocked ' + unit)
             else:

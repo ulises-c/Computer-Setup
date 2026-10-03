@@ -561,10 +561,15 @@ game data anyway.
 ## Install
 
 Do not follow a generic `setup.sh` install here. The bootstrap
-(`linux-game-server/setup.sh`) downloads the game through `install.sh` while the
+bootstrap (`linux-game-server/setup.sh`) downloads the game through `install.sh` while the
 maintenance guard blocks every start, and `activate.sh` renders the units, the
 polkit rule and the ufw rules through `setup.sh` in this directory before it
 deliberately starts the game. See [the game-server guide](../README.md).
+
+On an existing world, `install.sh` resolves the install path from the rendered
+`dragonwilds.service` and runs the root-owned pre-update backup gate before
+SteamCMD. Do not replace it with a direct `steamcmd +app_update`; configure and
+install the backup unit first.
 
 To apply a template change later, enter maintenance, re-run
 `sudo bash linux-game-server/dragonwilds/setup.sh`, check, then leave and start
@@ -633,9 +638,21 @@ journalctl -u dragonwilds.service -f
 sudo systemctl restart dragonwilds.service
 ```
 
-The unit runs `steamcmd +app_update` as an `ExecStartPre` on every start, so a
-restart picks up the current build. Its leading `-` means a Steam outage leaves
-the server starting on whatever is already on disk rather than failing to boot.
+The unit first starts `dragonwilds-pre-update-backup.service` as root. After the
+old process has stopped and flushed its world, that gate waits for the configured
+`game-backup.service` to finish. Only then does the unit run
+`steamcmd +app_update` as an `ExecStartPre`, so every restart that can apply a
+patch has a fresh off-host backup first. The Steam command's leading `-` means a
+Steam outage leaves the server starting on whatever is already on disk rather than
+failing to boot.
+
+The backup gate is skipped on a fresh install until a `.sav` exists. Once a save
+exists, a missing or malformed config, missing backup unit, failed backup, or
+timeout fails the game start and blocks the update. The gate restarts the backup
+unit rather than merely attaching to an already-running nightly job, so the copy
+is taken after this game's shutdown. The backup service allows two hours; the
+gate allows two and a half, and the game start job allows five hours because an
+update has taken a little over two hours on an empty server.
 
 Shutdown sends SIGTERM and waits up to 120 s: the server flushes its world on
 that signal, so cutting it short can lose recent progress.
@@ -658,9 +675,16 @@ match and a fresh world was created instead.
 
 ## Backups
 
-Nothing backs this host up on a schedule yet; the plan is tracked in
-`docs/TODO.md`. Until then, `backup-save.py` takes a verified, mode-600 copy of
-the configured world:
+The nightly `game-backup.service` sends this host's encrypted restic snapshot to
+the main server. `sudo bash linux-game-server/backup/setup.sh` installs a
+root-owned executor bundle under `/usr/local/libexec/`; the systemd unit does not
+execute the user-writable checkout as root. Re-run that setup after changing
+`backup/.env`, `dragonwilds/.env`, or the backup source code; the install path is
+captured into the root-owned unit. The status JSON is written under
+`/var/lib/computer-setup-backup/game-backup/` and served read-only to Homepage.
+The pre-update gate invokes the same service after the game has flushed and
+stopped, so it protects both automatic and manual updates. The standalone helper
+remains useful for an additional local copy:
 
 ```bash
 python3 linux-game-server/dragonwilds/backup-save.py --output-dir ~/backups
@@ -736,10 +760,10 @@ came back" alone is not success. Any failure — the start job failing, the old
 build coming back, or the port never binding — alerts at high priority and
 records the build in `status/.failed-build`, so it is not retried every 15
 minutes. It is retried when a newer build appears, or on any manual restart. The
-unit's `TimeoutStartSec=30min` leaves room for the download inside the start job.
+unit's `TimeoutStartSec=5h` leaves room for the backup and the long download inside the start job.
 
 Set `AUTO_UPDATE_RESTART=false` in `.env` to be notified but apply updates
-yourself:
+yourself. The manual restart still passes through the pre-update backup gate:
 
 ```bash
 sudo systemctl restart dragonwilds.service
