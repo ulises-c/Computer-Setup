@@ -316,15 +316,20 @@ the main server over SFTP (the same pattern as the Pi): `Saved/SaveGames`,
 live world copy taken by `backup-save.py`. It is a live backup, not a
 stopped-server snapshot. One-time setup:
 
-1. On the main server, give this host an SFTP-only target as in
-   [`linux-pi/backup/README.md`](../linux-pi/backup/README.md) (repository
-   paths `/mnt/wd1tb/restic-game` and `/mnt/wd14tb/restic-game-copy`).
-2. On this host, add a `game-backup-target` alias and key under
-   `/root/.ssh/`, then `cp backup/.env.example backup/.env` and set
-   `RESTIC_PASSWORD` (store it in the password manager), ntfy and Kuma.
-3. `bash linux-game-server/backup/setup.sh --dry-run`, then
-   `sudo bash linux-game-server/backup/setup.sh`, then
-   `sudo systemctl start game-backup.service` and check the Homepage card.
+1. On this host: `sudo bash server-base/backup/sftp-client.sh linux-game-server key`
+   (installs restic, creates root's key, copies the public key to
+   `/tmp/game-backup.pub`).
+2. Copy that public key to the main server, then there:
+   `sudo bash server-base/backup/sftp-target.sh game /tmp/game-backup.pub`
+   (SFTP-only `restic-game` account, `/mnt/wd1tb/restic-game` and
+   `/mnt/wd14tb/restic-game-copy`; the Pi's account is untouched).
+3. On this host: `sudo bash server-base/backup/sftp-client.sh linux-game-server connect <server-lan-ip> <server-ed25519-sha256>`
+   (pins the host key, writes the `game-backup-target` alias, creates
+   `backup/.env` with a new `RESTIC_PASSWORD` and initializes both
+   repositories). Save the password in the password manager.
+4. Set ntfy (and an Uptime Kuma push monitor) in `backup/.env`, then
+   `sudo bash linux-game-server/backup/setup.sh`,
+   `sudo systemctl start game-backup.service`, and check the Homepage card.
 
 Keep automatic game restarts off until a restore from this repository has been
 tested.

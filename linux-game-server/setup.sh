@@ -39,7 +39,7 @@ export TAG_FILTER_ACTIVE SELECTED_TAGS
 
 core_prime_sudo
 run sudo apt-get update
-run sudo apt-get install -y ca-certificates curl jq git rsync python3 ufw polkitd \
+run sudo apt-get install -y ca-certificates curl jq git rsync python3 ufw polkitd restic \
   docker.io docker-compose-v2 lib32gcc-s1 lib32stdc++6
 # Without recommends: cockpit would otherwise pull NetworkManager onto a networkd host.
 run sudo apt-get install -y --no-install-recommends cockpit ncdu smartmontools lm-sensors
