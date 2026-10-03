@@ -5,6 +5,7 @@
 BACKUP_NAME=game
 BACKUP_LABEL="Game server"
 BACKUP_UNIT=game-backup.service
+BACKUP_SHARED_LOCK_PATH=/var/lib/dragonwilds/player-log/.backup.lock
 
 saved=""
 install_dir=""
@@ -27,6 +28,7 @@ resolve_sources() {
   # Worlds and server config only (OwnerId, identity, world password); the game
   # install comes back from steamcmd. The repository is encrypted.
   CANDIDATES+=("$HOST_DIR/homepage/config")
+  CANDIDATES+=("/var/lib/dragonwilds/player-log")
   if [[ -n "$saved" ]]; then
     CANDIDATES+=("$saved/SaveGames" "$saved/Config")
   fi

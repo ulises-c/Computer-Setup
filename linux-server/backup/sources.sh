@@ -6,6 +6,7 @@
 BACKUP_NAME=server
 BACKUP_LABEL=Server
 BACKUP_UNIT=backup.service
+BACKUP_SHARED_LOCK_PATH=/var/lib/dragonwilds/player-log/.backup.lock
 : "${BACKUP_MOUNT:=/mnt/wd1tb}"
 : "${SECOND_BACKUP_MOUNT:=/mnt/wd14tb}"
 
@@ -70,6 +71,7 @@ PY
     "$HOST_DIR/filebrowser/filebrowser.db"
     "$HOST_DIR/qbittorrent/config"
     "$HOST_DIR/homepage/config"
+    /var/lib/dragonwilds/player-log
     /etc/atvloadly
   )
   # Worlds and server config only — the ~5.5 GB game install comes back from steamcmd,

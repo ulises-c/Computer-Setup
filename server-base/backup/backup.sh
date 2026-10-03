@@ -105,6 +105,7 @@ fi
 : "${RETENTION_KEEP_WEEKLY:=4}"
 : "${RETENTION_KEEP_MONTHLY:=6}"
 : "${RUN_CHECK:=true}"
+: "${BACKUP_SHARED_LOCK_PATH:=}"
 : "${NTFY_TOPIC:=$BACKUP_NAME-backup}"
 : "${KUMA_PUSH_URL:=}"
 : "${STATUS_JSON:=$SCRIPT_DIR/status/backup-status.json}"
@@ -290,12 +291,29 @@ if ! restic cat config >/dev/null 2>&1; then
 fi
 
 log "backing up ${#SOURCES[@]} source paths + staging"
+BACKUP_SHARED_LOCK_FD=""
+if [[ -n "$BACKUP_SHARED_LOCK_PATH" ]]; then
+  command -v flock >/dev/null || die "flock is required for coordinated player-log backups"
+  [[ -f "$BACKUP_SHARED_LOCK_PATH" && ! -L "$BACKUP_SHARED_LOCK_PATH" ]] \
+    || die "shared backup lock is missing or not a regular file: $BACKUP_SHARED_LOCK_PATH"
+  exec {BACKUP_SHARED_LOCK_FD}<>"$BACKUP_SHARED_LOCK_PATH"
+  lock_fd_target="$(readlink -- "/proc/$$/fd/$BACKUP_SHARED_LOCK_FD")" || die "cannot inspect shared backup lock"
+  [[ "$lock_fd_target" == "$BACKUP_SHARED_LOCK_PATH" ]] \
+    || die "shared backup lock redirected to: $lock_fd_target"
+  lock_fd_info="$(stat -Lc '%u:%a:%F' -- "/proc/$$/fd/$BACKUP_SHARED_LOCK_FD")" || die "cannot stat shared backup lock"
+  [[ "$lock_fd_info" == '0:600:regular file' ]] \
+    || die "shared backup lock ownership or mode is unsafe: $lock_fd_info"
+  flock -s "$BACKUP_SHARED_LOCK_FD" || die "could not acquire shared backup lock"
+fi
 restic backup "${SOURCES[@]}" "$STAGING_DIR" \
   --host "$HOSTTAG" \
   --tag "$BACKUP_NAME-nightly" \
   --exclude ts-state \
   --exclude '*.sock' \
   --exclude lost+found
+if [[ -n "$BACKUP_SHARED_LOCK_FD" ]]; then
+  flock -u "$BACKUP_SHARED_LOCK_FD"
+fi
 
 SNAPSHOT_ID="$(restic snapshots latest --host "$HOSTTAG" --json | jq -r '.[-1].short_id')"
 

@@ -194,15 +194,17 @@ class SafetyTests(unittest.TestCase):
         events = self.events()
         stops = [line for line in events if line.startswith('stop ')]
         self.assertEqual(stops, ['stop dragonwilds-auto-update.timer', 'stop dragonwilds-update-check.timer',
-                                'stop dragonwilds-auto-update.service', 'stop dragonwilds-update-check.service',
+                                'stop dragonwilds-player-log.timer', 'stop dragonwilds-auto-update.service',
+                                'stop dragonwilds-update-check.service', 'stop dragonwilds-player-log.service',
                                 'stop dragonwilds.service'])
         self.assertLess(events.index('reload'), events.index(stops[0]))
         self.assertIn('restart blocked', events)
         self.assertNotIn('UNSAFE restart', events)
         self.assertTrue((self.root / 'maintenance/blocked').exists())
         for unit in ('dragonwilds.service', 'dragonwilds-auto-update.service',
-                     'dragonwilds-update-check.service', 'dragonwilds-auto-update.timer',
-                     'dragonwilds-update-check.timer'):
+                     'dragonwilds-update-check.service', 'dragonwilds-player-log.service',
+                     'dragonwilds-auto-update.timer', 'dragonwilds-update-check.timer',
+                     'dragonwilds-player-log.timer'):
             self.assertIn('ConditionPathExists=!' + str(self.root / 'maintenance/blocked'),
                           (self.root / 'units' / (unit + '.d/90-maintenance.conf')).read_text())
         self.assertFalse(any('mask' in line for line in events))
