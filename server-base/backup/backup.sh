@@ -138,6 +138,8 @@ if [[ "${1:-}" == "notify-failure" ]]; then
       write_status failed || true
     fi
   fi
+  [[ -n "${NTFY_URL:-}" || -n "$KUMA_PUSH_URL" ]] \
+    || printf 'warning: NTFY_URL and KUMA_PUSH_URL are both empty; failure recorded but nobody alerted\n' >&2
   if ntfy_config_valid; then
     notify "$BACKUP_LABEL backup FAILED" urgent rotating_light "systemd OnFailure — see: journalctl -u $BACKUP_UNIT"
   else
@@ -168,6 +170,8 @@ validate_url NTFY_URL "${NTFY_URL:-}"
 validate_url KUMA_PUSH_URL "$KUMA_PUSH_URL"
 [[ "$NTFY_TOPIC" != *$'\n'* && "$NTFY_TOPIC" != *$'\r'* ]] || die "NTFY_TOPIC cannot contain a newline"
 [[ "${NTFY_TOKEN:-}" != *$'\n'* && "${NTFY_TOKEN:-}" != *$'\r'* ]] || die "NTFY_TOKEN cannot contain a newline"
+[[ -n "${NTFY_URL:-}" || -n "$KUMA_PUSH_URL" ]] \
+  || log "warning: NTFY_URL and KUMA_PUSH_URL are both empty in .env — a failed backup will alert nobody"
 [[ -n "${RESTIC_REPOSITORY:-}" ]] || die "set RESTIC_REPOSITORY in .env"
 [[ -n "${RESTIC_PASSWORD:-}" ]] || die "set RESTIC_PASSWORD in .env"
 command -v restic >/dev/null || die "restic not installed (apt install restic)"

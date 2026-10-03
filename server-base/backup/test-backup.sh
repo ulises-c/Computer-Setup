@@ -70,6 +70,10 @@ grep -q 'invalid ntfy configuration' <<<"$err" || fail "notify-failure ignored .
 if grep -q 'invalid KUMA_PUSH_URL' <<<"$err"; then fail "a bad ntfy URL suppressed the Kuma push"; fi
 rm "$pi/backup/.env"
 
+# With no alert channel at all, the failure path says so instead of staying silent.
+err="$(STATUS_JSON="$tmp/status.json" bash "$pi/backup/backup.sh" notify-failure 2>&1)"
+grep -q 'nobody alerted' <<<"$err" || fail "empty alert channels not reported"
+
 # A broken host path must not stop the failure notifier (game: relative install dir).
 game="$(make_host game linux-game-server)"
 mkdir -p "$game/dragonwilds"
