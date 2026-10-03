@@ -115,6 +115,8 @@ def render_settings(fleet, host_dir, local_text):
     }
     own = next(s for s in fleet["servers"] if s["dir"] == host_dir)
     extras = {"glances": own["glances_url"]}
+    if host.get("topbar", {}).get("net"):
+        extras["net"] = host["topbar"]["net"]
     if host.get("topbar", {}).get("rgb"):
         extras["rgb"] = host["topbar"]["rgb"]
     base["topbarExtras"] = extras

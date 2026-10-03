@@ -10,6 +10,7 @@ cardBlur: "sm"
 useEqualHeights: true
 topbarExtras:
   glances: "{{HOMEPAGE_VAR_MAIN_GLANCES_URL}}"
+  net: "eno2"
 
 layout:
   Servers:

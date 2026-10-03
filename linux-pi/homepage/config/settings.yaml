@@ -10,6 +10,7 @@ cardBlur: "sm"
 useEqualHeights: true
 topbarExtras:
   glances: "{{HOMEPAGE_VAR_PI_GLANCES_URL}}"
+  net: "wlan0"
 
 layout:
   Servers:
