@@ -5,8 +5,8 @@ readonly MAINTENANCE_DIR=/var/lib/dragonwilds-maintenance
 readonly MAINTENANCE_MARKER="$MAINTENANCE_DIR/blocked"
 readonly MAINTENANCE_LOCK="$MAINTENANCE_DIR/operation.lock"
 readonly MAINTENANCE_UNIT_DIR=/etc/systemd/system
-readonly MAINTENANCE_TIMERS=(dragonwilds-auto-update.timer dragonwilds-update-check.timer)
-readonly MAINTENANCE_SERVICES=(dragonwilds-auto-update.service dragonwilds-update-check.service dragonwilds.service)
+readonly MAINTENANCE_TIMERS=(dragonwilds-auto-update.timer dragonwilds-update-check.timer dragonwilds-player-log.timer)
+readonly MAINTENANCE_SERVICES=(dragonwilds-auto-update.service dragonwilds-update-check.service dragonwilds-player-log.service dragonwilds.service)
 
 maintenance_error() { printf 'error: %s\n' "$*" >&2; return 1; }
 maintenance_property() { systemctl show "$1" --property="$2" --value; }

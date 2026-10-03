@@ -29,20 +29,21 @@ services:
     restart: unless-stopped
 
   homepage:
-    image: ghcr.io/gethomepage/homepage:latest
-    container_name: homepage
-    network_mode: host
+    extends:
+      file: ../../server-base/homepage/compose.yml
+      service: homepage
     depends_on:
       - homepage-ts
     volumes:
       - ./config:/app/config
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Fetched by server-base/homepage/fetch-assets.sh; gitignored.
+      - ./assets/icons:/app/public/icons:ro
+      - ./assets/images:/app/public/images:ro
     env_file:
       - .env
     environment:
       # The proxied hostname (homepage.<tailnet>.ts.net) must be allow-listed or
       # homepage rejects the request — its version of a reverse-proxy host-check.
       HOMEPAGE_ALLOWED_HOSTS: "${HOSTNAME},${HOSTNAME}.local,localhost,${SERVER_IP},${TAILSCALE_HOSTNAME},${HOMEPAGE_VAR_HOMEPAGE_DOMAIN}"
+      # The sidecar proxies via host.docker.internal, so bind all interfaces.
       HOSTNAME: "0.0.0.0"
-      PORT: "3000"
-    restart: unless-stopped

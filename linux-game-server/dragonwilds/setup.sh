@@ -24,11 +24,14 @@ fi
 readonly APPID=4019830
 readonly UNIT_DIR=/etc/systemd/system
 readonly POLKIT_RULE=/etc/polkit-1/rules.d/50-dragonwilds-restart.rules
+readonly PLAYER_LOG_BUNDLE_DIR=/usr/local/libexec/computer-setup-dragonwilds
+readonly PLAYER_LOG_BUNDLE="$PLAYER_LOG_BUNDLE_DIR/player_log.py"
 : "${SERVICE_USER:=${SUDO_USER:-$(id -un)}}"
 : "${STEAMCMD:=/usr/games/steamcmd}"
 : "${SERVER_PORT:=7777}"
 : "${MAX_PLAYERS:=6}"
 : "${LAN_CIDR:=}"
+: "${BACKUP_UNIT:=game-backup.service}"
 
 # sed renders these into unit files, so a quoted path would break the templates.
 if ! [[ "$SCRIPT_DIR" =~ ^/[[:alnum:]_./-]+$ ]]; then
@@ -62,10 +65,18 @@ fi
 SERVICE_GROUP="$(id -gn "$SERVICE_USER")"
 : "${DRAGONWILDS_INSTALL_DIR:=$(getent passwd "$SERVICE_USER" | cut -d: -f6)/games/dragonwilds}"
 
-if ! [[ "$DRAGONWILDS_INSTALL_DIR" =~ ^/[[:alnum:]_./-]+$ ]]; then
+if ! [[ "$DRAGONWILDS_INSTALL_DIR" =~ ^/[[:alnum:]_./-]+$ && "$DRAGONWILDS_INSTALL_DIR" != *//* && "$DRAGONWILDS_INSTALL_DIR" != */./* && "$DRAGONWILDS_INSTALL_DIR" != */. && "$DRAGONWILDS_INSTALL_DIR" != */../* && "$DRAGONWILDS_INSTALL_DIR" != */.. && "$DRAGONWILDS_INSTALL_DIR" != */ ]]; then
   printf 'error: unsupported character in install path: %s\n' "$DRAGONWILDS_INSTALL_DIR" >&2
   exit 1
 fi
+if [[ "$BACKUP_UNIT" != game-backup.service ]]; then
+  printf 'error: BACKUP_UNIT must be game-backup.service, got: %s\n' "$BACKUP_UNIT" >&2
+  exit 1
+fi
+[[ -f "$SCRIPT_DIR/player_log.py" ]] || {
+  printf 'error: missing player log parser: %s/player_log.py\n' "$SCRIPT_DIR" >&2
+  exit 1
+}
 
 [[ -x "$STEAMCMD" ]] || \
   printf 'warning: %s not found — install steamcmd first (apt install steamcmd)\n' "$STEAMCMD" >&2
@@ -106,6 +117,7 @@ render() {
       -e "s|@APPID@|$APPID|g" \
       -e "s|@SERVER_PORT@|$SERVER_PORT|g" \
       -e "s|@MAX_PLAYERS@|$MAX_PLAYERS|g" \
+      -e "s|@BACKUP_UNIT@|$BACKUP_UNIT|g" \
       -e "s|@STATUS_SCRIPT@|$SCRIPT_DIR/dragonwilds-status.sh|g" \
       -e "s|@STATUS_JSON@|$SCRIPT_DIR/status/dragonwilds-status.json|g" \
       -e "s|@UPDATE_CHECK_SCRIPT@|$SCRIPT_DIR/dragonwilds-update-check.sh|g" \
@@ -113,24 +125,37 @@ render() {
       -e "s|@NOTIFIED_BUILD_FILE@|$SCRIPT_DIR/status/.notified-build|g" \
       -e "s|@FAILED_BUILD_FILE@|$SCRIPT_DIR/status/.failed-build|g" \
       -e "s|@AUTO_UPDATE_SCRIPT@|$SCRIPT_DIR/dragonwilds-auto-update.sh|g" \
+      -e "s|@PLAYER_LOG_SCRIPT@|$PLAYER_LOG_BUNDLE|g" \
       "$src" > "$tmp/$dest"
 }
 
 render "$SCRIPT_DIR/dragonwilds.service.template" dragonwilds.service
+render "$SCRIPT_DIR/dragonwilds-pre-update-backup.service.template" dragonwilds-pre-update-backup.service
 render "$SCRIPT_DIR/dragonwilds-status.service.template" dragonwilds-status.service
 render "$SCRIPT_DIR/dragonwilds-update-check.service.template" dragonwilds-update-check.service
 render "$SCRIPT_DIR/dragonwilds-auto-update.service.template" dragonwilds-auto-update.service
+render "$SCRIPT_DIR/dragonwilds-player-log.service.template" dragonwilds-player-log.service
 render "$SCRIPT_DIR/dragonwilds-restart.rules.template" dragonwilds-restart.rules
+
+if [[ "$DRY_RUN" == false ]]; then
+  install -d -o root -g root -m 755 "$PLAYER_LOG_BUNDLE_DIR"
+  install -o root -g root -m 755 "$SCRIPT_DIR/player_log.py" "$PLAYER_LOG_BUNDLE"
+fi
 
 if command -v systemd-analyze >/dev/null; then
   # verify rejects an ExecStart that does not exist yet, which would abort a
   # first-time setup run before the game is installed.
-  verify_units=()
-  [[ "$game_installed" == true ]] && verify_units+=("$tmp/dragonwilds.service")
-  systemd-analyze verify "${verify_units[@]}" "$tmp/dragonwilds-status.service" \
-    "$tmp/dragonwilds-update-check.service" "$tmp/dragonwilds-auto-update.service" \
+  verify_units=(
+    "$tmp/dragonwilds-pre-update-backup.service"
+    "$tmp/dragonwilds-status.service"
+    "$tmp/dragonwilds-update-check.service"
+    "$tmp/dragonwilds-auto-update.service"
+  )
+  [[ "$game_installed" == true ]] && verify_units=("$tmp/dragonwilds.service" "${verify_units[@]}")
+  [[ -x "$PLAYER_LOG_BUNDLE" ]] && verify_units+=("$tmp/dragonwilds-player-log.service")
+  systemd-analyze verify "${verify_units[@]}" \
     "$SCRIPT_DIR/dragonwilds-status.timer" "$SCRIPT_DIR/dragonwilds-update-check.timer" \
-    "$SCRIPT_DIR/dragonwilds-auto-update.timer"
+    "$SCRIPT_DIR/dragonwilds-auto-update.timer" "$SCRIPT_DIR/dragonwilds-player-log.timer"
 fi
 
 if [[ "$DRY_RUN" == true ]]; then
@@ -138,12 +163,47 @@ if [[ "$DRY_RUN" == true ]]; then
   printf '[dry-run] install polkit rule %s\n' "$POLKIT_RULE"
 else
   install -o root -g root -m 644 "$tmp/dragonwilds.service" "$UNIT_DIR/dragonwilds.service"
+  install -o root -g root -m 644 "$tmp/dragonwilds-pre-update-backup.service" "$UNIT_DIR/dragonwilds-pre-update-backup.service"
   install -o root -g root -m 644 "$tmp/dragonwilds-status.service" "$UNIT_DIR/dragonwilds-status.service"
   install -o root -g root -m 644 "$SCRIPT_DIR/dragonwilds-status.timer" "$UNIT_DIR/dragonwilds-status.timer"
   install -o root -g root -m 644 "$tmp/dragonwilds-update-check.service" "$UNIT_DIR/dragonwilds-update-check.service"
   install -o root -g root -m 644 "$SCRIPT_DIR/dragonwilds-update-check.timer" "$UNIT_DIR/dragonwilds-update-check.timer"
   install -o root -g root -m 644 "$tmp/dragonwilds-auto-update.service" "$UNIT_DIR/dragonwilds-auto-update.service"
   install -o root -g root -m 644 "$SCRIPT_DIR/dragonwilds-auto-update.timer" "$UNIT_DIR/dragonwilds-auto-update.timer"
+  install -o root -g root -m 644 "$tmp/dragonwilds-player-log.service" "$UNIT_DIR/dragonwilds-player-log.service"
+  install -o root -g root -m 644 "$SCRIPT_DIR/dragonwilds-player-log.timer" "$UNIT_DIR/dragonwilds-player-log.timer"
+  player_log_parent=/var/lib/dragonwilds
+  [[ ! -L "$player_log_parent" && ( ! -e "$player_log_parent" || -d "$player_log_parent" ) ]] || {
+    printf 'error: player-log parent is not a real directory: %s\n' "$player_log_parent" >&2
+    exit 1
+  }
+  install -d -o root -g root -m 755 "$player_log_parent"
+  [[ ! -L "$player_log_parent" && "$(stat -c '%u:%G:%a' "$player_log_parent")" == '0:root:755' ]] || {
+    printf 'error: player-log parent ownership or mode is unsafe: %s\n' "$player_log_parent" >&2
+    exit 1
+  }
+  player_log_dir="$player_log_parent/player-log"
+  [[ ! -L "$player_log_dir" && ( ! -e "$player_log_dir" || -d "$player_log_dir" ) ]] || {
+    printf 'error: player-log directory is not a real directory: %s\n' "$player_log_dir" >&2
+    exit 1
+  }
+  install -d -o root -g adm -m 2750 "$player_log_dir"
+  [[ ! -L "$player_log_dir" && "$(stat -c '%u:%G:%a' "$player_log_dir")" == '0:adm:2750' ]] || {
+    printf 'error: player-log directory ownership or mode is unsafe: %s\n' "$player_log_dir" >&2
+    exit 1
+  }
+  player_log_lock="$player_log_dir/.backup.lock"
+  [[ ! -L "$player_log_lock" && ( ! -e "$player_log_lock" || -f "$player_log_lock" ) ]] || {
+    printf 'error: player-log backup lock is not a regular file: %s\n' "$player_log_lock" >&2
+    exit 1
+  }
+  [[ -e "$player_log_lock" ]] || install -o root -g adm -m 600 /dev/null "$player_log_lock"
+  chown root:adm "$player_log_lock"
+  chmod 600 "$player_log_lock"
+  [[ ! -L "$player_log_lock" && "$(stat -c '%u:%G:%a' "$player_log_lock")" == '0:adm:600' ]] || {
+    printf 'error: player-log backup lock ownership or mode is unsafe: %s\n' "$player_log_lock" >&2
+    exit 1
+  }
   # polkitd watches rules.d and reloads on its own.
   install -o root -g root -m 644 "$tmp/dragonwilds-restart.rules" "$POLKIT_RULE"
   chmod 755 "$SCRIPT_DIR/dragonwilds-update-check.sh" "$SCRIPT_DIR/dragonwilds-auto-update.sh" \
@@ -166,6 +226,7 @@ fi
 run systemctl enable --now dragonwilds-status.timer
 run systemctl enable --now dragonwilds-update-check.timer
 run systemctl enable --now dragonwilds-auto-update.timer
+run systemctl enable --now dragonwilds-player-log.timer
 
 # LAN and tailnet only — running this never implies a router port-forward.
 if [[ -z "$LAN_CIDR" ]]; then

@@ -1,0 +1,61 @@
+{
+  "servers": [
+    {
+      "key": "main",
+      "dir": "linux-server",
+      "name": "main server",
+      "icon": "sh-ubuntu.svg",
+      "description": "NAS — storage, media and core services",
+      "domain_var": "MAIN_HOMEPAGE_DOMAIN",
+      "glances_url": "{{HOMEPAGE_VAR_MAIN_GLANCES_URL}}"
+    },
+    {
+      "key": "pi",
+      "dir": "linux-pi",
+      "name": "pi",
+      "icon": "sh-raspberry-pi.svg",
+      "description": "MotionEye, CUPS and backup DNS",
+      "domain_var": "PI_HOMEPAGE_DOMAIN",
+      "glances_url": "{{HOMEPAGE_VAR_PI_GLANCES_URL}}"
+    },
+    {
+      "key": "game",
+      "dir": "linux-game-server",
+      "name": "game server",
+      "icon": "sh-steam.svg",
+      "description": "Dedicated game servers",
+      "domain_var": "GAME_HOMEPAGE_DOMAIN",
+      "glances_url": "https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/glances"
+    }
+  ],
+  "shared_services": {
+    "group": "Shared services",
+    "host": "main",
+    "services": [
+      {"name": "uptime kuma", "icon": "sh-uptime-kuma.svg", "description": "Uptime monitor for every server", "domain_var": "UPTIMEKUMA_DOMAIN",
+       "widget": {"type": "uptimekuma", "slug": "default"}},
+      {"name": "ntfy", "icon": "sh-ntfy.svg", "description": "Push notifications", "domain_var": "NTFY_DOMAIN"},
+      {"name": "forgejo", "icon": "sh-forgejo.svg", "description": "Self-hosted git", "domain_var": "FORGEJO_DOMAIN"},
+      {"name": "adguard home", "icon": "sh-adguard-home.svg", "description": "Primary DNS ad blocker", "domain_var": "ADGUARD_DOMAIN"},
+      {"name": "immich", "icon": "sh-immich.svg", "description": "Photo + video backup", "domain_var": "IMMICH_DOMAIN"},
+      {"name": "syncthing", "icon": "sh-syncthing.svg", "description": "File sync", "domain_var": "SYNCTHING_DOMAIN"}
+    ]
+  },
+  "hosts": {
+    "linux-server": {
+      "title": "Home Server",
+      "topbar": {"label": "main server", "net": "eno2", "disks": ["/etc/hostname", "/mnt/seagate4tb", "/mnt/wd14tb", "/mnt/wd1tb"]},
+      "accents": {"Servers": "indigo", "Management": "blue", "Network": "teal", "Storage": "amber", "NAS": "orange"}
+    },
+    "linux-pi": {
+      "title": "Pi — Secondary Server",
+      "topbar": {"label": "pi", "net": "wlan0", "disks": ["/etc/hostname"]},
+      "accents": {"Servers": "indigo", "Management": "blue", "Pi Services": "emerald", "Shared services": "cyan"}
+    },
+    "linux-game-server": {
+      "title": "Game Server",
+      "topbar": {"label": "game server", "net": "enp2s0", "disks": ["/etc/hostname"], "rgb": "/host-status/rgb.json"},
+      "accents": {"Servers": "indigo", "Game server": "blue", "Games": "rose", "Shared services": "cyan"}
+    }
+  }
+}

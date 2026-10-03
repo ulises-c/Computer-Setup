@@ -6,6 +6,46 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com). Remaining
 work lives in [TODO.md](TODO.md); the design rationale for the unified layout is
 in [UNIFICATION.md](UNIFICATION.md).
 
+## Unreleased — Shared server base and cross-linked dashboards
+
+### Added
+- `server-base/`: one layer for every server. Base Glances, Portainer, Watchtower
+  and Homepage compose services that each host `extends`; `serve.sh` publishing
+  a host's routes from its `serve.conf` (one tailnet node per host); a shared
+  restic engine that hosts symlink and configure with `sources.sh`; and
+  `fleet.json` + `homepage/generate.py`, which render every host's Homepage
+  config so the Servers and Shared services groups cannot drift (`--check` in CI).
+- `server-base` tag in `packages.json` (shell, terminal tools, git/gh, Tailscale,
+  Docker, Cockpit, claude-code, opencode); opencode installs on servers via a new
+  `opencode_step`, zoxide gains a server apt entry.
+- Servers cards show each host's fixed facts (OS, kernel, hostname, CPU, threads,
+  RAM) from its Glances; each dashboard's top bar shows its own host's live CPU,
+  memory, disks, CPU temperature and uptime (generated `widgets.yaml`).
+- Homepage design system: colour selfh.st logos, per-group accents (heading, card
+  rule and wash, tinted charts), and the official Dragonwilds icon, logo and key
+  art fetched from Steam at deploy time (not committed).
+- `linux-pi/setup.sh`: the Pi's base bootstrap on the shared engine, plus Glances,
+  Portainer and Watchtower on the Pi's own node.
+- Game server nightly restic backup to the main server, including a verified
+  live world copy.
+- Dragonwilds restarts now wait for the host backup service after the old game
+  process flushes its world, before SteamCMD can apply a build. The gate skips
+  fresh installs with no save and fails closed once a configured world exists;
+  it replaces an already-running nightly backup with a fresh post-shutdown run,
+  and the start timeout is five hours for the observed long patches. Backup units
+  now execute root-owned bundles rather than scripts from the writable checkout;
+  fixed Dragonwilds paths and root-owned backup status state prevent user-owned
+  runtime files from redirecting privileged backup work. The standalone installer
+  now uses the same gate for existing worlds, and the copied world helper is
+  hash-pinned in the rendered backup unit.
+
+### Changed
+- Homepage is pinned to v2.4.0 on every host (the main server and Pi used `:latest`,
+  which resolved to v2.4.0).
+- Backups on the main server and Pi now share the Pi's hardened failure handling:
+  one alert from `OnFailure`, and a failed second copy marks the run "second copy
+  incomplete" instead of failing it.
+
 ## 2026-10-02 — RuneScape: Dragonwilds session configuration
 
 ### Changed

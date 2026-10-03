@@ -32,6 +32,7 @@ sudo tailscale up
 - [`../dotfiles/zsh_plugins.txt`](../dotfiles/zsh_plugins.txt) — shared antidote plugin list, deployed to `~/.zsh_plugins.txt` and pre-cloned by `setup.sh`
 - [`../dotfiles/tmux.conf`](../dotfiles/tmux.conf) — tmux config with mouse support, vi copy mode, and a status bar (shared across all platforms); copied to `~/.tmux.conf` by `setup.sh`
 - [`../packages.json`](../packages.json) — machine-readable package manifest (shared across all platforms)
+- [`../server-base/`](../server-base/README.md) — the layer every server shares: Glances, Portainer, Watchtower and Homepage stacks (this host's compose files `extends` them and add the Tailscale sidecars), the restic backup engine (`backup/backup.sh` and `setup.sh` are symlinks into it; `backup/sources.sh` lists this host's paths; setup installs a root-owned executor bundle for systemd), and the Homepage generator. `homepage/config/{services,settings}.yaml` are generated from `homepage/*.local.yaml` — edit those and run `python3 server-base/homepage/generate.py`
 - [`llama-telemetry/`](llama-telemetry/README.md) — always-on, tailnet-only historical llama-swap dashboard; receives metadata over SSH from the desktop
 
 ## Next steps
@@ -72,6 +73,7 @@ Start services in this order. Most just need `docker compose up -d`; exceptions 
 # Homepage — update .env with your server details first (see post-install.md)
 cd linux-server/homepage && cp .env.example .env
 # Existing .env: add new .env.example keys, including HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN.
+bash ../../server-base/homepage/fetch-assets.sh ..   # official game artwork (gitignored)
 # edit .env, then:
 docker compose up -d
 # Access at http://<server-ip>:3000 (or https://<tailscale-hostname> after HTTPS setup)

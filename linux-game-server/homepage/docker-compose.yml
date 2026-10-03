@@ -1,15 +1,14 @@
 services:
   homepage:
-    image: ghcr.io/gethomepage/homepage:v2.4.0
-    container_name: homepage
-    network_mode: host
+    extends:
+      file: ../../server-base/homepage/compose.yml
+      service: homepage
     env_file:
       - .env
     environment:
       HOMEPAGE_ALLOWED_HOSTS: "${HOMEPAGE_ALLOWED_HOSTS:?Run linux-game-server/setup.sh to create .env}"
-      HOSTNAME: "127.0.0.1"
-      PORT: "3000"
     volumes:
       - ./config:/app/config
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    restart: unless-stopped
+      # Fetched by server-base/homepage/fetch-assets.sh; gitignored.
+      - ./assets/icons:/app/public/icons:ro
+      - ./assets/images:/app/public/images:ro

@@ -30,29 +30,18 @@ services:
     restart: unless-stopped
 
   glances:
-    image: nicolargo/glances:4.5.4-full
-    container_name: glances
-    restart: unless-stopped
-    pid: host
-    privileged: true
-    network_mode: host
+    extends:
+      file: ../../server-base/glances/compose.yml
+      service: glances
     environment:
-      - GLANCES_OPT=-w
-      - GLANCES_ALLOWED_HOSTS=${GLANCES_ALLOWED_HOSTS}
-      - TZ=America/Los_Angeles
+      # The sidecar proxies via host.docker.internal, so bind all interfaces.
+      GLANCES_OPT: "-w"
+      GLANCES_FS_SHOW: "^/etc/hostname$$,^/mnt/.+"
+      GLANCES_FS_ALIAS: "/etc/hostname:system,/mnt/seagate4tb:media 4TB,/mnt/wd14tb:backup 14TB,/mnt/wd1tb:backup 1TB"
+      GLANCES_SENSORS_SHOW: "^Package id 0$$,^Composite$$"
+      GLANCES_SENSORS_ALIAS: "Package id 0:CPU,Composite:NVMe"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /etc/os-release:/etc/os-release:ro
-      # Expose the NAS mounts (read-only) so glances `fs:` can report capacity.
-      # Block-device I/O already works via pid:host; filesystem usage needs the
-      # mounts visible inside the container.
+      # NAS mounts (read-only) so glances `fs:` can report capacity.
       - /mnt:/mnt:ro
-      # Stable disk aliasing: entrypoint reads /dev/disk/by-label/ to map
-      # filesystem labels (Seagate_4TB, WD_1TB, WD14TB) to the current kernel
-      # device name and monkey-patches Glances' diskio plugin, so Homepage
-      # disk I/O widgets use persistent label names across reboots.
-      - ./entrypoint.sh:/entrypoint.sh:ro
-      - ./rename_disks.py:/rename_disks.py:ro
+      # by-label names feed the shared disk-alias patch (WD14TB, WD_1TB, ...).
       - /dev/disk/by-label:/dev/disk/by-label:ro
-      - /sys/class/block:/sys/class/block:ro
-    command: /bin/sh /entrypoint.sh

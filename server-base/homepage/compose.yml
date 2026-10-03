@@ -1,0 +1,17 @@
+services:
+  # Dashboard shared by every server. Host networking so the resources widget
+  # reports the host and loopback-only helpers (Glances, status JSONs) are
+  # reachable. Hosts extend this service and add their own config mount,
+  # env_file, assets mounts and HOMEPAGE_ALLOWED_HOSTS; relative paths in an
+  # extended file resolve against this directory, not the host's.
+  homepage:
+    image: ghcr.io/gethomepage/homepage:v2.4.0
+    container_name: homepage
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      HOSTNAME: "127.0.0.1"
+      PORT: "3000"
+    volumes:
+      # Read-only still grants full Docker API access; keep Homepage tailnet-only.
+      - /var/run/docker.sock:/var/run/docker.sock:ro

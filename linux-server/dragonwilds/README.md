@@ -562,9 +562,15 @@ journalctl -u dragonwilds.service -f
 sudo systemctl restart dragonwilds.service
 ```
 
-The unit runs `steamcmd +app_update` as an `ExecStartPre` on every start, so a
-restart picks up the current build. Its leading `-` means a Steam outage leaves
-the server starting on whatever is already on disk rather than failing to boot.
+The unit first runs `dragonwilds-pre-update-backup.service` after the old process
+has stopped and flushed its world. That gate restarts the configured
+`backup.service` and waits for it to complete before the unit runs
+`steamcmd +app_update`, so a restart that can apply a patch has a fresh backup
+first. A missing or malformed config, missing backup unit, failed backup, or
+timeout blocks the start once a `.sav` exists. The gate is skipped on a fresh
+install with no save yet. The Steam command's leading `-` means a Steam outage
+leaves the server starting on whatever is already on disk rather than failing to
+boot.
 
 Shutdown sends SIGTERM and waits up to 120 s: the server flushes its world on
 that signal, so cutting it short can lose recent progress.
@@ -588,15 +594,17 @@ match and a fresh world was created instead.
 ## Backups
 
 `linux-server/backup` picks up `Saved/SaveGames` (worlds) and `Saved/Config`
-(settings, including `OwnerId`) automatically, resolving the install directory
-from this folder's `.env` — the same way it handles a relocated Forgejo data dir.
-This folder's `.env` is captured too. The game install itself is excluded;
-steamcmd re-downloads it.
+(settings, including `OwnerId`) automatically. The backup setup captures the
+Dragonwilds install directory and relocated Forgejo data path into root-owned
+systemd unit environments; rerun both Dragonwilds and backup setup after changing
+either service `.env`. This folder's `.env` is captured too. The game install
+itself is excluded; steamcmd re-downloads it.
 
-A `.sav` has no online-snapshot equivalent to sqlite's `.backup`, so a save
-written exactly as the 03:30 run reads it could be captured torn. The previous
-nightly snapshot is the fallback; stop the service first for a guaranteed-clean
-copy.
+A `.sav` has no online-snapshot equivalent to sqlite's `.backup`. The nightly
+run is live, but every game start/restart first stops the server and runs the
+same backup service again, giving updates a clean pre-update copy. If systemd
+reports an unclean or forced stop, the next start is blocked until the operator
+investigates and removes `/run/dragonwilds/stop-failure`.
 
 ## Status card
 
@@ -657,10 +665,10 @@ came back" alone is not success. Any failure — the start job failing, the old
 build coming back, or the port never binding — alerts at high priority and
 records the build in `status/.failed-build`, so it is not retried every 15
 minutes. It is retried when a newer build appears, or on any manual restart. The
-unit's `TimeoutStartSec=30min` leaves room for the download inside the start job.
+unit's `TimeoutStartSec=5h` leaves room for the backup and the long download inside the start job.
 
 Set `AUTO_UPDATE_RESTART=false` in `.env` to be notified but apply updates
-yourself:
+yourself. Manual restarts still pass through the pre-update backup gate:
 
 ```bash
 sudo systemctl restart dragonwilds.service

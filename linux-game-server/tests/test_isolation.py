@@ -3,16 +3,16 @@ from pathlib import Path
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-SHARED = ROOT.parent / "linux-server"
+SHARED = (ROOT.parent / "linux-server", ROOT.parent / "server-base")
 
 
 class IsolationTests(unittest.TestCase):
-    def test_symlinks_resolve_into_linux_server(self):
+    def test_symlinks_resolve_into_shared_trees(self):
         bad = []
         for path in ROOT.rglob("*"):
             if path.is_symlink():
                 target = path.resolve()
-                if not target.is_file() or not target.is_relative_to(SHARED):
+                if not target.is_file() or not any(target.is_relative_to(d) for d in SHARED):
                     bad.append(str(path.relative_to(ROOT)))
         self.assertEqual(bad, [])
 

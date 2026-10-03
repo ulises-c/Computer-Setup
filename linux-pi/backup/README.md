@@ -24,9 +24,9 @@ The Pi pushes a restic repository over SFTP to the main server's DAS, with an
 optional second copy for redundancy:
 
 ```
-Pi (restic) ──SFTP──> Main Server (restic-pi user)
-                      ├── /mnt/wd1tb/restic-pi     (primary)
-                      └── /mnt/wd14tb/restic-pi-copy (second copy)
+Pi (restic) ──SFTP──> Main Server (restic-pi, chrooted to /srv/restic/pi)
+                      ├── /primary → /mnt/wd1tb/restic-pi       (bind mount)
+                      └── /copy    → /mnt/wd14tb/restic-pi-copy (bind mount)
 ```
 
 The second copy uses `restic copy --from-repo` (same pattern as the server's
@@ -98,34 +98,30 @@ Host pi-backup-target
     IdentityFile /root/.ssh/backup
 ```
 
-Use `sftp:pi-backup-target:/mnt/...` for the repository URLs in `.env`.
+Use `sftp:pi-backup-target:/primary` and `sftp:pi-backup-target:/copy` for the
+repository URLs in `.env` (paths inside the account's chroot).
+An existing `.env` that still points at `/mnt/wd1tb/restic-pi` and
+`/mnt/wd14tb/restic-pi-copy` must switch to these paths once `sftp-target.sh`
+has chrooted the account (the absolute paths no longer exist for it).
+
+The bind mounts start at boot. If a drive is attached after boot (its fstab
+entry is `nofail`), start them by hand on the main server:
+`sudo systemctl start srv-restic-pi-primary.mount srv-restic-pi-copy.mount`.
 
 ### 4. Server-side setup
 
-The main server needs a dedicated SFTP user for Pi backups. Create it manually
-or pass this to the server's LLM agent:
+On the main server, with the Pi's public key copied over:
 
 ```sh
-# On the main server:
-sudo useradd -m -s /bin/false restic-pi
-sudo passwd restic-pi   # set a strong password (or use key-only auth)
-
-# Create the restic repo dirs:
-sudo mkdir -p /mnt/wd1tb/restic-pi /mnt/wd14tb/restic-pi-copy
-sudo chown restic-pi:restic-pi /mnt/wd1tb/restic-pi /mnt/wd14tb/restic-pi-copy
+sudo -S -p '' bash server-base/backup/sftp-target.sh pi /tmp/pi-backup.pub
 ```
 
-The user **must** have:
-- Shell: `/bin/false` (silent — `/usr/sbin/nologin` outputs a message that
-  corrupts the SFTP protocol stream)
-- SFTP access via `ForceCommand internal-sftp` in sshd_config:
-
-```
-Match User restic-pi
-    ForceCommand internal-sftp
-    AllowTcpForwarding no
-    X11Forwarding no
-```
+It creates the SFTP-only `restic-pi` account (shell `/bin/false`; `nologin`
+corrupts the SFTP stream), chroots it to `/srv/restic/pi`, bind-mounts the two
+repositories there as `/primary` and `/copy` (systemd mount units that only
+come up while their drive is mounted), and writes its own sshd `Match` drop-in.
+It checks with `sshd -T` that the drop-in binds only that account. Re-running
+it without the key keeps the existing authorized key.
 
 ### 5. Configure
 
@@ -144,9 +140,11 @@ restic init
 restic -r "$SECOND_RESTIC_REPOSITORY" init --copy-chunker-params --from-repo "$RESTIC_REPOSITORY"
 ```
 
-The script initializes the primary repository on first use. It never initializes the
-optional second repository automatically because an unreachable SFTP target and an
-uninitialized repository are not safely distinguishable.
+The shared engine (`server-base/backup/backup.sh`) initializes the primary
+repository on first use. It never initializes an SFTP second repository
+automatically, because an unreachable target and an uninitialized repository are
+not safely distinguishable; only a local second repository behind a verified
+`SECOND_BACKUP_MOUNT` is auto-initialized.
 
 ### 7. Status card server
 
@@ -160,8 +158,12 @@ sudo docker compose up -d
 sudo bash setup.sh
 ```
 
-`setup.sh` renders the service units with the current checkout path, installs them,
-and enables the timer. Re-run it after moving the checkout.
+`setup.sh` installs a root-owned executor bundle under
+`/usr/local/libexec/computer-setup-backup/pi-backup`, renders the service units,
+and enables the timer. Status is kept under
+`/var/lib/computer-setup-backup/pi-backup/` and mounted read-only by the status
+container. Re-run it after changing `.env`, backup source code, or moving the
+checkout.
 
 ### 9. Run + verify
 
@@ -195,8 +197,7 @@ Then put state back per service:
 - **Losing `RESTIC_PASSWORD` = unrecoverable backups.** Keep it secure.
 - The second copy is reported as incomplete if its target or an operation fails —
   don't rely on it as your only backup.
-- Staged `.env` copies live under `/root/pi-backup-staging` with mode `0700` and
-  are removed on normal exit. A forced kill can leave that root-only directory for
-  the next run to replace.
+- Staged `.env` copies live under `/var/tmp/pi-backup-staging` (private to the unit
+  through `PrivateTmp=yes`) with mode `0700` and are removed on normal exit.
 - The script skips missing source paths, so it's safe to enable before every
   service is deployed; coverage grows automatically as data dirs appear.

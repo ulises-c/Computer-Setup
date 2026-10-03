@@ -1,0 +1,15 @@
+[Unit]
+Description=Export OpenRGB device status for Homepage
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/rgb-status /var/lib/host-status/rgb.json
+TimeoutStartSec=5min
+Nice=10
+# OpenRGB keeps its config under $HOME; give it a private state dir.
+Environment=HOME=/var/lib/rgb-status
+StateDirectory=rgb-status
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/host-status
+PrivateTmp=yes

@@ -218,6 +218,9 @@ server_extras() {
 
   # ── Docker services ─────────────────────────────────────────────────────────
   printf '\n'
+  printf '==> Fetching Homepage artwork...\n'
+  run bash "$SETUP_ROOT/server-base/homepage/fetch-assets.sh" "$CONFIG_SRC_DIR"
+  printf '\n'
   printf '==> Starting Docker services...\n'
   local svc_dir
   for svc in homepage portainer glances speedtest-tracker filebrowser watchtower \

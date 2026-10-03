@@ -10,9 +10,11 @@ unified-layout design rationale is in [UNIFICATION.md](UNIFICATION.md).
       and test real joins beyond six before treating it as usable.
 - [ ] Retest the join-code route from a Tailscale client; the documented evidence
       shows EOS can advertise the WAN address while direct tailnet-IP connect works.
-- [ ] Arrange recurring off-host backups for this host's `Saved/Config`,
-      `Saved/SaveGames`, and private deployment `.env`; the rename backup is only
-      a rollback point, not recurring coverage.
+- [x] Nightly off-host backups cover this host's `Saved/Config`,
+      `Saved/SaveGames`, private deployment `.env`, and a verified live world
+      copy through `linux-game-server/backup/`.
+- [ ] Test a restore from the game server's restic repository before enabling
+      automatic restarts.
 
 ## Live-run cleanup & follow-ups (unification / dotfiles)
 
@@ -293,10 +295,11 @@ torrents only). Before broader use, route all torrent traffic through a VPN.
 Dedicated game host (`linux-game-server/`), currently Homepage and the native
 Dragonwilds server, migrated off the NAS host.
 
-- [ ] **Backups.** Add restic to the game host, snapshotting `Saved/SaveGames`,
-      `Saved/Config` and the private `.env` files into a repository on the NAS
-      host's backup drive, and test a restore. Keep the configuration under
-      `linux-game-server/`; the NAS side should only provide the target
+- [x] **Backups.** `linux-game-server/backup/` uses the shared restic engine and
+      is deployed to the NAS SFTP target; the nightly service has completed a
+      successful run. A tested restore remains open below.
+- [ ] **Backup restore.** Restore a game snapshot and verify the world loads
+      before enabling automatic restarts.
 - [ ] After a verified restore, set `AUTO_UPDATE_RESTART=true` and configure
       ntfy in `linux-game-server/dragonwilds/.env`
 - [ ] Reserve the game host's LAN address in the router's DHCP table so the
@@ -311,7 +314,40 @@ still separate from the unified Ubuntu Server profile.
 - [x] Secondary AdGuard Home with config sync
 - [x] Pi Homepage dashboard and Tailscale front doors
 - [x] MotionEye, CUPS, and backup service configuration
-- [ ] Add a Debian/arm64 Pi platform to the root provisioning engine (no snap/PPA)
-- [ ] Add the shared headless zsh/Tailscale/Docker/SSH base without duplicating
-      `platforms/server.sh`
-- [ ] Run and record the complete provisioning and service verification on Pi hardware
+- [x] Shared headless base (server-base tools, dotfiles, Tailscale, Docker,
+      Glances/Portainer/Watchtower/Cockpit) via `linux-pi/setup.sh` on the shared
+      engine, without a fifth root platform
+- [ ] Run `linux-pi/setup.sh` and `serve.sh` on the Pi and record the result
+      (untested on hardware: Debian release, arm64 installers, Cockpit on the node)
+- [ ] Re-render the Pi backup units (`sudo bash linux-pi/backup/setup.sh`) and
+      confirm a nightly run with the shared engine
+
+## Server base (`server-base/`)
+
+Shared layer for every server; see [server-base/README.md](../server-base/README.md).
+
+- [ ] Deploy on the main server: `git pull`, `python3 server-base/homepage/generate.py --check`,
+      `bash server-base/homepage/fetch-assets.sh linux-server`, then
+      `docker compose up -d` in `homepage`, `glances`, `portainer`, `watchtower`
+      (recreates them from the base; config is otherwise identical) and revalidate Homepage
+- [ ] Main server: `sudo bash linux-server/backup/setup.sh` to re-render the failure
+      unit with `EnvironmentFile`, then check one nightly run on the shared engine
+- [ ] Game server: recreate Homepage with the assets mounts (`sudo docker compose up -d`
+      in `homepage/`) so the Dragonwilds icon and artwork load
+- [ ] Add `HOMEPAGE_VAR_MAIN_GLANCES_URL` to the game server and Pi Homepage `.env`
+      files (and the Pi's `HOMEPAGE_VAR_PI_NODE_DOMAIN` + Shared services domains)
+- [ ] Once #86 lands on the main server and Pi: point `MAIN_GLANCES_URL` /
+      `PI_HOMEPAGE_DOMAIN` at the host nodes and give the Pi's Servers card a
+      `glances_url` in `fleet.json`
+- [x] Homepage UI ([#95](https://github.com/ulises-c/Computer-Setup/issues/95)):
+      checked all three dashboards at phone width (390px): single column, no
+      horizontal overflow. The light theme is unreachable (`theme: dark` is
+      fixed in settings, so Homepage hides the toggle).
+- [ ] Integrate with #86 / PR #102 (whichever merges second does this): one
+      serve mechanism (keep `scripts/ts-serve-apply.sh` + per-host `serve.json`,
+      move it under `server-base/`, convert the game server, add the Pi's
+      Glances/Cockpit/Portainer routes, drop `server-base/serve.sh`); re-apply
+      the base `extends` to the sidecar-free server compose files; move #102's
+      Homepage hrefs into `services.local.yaml` and point `MAIN_GLANCES_URL` /
+      the Pi card's `glances_url` at the host nodes; settle one Cockpit and
+      Portainer URL convention across hosts and the Homepage image pin

@@ -839,6 +839,20 @@ claude_code_step() {
   fi
 }
 
+opencode_step() {
+  pkg_selected opencode || return 0
+  [[ -n "$(custom_cmd opencode)" ]] || return 0
+  printf '\n'
+  if command -v opencode &>/dev/null; then
+    printf '==> opencode already installed\n'
+  elif [[ "$DRY_RUN" == true ]]; then
+    printf '  [dry-run] eval: %s\n' "$(custom_cmd opencode)"
+  else
+    printf '==> Installing opencode...\n'
+    eval "$(custom_cmd opencode)"
+  fi
+}
+
 ghostty_deploy_linux() {
   local cfg_dir="${XDG_CONFIG_HOME:-$HOME/.config}/ghostty"
   local cfg="$cfg_dir/config"
@@ -945,6 +959,7 @@ linux_main() {
   [[ "$SERVER_PROFILE" == true ]] && \
     printf "    Run 'sudo tailscale up' to authenticate and connect to your Tailnet.\n"
   claude_code_step
+  opencode_step
   rust_toolchain_step
 
   if [[ "$SERVER_PROFILE" != true ]]; then

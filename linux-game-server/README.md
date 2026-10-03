@@ -10,15 +10,23 @@ This is a separate service deployment entrypoint, not a fifth packages.json
 platform. Package selection and dotfile deployment reuse `lib/core.sh`; Docker
 address-pool setup and Antidote pre-cloning reuse `platforms/server.sh`.
 
-Files that are 1:1 with the NAS host are symlinks into `../linux-server`: the
-Dragonwilds unit templates, timers, status/update/player scripts,
-`read-save-info.sh`, the status container, and `docker/daemon.json`. A fix to one
-of those applies to both hosts, so change them only when the change is right for
-the NAS host too. Anything that differs on this host is a real file here instead
-of an edit under `linux-server/`: `dragonwilds/setup.sh` (it also opens the LAN
-discovery port), the Dragonwilds guide, and the maintenance, activation, install
-and backup helpers. `tests/test_isolation.py` checks that every symlink resolves
-into `linux-server/` and that no game-specific file references it.
+The layer every server shares lives in [`../server-base`](../server-base/README.md):
+the Glances, Portainer, Watchtower and Homepage compose files here `extends`
+the base services, `serve.sh` execs the shared `server-base/serve.sh` with this
+host's routes in `serve.conf`, `backup/backup.sh` and `backup/setup.sh` are
+symlinks into the shared restic engine, and the Homepage
+`config/{services,settings}.yaml` are generated from `homepage/*.local.yaml`
+(`python3 server-base/homepage/generate.py`). Dragonwilds files that are 1:1
+with the NAS host are symlinks into `../linux-server`: the unit templates,
+timers, status/update/player scripts, `read-save-info.sh`, the status container,
+and `docker/daemon.json`. A fix to one of those applies to both hosts, so change
+them only when the change is right for the NAS host too. Anything that differs
+on this host is a real file here instead of an edit under `linux-server/`:
+`dragonwilds/setup.sh` (it also opens the LAN discovery port), the Dragonwilds
+guide, and the maintenance, activation, install and backup helpers.
+`tests/test_isolation.py` checks that every symlink resolves into
+`linux-server/` or `server-base/` and that no game-specific file references
+`linux-server/`.
 
 It does not install the NAS server's DNS resolver, storage services, NUT, reverse
 proxy, or entire container fleet. Do not run the root `setup.sh --profile server`
@@ -33,8 +41,8 @@ bash linux-game-server/setup.sh --dry-run
 bash linux-game-server/setup.sh
 ```
 
-The shared manifest's high-priority apt base and medium-priority `terminal`
-packages are installed. Deployment prerequisites come from Ubuntu's archive;
+The shared manifest's high-priority apt base and the `server-base` tool set
+(shell, terminal tools, git/gh, Cockpit, claude-code, opencode) are installed. Deployment prerequisites come from Ubuntu's archive;
 no old Ubuntu PPA or unsupported Docker convenience-script distro fallback is
 needed. SteamCMD comes from Valve's official distribution because a fresh
 26.04 installation need not have the `steamcmd` multiverse/i386 package enabled.
@@ -74,7 +82,12 @@ no `homepage`, `glances` or similar name that the NAS host already owns.
 | Glances | `127.0.0.1:61208` | `/glances/` |
 | Cockpit (host service) | `127.0.0.1:9090` | `/cockpit/` |
 | Portainer | `127.0.0.1:9000` | `:9443` (fallback) |
+| Dragonwilds status JSON | `127.0.0.1:8096` | not served (this Homepage only) |
 | Watchtower | no listener | updates images daily at 03:00 |
+
+The status JSON (which includes the join password) is read only by this host's
+Homepage over loopback; the other dashboards show just this host's Glances
+info. `serve.sh` switches off the old `/dragonwilds` mount.
 
 `serve --set-path` strips the mount path before proxying. Glances' web UI uses
 relative URLs, so it works stripped (keep the trailing `/` in links). Cockpit
@@ -295,14 +308,53 @@ drop-ins remain inert without the marker and are reused next time. Never run
 both hosts at once. The helper controls these systemd units, not manually started
 game/SteamCMD processes, and does not prevent an administrator removing the guard.
 
-The NAS host's backup job does not cover this machine. Keep automatic game restarts off and arrange an off-host backup of
-`Saved/Config`, `Saved/SaveGames`, and the private deployment `.env`. Test a
-restore before treating this host as covered. The stopped migration archive is
-a rollback point, not recurring backup coverage.
+### Recurring backups
+
+`backup/` runs the shared restic engine nightly at 04:15 into a repository on
+the main server over SFTP (the same pattern as the Pi): `Saved/SaveGames`,
+`Saved/Config`, the Homepage config, every service `.env`, and a header-checked
+live world copy taken by `backup-save.py`. It is a live backup, not a
+stopped-server snapshot. One-time setup:
+
+1. On this host: `sudo bash server-base/backup/sftp-client.sh linux-game-server key`
+   (installs restic, creates root's key, copies the public key to
+   `/tmp/game-backup.pub`).
+2. Copy that public key to the main server, then there:
+   `sudo bash server-base/backup/sftp-target.sh game /tmp/game-backup.pub`
+   (SFTP-only `restic-game` account chrooted to `/srv/restic/game`, where
+   `/primary` and `/copy` are bind mounts of `/mnt/wd1tb/restic-game` and
+   `/mnt/wd14tb/restic-game-copy`; the Pi's account is untouched).
+3. On this host: `sudo bash server-base/backup/sftp-client.sh linux-game-server connect <server-lan-ip> <server-ed25519-sha256>`
+   (pins the host key, writes the `game-backup-target` alias, creates
+   `backup/.env` with a new `RESTIC_PASSWORD` and initializes both
+   repositories). Save the password in the password manager.
+4. Set ntfy (and an Uptime Kuma push monitor) in `backup/.env`, then
+   `sudo bash linux-game-server/backup/setup.sh`,
+   `sudo systemctl start game-backup.service`, and check the Homepage card.
+
+   The backup setup installs a root-owned executor bundle under
+   `/usr/local/libexec/computer-setup-backup/game`; the systemd unit does not run
+   backup code directly from this writable checkout. Re-run the setup after
+   changing `backup/.env`, `dragonwilds/.env`, or the backup source code; the
+   Dragonwilds install path is captured into the root-owned unit.
+
+Keep automatic game restarts off until a restore from this repository has been
+tested.
+
+## RGB status on Homepage
+
+`sudo bash linux-game-server/rgb/setup.sh` installs a timer that runs OpenRGB
+every 10 minutes as root (the case's HP TracerLED controller is a root-only
+HID device) and writes the detected devices and their active mode to
+`/var/lib/host-status/rgb.json`. `serve.sh` publishes that one file at
+`/host-status/rgb.json`, and the Homepage top bar and the `rgb lighting` card
+show one entry per device (hidden once the data is over 30 minutes old).
+OpenRGB's CLI prints no colours, and for this controller the mode is the one
+OpenRGB last set, not one read back from the hardware.
 
 ## Scope left for later
 
-- Scheduled off-host backups and a restore test.
+- A tested restore from the game server's restic repository.
 - A dedicated game-only Unix account (the game runs as the login user; a
   compromised game can access that user's files).
 - Full integration with root setup/verify profiles if another game platform

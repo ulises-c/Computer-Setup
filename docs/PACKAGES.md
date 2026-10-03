@@ -45,7 +45,9 @@ object-of-arrays.
 ## Category selection (`--base` / `--tags`)
 
 - `--base` installs only the high-priority base set (no category packages).
-- `--tags development,terminal` installs base + those tag categories. Enabled
+- `--tags development,terminal` installs base + those tag categories. The `server-base`
+  tag marks the tool set every server shares; the game server and Pi bootstraps
+  select it (see `server-base/README.md`). Enabled
   work/personal apps install regardless of category.
 - Bare run on a TTY with no selection flag → `core_maybe_prompt_selection` prompts
   interactively; skipped on the server profile and in non-interactive/CI runs.
