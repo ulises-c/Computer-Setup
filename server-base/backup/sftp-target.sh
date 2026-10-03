@@ -5,25 +5,30 @@ set -euo pipefail
 # SFTP-only account, restic-<client>, holding its primary repository on the 1TB
 # drive and its second copy on the 14TB drive, and authorizes the client's root
 # backup key. Idempotent; never touches another client's account or repos.
+# Omit <pubkey-file> to keep the account's existing authorized key (repairing
+# an account whose sshd Match block was lost).
 #
-#   sudo bash server-base/backup/sftp-target.sh [--dry-run] <client> <pubkey-file>
+#   sudo bash server-base/backup/sftp-target.sh [--dry-run] <client> [<pubkey-file>]
 
 DRY_RUN=false
 [[ "${1:-}" == --dry-run ]] && { DRY_RUN=true; shift; }
 client="${1:-}"
 pubkey_file="${2:-}"
-[[ "$client" =~ ^[a-z][a-z0-9-]{0,20}$ && -f "$pubkey_file" ]] || {
-  printf 'usage: sudo bash %s [--dry-run] <client> <pubkey-file>\n' "$0" >&2
+[[ "$client" =~ ^[a-z][a-z0-9-]{0,20}$ && ( -z "$pubkey_file" || -f "$pubkey_file" ) ]] || {
+  printf 'usage: sudo bash %s [--dry-run] <client> [<pubkey-file>]\n' "$0" >&2
   exit 1
 }
 : "${PRIMARY_MOUNT:=/mnt/wd1tb}"
 : "${SECOND_MOUNT:=/mnt/wd14tb}"
 user="restic-$client"
-pubkey="$(head -1 "$pubkey_file")"
-[[ "$pubkey" =~ ^ssh-ed25519\ [A-Za-z0-9+/=]+(\ [^[:space:]]+)?$ ]] || {
-  printf 'error: %s is not a single ed25519 public key\n' "$pubkey_file" >&2
-  exit 1
-}
+pubkey=""
+if [[ -n "$pubkey_file" ]]; then
+  pubkey="$(head -1 "$pubkey_file")"
+  [[ "$pubkey" =~ ^ssh-ed25519\ [A-Za-z0-9+/=]+(\ [^[:space:]]+)?$ ]] || {
+    printf 'error: %s is not a single ed25519 public key\n' "$pubkey_file" >&2
+    exit 1
+  }
+fi
 dropin="/etc/ssh/sshd_config.d/60-$user.conf"
 
 for m in "$PRIMARY_MOUNT" "$SECOND_MOUNT"; do
@@ -46,12 +51,18 @@ home="$(getent passwd "$user" | cut -d: -f6 || true)"
 home="${home:-/home/$user}"
 run install -d -o "$user" -g "$user" -m 700 "$PRIMARY_MOUNT/restic-$client" "$SECOND_MOUNT/restic-$client-copy"
 run install -d -o "$user" -g "$user" -m 700 "$home/.ssh"
+if [[ -z "$pubkey" && "$DRY_RUN" == false && ! -s "$home/.ssh/authorized_keys" ]]; then
+  printf 'error: %s has no authorized key; pass the client public key\n' "$user" >&2
+  exit 1
+fi
 if [[ "$DRY_RUN" == true ]]; then
-  printf '[dry-run] write %s/.ssh/authorized_keys (restrict,%s)\n' "$home" "${pubkey%% *}"
+  printf '[dry-run] %s %s/.ssh/authorized_keys\n' "${pubkey:+write (restrict) }${pubkey:-keep}" "$home"
   printf '[dry-run] write %s: Match User %s, ForceCommand internal-sftp\n' "$dropin" "$user"
   exit 0
 fi
-printf 'restrict %s\n' "$pubkey" | install -o "$user" -g "$user" -m 600 /dev/stdin "$home/.ssh/authorized_keys"
+if [[ -n "$pubkey" ]]; then
+  printf 'restrict %s\n' "$pubkey" | install -o "$user" -g "$user" -m 600 /dev/stdin "$home/.ssh/authorized_keys"
+fi
 
 tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT

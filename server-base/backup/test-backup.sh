@@ -176,4 +176,19 @@ for host in linux-server linux-pi linux-game-server; do
   ) || fail "$host/backup/sources.sh does not source cleanly"
 done
 
+# An unreachable SFTP primary fails the run instead of trying `restic init`.
+cat >"$server/backup/.env" <<EOF2
+RESTIC_REPOSITORY=sftp:target:/primary
+RESTIC_PASSWORD=test
+BACKUP_MOUNT=$drive
+STAGING_DIR=$tmp/staging
+EOF2
+touch "$drive/.backup-target-ok"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >>"$RESTIC_LOG"\nexit 1\n' >"$stub/restic"
+: >"$tmp/restic.log"
+if PATH="$stub:$PATH" RESTIC_LOG="$tmp/restic.log" bash "$server/backup/backup.sh" >/dev/null 2>&1; then
+  fail "unreachable SFTP primary did not fail the run"
+fi
+if grep -q '^init' "$tmp/restic.log"; then fail "unreachable SFTP primary was initialized"; fi
+
 printf 'backup engine tests: PASSED\n'

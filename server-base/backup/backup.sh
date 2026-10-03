@@ -243,6 +243,9 @@ done < <(find "$HOST_DIR" -mindepth 2 -maxdepth 2 -name .env -print0)
 
 # --- backup -----------------------------------------------------------------
 if ! restic cat config >/dev/null 2>&1; then
+  # A remote repository is never created here: an unreachable or misconfigured
+  # SFTP target looks the same as a missing repository (sftp-client.sh inits it).
+  [[ "$RESTIC_REPOSITORY" != sftp:* ]] || die "cannot open $RESTIC_REPOSITORY (not auto-initializing a remote repository; check SSH/SFTP access)"
   log "initializing restic repo at $RESTIC_REPOSITORY"
   restic init
 fi
