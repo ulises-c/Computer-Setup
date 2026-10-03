@@ -122,6 +122,7 @@ agentic-ai/
       general.md   — language-agnostic coding principles
       agents.md    — when to self-invoke Plan / Explore / review / verify
       railguard.md — slim always-loaded Railguard behavior and reference routing
+      git.md       — remote-auth failures (ssh-agent window, publickey) need the user
     bash/
       style.md     — bash scripting conventions
   Claude/

@@ -1,6 +1,7 @@
 @rules/common/general.md
 @rules/common/agents.md
 @rules/common/railguard.md
+@rules/common/git.md
 @rules/bash/style.md
 
 # Agents
