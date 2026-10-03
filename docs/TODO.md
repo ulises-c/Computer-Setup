@@ -336,8 +336,10 @@ Shared layer for every server; see [server-base/README.md](../server-base/README
 - [ ] Once #86 lands on the main server and Pi: point `MAIN_GLANCES_URL` /
       `PI_HOMEPAGE_DOMAIN` at the host nodes and give the Pi's Servers card a
       `glances_url` in `fleet.json`
-- [ ] Homepage UI ([#95](https://github.com/ulises-c/Computer-Setup/issues/95)):
-      check the shared design on a phone-width viewport and in the light theme
+- [x] Homepage UI ([#95](https://github.com/ulises-c/Computer-Setup/issues/95)):
+      checked all three dashboards at phone width (390px): single column, no
+      horizontal overflow. The light theme is unreachable (`theme: dark` is
+      fixed in settings, so Homepage hides the toggle).
 - [ ] Integrate with #86 / PR #102 (whichever merges second does this): one
       serve mechanism (keep `scripts/ts-serve-apply.sh` + per-host `serve.json`,
       move it under `server-base/`, convert the game server, add the Pi's
