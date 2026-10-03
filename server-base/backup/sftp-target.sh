@@ -76,13 +76,18 @@ if ! sshd -t; then
 fi
 systemctl reload ssh
 
-# The Match block must bind only this account.
-sshd -T -C "user=$user,host=check,addr=127.0.0.1" | grep -qx 'forcecommand internal-sftp' || {
-  printf 'error: %s does not get ForceCommand internal-sftp\n' "$user" >&2
+# The Match block must bind only this account. sshd -T quoting differs across
+# OpenSSH releases, so compare case-insensitively with optional quotes.
+sshd -T -C "user=$user,host=check,addr=127.0.0.1" >"$tmp"
+if ! grep -qiE '^forcecommand "?internal-sftp"?$' "$tmp"; then
+  rm -f "$dropin"
+  systemctl reload ssh
+  printf 'error: %s does not get ForceCommand internal-sftp (sshd -T says: %s); removed %s\n' \
+    "$user" "$(grep -i '^forcecommand' "$tmp" || printf 'nothing')" "$dropin" >&2
   exit 1
-}
+fi
 sshd -T -C "user=${SUDO_USER:-root},host=check,addr=127.0.0.1" >"$tmp"
-if ! grep -qx 'forcecommand none' "$tmp" || ! grep -qx 'permittty yes' "$tmp"; then
+if ! grep -qiE '^forcecommand "?none"?$' "$tmp" || ! grep -qiE '^permittty "?yes"?$' "$tmp"; then
   rm -f "$dropin"
   systemctl reload ssh
   printf 'error: the drop-in leaked onto %s; removed it and reloaded sshd\n' "${SUDO_USER:-root}" >&2
