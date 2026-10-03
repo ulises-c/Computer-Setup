@@ -908,13 +908,57 @@ class PlayerLogTests(unittest.TestCase):
 
     def test_unstarted_unit_exits_cleanly(self):
         with tempfile.TemporaryDirectory() as directory, \
-                mock.patch.object(player_log, "_systemd_property", return_value=""), \
+                mock.patch.object(
+                    player_log, "_systemd_property",
+                    side_effect=lambda unit, name: "loaded" if name == "LoadState" else "",
+                ), \
                 mock.patch.object(player_log, "_journal") as journal, \
                 mock.patch.object(player_log.sys, "argv", [
                     "player_log.py", "--install-dir", directory, "--data-dir", str(Path(directory) / "pl"),
                 ]):
             self.assertEqual(player_log.main(), 0)
         journal.assert_not_called()
+
+    def test_unreadable_unit_is_an_error(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(player_log, "_systemd_property", return_value=""), \
+                mock.patch.object(player_log.sys, "argv", [
+                    "player_log.py", "--install-dir", directory, "--data-dir", str(Path(directory) / "pl"),
+                ]):
+            with self.assertRaises(RuntimeError):
+                player_log.main()
+
+    def test_rolled_back_summary_is_detected(self):
+        now = player_log.datetime.now(player_log.timezone.utc)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "pl"
+            log = PlayerLog(root, retention_days=90)
+            old = now - player_log.timedelta(days=100)
+            aged = [self._record(i, old + player_log.timedelta(seconds=i), "LogNet: Join succeeded: Alice")
+                    for i in range(1, 51)]
+            events, state = parse_journal_records(aged, {}, session_id=SESSION_1)
+            log.commit(events, state)
+            snapshot = (root / "players.json").read_bytes()
+            recent = [self._record(100 + i, now - player_log.timedelta(minutes=10 - i), "LogNet: Join succeeded: Bob")
+                      for i in range(10)]
+            events, state = parse_journal_records(recent, log.load_state(), session_id=SESSION_1)
+            log.commit(events, state)
+            (root / "players.json").write_bytes(snapshot)
+            with self.assertRaisesRegex(RuntimeError, "inconsistent"):
+                log.commit([], log.load_state())
+
+    def test_cursor_recovery_since_tracks_every_record(self):
+        start = player_log.datetime.now(player_log.timezone.utc) - player_log.timedelta(hours=1)
+        _, state = parse_journal_records(
+            [self._record(1, start, "LogNet: Join succeeded: Bob")]
+            + [self._record(i, start + player_log.timedelta(seconds=i), "noise") for i in range(2, 30)],
+            {},
+            session_id=SESSION_1,
+        )
+        self.assertEqual(
+            state["last_record_timestamp_us"],
+            int((start + player_log.timedelta(seconds=29)).timestamp() * 1_000_000),
+        )
 
     def test_unsafe_root_mode_fails_closed_without_chmod(self):
         with tempfile.TemporaryDirectory() as directory:

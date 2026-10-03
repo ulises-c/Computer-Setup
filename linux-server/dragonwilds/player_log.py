@@ -309,6 +309,7 @@ def parse_journal_records(
         next_state["active_connections"] = {}
         next_state["pending_connections"] = []
         next_state.pop("last_realtime_timestamp_us", None)
+        next_state.pop("last_record_timestamp_us", None)
         next_state["processed_cursors"] = []
     next_state["session_id"] = safe_session_id
     next_state["initialized"] = True
@@ -342,6 +343,7 @@ def parse_journal_records(
         if timestamp_us is None:
             _remember_cursor(next_state, cursor)
             continue
+        next_state["last_record_timestamp_us"] = timestamp_us
         record_timestamp = _timestamp(record)
         current_time = _parse_timestamp(record_timestamp)
         if current_time is not None:
@@ -603,6 +605,9 @@ def _sanitize_summary(summary: Any) -> dict[str, Any]:
     updated = _canonical_timestamp(summary.get("updated"))
     if updated is not None:
         clean["updated"] = updated
+    generation = _clean_count(summary.get("generation"))
+    if generation is not None:
+        clean["generation"] = generation
 
     raw_players = summary.get("players", {})
     if not isinstance(raw_players, dict):
@@ -879,6 +884,16 @@ def _sanitize_state(state: Any) -> dict[str, Any]:
         and 0 <= last_timestamp <= now_us + MAX_FUTURE_TIMESTAMP_SKEW_US
     ):
         clean["last_realtime_timestamp_us"] = last_timestamp
+    last_record = state.get("last_record_timestamp_us")
+    if (
+        isinstance(last_record, int)
+        and not isinstance(last_record, bool)
+        and 0 <= last_record <= now_us + MAX_FUTURE_TIMESTAMP_SKEW_US
+    ):
+        clean["last_record_timestamp_us"] = last_record
+    generation = _clean_count(state.get("generation"))
+    if generation is not None:
+        clean["generation"] = generation
 
     for field, limit in (("processed_cursors", 8192), ("processed_event_ids", 4096)):
         values = state.get(field, [])
@@ -997,6 +1012,8 @@ class PlayerLog:
                 "last_cursor",
                 "session_id",
                 "last_realtime_timestamp_us",
+                "last_record_timestamp_us",
+                "generation",
                 "processed_cursors",
                 "processed_event_ids",
                 "active_connections",
@@ -1127,14 +1144,21 @@ class PlayerLog:
         retained_existing = [
             event for event in combined if _event_key(event) not in new_keys
         ]
-        if summary_is_usable and not _summary_covers_events(prior_summary, retained_existing):
+        prior_generation = prior_state.get("generation", 0)
+        if summary_is_usable and (
+            clean_prior_summary.get("generation", 0) != prior_generation
+            or not _summary_covers_events(prior_summary, retained_existing)
+        ):
             raise RuntimeError("player-log summary is inconsistent with retained events")
         if summary_is_usable:
             summary = aggregate_player_events(prior_summary, new_events)
         else:
             summary = aggregate_player_events({}, [*retained_existing, *new_events])
+        # A shared generation in summary and state catches a rollback of either file alone.
+        summary["generation"] = prior_generation + 1
         next_state = _sanitize_state(state)
         next_state["initialized"] = True
+        next_state["generation"] = prior_generation + 1
         processed = list(prior_state.get("processed_event_ids", []))
         processed.extend(
             key for key in (_event_key(event) for event in new_events)
@@ -1463,10 +1487,15 @@ def main() -> int:
     active_enter = _normalize_active_enter(_systemd_property(args.unit, "ActiveEnterTimestamp"))
     invocation_id = _systemd_property(args.unit, "InvocationID")
     if not _normalize_invocation_id(invocation_id):
+        if _systemd_property(args.unit, "LoadState") != "loaded":
+            raise RuntimeError(f"cannot read {args.unit} from systemd")
         print(f"player-log: {args.unit} has not started; nothing to record")
         return 0
     session_id = _session_id(active_enter, invocation_id, _boot_id())
-    last_timestamp_us = int(state.get("last_realtime_timestamp_us", 0) or 0)
+    last_timestamp_us = max(
+        int(state.get("last_realtime_timestamp_us", 0) or 0),
+        int(state.get("last_record_timestamp_us", 0) or 0),
+    )
     same_session = state.get("session_id") == session_id
     records, cursor_recovered = _journal(
         args.unit,

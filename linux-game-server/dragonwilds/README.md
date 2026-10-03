@@ -723,7 +723,8 @@ Fields: `status` (`running` / `starting` / `stopped` / `failed` / `unknown`),
 ### Player history
 
 `dragonwilds-player-log.timer` runs a root-owned parser every minute. It reads
-only new records from the Dragonwilds journal and stores its private output
+only new records from the Dragonwilds journal, at most 2000 per run
+(`journalctl --lines=+N`, so systemd 255 or newer), and stores its private output
 outside the checkout and outside the public status directory:
 
 ```text
