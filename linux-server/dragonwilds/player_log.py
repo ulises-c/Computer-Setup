@@ -56,6 +56,9 @@ MAX_COUNT = 10**12
 LOCK_WAIT_SECONDS = 20
 MAX_FUTURE_TIMESTAMP_SKEW_US = 7 * 24 * 60 * 60 * 1_000_000
 MAX_JOURNAL_RECORDS = 8192
+# One page per run keeps every run bounded; the minute timer drains any backlog.
+JOURNAL_BATCH_RECORDS = 2000
+JOURNAL_FIELDS = "MESSAGE,PLAYER_ID,EOS_PRODUCT_USER_ID"
 MAX_JOURNAL_OUTPUT_BYTES = 8 * 1024 * 1024
 MAX_COMMAND_ERROR_BYTES = 1 * 1024 * 1024
 MAX_SYSTEMD_PROPERTY_BYTES = 64 * 1024
@@ -451,8 +454,6 @@ def parse_journal_records(
 
         if relevant_record:
             previous_timestamp = int(next_state.get("last_realtime_timestamp_us", 0) or 0)
-            if previous_timestamp and timestamp_us < previous_timestamp:
-                raise RuntimeError("journal timestamp moved backwards during parsing")
             next_state["last_realtime_timestamp_us"] = max(
                 previous_timestamp,
                 timestamp_us,
@@ -482,6 +483,7 @@ def _filter_recovered_records(
         if cursor in processed_cursors:
             continue
         timestamp = _record_timestamp_us(record)
+        # Timestamps are the only dedupe once the cursor is lost, so a rollback here stays fail-closed.
         if same_session and last_timestamp and timestamp is not None and timestamp < last_timestamp:
             raise RuntimeError("journal timestamp moved backwards during cursor recovery")
         if last_timestamp and timestamp is not None and timestamp < last_timestamp:
@@ -806,17 +808,16 @@ def aggregate_player_events(
 
 
 def _summary_covers_events(summary: dict[str, Any], events: Iterable[dict[str, Any]]) -> bool:
+    # Totals only: per-identity attribution depends on events that may have aged out.
     clean_summary = _sanitize_summary(summary)
-    observed = aggregate_player_events({}, events)
-    if clean_summary["unidentified_join_count"] < observed["unidentified_join_count"]:
-        return False
-    for key, observed_player in observed["players"].items():
-        stored_player = clean_summary["players"].get(key)
-        if not isinstance(stored_player, dict):
-            return False
-        if stored_player.get("join_count", 0) < observed_player.get("join_count", 0):
-            return False
-    return True
+    stored_joins = clean_summary["unidentified_join_count"] + sum(
+        player.get("join_count", 0) for player in clean_summary["players"].values()
+    )
+    retained_joins = sum(
+        1 for event in events
+        if (clean := _sanitize_event(event)) is not None and clean.get("event") == "player_joined"
+    )
+    return stored_joins >= retained_joins
 
 
 def _parse_timestamp(value: Any) -> datetime | None:
@@ -942,8 +943,7 @@ class BackupInProgress(RuntimeError):
     pass
 
 
-def _lock_exclusive(fd: int) -> None:
-    deadline = time.monotonic() + LOCK_WAIT_SECONDS
+def _lock_exclusive(fd: int, deadline: float) -> None:
     while True:
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -966,16 +966,19 @@ class PlayerLog:
         self.state_path = self.root / "state.json"
         self.transaction_path = self.root / ".transaction.json"
         self.lock_path = self.root / ".backup.lock"
+        self._lock_deadline = time.monotonic() + LOCK_WAIT_SECONDS
         try:
             root_stat = os.lstat(self.root)
         except FileNotFoundError:
-            self.root.mkdir(parents=True, exist_ok=False)
+            self.root.mkdir(mode=0o750, parents=True, exist_ok=False)
             root_stat = os.lstat(self.root)
         if not stat.S_ISDIR(root_stat.st_mode):
             raise RuntimeError(f"player-log root is not a directory: {self.root}")
-        os.chmod(self.root, 0o2750)
+        # No chmod here: RestrictSUIDSGID rejects any chmod carrying the setgid bit; setup.sh owns the mode.
+        if root_stat.st_uid != os.geteuid() or stat.S_IMODE(root_stat.st_mode) & 0o027:
+            raise RuntimeError(f"player-log root ownership or mode is unsafe: {self.root}")
         with self._open_lock() as lock:
-            _lock_exclusive(lock.fileno())
+            _lock_exclusive(lock.fileno(), self._lock_deadline)
             try:
                 self._recover_transaction()
             finally:
@@ -1060,7 +1063,7 @@ class PlayerLog:
 
     def commit(self, events: Iterable[dict[str, Any]], state: dict[str, Any]) -> None:
         with self._open_lock() as lock:
-            _lock_exclusive(lock.fileno())
+            _lock_exclusive(lock.fileno(), self._lock_deadline)
             try:
                 self._commit_locked(events, state)
             finally:
@@ -1391,8 +1394,17 @@ def _run_capped(
     )
 
 
-def _journal(unit: str, cursor: str, since: str) -> tuple[list[dict[str, Any]], bool]:
-    command = ["journalctl", "-u", unit, "--no-pager", "-o", "json"]
+def _journal_command(unit: str) -> list[str]:
+    return [
+        "journalctl", "-u", unit, "--no-pager", "-o", "json",
+        f"--output-fields={JOURNAL_FIELDS}", f"--lines=+{JOURNAL_BATCH_RECORDS}",
+    ]
+
+
+def _journal(
+    unit: str, cursor: str, since: str, recovery_since: str = "",
+) -> tuple[list[dict[str, Any]], bool]:
+    command = _journal_command(unit)
     if cursor:
         command.extend(["--after-cursor", cursor])
     elif since:
@@ -1403,9 +1415,9 @@ def _journal(unit: str, cursor: str, since: str) -> tuple[list[dict[str, Any]], 
     if not cursor:
         raise RuntimeError(stderr.strip() or "journalctl failed")
 
-    recovery_command = ["journalctl", "-u", unit, "--no-pager", "-o", "json"]
-    if since:
-        recovery_command.extend(["--since", since])
+    recovery_command = _journal_command(unit)
+    if recovery_since or since:
+        recovery_command.extend(["--since", recovery_since or since])
     recovery_code, recovery_stdout, recovery_stderr = _run_capped(recovery_command)
     if recovery_code != 0:
         raise RuntimeError(recovery_stderr.strip() or stderr.strip() or "journalctl failed")
@@ -1450,11 +1462,17 @@ def main() -> int:
     state = log.load_state()
     active_enter = _normalize_active_enter(_systemd_property(args.unit, "ActiveEnterTimestamp"))
     invocation_id = _systemd_property(args.unit, "InvocationID")
+    if not _normalize_invocation_id(invocation_id):
+        print(f"player-log: {args.unit} has not started; nothing to record")
+        return 0
     session_id = _session_id(active_enter, invocation_id, _boot_id())
+    last_timestamp_us = int(state.get("last_realtime_timestamp_us", 0) or 0)
+    same_session = state.get("session_id") == session_id
     records, cursor_recovered = _journal(
         args.unit,
         state.get("last_cursor", ""),
         active_enter or "now",
+        f"@{last_timestamp_us // 1_000_000}" if same_session and last_timestamp_us else "",
     )
     if cursor_recovered:
         records = _filter_recovered_records(records, state, session_id)

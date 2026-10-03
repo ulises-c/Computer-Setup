@@ -754,23 +754,35 @@ lock is shared: the parser takes it exclusively, and restic takes it shared whil
 reading the source. A parser run that cannot get the lock within 20 seconds
 skips and catches up from its journal cursor on the next tick. A backup with no
 player-log directory on disk skips coordination; once the directory exists, a
-missing or non-root `0600` lock fails the backup. Restore into a staging directory first, then copy while the
-exclusive lock is held, preserving the live lock inode:
+missing or non-root `0600` lock fails the backup, which also blocks the
+pre-update backup gate and therefore game starts. Restore only the player-log
+path into a root-only staging directory, then copy while the exclusive lock is
+held, preserving the live lock inode. Run from `linux-game-server/dragonwilds/`:
 
 ```bash
 bash maintenance.sh enter
-restic restore latest --target /tmp/dragonwilds-restore
+restore="$(sudo mktemp -d /root/player-log-restore.XXXXXX)"
+sudo bash -c 'set -a; source ../backup/.env; set +a
+  restic restore latest --host "$(hostname)" \
+    --include /var/lib/dragonwilds/player-log --target "$1"' bash "$restore"
 sudo flock -x /var/lib/dragonwilds/player-log/.backup.lock -c \
   'rsync -a --delete --numeric-ids --exclude=.backup.lock \
-   /tmp/dragonwilds-restore/var/lib/dragonwilds/player-log/ \
-   /var/lib/dragonwilds/player-log/'
+   "$1/var/lib/dragonwilds/player-log/" /var/lib/dragonwilds/player-log/' bash "$restore"
+sudo rm -rf "$restore"
 sudo chown -R root:adm /var/lib/dragonwilds/player-log
 sudo chmod 2750 /var/lib/dragonwilds/player-log
 sudo chmod 640 /var/lib/dragonwilds/player-log/events.jsonl /var/lib/dragonwilds/player-log/players.json
 sudo chmod 600 /var/lib/dragonwilds/player-log/state.json /var/lib/dragonwilds/player-log/.backup.lock
 bash maintenance.sh check
 bash maintenance.sh leave
+sudo systemctl start dragonwilds.service dragonwilds-auto-update.timer \
+  dragonwilds-update-check.timer dragonwilds-player-log.timer
 ```
+
+`maintenance.sh leave` starts nothing, hence the explicit start. History from
+before a host move lives under the old host's snapshots; pass that hostname to
+`--host`. A host that was already in maintenance before pulling the player-log
+units must run `maintenance.sh enter` again so those units get their guards.
 
 Do not restore directly over the live directory, replace `.backup.lock`, or
 restart the player-log timer until `maintenance.sh check` succeeds.

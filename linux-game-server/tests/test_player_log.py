@@ -23,14 +23,15 @@ class PlayerLogTests(unittest.TestCase):
     def test_commit_skips_when_backup_holds_lock(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            log = PlayerLog(root)
+            PlayerLog(root)
             with open(root / ".backup.lock", "r+") as backup_lock, \
                     mock.patch.object(player_log, "LOCK_WAIT_SECONDS", 0):
+                log = PlayerLog(root)
                 player_log.fcntl.flock(backup_lock.fileno(), player_log.fcntl.LOCK_SH)
                 with self.assertRaises(player_log.BackupInProgress):
                     log.commit([], {})
             self.assertFalse((root / "state.json").exists())
-            log.commit([], {})
+            PlayerLog(root).commit([], {})
 
     def test_parses_join_and_leave_without_retaining_raw_messages(self):
         records = [
@@ -544,23 +545,6 @@ class PlayerLogTests(unittest.TestCase):
                 SESSION_1,
             )
 
-    def test_same_session_clock_rollback_fails_closed_during_successful_parse(self):
-        with self.assertRaises(RuntimeError):
-            parse_journal_records(
-                [
-                    {
-                        "__CURSOR": "new",
-                        "__REALTIME_TIMESTAMP": "99",
-                        "MESSAGE": "AddClientConnection: Added client connection RemoteAddr: 192.0.2.10:4321",
-                    }
-                ],
-                {
-                    "session_id": SESSION_1,
-                    "last_realtime_timestamp_us": 100,
-                },
-                session_id=SESSION_1,
-            )
-
     def test_parser_boundary_drops_untrusted_endpoint_and_state_fields(self):
         records = [
             {
@@ -868,6 +852,79 @@ class PlayerLogTests(unittest.TestCase):
             player_log._decode_journal(output)
         with self.assertRaises(RuntimeError):
             player_log._decode_journal('{"__CURSOR":"ok"}\nnot-json\n')
+
+    @staticmethod
+    def _record(index, when, message):
+        return {
+            "__CURSOR": f"c{index}",
+            "__REALTIME_TIMESTAMP": str(int(when.timestamp() * 1_000_000)),
+            "MESSAGE": message,
+        }
+
+    def test_aged_out_id_join_does_not_wedge_later_commits(self):
+        now = player_log.datetime.now(player_log.timezone.utc)
+        with tempfile.TemporaryDirectory() as directory:
+            log = PlayerLog(Path(directory) / "pl", retention_days=90)
+            old = now - player_log.timedelta(days=100)
+            batches = [
+                [self._record(1, old, "LogNet: Join succeeded: Bob PlayerId=abc123")],
+                [self._record(2, now - player_log.timedelta(minutes=5), "LogNet: Join succeeded: Bob")],
+                [self._record(3, now - player_log.timedelta(minutes=4), "noise")],
+                [self._record(4, now - player_log.timedelta(minutes=3), "noise")],
+            ]
+            for batch in batches:
+                events, state = parse_journal_records(batch, log.load_state(), session_id=SESSION_1)
+                log.commit(events, state)
+
+    def test_backwards_clock_step_keeps_parsing(self):
+        start = player_log.datetime.now(player_log.timezone.utc) - player_log.timedelta(hours=1)
+        _, state = parse_journal_records(
+            [self._record(1, start, "AddClientConnection: Added client connection. RemoteAddr: 10.0.0.5:5000")],
+            {},
+            session_id=SESSION_1,
+        )
+        events, state = parse_journal_records(
+            [self._record(2, start - player_log.timedelta(seconds=2), "LogNet: Join succeeded: Bob")],
+            state,
+            session_id=SESSION_1,
+        )
+        self.assertEqual(state["last_cursor"], "c2")
+        self.assertEqual(len(events), 1)
+
+    def test_journal_reads_one_bounded_page(self):
+        with mock.patch.object(player_log, "_run_capped", return_value=(0, "", "")) as run:
+            player_log._journal("dragonwilds.service", "cursor", "session-start")
+        command = run.call_args.args[0]
+        self.assertIn(f"--lines=+{player_log.JOURNAL_BATCH_RECORDS}", command)
+        self.assertIn(f"--output-fields={player_log.JOURNAL_FIELDS}", command)
+
+    def test_cursor_recovery_resumes_from_last_timestamp(self):
+        with mock.patch.object(
+            player_log, "_run_capped", side_effect=[(1, "", "bad cursor"), (0, "", "")],
+        ) as run:
+            player_log._journal("dragonwilds.service", "stale", "session-start", "@1700000000")
+        recovery = run.call_args_list[1].args[0]
+        self.assertEqual(recovery[recovery.index("--since") + 1], "@1700000000")
+
+    def test_unstarted_unit_exits_cleanly(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(player_log, "_systemd_property", return_value=""), \
+                mock.patch.object(player_log, "_journal") as journal, \
+                mock.patch.object(player_log.sys, "argv", [
+                    "player_log.py", "--install-dir", directory, "--data-dir", str(Path(directory) / "pl"),
+                ]):
+            self.assertEqual(player_log.main(), 0)
+        journal.assert_not_called()
+
+    def test_unsafe_root_mode_fails_closed_without_chmod(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "pl"
+            root.mkdir(mode=0o750)
+            root.chmod(0o770)
+            with mock.patch.object(player_log.os, "chmod") as chmod:
+                with self.assertRaises(RuntimeError):
+                    PlayerLog(root)
+            chmod.assert_not_called()
 
 
 if __name__ == "__main__":
