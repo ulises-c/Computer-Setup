@@ -149,6 +149,18 @@
             - field: repo_size_bytes
               label: Repo size
               format: bytes
+    - rgb lighting:
+        icon: mdi-palette
+        description: OpenRGB devices and active mode (refreshed every 10 min)
+        widget:
+          type: customapi
+          url: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/host-status/rgb.json
+          refreshInterval: 300000
+          display: dynamic-list
+          mappings:
+            items: devices
+            name: name
+            label: mode
 
 - Games:
     - game server:
