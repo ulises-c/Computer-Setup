@@ -765,9 +765,9 @@ restore="$(sudo mktemp -d /root/player-log-restore.XXXXXX)"
 sudo bash -c 'set -a; source ../backup/.env; set +a
   restic restore latest --host "$(hostname)" \
     --include /var/lib/dragonwilds/player-log --target "$1"' bash "$restore"
-sudo flock -x /var/lib/dragonwilds/player-log/.backup.lock -c \
-  'rsync -a --delete --numeric-ids --exclude=.backup.lock \
-   "$1/var/lib/dragonwilds/player-log/" /var/lib/dragonwilds/player-log/' bash "$restore"
+sudo flock -x /var/lib/dragonwilds/player-log/.backup.lock \
+  rsync -a --delete --numeric-ids --exclude=.backup.lock \
+  "$restore/var/lib/dragonwilds/player-log/" /var/lib/dragonwilds/player-log/
 sudo rm -rf "$restore"
 sudo chown -R root:adm /var/lib/dragonwilds/player-log
 sudo chmod 2750 /var/lib/dragonwilds/player-log
