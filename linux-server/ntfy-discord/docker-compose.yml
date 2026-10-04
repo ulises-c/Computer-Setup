@@ -1,0 +1,23 @@
+services:
+  ntfy-discord:
+    image: python:3-alpine
+    container_name: ntfy-discord
+    command: ["python3", "-u", "/app/relay.py"]
+    # Host networking: ntfy is reached over the tailnet (MagicDNS on the host)
+    # and Discord over the internet; the relay listens on nothing.
+    network_mode: host
+    user: "${RELAY_UID:-1000}:${RELAY_GID:-1000}"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    environment:
+      - TZ=America/Los_Angeles
+      - RELAY_STATE_FILE=/state/last-id
+    volumes:
+      - ./relay.py:/app/relay.py:ro
+      - ./state:/state
+    restart: unless-stopped

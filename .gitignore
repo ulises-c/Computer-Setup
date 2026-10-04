@@ -26,6 +26,7 @@ linux-server/nginx-proxy-manager/letsencrypt/
 
 linux-server/ntfy/data/
 linux-server/ntfy/cache/
+linux-server/ntfy-discord/state/
 
 linux-server/speedtest-tracker/data/
 
