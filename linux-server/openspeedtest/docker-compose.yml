@@ -41,5 +41,6 @@ services:
     depends_on:
       - openspeedtest-ts
     restart: unless-stopped
-    environment:
-      - TZ=America/Los_Angeles
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true

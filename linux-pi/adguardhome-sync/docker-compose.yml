@@ -8,4 +8,6 @@ services:
     command: run
     env_file:
       - .env
+      - path: ../../server-base/timezone.env
+        required: true
     restart: unless-stopped

@@ -34,8 +34,9 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+      - path: ../../server-base/timezone.env
+        required: true
     environment:
-      - TZ=America/Los_Angeles
       # ntfy is behind a reverse proxy (tailscale serve) — trust X-Forwarded-For
       # so rate limiting / visitor identification uses the real client IP.
       - NTFY_BEHIND_PROXY=true

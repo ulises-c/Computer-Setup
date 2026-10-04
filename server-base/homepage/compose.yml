@@ -9,6 +9,9 @@ services:
     container_name: homepage
     restart: unless-stopped
     network_mode: host
+    env_file:
+      - path: ../timezone.env
+        required: true
     environment:
       HOSTNAME: "127.0.0.1"
       PORT: "3000"

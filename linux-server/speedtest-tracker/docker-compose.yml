@@ -33,10 +33,11 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+      - path: ../../server-base/timezone.env
+        required: true
     environment:
       - PUID=1000
       - PGID=1000
-      - TZ=America/Los_Angeles
       - DB_CONNECTION=sqlite
     volumes:
       - ./data:/config

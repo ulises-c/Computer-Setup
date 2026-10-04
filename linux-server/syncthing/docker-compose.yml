@@ -39,10 +39,12 @@ services:
     depends_on:
       - syncthing-ts
     restart: unless-stopped
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     environment:
       - PUID=1000
       - PGID=1000
-      - TZ=America/Los_Angeles
       - STGUIADDRESS=127.0.0.1:8384
     volumes:
       - ./config:/config

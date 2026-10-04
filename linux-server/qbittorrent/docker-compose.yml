@@ -39,10 +39,12 @@ services:
     depends_on:
       - qbittorrent-ts
     restart: unless-stopped
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     environment:
       - PUID=1000
       - PGID=1001          # nas group — so downloads are shareable via Samba
-      - TZ=America/Los_Angeles
       - WEBUI_PORT=8080
       - UMASK=002          # group-writable (664 files / 775 dirs) for nas members
     volumes:

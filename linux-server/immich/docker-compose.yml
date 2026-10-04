@@ -38,8 +38,10 @@ services:
       - redis
       - database
     restart: unless-stopped
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     environment:
-      - TZ=${TZ:-America/Los_Angeles}
       - DB_PASSWORD=${DB_PASSWORD:?set DB_PASSWORD in .env}
       - DB_USERNAME=${DB_USERNAME:-postgres}
       - DB_DATABASE_NAME=${DB_DATABASE_NAME:-immich}
@@ -59,8 +61,9 @@ services:
     image: ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-v3}
     container_name: immich-machine-learning
     restart: unless-stopped
-    environment:
-      - TZ=${TZ:-America/Los_Angeles}
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     volumes:
       - model-cache:/cache
     labels:

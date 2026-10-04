@@ -10,6 +10,9 @@ services:
     pid: host
     privileged: true
     network_mode: host
+    env_file:
+      - path: ../timezone.env
+        required: true
     environment:
       GLANCES_OPT: "-w -B 127.0.0.1"
       # Unset falls back to the entrypoint's local proxy names (incl. host.docker.internal).
@@ -17,7 +20,6 @@ services:
       # The host's root filesystem, seen through the /etc/hostname bind mount.
       GLANCES_FS_SHOW: "^/etc/hostname$$"
       GLANCES_FS_ALIAS: "/etc/hostname:system"
-      TZ: America/Los_Angeles
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /etc/os-release:/etc/os-release:ro
