@@ -69,8 +69,15 @@ got_files="$(find "$scratch" -type f | wc -l | tr -d ' ')"
 (( got_files == want_files )) || die "restored $got_files files, snapshot has $want_files"
 log "restored $got_files files ($want_bytes bytes)"
 
-checked=0
+checked=0 raw=0
 while IFS= read -r -d '' db; do
+  # backup.sh falls back to a raw copy for non-SQLite *.db files (e.g. BoltDB),
+  # still with the .sqlitebak suffix; only real SQLite files can be checked.
+  if ! head -c 16 "$db" | cmp -s - <(printf 'SQLite format 3\0'); then
+    log "raw copy, not SQLite (not checked): ${db#"$scratch"}"
+    raw=$((raw + 1))
+    continue
+  fi
   if ! command -v sqlite3 >/dev/null; then
     log "sqlite3 not installed; skipping $(basename "$db")"
     continue
@@ -79,7 +86,7 @@ while IFS= read -r -d '' db; do
   [[ "$result" == ok ]] || die "integrity_check failed for ${db#"$scratch"}: $result"
   checked=$((checked + 1))
 done < <(find "$scratch" -path '*-staging/sqlite/*' -type f -print0)
-log "sqlite snapshots passing integrity_check: $checked"
+log "sqlite snapshots passing integrity_check: $checked (raw non-SQLite copies: $raw)"
 
 sums=0
 while IFS= read -r -d '' sidecar; do
