@@ -91,6 +91,10 @@ in [UNIFICATION.md](UNIFICATION.md).
   backup never takes down the last working DNS server.
 
 ### Fixed
+- Dragonwilds was serving an empty `Main` world since a failed hand rename on
+  2026-10-02; the original world `1` is restored. The status card now reports the
+  configured world's save (not the newest `.sav`), and the cards gained world ID,
+  owner, last join, CPU, auto-update, last backup and worlds-on-disk rows.
 - The shared backup lock check rejected the always-empty lock file (`stat %F`
   reports `regular empty file`), which failed the pre-update backup gate and so
   blocked game starts.
@@ -103,7 +107,8 @@ in [UNIFICATION.md](UNIFICATION.md).
   Dragonwilds systemd template. `MAX_PLAYERS=6` is now documented in both env
   examples, validated by both installers, and reused by the status JSON so the
   Homepage `online/capacity` row stays aligned with the launch command.
-- Recorded the server rename to `Ollie-GS`, the world rename to `Main`, the save
+- Recorded the server rename to `Ollie-GS`, the world rename to `Main` (it did not
+  take; see the shared-server-base Fixed entry), the save
   header/filename/config consistency requirement, and the private world-password
   placement. Homepage shows the join pass below the per-session join code and is
   intended to remain tailnet-only.

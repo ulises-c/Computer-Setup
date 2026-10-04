@@ -165,7 +165,7 @@
 - Games:
     - game server:
         icon: /icons/dragonwilds.ico
-        description: Overall game server health and activity
+        description: Dragonwilds dedicated server — host, build, backups
         server: my-docker
         container: dragonwilds-status
         widget:
@@ -177,25 +177,55 @@
             - field: status
               label: Server
               format: text
+            - field: server_name
+              label: Name
+              format: text
             - field: online_capacity
               label: Players
               format: text
+            - field: last_join_name
+              label: Last join
+              format: text
+            - field: last_join
+              label: Last join at
+              format: relativeDate
             - field: uptime_seconds
               label: Uptime
               format: duration
+            - field: cpu_percent
+              label: CPU (1 core)
+              format: percent
             - field: memory_bytes
               label: Memory
               format: bytes
             - field: disk_free_bytes
               label: Disk free
               format: bytes
-            - field: update_status
+            - field: build
               label: Build
+              format: text
+            - field: update_status
+              label: Update
+              format: text
+            - field: update_checked
+              label: Checked
+              format: relativeDate
+            - field: auto_update
+              label: Auto-update
+              format: text
+            - field: backup_status
+              label: Backup
+              format: text
+            - field: last_backup
+              label: Last backup
+              format: relativeDate
+            - field: worlds_on_disk
+              label: Worlds
               format: text
     - Ollie-GS:
         id: dragonwilds-world
         icon: /icons/dragonwilds.ico
-        description: RuneScape Dragonwilds — UDP 7777 (LAN + tailnet)
+        description: Active world — UDP 7777 (LAN + tailnet)
         server: my-docker
         container: dragonwilds-status
         widget:
@@ -204,8 +234,14 @@
           refreshInterval: 60000
           display: list
           mappings:
-            - field: status
-              label: Server
+            - field: world
+              label: World
+              format: text
+            - field: world_id
+              label: World ID
+              format: text
+            - field: world_owner
+              label: Owner
               format: text
             - field: online_capacity
               label: Players
@@ -228,18 +264,9 @@
             - field: last_save
               label: Last save
               format: relativeDate
-            - field: uptime_seconds
-              label: Uptime
-              format: duration
-            - field: memory_bytes
-              label: Memory
-              format: bytes
             - field: save_bytes
               label: World size
               format: bytes
-            - field: update_status
-              label: Build
-              format: text
 
 - Shared services:
     - uptime kuma:

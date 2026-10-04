@@ -19,8 +19,12 @@ The server was configured as follows during the rename and Homepage work:
 
 - Server display name: `Ollie-GS` (shortened to stay within the documented community
   name-length guidance).
-- World name: `Main`; `DefaultWorldName`, the internal save header, and
-  `SaveGames/Main.sav` were made consistent.
+- World name: `1` (`DefaultWorldName=1`, `SaveGames/1.sav`). A hand rename to
+  `Main` (editing the save header and filename) failed: the game logged
+  "Skipping save game (Main) as cannot be loaded in current version" and created
+  an empty `Main` world instead, which ran from 2026-10-02 to 2026-10-03 until
+  `1.sav` was restored. Never edit a save header to rename a world; the empty
+  world is archived in `Saved/SaveGames-archive/`.
 - A world join password is configured in the private `DedicatedServer.ini`; it is
   shown as **Join pass** below **Join code** on the tailnet-only Homepage card. The
   password value is not stored in Git or this documentation.
