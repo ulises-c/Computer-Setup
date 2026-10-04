@@ -2,8 +2,7 @@
 Description=Nightly server backup
 
 [Timer]
-# 03:00 local, with the game server and the Pi. Watchtower's 3 AM is UTC
-# (the container has no TZ), so image updates land in the evening instead.
+# 03:00 local, with the game server and the Pi, after watchtower's 2:30 image updates.
 OnCalendar=*-*-* 03:00:00
 # Catch up if the machine was off at the scheduled time.
 Persistent=true
