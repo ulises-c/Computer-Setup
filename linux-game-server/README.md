@@ -310,7 +310,7 @@ game/SteamCMD processes, and does not prevent an administrator removing the guar
 
 ### Recurring backups
 
-`backup/` runs the shared restic engine nightly at 04:15 into a repository on
+`backup/` runs the shared restic engine nightly at 03:00 into a repository on
 the main server over SFTP (the same pattern as the Pi): `Saved/SaveGames`,
 `Saved/Config`, the Homepage config, every service `.env`, and a header-checked
 live world copy taken by `backup-save.py`. It is a live backup, not a

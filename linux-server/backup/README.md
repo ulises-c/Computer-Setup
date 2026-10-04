@@ -24,7 +24,7 @@ outgrow the 1TB target; offsite image backup is tracked in
 [#87](https://github.com/ulises-c/Computer-Setup/issues/87).
 
 A Dragonwilds world is a plain `.sav` with no online-snapshot equivalent to
-sqlite's `.backup`, so a save written at the moment the 03:30 run reads it could
+sqlite's `.backup`, so a save written at the moment the 03:00 run reads it could
 be captured torn. Nightly retention means the previous snapshot is the fallback.
 The Dragonwilds pre-update gate stops the game before invoking the backup service
 for a clean copy; a save without a readable, matching `DedicatedServer.ini` is
