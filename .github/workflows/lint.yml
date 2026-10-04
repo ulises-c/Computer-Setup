@@ -60,6 +60,9 @@ jobs:
       - name: Test server-base Homepage generator (outputs current, cross-links)
         run: python3 server-base/tests/test_generate.py -v
 
+      - name: Check every compose service loads timezone.env
+        run: python3 scripts/check-compose-timezone.py
+
       - name: Test ntfy to Discord relay
         run: python3 -m unittest discover -v -s linux-server/ntfy-discord/tests
 
