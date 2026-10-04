@@ -78,7 +78,10 @@ in [UNIFICATION.md](UNIFICATION.md).
 
 - Non-SQLite `*.db` files (BoltDB: Filebrowser, AdGuard sessions/stats) are copied
   with the container that bind-mounts them briefly stopped, instead of raw-copied
-  live; the container is restarted even if the backup fails mid-copy.
+  live; the container is restarted even if the backup fails mid-copy. AdGuard is
+  only stopped once another resolver in `DNS_PEERS` answers (polled every 15 s
+  for up to 15 min); otherwise its files are copied live with a warning, so the
+  backup never takes down the last working DNS server.
 
 ### Fixed
 - The shared backup lock check rejected the always-empty lock file (`stat %F`

@@ -108,6 +108,10 @@ fi
 : "${BACKUP_SHARED_LOCK_PATH:=}"
 : "${NTFY_TOPIC:=$BACKUP_NAME-backup}"
 : "${KUMA_PUSH_URL:=}"
+: "${DNS_CONTAINER:=adguardhome}"
+: "${DNS_PEERS:=}"
+: "${DNS_PEER_WAIT_SECONDS:=900}"
+: "${DNS_PEER_POLL_SECONDS:=15}"
 : "${STATUS_JSON:=$SCRIPT_DIR/status/backup-status.json}"
 
 notify() {
@@ -289,7 +293,37 @@ for db in "${RAW_COPIES[@]}"; do
     log "raw copy (not sqlite, no running owner): ${db#"$HOST_DIR"/}"
   fi
 done
+dns_peer_answering() {
+  local peer
+  for peer in $DNS_PEERS; do
+    [[ -n "$(dig +short +time=2 +tries=1 @"$peer" example.com A 2>/dev/null)" ]] && return 0
+  done
+  return 1
+}
+# Stopping the local resolver is only safe while another one answers: wait up to
+# DNS_PEER_WAIT_SECONDS for a peer, else copy live rather than take DNS down.
+dns_peer_ready() {
+  local deadline=$((SECONDS + DNS_PEER_WAIT_SECONDS))
+  [[ -n "$DNS_PEERS" ]] || { log "warning: DNS_PEERS is empty; not stopping $DNS_CONTAINER"; return 1; }
+  command -v dig >/dev/null || { log "warning: dig not installed; not stopping $DNS_CONTAINER"; return 1; }
+  until dns_peer_answering; do
+    if (( SECONDS >= deadline )); then
+      log "warning: no DNS peer answered within ${DNS_PEER_WAIT_SECONDS}s; not stopping $DNS_CONTAINER"
+      return 1
+    fi
+    log "waiting for a DNS peer before stopping $DNS_CONTAINER"
+    sleep "$DNS_PEER_POLL_SECONDS"
+  done
+}
 for owner in $(printf '%s\n' "${raw_owners[@]}" | sort -u); do
+  if [[ "$owner" == "$DNS_CONTAINER" ]] && ! dns_peer_ready; then
+    for i in "${!RAW_COPIES[@]}"; do
+      [[ "${raw_owners[$i]}" == "$owner" ]] || continue
+      cp -a "${RAW_COPIES[$i]}" "$(staged_db_path "${RAW_COPIES[$i]}")"
+      log "raw copy with $owner running (may be inconsistent): ${RAW_COPIES[$i]#"$HOST_DIR"/}"
+    done
+    continue
+  fi
   log "consistent copy: stopping $owner briefly"
   QUIESCED_CONTAINERS=("$owner")
   docker stop "$owner" >/dev/null

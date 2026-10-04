@@ -103,18 +103,28 @@ cat >"$stub/mountpoint" <<'EOF'
 #!/usr/bin/env bash
 [[ "$2" != */unmounted ]]
 EOF
-# One running container, Filebrowser, bind-mounting its database dir and the
-# whole host filesystem; stop/start calls are logged in order.
+# Two running containers: Filebrowser, bind-mounting its database dir and the
+# whole host filesystem, and AdGuard; stop/start calls are logged in order.
 cat >"$stub/docker" <<'EOF'
 #!/usr/bin/env bash
 case "$1" in
-  ps) printf 'fb0000000001\n' ;;
+  ps) printf 'fb0000000001\nag0000000001\n' ;;
   inspect)
-    [[ "${!#}" == fb0000000001 ]] || exit 1
-    printf '/filebrowser\t%s\n/filebrowser\t/\n' "$FB_DB_DIR" ;;
+    for id in "$@"; do
+      case "$id" in
+        fb0000000001) printf '/filebrowser\t%s\n/filebrowser\t/\n' "$FB_DB_DIR" ;;
+        ag0000000001) printf '/adguardhome\t%s\n' "$AG_WORK_DIR" ;;
+      esac
+    done ;;
   stop|start) printf '%s %s\n' "$1" "$2" >>"$DOCKER_LOG" ;;
   *) exit 1 ;;
 esac
+EOF
+# A DNS peer answers only while DIG_ANSWER=1.
+cat >"$stub/dig" <<'EOF'
+#!/usr/bin/env bash
+[[ "${DIG_ANSWER:-1}" == 1 ]] && printf '93.184.215.14\n'
+exit 0
 EOF
 cat >"$stub/systemctl" <<'EOF'
 #!/usr/bin/env bash
@@ -134,7 +144,9 @@ touch "$drive/.backup-target-ok"
 printf 'SQLite format 3\0x' >"$server/uptime-kuma/data/kuma.db"
 mkdir -p "$server/filebrowser/database"
 printf '\0\0\0\0bolt' >"$server/filebrowser/database/filebrowser.db"
-export FB_DB_DIR="$server/filebrowser/database" DOCKER_LOG="$tmp/docker.log"
+mkdir -p "$server/adguard/work/data"
+printf '\0\0\0\0bolt' >"$server/adguard/work/data/stats.db"
+export FB_DB_DIR="$server/filebrowser/database" AG_WORK_DIR="$server/adguard/work" DOCKER_LOG="$tmp/docker.log"
 printf 'title: test\n' >"$server/homepage/config/settings.yaml"
 printf 'FORGEJO_DATA_PATH="%s"\n' "$tmp/forgejo-data" >"$server/forgejo/.env"
 printf 'NTFY_BASE_URL=x\n' >"$server/ntfy/.env"
@@ -155,6 +167,9 @@ SECOND_BACKUP_MOUNT=$tmp/unmounted
 STAGING_DIR=$tmp/staging
 BACKUP_DRAGONWILDS_INSTALL_DIR=$server/dragonwilds/games/dragonwilds
 BACKUP_FORGEJO_DATA_PATH=$tmp/forgejo-data
+DNS_PEERS=192.0.2.53
+DNS_PEER_WAIT_SECONDS=2
+DNS_PEER_POLL_SECONDS=1
 EOF
 
 out="$(PATH="$stub:$PATH" RESTIC_LOG="$tmp/restic.log" bash ${TEST_TRACE:+-x} "$server/backup/backup.sh" 2>&1)" \
@@ -169,14 +184,27 @@ grep -q 'sqlite snapshot: uptime-kuma/data/kuma.db' <<<"$out" || fail "sqlite db
 grep -q 'consistent copy: stopping filebrowser briefly' <<<"$out" || fail "BoltDB owner not stopped: $out"
 grep -q 'raw copy with filebrowser stopped: filebrowser/database/filebrowser.db' <<<"$out" \
   || fail "BoltDB not copied while its owner was stopped: $out"
-[[ "$(<"$DOCKER_LOG")" == $'stop filebrowser\nstart filebrowser' ]] \
-  || fail "filebrowser not stopped then restarted exactly once: $(<"$DOCKER_LOG")"
+grep -q 'raw copy with adguardhome stopped: adguard/work/data/stats.db' <<<"$out" \
+  || fail "AdGuard not stopped while a DNS peer answered: $out"
+[[ "$(<"$DOCKER_LOG")" == $'stop adguardhome\nstart adguardhome\nstop filebrowser\nstart filebrowser' ]] \
+  || fail "owners not stopped then restarted exactly once each: $(<"$DOCKER_LOG")"
 grep -q 'second copy incomplete' <<<"$out" || fail "unmounted second drive not reported"
 if grep -q '^init' "$tmp/restic.log"; then fail "second repo initialized on an unmounted drive"; fi
 [[ "$(jq -r '.status' "$server/backup/status/backup-status.json")" == success ]] || fail "status not success"
 [[ "$(jq -r '.snapshot' "$server/backup/status/backup-status.json")" == abc12345 ]] || fail "snapshot id not recorded"
 [[ ! -e "$tmp/staging" ]] || fail "staging dir left behind"
 grep -q 'skipping coordination' <<<"$out" || fail "absent player-log dir did not skip lock coordination"
+
+# With no DNS peer answering, AdGuard is never stopped: wait, then copy live.
+: >"$DOCKER_LOG"
+out="$(DIG_ANSWER=0 PATH="$stub:$PATH" RESTIC_LOG="$tmp/restic.log" bash "$server/backup/backup.sh" 2>&1)" \
+  || fail "run without a DNS peer failed: $out"
+grep -q 'waiting for a DNS peer before stopping adguardhome' <<<"$out" || fail "no DNS peer wait: $out"
+grep -q 'no DNS peer answered within 2s; not stopping adguardhome' <<<"$out" || fail "DNS peer wait not bounded: $out"
+grep -q 'raw copy with adguardhome running (may be inconsistent): adguard/work/data/stats.db' <<<"$out" \
+  || fail "AdGuard files not copied live: $out"
+[[ "$(<"$DOCKER_LOG")" == $'stop filebrowser\nstart filebrowser' ]] \
+  || fail "AdGuard stopped without a DNS peer: $(<"$DOCKER_LOG")"
 
 # Once the player-log dir is backed up, its lock must exist and be root-owned 0600.
 mkdir -p "$player_log"
