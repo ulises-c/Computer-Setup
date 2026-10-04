@@ -126,6 +126,7 @@ render() {
       -e "s|@FAILED_BUILD_FILE@|$SCRIPT_DIR/status/.failed-build|g" \
       -e "s|@AUTO_UPDATE_SCRIPT@|$SCRIPT_DIR/dragonwilds-auto-update.sh|g" \
       -e "s|@PLAYER_LOG_SCRIPT@|$PLAYER_LOG_BUNDLE|g" \
+      -e "s|@PLAYER_LOG_NOTIFY_SCRIPT@|$SCRIPT_DIR/dragonwilds-player-log-notify.sh|g" \
       "$src" > "$tmp/$dest"
 }
 
@@ -135,6 +136,7 @@ render "$SCRIPT_DIR/dragonwilds-status.service.template" dragonwilds-status.serv
 render "$SCRIPT_DIR/dragonwilds-update-check.service.template" dragonwilds-update-check.service
 render "$SCRIPT_DIR/dragonwilds-auto-update.service.template" dragonwilds-auto-update.service
 render "$SCRIPT_DIR/dragonwilds-player-log.service.template" dragonwilds-player-log.service
+render "$SCRIPT_DIR/dragonwilds-player-log-failure.service.template" dragonwilds-player-log-failure.service
 render "$SCRIPT_DIR/dragonwilds-restart.rules.template" dragonwilds-restart.rules
 
 if [[ "$DRY_RUN" == false ]]; then
@@ -150,6 +152,7 @@ if command -v systemd-analyze >/dev/null; then
     "$tmp/dragonwilds-status.service"
     "$tmp/dragonwilds-update-check.service"
     "$tmp/dragonwilds-auto-update.service"
+    "$tmp/dragonwilds-player-log-failure.service"
   )
   [[ "$game_installed" == true ]] && verify_units=("$tmp/dragonwilds.service" "${verify_units[@]}")
   [[ -x "$PLAYER_LOG_BUNDLE" ]] && verify_units+=("$tmp/dragonwilds-player-log.service")
@@ -172,6 +175,8 @@ else
   install -o root -g root -m 644 "$SCRIPT_DIR/dragonwilds-auto-update.timer" "$UNIT_DIR/dragonwilds-auto-update.timer"
   install -o root -g root -m 644 "$tmp/dragonwilds-player-log.service" "$UNIT_DIR/dragonwilds-player-log.service"
   install -o root -g root -m 644 "$SCRIPT_DIR/dragonwilds-player-log.timer" "$UNIT_DIR/dragonwilds-player-log.timer"
+  install -o root -g root -m 644 "$tmp/dragonwilds-player-log-failure.service" \
+    "$UNIT_DIR/dragonwilds-player-log-failure.service"
   player_log_parent=/var/lib/dragonwilds
   [[ ! -L "$player_log_parent" && ( ! -e "$player_log_parent" || -d "$player_log_parent" ) ]] || {
     printf 'error: player-log parent is not a real directory: %s\n' "$player_log_parent" >&2
@@ -207,7 +212,7 @@ else
   # polkitd watches rules.d and reloads on its own.
   install -o root -g root -m 644 "$tmp/dragonwilds-restart.rules" "$POLKIT_RULE"
   chmod 755 "$SCRIPT_DIR/dragonwilds-update-check.sh" "$SCRIPT_DIR/dragonwilds-auto-update.sh" \
-    "$SCRIPT_DIR/dragonwilds-players.sh"
+    "$SCRIPT_DIR/dragonwilds-players.sh" "$SCRIPT_DIR/dragonwilds-player-log-notify.sh"
   # Holds NTFY_TOKEN; a cp of .env.example lands world-readable.
   [[ -f "$SCRIPT_DIR/.env" ]] && chmod 600 "$SCRIPT_DIR/.env"
   install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 755 "$SCRIPT_DIR/status"

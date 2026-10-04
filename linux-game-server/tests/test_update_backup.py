@@ -1,3 +1,7 @@
+import os
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -138,6 +142,51 @@ class UpdateBackupTests(unittest.TestCase):
         self.assertIn("BACKUP_SHARED_LOCK_PATH", game_sources)
         self.assertIn("BACKUP_SHARED_LOCK_PATH", server_sources)
         self.assertIn('flock -s "$BACKUP_SHARED_LOCK_FD"', backup_engine)
+
+
+class PlayerLogNotifyTests(unittest.TestCase):
+    def _run(self, directory, env_lines):
+        bin_dir = Path(directory) / "bin"
+        bin_dir.mkdir(exist_ok=True)
+        calls = Path(directory) / "curl.calls"
+        (bin_dir / "curl").write_text(f'#!/usr/bin/env bash\nprintf "%s\\n" "$*" >>"{calls}"\n')
+        (bin_dir / "journalctl").write_text('#!/usr/bin/env bash\nprintf "starting\\nerror: boom\\n"\n')
+        for tool in ("curl", "journalctl"):
+            (bin_dir / tool).chmod(0o755)
+        app = Path(directory) / "app"
+        (app / "status").mkdir(parents=True, exist_ok=True)
+        shutil.copy(GAME / "dragonwilds-player-log-notify.sh", app / "notify.sh")
+        (app / ".env").write_text("".join(f"{line}\n" for line in env_lines))
+        env = {"PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": directory}
+        result = subprocess.run(["bash", str(app / "notify.sh")], env=env, capture_output=True, text=True)
+        return result, calls.read_text().splitlines() if calls.exists() else [], app
+
+    def test_player_log_service_alerts_on_failure(self):
+        template = GAME.joinpath("dragonwilds-player-log.service.template").read_text()
+        self.assertIn("OnFailure=dragonwilds-player-log-failure.service", template)
+        failure = GAME.joinpath("dragonwilds-player-log-failure.service.template").read_text()
+        self.assertIn("User=@USER@", failure)
+        self.assertIn("ExecStart=@PLAYER_LOG_NOTIFY_SCRIPT@", failure)
+
+    def test_alert_is_sent_once_per_window_with_last_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env = ["NTFY_URL=https://ntfy.example", "NTFY_TOPIC=dw", "NTFY_TOKEN=tok"]
+            result, calls, app = self._run(directory, env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(len(calls), 1)
+            self.assertIn("error: boom", calls[0])
+            self.assertIn("https://ntfy.example/dw", calls[0])
+            self.assertTrue((app / "status" / ".player-log-alerted").exists())
+            result, calls, _ = self._run(directory, env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(len(calls), 1)
+
+    def test_unconfigured_ntfy_is_a_warning_not_a_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result, calls, _ = self._run(directory, ["NTFY_URL="])
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(calls, [])
+            self.assertIn("not alerted", result.stderr)
 
 
 if __name__ == "__main__":

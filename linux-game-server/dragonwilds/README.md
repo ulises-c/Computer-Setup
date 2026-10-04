@@ -797,6 +797,12 @@ sudo jq . /var/lib/dragonwilds/player-log/players.json
 sudo tail -n 20 /var/lib/dragonwilds/player-log/events.jsonl
 ```
 
+A failed parser run triggers `dragonwilds-player-log-failure.service`, which
+sends one high-priority ntfy alert with the last `error:` line to the
+`NTFY_URL`/`NTFY_TOPIC` in `dragonwilds/.env`, then stays quiet for 6 hours
+while the failure continues (`status/.player-log-alerted`). Runs skipped for a
+backup exit 0 and never alert.
+
 ### Update checking
 
 `dragonwilds-update-check.timer` runs every two hours on even hours, asking Steam

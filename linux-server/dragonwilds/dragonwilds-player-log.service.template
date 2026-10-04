@@ -1,6 +1,7 @@
 [Unit]
 Description=Record Dragonwilds player join history
 After=systemd-journald.service
+OnFailure=dragonwilds-player-log-failure.service
 
 [Service]
 Type=oneshot

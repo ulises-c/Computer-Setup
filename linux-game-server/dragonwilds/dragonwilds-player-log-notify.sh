@@ -1,0 +1,1 @@
+../../linux-server/dragonwilds/dragonwilds-player-log-notify.sh
