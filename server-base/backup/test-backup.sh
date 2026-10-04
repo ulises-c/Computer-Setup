@@ -96,13 +96,26 @@ esac
 EOF
 cat >"$stub/sqlite3" <<'EOF'
 #!/usr/bin/env bash
+[[ "$(head -c 15 "$1")" == "SQLite format 3" ]] || exit 1
 dest="${2#.backup \'}"; cp "$1" "${dest%\'}"
 EOF
 cat >"$stub/mountpoint" <<'EOF'
 #!/usr/bin/env bash
 [[ "$2" != */unmounted ]]
 EOF
-printf '#!/usr/bin/env bash\nexit 1\n' >"$stub/docker"
+# One running container, Filebrowser, bind-mounting its database dir and the
+# whole host filesystem; stop/start calls are logged in order.
+cat >"$stub/docker" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+  ps) printf 'fb0000000001\n' ;;
+  inspect)
+    [[ "${!#}" == fb0000000001 ]] || exit 1
+    printf '/filebrowser\t%s\n/filebrowser\t/\n' "$FB_DB_DIR" ;;
+  stop|start) printf '%s %s\n' "$1" "$2" >>"$DOCKER_LOG" ;;
+  *) exit 1 ;;
+esac
+EOF
 cat >"$stub/systemctl" <<'EOF'
 #!/usr/bin/env bash
 [[ "${1:-}" == show ]] || exit 1
@@ -118,7 +131,10 @@ drive="$tmp/drive"
 mkdir -p "$drive" "$server/uptime-kuma/data" "$server/homepage/config" "$server/ntfy" "$server/forgejo" \
   "$tmp/forgejo-data"
 touch "$drive/.backup-target-ok"
-printf 'x' >"$server/uptime-kuma/data/kuma.db"
+printf 'SQLite format 3\0x' >"$server/uptime-kuma/data/kuma.db"
+mkdir -p "$server/filebrowser/database"
+printf '\0\0\0\0bolt' >"$server/filebrowser/database/filebrowser.db"
+export FB_DB_DIR="$server/filebrowser/database" DOCKER_LOG="$tmp/docker.log"
 printf 'title: test\n' >"$server/homepage/config/settings.yaml"
 printf 'FORGEJO_DATA_PATH="%s"\n' "$tmp/forgejo-data" >"$server/forgejo/.env"
 printf 'NTFY_BASE_URL=x\n' >"$server/ntfy/.env"
@@ -150,6 +166,11 @@ for want in "$tmp/forgejo-data" "$server/uptime-kuma/data" "$server/homepage/con
 done
 [[ "$backup_line" != *"$server/qbittorrent/config"* ]] || fail "absent path was backed up"
 grep -q 'sqlite snapshot: uptime-kuma/data/kuma.db' <<<"$out" || fail "sqlite db not staged"
+grep -q 'consistent copy: stopping filebrowser briefly' <<<"$out" || fail "BoltDB owner not stopped: $out"
+grep -q 'raw copy with filebrowser stopped: filebrowser/database/filebrowser.db' <<<"$out" \
+  || fail "BoltDB not copied while its owner was stopped: $out"
+[[ "$(<"$DOCKER_LOG")" == $'stop filebrowser\nstart filebrowser' ]] \
+  || fail "filebrowser not stopped then restarted exactly once: $(<"$DOCKER_LOG")"
 grep -q 'second copy incomplete' <<<"$out" || fail "unmounted second drive not reported"
 if grep -q '^init' "$tmp/restic.log"; then fail "second repo initialized on an unmounted drive"; fi
 [[ "$(jq -r '.status' "$server/backup/status/backup-status.json")" == success ]] || fail "status not success"

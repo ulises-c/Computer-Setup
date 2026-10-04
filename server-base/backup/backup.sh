@@ -196,7 +196,12 @@ finish() {
     command -v jq >/dev/null && write_status failed true || true
   fi
   [[ "$STAGING_READY" == true ]] && rm -rf "$STAGING_DIR"
+  local container
+  for container in "${QUIESCED_CONTAINERS[@]}"; do
+    docker start "$container" >/dev/null 2>&1 || true
+  done
 }
+QUIESCED_CONTAINERS=()
 trap finish EXIT
 
 # --- guards -----------------------------------------------------------------
@@ -241,21 +246,62 @@ STAGING_READY=true
 
 # Live SQLite files copied with the online .backup API (consistent, no downtime).
 # Staged copies get a .sqlitebak suffix; restore by stripping it.
+staged_db_path() {
+  local rel="${1#"$HOST_DIR"/}"
+  printf '%s/sqlite/%s.sqlitebak' "$STAGING_DIR" "${rel#/}"
+}
+RAW_COPIES=()
 for root in "${SOURCES[@]}"; do
   [[ -d "$root" ]] || continue
   while IFS= read -r -d '' db; do
     command -v sqlite3 >/dev/null || die "sqlite3 not installed (apt install sqlite3); needed for $db"
-    rel="${db#"$HOST_DIR"/}"
-    rel="${rel#/}"
-    dest="$STAGING_DIR/sqlite/$rel.sqlitebak"
+    dest="$(staged_db_path "$db")"
     mkdir -p "$(dirname "$dest")"
     if sqlite3 "$db" ".backup '$dest'" 2>/dev/null; then
-      log "sqlite snapshot: $rel"
+      log "sqlite snapshot: ${db#"$HOST_DIR"/}"
     else
-      cp -a "$db" "$dest"
-      log "raw copy (not sqlite/locked): $rel"
+      RAW_COPIES+=("$db")
     fi
   done < <(find "$root" -type f \( -name '*.db' -o -name '*.sqlite' -o -name '*.sqlite3' \) -print0)
+done
+
+# Non-SQLite *.db files (BoltDB: Filebrowser, AdGuard) can only be copied raw;
+# stop the running container that bind-mounts each one so the copy is clean.
+# The deepest mount wins, and a whole-filesystem mount (Filebrowser's /) never does.
+owning_container() {
+  local db="$1" best="" best_len=0 name src
+  command -v docker >/dev/null || return 0
+  while IFS=$'\t' read -r name src; do
+    [[ -n "$src" && "$src" != / && "$db" == "$src"/* ]] || continue
+    (( ${#src} > best_len )) || continue
+    best="$name" best_len="${#src}"
+  done < <(docker ps -q 2>/dev/null \
+    | xargs -r docker inspect -f '{{$n := .Name}}{{range .Mounts}}{{$n}}{{"\t"}}{{.Source}}{{"\n"}}{{end}}' 2>/dev/null \
+    | sed 's#^/##')
+  printf '%s' "$best"
+}
+raw_owners=()
+for db in "${RAW_COPIES[@]}"; do
+  owner="$(owning_container "$db")"
+  raw_owners+=("$owner")
+  if [[ -z "$owner" ]]; then
+    cp -a "$db" "$(staged_db_path "$db")"
+    log "raw copy (not sqlite, no running owner): ${db#"$HOST_DIR"/}"
+  fi
+done
+for owner in $(printf '%s\n' "${raw_owners[@]}" | sort -u); do
+  log "consistent copy: stopping $owner briefly"
+  QUIESCED_CONTAINERS=("$owner")
+  docker stop "$owner" >/dev/null
+  copied=true
+  for i in "${!RAW_COPIES[@]}"; do
+    [[ "${raw_owners[$i]}" == "$owner" ]] || continue
+    cp -a "${RAW_COPIES[$i]}" "$(staged_db_path "${RAW_COPIES[$i]}")" || copied=false
+    log "raw copy with $owner stopped: ${RAW_COPIES[$i]#"$HOST_DIR"/}"
+  done
+  docker start "$owner" >/dev/null
+  QUIESCED_CONTAINERS=()
+  [[ "$copied" == true ]] || die "copying $owner's database failed ($owner restarted)"
 done
 
 # Portainer stores BoltDB in a named volume; a brief stop guarantees a clean copy.

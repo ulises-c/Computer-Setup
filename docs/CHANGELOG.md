@@ -76,6 +76,10 @@ in [UNIFICATION.md](UNIFICATION.md).
 - The main server keeps backing up the old Dragonwilds saves left on its disk; the
   install-path cross-check applies only while that host runs `dragonwilds.service`.
 
+- Non-SQLite `*.db` files (BoltDB: Filebrowser, AdGuard sessions/stats) are copied
+  with the container that bind-mounts them briefly stopped, instead of raw-copied
+  live; the container is restarted even if the backup fails mid-copy.
+
 ### Fixed
 - The shared backup lock check rejected the always-empty lock file (`stat %F`
   reports `regular empty file`), which failed the pre-update backup gate and so
