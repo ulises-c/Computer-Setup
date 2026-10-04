@@ -17,8 +17,10 @@ in [UNIFICATION.md](UNIFICATION.md).
   config so the Servers and Shared services groups cannot drift (`--check` in CI).
 - `server-base/timezone.sh`: containers take `TZ` from the host's time zone via a
   generated `server-base/timezone.env` instead of a hardcoded zone; `--apply`
-  recreates running compose services whose `TZ` is stale. Homepage and
-  adguardhome-sync now get the host zone too (previously UTC).
+  recreates running compose services whose `TZ` is stale or unset. Every service
+  in every compose file loads it (sidecars, status servers and databases
+  included, most previously on UTC), enforced in CI by
+  `scripts/check-compose-timezone.py`.
 - `server-base` tag in `packages.json` (shell, terminal tools, git/gh, Tailscale,
   Docker, Cockpit, claude-code, opencode); opencode installs on servers via a new
   `opencode_step`, zoxide gains a server apt entry.

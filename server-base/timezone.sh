@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Writes the host's time zone to server-base/timezone.env, which every
-# time-aware container loads as env_file. Run after changing the host zone with
+# compose service loads as env_file. Run after changing the host zone with
 # timedatectl; --apply then recreates the running compose services whose TZ is
 # stale or unset.
 # Usage: bash server-base/timezone.sh [--apply] [--dry-run]

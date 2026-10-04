@@ -50,8 +50,10 @@ report that host down.
 
 The host's time zone (`timedatectl`) is the single source. systemd timers
 already follow it; containers get it as `TZ` from `server-base/timezone.env`,
-which every time-aware service loads with a required `env_file` (base stacks
-as `../timezone.env`, host stacks as `../../server-base/timezone.env`).
+which every service in every compose file loads with a required `env_file`
+(base stacks as `../timezone.env`, host stacks as
+`../../server-base/timezone.env`); a new service needs that entry too, and CI
+(`scripts/check-compose-timezone.py`) fails any service that resolves without it.
 `timezone.sh` generates that file (gitignored), and the host bootstraps run it
 before any compose step. Containers need the zone *name*: Node and PHP images
 ignore a bind-mounted `/etc/localtime`.
@@ -65,7 +67,7 @@ bash server-base/timezone.sh --apply   # rewrites timezone.env, recreates stale 
 ```
 
 `--apply` recreates (`up -d --no-deps`) only running compose services whose
-`TZ` differs from the host's, and needs Docker access (the `docker` group, or
+`TZ` differs from the host's or is unset, and needs Docker access (the `docker` group, or
 `sudo`). `--dry-run` prints the compose commands instead.
 
 ## Homepage
