@@ -627,7 +627,7 @@ Fields: `status` (`running` / `starting` / `stopped` / `failed` / `unknown`),
 
 ### Update checking
 
-`dragonwilds-update-check.timer` runs every two hours on even hours, asking Steam
+`dragonwilds-update-check.timer` runs every 15 minutes, asking Steam
 for the current public build and writing it to `status/.latest-build`. The status
 script compares that against the installed build from the app manifest and
 publishes `update_status` (`up to date` / `update available (<build>)` /
