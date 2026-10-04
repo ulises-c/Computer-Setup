@@ -70,6 +70,7 @@ command -v docker &>/dev/null || platform_docker_optional
 # DNS resolver; pin the address pools by hand in a maintenance window instead.
 
 run bash "$SETUP_ROOT/server-base/homepage/fetch-assets.sh" "$SCRIPT_DIR"
+run bash "$SETUP_ROOT/server-base/timezone.sh"
 for dir in glances portainer watchtower; do
   run sudo docker compose -f "$SCRIPT_DIR/$dir/docker-compose.yml" config --quiet
 done

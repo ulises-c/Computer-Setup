@@ -68,6 +68,8 @@ curl -fsSL https://claude.ai/install.sh | bash
 ### 5. Docker services
 
 Start services in this order. Most just need `docker compose up -d`; exceptions are noted.
+First run `bash server-base/timezone.sh` once: time-aware stacks load the host's
+time zone from the `server-base/timezone.env` it writes ([Time zone](../server-base/README.md#time-zone)).
 
 ```sh
 # Homepage — update .env with your server details first (see post-install.md)

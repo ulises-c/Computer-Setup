@@ -46,6 +46,28 @@ report that host down.
 | Pi | `linux-pi/setup.sh` | base services on the Pi's node; its other services keep sidecars until #86 |
 | game server | `linux-game-server/setup.sh` | one node, `/<service>` paths |
 
+## Time zone
+
+The host's time zone (`timedatectl`) is the single source. systemd timers
+already follow it; containers get it as `TZ` from `server-base/timezone.env`,
+which every time-aware service loads with a required `env_file` (base stacks
+as `../timezone.env`, host stacks as `../../server-base/timezone.env`).
+`timezone.sh` generates that file (gitignored), and the host bootstraps run it
+before any compose step. Containers need the zone *name*: Node and PHP images
+ignore a bind-mounted `/etc/localtime`.
+
+On a fresh checkout run `bash server-base/timezone.sh` before any
+`docker compose up`; compose refuses to start without the file. To change zone:
+
+```sh
+sudo timedatectl set-timezone <Zone>
+bash server-base/timezone.sh --apply   # rewrites timezone.env, recreates stale compose services
+```
+
+`--apply` recreates (`up -d --no-deps`) only running compose services whose
+`TZ` differs from the host's, and needs Docker access (the `docker` group, or
+`sudo`). `--dry-run` prints the compose commands instead.
+
 ## Homepage
 
 `fleet.json` lists every server (name, icon, description, the `HOMEPAGE_VAR_*`
