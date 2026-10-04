@@ -30,6 +30,13 @@ in [UNIFICATION.md](UNIFICATION.md).
 - Homepage design system: colour selfh.st logos, per-group accents (heading, card
   rule and wash, tinted charts), and the official Dragonwilds icon, logo and key
   art fetched from Steam at deploy time (not committed).
+- `server-base/adguard-replica`: the AdGuard replica service shared by every
+  host (the Pi's replica now extends it), and a third replica on the game server.
+  Its DNS and LAN-only UI (`:3053`, also the first-run wizard's port, off
+  Homepage's `:3000`) bind the LAN address only, beside systemd-resolved's stub;
+  `linux-game-server/adguard/setup.sh` completes AdGuard's first-run install
+  through its install API, opens DNS and the UI to the LAN in ufw, and checks
+  that it resolves. The Pi's `adguardhome-sync` syncs it as `REPLICA2`.
 - `linux-pi/setup.sh`: the Pi's base bootstrap on the shared engine, plus Glances,
   Portainer and Watchtower on the Pi's own node.
 - Game server nightly restic backup to the main server, including a verified

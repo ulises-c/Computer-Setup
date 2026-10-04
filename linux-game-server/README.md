@@ -28,7 +28,8 @@ guide, and the maintenance, activation, install and backup helpers.
 `linux-server/` or `server-base/` and that no game-specific file references
 `linux-server/`.
 
-It does not install the NAS server's DNS resolver, storage services, NUT, reverse
+It does not install the NAS server's primary DNS resolver (only an
+[AdGuard replica](#adguard-replica)), storage services, NUT, reverse
 proxy, or entire container fleet. Do not run the root `setup.sh --profile server`
 on this host: that starts the existing home-server service set.
 
@@ -357,6 +358,53 @@ HID device) and writes the detected devices and their active mode to
 show one entry per device (hidden once the data is over 30 minutes old).
 OpenRGB's CLI prints no colours, and for this controller the mode is the one
 OpenRGB last set, not one read back from the hardware.
+
+## AdGuard replica
+
+`adguard/` is the third AdGuard resolver, after the main server's primary and
+the Pi's replica ([`server-base/adguard-replica`](../server-base/README.md#adguard-replicas)).
+It has no Tailscale front door. DNS and the UI bind the LAN address only:
+`:53` beside systemd-resolved's `127.0.0.53` stub, and the UI on `:3053`
+because Homepage owns `:3000` (`--web-addr` in the compose file moves the
+first-run wizard there too). The bind addresses live in AdGuard's own
+`conf/AdGuardHome.yaml`, written at first run; config sync never changes them.
+If the address is missing at boot AdGuard exits and Docker restarts it until it
+can bind, so the address must be stable (the router reservation in
+`docs/TODO.md`).
+
+```sh
+cd linux-game-server/adguard
+cp .env.example .env     # LAN_IP, ADGUARD_USER, ADGUARD_PASSWORD (8+ chars); LAN_CIDR optional
+bash setup.sh --dry-run
+bash setup.sh
+```
+
+`setup.sh` (login user; steps use sudo) starts the container, completes the
+first-run install through AdGuard's install API if `conf/AdGuardHome.yaml` does
+not exist yet (it never rewrites an existing one), then allows TCP/UDP 53 and
+TCP 3053 from `LAN_CIDR` to `LAN_IP` in ufw and checks
+`dig @<game-lan-ip> example.com +short`. The install runs before the ufw rules
+so the unauthenticated wizard is never reachable from the LAN.
+
+Then, on the Pi, add the replica to the syncer and restart it:
+
+```sh
+cd linux-pi/adguardhome-sync
+# add to .env, with this host's ADGUARD_USER/ADGUARD_PASSWORD:
+#   REPLICA2_URL=http://<game-lan-ip>:3053
+#   REPLICA2_USERNAME=<admin-user>
+#   REPLICA2_PASSWORD=<admin-password>
+docker compose up -d --force-recreate
+docker logs adguardhome-sync 2>&1 | grep -i replica
+```
+
+Finally, in the router's DHCP settings add `<game-lan-ip>` as the third DNS
+server, after the main server and the Pi, and renew a client lease.
+
+If the LAN address changes, update `LAN_IP` in `.env` and the `bind_hosts` and
+`http.address` entries in the root-owned `conf/AdGuardHome.yaml` (or
+`sudo rm -r conf` to reinstall; the next sync restores the config), then rerun
+`setup.sh` and delete the old address's ufw rules.
 
 ## Scope left for later
 

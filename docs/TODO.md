@@ -251,8 +251,15 @@ kept the primary AdGuard from recovering.
       AdGuard on `<pi-hostname>`, host-networked (independent of Tailscale) and
       config-synced from the primary, handed out as secondary DNS by the router —
       `linux-pi/adguard` + `linux-pi/adguardhome-sync`.
-- [ ] **Secondary DHCP.** DHCP is still single-homed on the server; a server
-      outage means no new leases. Add a secondary scope (Pi/router) or long leases.
+- [x] **DHCP is not single-homed on the server.** The router does DHCP (AdGuard's
+      DHCP is disabled everywhere) and hands out the resolvers, so a server outage
+      does not stop leases.
+- [ ] **Router: add the game server as the third DNS server** (`<game-lan-ip>`,
+      after the main server and the Pi) in its DHCP settings —
+      `linux-game-server/README.md#adguard-replica`.
+- [ ] **AdGuard replica on the NAS once deployed** — extend
+      `server-base/adguard-replica` and add it as the next `REPLICA<n>` in the
+      Pi's syncer.
 
 ## Server Docker network sprawl — [#75](https://github.com/ulises-c/Computer-Setup/issues/75)
 

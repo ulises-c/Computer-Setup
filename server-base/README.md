@@ -19,7 +19,7 @@ consume it and add only what is genuinely theirs.
 | Dashboard | cross-linked Homepage (Servers group, Shared services, design system) | `fleet.json`, `homepage/` |
 
 Not base (single-instance, network-wide, or host-specific): Uptime Kuma, ntfy,
-Forgejo, AdGuard (primary on the main server, replica on the Pi), Immich,
+Forgejo, the primary AdGuard (replicas are shared, see below), Immich,
 Syncthing, NUT, the NAS storage stack, CUPS/MotionEye, Dragonwilds. Uptime Kuma
 in particular stays on the main server: a monitor on the host it watches cannot
 report that host down.
@@ -45,6 +45,25 @@ report that host down.
 | main server | `setup.sh --profile server` | one sidecar node per service (moves to one node under #86) |
 | Pi | `linux-pi/setup.sh` | base services on the Pi's node; its other services keep sidecars until #86 |
 | game server | `linux-game-server/setup.sh` | one node, `/<service>` paths |
+
+## AdGuard replicas
+
+The primary AdGuard on the main server holds the config. Replicas extend
+`adguard-replica/compose.yml`: host-networked and independent of Tailscale, so
+`:53` keeps answering LAN clients when the tailnet or the internet is down. The
+Pi's `adguardhome-sync` pulls the primary's config into every replica
+(`REPLICA<n>_*` in `linux-pi/adguardhome-sync/.env`) every 10 minutes and on
+start. Replicas are not backed up for DNS: a fresh one is configured by the
+first sync.
+
+| Host | Compose | UI | DNS bind |
+| --- | --- | --- | --- |
+| Pi | `linux-pi/adguard` | `:80`, tailnet via `adguard-pi-ts` | all interfaces |
+| game server | `linux-game-server/adguard` (`setup.sh`) | `<game-lan-ip>:3053`, LAN only | LAN address only, beside systemd-resolved's stub |
+
+The router does DHCP and hands out the resolvers in order (main server, Pi, game
+server). Most clients fail over down that list after a timeout rather than
+racing them, so a replica mainly carries load while the primary is down.
 
 ## Time zone
 

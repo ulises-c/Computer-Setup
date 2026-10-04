@@ -46,6 +46,9 @@ backup resolver so DNS survives the server going down.
 
 ## `adguard/` — secondary AdGuard Home
 
+`adguardhome` extends the shared replica in
+[`server-base/adguard-replica`](../server-base/README.md#adguard-replicas).
+
 - **Host-networked** (`network_mode: host`): owns `:53` (tcp+udp) and the `:80`
   admin UI directly on the Pi. **Independent of Tailscale** — DNS keeps serving
   LAN clients even if the tailnet/internet is down. This is the whole point; do
@@ -59,8 +62,9 @@ backup resolver so DNS survives the server going down.
 
 [`bakito/adguardhome-sync`](https://github.com/bakito/adguardhome-sync) runs on
 the Pi and pulls the primary's config (filters, rewrites, upstreams, rules,
-services) into this replica on a cron, so the two stay in lockstep. DHCP sync is
-disabled. Because the syncer runs here, the Pi re-pulls the latest config on
+services) into every replica on a cron — this one (`REPLICA1`) and the game
+server's (`REPLICA2`, [`linux-game-server/adguard`](../linux-game-server/README.md#adguard-replica)).
+DHCP sync is disabled: the router does DHCP. Because the syncer runs here, the Pi re-pulls the latest config on
 start; if the primary is down, the replica simply keeps its last-good config.
 
 ## `homepage/`, `motioneye/`, `cups/` — Pi dashboard + service front doors
@@ -175,7 +179,8 @@ Server and is not supported on the Pi yet.
    ```
    The Pi's filters/rewrites/upstreams should now match the primary.
 4. **Wire failover on the router (`<router-ip>`):** in its DHCP settings, set the
-   DNS servers to `[<server-ip>, <pi-ip>]` (primary = server, secondary = Pi).
+   DNS servers to `[<server-ip>, <pi-ip>]` (primary = server, secondary = Pi),
+   plus `<game-lan-ip>` third once the game server's replica is up.
    Renew a client lease to pick it up.
 5. **Bring up the Pi dashboard + service front doors:** for each of `homepage`,
    `motioneye`, `cups`: `cp .env.example .env`, set `TS_AUTHKEY` (and, for
