@@ -153,3 +153,11 @@ Install or re-render a host's units with `sudo bash <host>/backup/setup.sh`
 root-owned unit; changing `dragonwilds/.env` requires rerunning both setup
 scripts. `bash server-base/backup/test-backup.sh` runs the engine against every
 host's `sources.sh` with stubbed restic.
+
+Restore checks never touch live data:
+`sudo bash server-base/backup/restore-check.sh <host-dir> [--second] [--keep]`
+runs `restic check`, restores the host's latest snapshot into a root-only scratch
+dir, and verifies the file count, staged SQLite snapshots (`integrity_check`) and
+staged copies with a `.sha256` sidecar. The game server also has
+`linux-game-server/backup/restore-drill.sh`, which loads a restored world in the
+game (see its README).

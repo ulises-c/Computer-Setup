@@ -338,8 +338,13 @@ stopped-server snapshot. One-time setup:
    changing `backup/.env`, `dragonwilds/.env`, or the backup source code; the
    Dragonwilds install path is captured into the root-owned unit.
 
-Keep automatic game restarts off until a restore from this repository has been
-tested.
+Restore drill: with nobody online, `sudo bash linux-game-server/backup/restore-drill.sh`
+stops the game, takes a fresh snapshot of the stopped world, restores it to a
+scratch dir, checks it is byte-identical to the live saves and config, swaps the
+restored `SaveGames` in and waits for `World load SUCCEEDED`. The original
+`SaveGames` is kept beside the live one; any failure puts it back and restarts
+the game. `server-base/backup/restore-check.sh linux-game-server` verifies a
+restore without stopping anything.
 
 ## RGB status on Homepage
 
@@ -354,7 +359,6 @@ OpenRGB last set, not one read back from the hardware.
 
 ## Scope left for later
 
-- A tested restore from the game server's restic repository.
 - A dedicated game-only Unix account (the game runs as the login user; a
   compromised game can access that user's files).
 - Full integration with root setup/verify profiles if another game platform
