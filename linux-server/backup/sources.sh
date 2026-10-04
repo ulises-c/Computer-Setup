@@ -26,10 +26,16 @@ resolve_sources() {
   [[ "$dwd" =~ ^/[[:alnum:]_./-]+$ && "$dwd" != *//* && "$dwd" != */./* && "$dwd" != */. && "$dwd" != */../* && "$dwd" != */.. && "$dwd" != */ ]] \
     || die "invalid fixed Dragonwilds install path"
   command -v systemctl >/dev/null || die "systemctl is required to verify the Dragonwilds install path"
-  configured_game_install_dir="$(systemctl show dragonwilds.service --property=WorkingDirectory --value 2>/dev/null)" \
-    || die "could not read dragonwilds.service WorkingDirectory"
-  [[ -n "$configured_game_install_dir" && "$configured_game_install_dir" == "$dwd" ]] \
-    || die "game and main-server backup Dragonwilds install paths differ; rerun both setup scripts"
+  # Once the game moved to its own host, only the saves left here are backed up;
+  # the path cross-check applies only while this host still runs the game.
+  game_load_state="$(systemctl show dragonwilds.service --property=LoadState --value 2>/dev/null)" \
+    || die "could not read dragonwilds.service LoadState"
+  if [[ "$game_load_state" == loaded ]]; then
+    configured_game_install_dir="$(systemctl show dragonwilds.service --property=WorkingDirectory --value 2>/dev/null)" \
+      || die "could not read dragonwilds.service WorkingDirectory"
+    [[ -n "$configured_game_install_dir" && "$configured_game_install_dir" == "$dwd" ]] \
+      || die "game and main-server backup Dragonwilds install paths differ; rerun both setup scripts"
+  fi
   if [[ -n "$dwd" ]]; then
     dragonwilds_saved="$dwd/RSDragonwilds/Saved"
     [[ -d "$dragonwilds_saved" ]] || log "warning: Dragonwilds saves not found at $dragonwilds_saved — not backed up"

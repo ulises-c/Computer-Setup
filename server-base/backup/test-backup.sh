@@ -106,6 +106,7 @@ printf '#!/usr/bin/env bash\nexit 1\n' >"$stub/docker"
 cat >"$stub/systemctl" <<'EOF'
 #!/usr/bin/env bash
 [[ "${1:-}" == show ]] || exit 1
+[[ "$*" == *LoadState* ]] && { printf 'loaded\n'; exit 0; }
 printf '%s\n' "$BACKUP_DRAGONWILDS_INSTALL_DIR"
 EOF
 chmod +x "$stub"/*
@@ -208,7 +209,9 @@ for host in linux-server linux-pi linux-game-server; do
     fi
     if [[ "$host" == linux-server || "$host" == linux-game-server ]]; then
       # shellcheck disable=SC2329  # invoked indirectly by the sourced sources.sh
-      systemctl() { printf '%s\n' "$BACKUP_DRAGONWILDS_INSTALL_DIR"; }
+      systemctl() {
+        if [[ "$*" == *LoadState* ]]; then printf 'loaded\n'; else printf '%s\n' "$BACKUP_DRAGONWILDS_INSTALL_DIR"; fi
+      }
     fi
     if [[ "$host" == linux-server ]]; then
       # shellcheck disable=SC2034  # consumed by the sourced backup sources.sh
@@ -241,6 +244,34 @@ if bash -c '
 ' bash "$tmp/path-drift" "$REPO" >/dev/null 2>&1; then
   fail "game backup accepted a path drift from dragonwilds.service"
 fi
+
+# Main server: the path cross-check binds while it runs the game, and is skipped
+# once dragonwilds.service is gone (old saves are still backed up).
+main_server_resolve() {
+  bash -c '
+    set -euo pipefail
+    HOST_DIR="$1"
+    load_state="$3"
+    BACKUP_DRAGONWILDS_INSTALL_DIR="$1/world-a"
+    BACKUP_FORGEJO_DATA_PATH="$1/forgejo/data"
+    CANDIDATES=()
+    log() { :; }
+    die() { exit 1; }
+    systemctl() {
+      if [[ "$*" == *LoadState* ]]; then printf "%s\n" "$load_state"; else printf "%s/world-b\n" "$HOST_DIR"; fi
+    }
+    source "$2/linux-server/backup/sources.sh"
+    resolve_sources
+    printf "%s\n" "${CANDIDATES[@]}"
+  ' bash "$tmp/main-drift" "$REPO" "$1"
+}
+mkdir -p "$tmp/main-drift/world-a/RSDragonwilds/Saved/SaveGames"
+if main_server_resolve loaded >/dev/null 2>&1; then
+  fail "main-server backup accepted a path drift from a loaded dragonwilds.service"
+fi
+main_out="$(main_server_resolve not-found 2>&1)" || fail "main-server backup failed without dragonwilds.service: $main_out"
+grep -q "world-a/RSDragonwilds/Saved/SaveGames" <<<"$main_out" \
+  || fail "main-server backup dropped the old Dragonwilds saves: $main_out"
 
 # A changed root-owned helper must fail its pinned-hash check before Python runs.
 bundle="$tmp/root-bundle"
