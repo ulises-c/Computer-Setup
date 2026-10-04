@@ -84,6 +84,7 @@ class RelayTests(unittest.TestCase):
     def test_default_webhook_catches_unknown_prefix(self):
         self.assertEqual(relay.webhook_for("other-x", {"default": "D"}), "D")
         self.assertIsNone(relay.webhook_for("other-x", {"server": "S"}))
+        self.assertEqual(relay.webhook_for("nas-backup", {"nas": "N", "default": "D"}), "N")
 
     def test_stale_messages_are_skipped_after_an_outage(self):
         sent = []

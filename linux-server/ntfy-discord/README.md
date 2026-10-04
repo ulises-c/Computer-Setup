@@ -10,6 +10,7 @@ touching any server's scripts.
 | `server-*`   | `DISCORD_WEBHOOK_SERVER` | main server           |
 | `game-*`     | `DISCORD_WEBHOOK_GAME`   | game server           |
 | `pi-*`       | `DISCORD_WEBHOOK_PI`     | Raspberry Pi          |
+| `nas-*`      | `DISCORD_WEBHOOK_NAS`    | NAS                   |
 | other        | `DISCORD_WEBHOOK_DEFAULT`| dropped when unset    |
 
 Messages arrive as embeds: the ntfy title, the message body, a colour from the

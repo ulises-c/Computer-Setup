@@ -2,7 +2,7 @@
 """Forward every ntfy message to a Discord webhook chosen by topic prefix.
 
 server-* topics go to DISCORD_WEBHOOK_SERVER, game-* to DISCORD_WEBHOOK_GAME,
-pi-* to DISCORD_WEBHOOK_PI; anything else to DISCORD_WEBHOOK_DEFAULT if set.
+pi-* to DISCORD_WEBHOOK_PI, nas-* to DISCORD_WEBHOOK_NAS; anything else to DISCORD_WEBHOOK_DEFAULT if set.
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-ROUTE_PREFIXES = ("server", "game", "pi")
+ROUTE_PREFIXES = ("server", "game", "pi", "nas")
 TOPIC_RE = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
 MESSAGE_ID_RE = re.compile(r"[A-Za-z0-9]{1,64}\Z")
 WEBHOOK_RE = re.compile(r"https://(?:discord|discordapp)\.com/api/webhooks/[0-9]+/[A-Za-z0-9_-]+\Z")
