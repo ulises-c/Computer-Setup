@@ -23,7 +23,7 @@ cat >"$tmp/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$STUB_DOCKER_LOG"
 case "$1" in
-  ps) printf 'aaa\nbbb\nccc\nddd\n' ;;
+  ps) printf 'aaa\nbbb\nccc\nddd\neee\n' ;;
   inspect)
     cat <<'JSON'
 [
@@ -40,9 +40,10 @@ case "$1" in
   {"Name": "/uptime-kuma-ts", "Config": {"Env": ["TS_STATE_DIR=/var/lib/tailscale"], "Labels": {
     "com.docker.compose.project": "uptime-kuma",
     "com.docker.compose.project.working_dir": "/srv/uptime-kuma",
-    "com.docker.compose.project.config_files": "/srv/uptime-kuma/docker-compose.yml",
+    "com.docker.compose.project.config_files": "/srv/uptime-kuma/docker-compose.yml,/srv/uptime-kuma/override.yml",
     "com.docker.compose.service": "uptime-kuma-ts"}}},
-  {"Name": "/manual", "Config": {"Env": ["TZ=UTC"], "Labels": null}}
+  {"Name": "/manual", "Config": {"Env": ["TZ=UTC"], "Labels": null}},
+  {"Name": "/plain", "Config": {"Env": ["PATH=/bin"], "Labels": {}}}
 ]
 JSON
     ;;
@@ -87,14 +88,16 @@ out="$(STUB_TZ=Europe/Berlin bash "$SCRIPT" --dry-run)"
 [[ "$out" == "[dry-run] write $TIMEZONE_ENV: TZ=Europe/Berlin" ]] || fail "dry-run output: $out"
 [[ "$(<"$TIMEZONE_ENV")" == "TZ=America/Los_Angeles" ]] || fail "dry-run wrote the file"
 
-# --- --apply --dry-run: only stale compose services, grouped per project -----
+# --- --apply --dry-run: stale or TZ-less compose services, grouped per project
 : >"$STUB_DOCKER_LOG"
 out="$(STUB_TZ=Europe/Berlin bash "$SCRIPT" --apply --dry-run)"
-expected='[dry-run] docker compose -p uptime-kuma --project-directory /srv/uptime-kuma -f /srv/uptime-kuma/docker-compose.yml -f /srv/uptime-kuma/override.yml up -d --no-deps uptime-kuma'
-grep -qxF -- "$expected" <<<"$out" || fail "missing compose up for stale service: $out"
-[[ "$(grep -c '^\[dry-run\] docker compose' <<<"$out")" -eq 1 ]] || fail "recreated more than the stale service: $out"
-grep -q '^skip manual:' <<<"$out" || fail "non-compose container not reported: $out"
-grep -q '1 service(s) recreated in 1 project(s), 1 container(s) already on Europe/Berlin, 1 skipped' <<<"$out" \
+expected='[dry-run] docker compose -p uptime-kuma --project-directory /srv/uptime-kuma -f /srv/uptime-kuma/docker-compose.yml -f /srv/uptime-kuma/override.yml up -d --no-deps uptime-kuma uptime-kuma-ts'
+grep -qxF -- "$expected" <<<"$out" || fail "missing compose up for stale and TZ-less services: $out"
+[[ "$(grep -c '^\[dry-run\] docker compose' <<<"$out")" -eq 1 ]] || fail "recreated more than the stale project: $out"
+grep -qxF 'stale uptime-kuma-ts (uptime-kuma/uptime-kuma-ts): TZ=(unset)' <<<"$out" || fail "TZ-less compose container not stale: $out"
+grep -q '^skip manual: TZ=UTC ' <<<"$out" || fail "non-compose container not reported: $out"
+grep -q '^skip plain: TZ=(unset) ' <<<"$out" || fail "TZ-less non-compose container not reported: $out"
+grep -q '2 service(s) recreated in 1 project(s), 1 container(s) already on Europe/Berlin, 2 skipped' <<<"$out" \
   || fail "summary: $out"
 grep -q '^compose' "$STUB_DOCKER_LOG" && fail "dry-run ran docker compose"
 
@@ -102,7 +105,7 @@ grep -q '^compose' "$STUB_DOCKER_LOG" && fail "dry-run ran docker compose"
 : >"$STUB_DOCKER_LOG"
 STUB_TZ=Europe/Berlin bash "$SCRIPT" --apply >/dev/null
 [[ "$(<"$TIMEZONE_ENV")" == "TZ=Europe/Berlin" ]] || fail "--apply did not write the zone"
-grep -qxF 'compose -p uptime-kuma --project-directory /srv/uptime-kuma -f /srv/uptime-kuma/docker-compose.yml -f /srv/uptime-kuma/override.yml up -d --no-deps uptime-kuma' \
+grep -qxF 'compose -p uptime-kuma --project-directory /srv/uptime-kuma -f /srv/uptime-kuma/docker-compose.yml -f /srv/uptime-kuma/override.yml up -d --no-deps uptime-kuma uptime-kuma-ts' \
   "$STUB_DOCKER_LOG" || fail "--apply did not recreate the stale service: $(<"$STUB_DOCKER_LOG")"
 
 # --- --apply without docker fails --------------------------------------------

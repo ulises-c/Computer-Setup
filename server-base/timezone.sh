@@ -2,7 +2,7 @@
 # Writes the host's time zone to server-base/timezone.env, which every
 # time-aware container loads as env_file. Run after changing the host zone with
 # timedatectl; --apply then recreates the running compose services whose TZ is
-# stale.
+# stale or unset.
 # Usage: bash server-base/timezone.sh [--apply] [--dry-run]
 set -euo pipefail
 
@@ -83,14 +83,13 @@ if [[ -n "$ids" ]]; then
   containers="$(docker inspect $ids | jq -r '
     .[]
     | (.Config.Labels // {}) as $l
-    | ([.Config.Env[]? | select(startswith("TZ=")) | .[3:]] | last) as $tz
-    | select($tz != null)
+    | ([.Config.Env[]? | select(startswith("TZ=")) | .[3:]] | last // "") as $tz
     | [.Name[1:], $tz,
        ($l["com.docker.compose.project"] // ""),
        ($l["com.docker.compose.project.working_dir"] // ""),
        ($l["com.docker.compose.project.config_files"] // ""),
        ($l["com.docker.compose.service"] // "")]
-    | @tsv' | sort -t $'\t' -k3,3 -k6,6)"
+    | join("\u001f")' | sort -t $'\x1f' -k3,3 -k6,6)"
 fi
 
 run_compose() {
@@ -127,14 +126,14 @@ flush() {
   services=()
 }
 
-while IFS=$'\t' read -r name tz c_project c_workdir c_files c_service; do
+while IFS=$'\x1f' read -r name tz c_project c_workdir c_files c_service; do
   [[ -n "$name" ]] || continue
   if [[ "$tz" == "$ZONE" ]]; then
     current=$((current + 1))
     continue
   fi
   if [[ -z "$c_project" || -z "$c_workdir" || -z "$c_files" || -z "$c_service" ]]; then
-    printf 'skip %s: TZ=%s but not a compose service; recreate it by hand\n' "$name" "$tz"
+    printf 'skip %s: TZ=%s but not a compose service; recreate it by hand\n' "$name" "${tz:-(unset)}"
     skipped=$((skipped + 1))
     continue
   fi
@@ -145,7 +144,7 @@ while IFS=$'\t' read -r name tz c_project c_workdir c_files c_service; do
   if (( ${#services[@]} == 0 )) || [[ "${services[${#services[@]}-1]}" != "$c_service" ]]; then
     services+=("$c_service")
   fi
-  printf 'stale %s (%s/%s): TZ=%s\n' "$name" "$c_project" "$c_service" "$tz"
+  printf 'stale %s (%s/%s): TZ=%s\n' "$name" "$c_project" "$c_service" "${tz:-(unset)}"
 done <<< "$containers"
 flush
 
