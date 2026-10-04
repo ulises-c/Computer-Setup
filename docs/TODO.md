@@ -13,10 +13,9 @@ unified-layout design rationale is in [UNIFICATION.md](UNIFICATION.md).
 - [x] Nightly off-host backups cover this host's `Saved/Config`,
       `Saved/SaveGames`, private deployment `.env`, and a verified live world
       copy through `linux-game-server/backup/`.
-- [ ] Load a restored world in the game. Restoring the verified world copy from
-      the game server's restic repository was tested; starting the server on a
-      restored save was not. Automatic restarts are already on, behind a pre-update
-      backup gate that was verified live.
+- [x] Restore drill (`linux-game-server/backup/restore-drill.sh`): a fresh snapshot
+      of the stopped world restored byte-identical and the game loaded it
+      (`World load SUCCEEDED`, 2026-10-03)
 
 ## Live-run cleanup & follow-ups (unification / dotfiles)
 
@@ -300,8 +299,7 @@ Dragonwilds server, migrated off the NAS host.
 - [x] **Backups.** `linux-game-server/backup/` uses the shared restic engine and
       is deployed to the NAS SFTP target; the nightly service has completed a
       successful run. A tested restore remains open below.
-- [ ] **Backup restore.** Verify a restored world loads in the game (see the
-      Dragonwilds follow-up above; automatic restarts are already on).
+- [x] **Backup restore.** Restored world loaded in the game (restore drill)
 - [x] `AUTO_UPDATE_RESTART=true` and ntfy (`game-dragonwilds` topic) configured in
       `linux-game-server/dragonwilds/.env`, after a live check of the pre-update
       backup gate

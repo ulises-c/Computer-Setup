@@ -160,4 +160,5 @@ runs `restic check`, restores the host's latest snapshot into a root-only scratc
 dir, and verifies the file count, staged SQLite snapshots (`integrity_check`) and
 staged copies with a `.sha256` sidecar. The game server also has
 `linux-game-server/backup/restore-drill.sh`, which loads a restored world in the
-game (see its README).
+game (see its README). Rerun them after any change to the backup engine or a
+host's `sources.sh`.

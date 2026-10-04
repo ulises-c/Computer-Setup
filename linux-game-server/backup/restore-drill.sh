@@ -19,6 +19,13 @@ readonly LOAD_TIMEOUT_SECONDS=600
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 log() { printf '[drill] %s\n' "$*"; }
+# grep -c reads the whole stream: grep -q would exit on the first match, SIGPIPE
+# journalctl, and under pipefail the match would read as a failure.
+world_loaded_since() {
+  local count
+  count="$(journalctl -u "$GAME_UNIT" --since "$1" --no-pager -o cat | grep -c 'World load SUCCEEDED' || true)"
+  (( count > 0 ))
+}
 
 allow_players=false
 for arg in "$@"; do
@@ -106,13 +113,13 @@ since="$(date '+%Y-%m-%d %H:%M:%S')"
 log "starting $GAME_UNIT (its pre-update backup gate runs first)"
 systemctl start "$GAME_UNIT"
 deadline=$((SECONDS + LOAD_TIMEOUT_SECONDS))
-until journalctl -u "$GAME_UNIT" --since "$since" --no-pager -o cat | grep -q 'World load SUCCEEDED'; do
+until world_loaded_since "$since"; do
   (( SECONDS < deadline )) || die "no 'World load SUCCEEDED' within ${LOAD_TIMEOUT_SECONDS}s"
   state="$(systemctl show "$GAME_UNIT" -p ActiveState --value)"
   [[ "$state" == active || "$state" == activating ]] || die "$GAME_UNIT is $state while loading"
   sleep 5
 done
-journalctl -u "$GAME_UNIT" --since "$since" --no-pager -o cat | grep 'World load SUCCEEDED' | tail -1
+log "game reported: World load SUCCEEDED"
 
 systemctl start "$UPDATE_TIMER"
 rm -rf "$scratch"

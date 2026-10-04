@@ -344,7 +344,8 @@ scratch dir, checks it is byte-identical to the live saves and config, swaps the
 restored `SaveGames` in and waits for `World load SUCCEEDED`. The original
 `SaveGames` is kept beside the live one; any failure puts it back and restarts
 the game. `server-base/backup/restore-check.sh linux-game-server` verifies a
-restore without stopping anything.
+restore without stopping anything. Rerun both after any change to the backup
+engine, `backup/sources.sh`, the pre-update gate or the save layout.
 
 ## RGB status on Homepage
 

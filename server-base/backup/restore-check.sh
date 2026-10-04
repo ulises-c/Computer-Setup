@@ -52,9 +52,9 @@ snapshot="$(jq -r '.[-1].short_id // empty' <<<"$snapshot_json")"
 [[ -n "$snapshot" ]] || die "no snapshot for host $host"
 log "snapshot $snapshot from $(jq -r '.[-1].time' <<<"$snapshot_json" | cut -c1-19)"
 
-stats="$(restic stats "$snapshot" --mode restore-size --json)"
-want_files="$(jq -r '.total_file_count' <<<"$stats")"
-want_bytes="$(jq -r '.total_size' <<<"$stats")"
+want_bytes="$(restic stats "$snapshot" --mode restore-size --json | jq -r '.total_size')"
+# restore-size's total_file_count also counts directories; compare regular files only.
+want_files="$(restic ls "$snapshot" --json | jq -s '[.[] | select(.type == "file")] | length')"
 
 scratch_parent=/root
 free_kb="$(df -Pk "$scratch_parent" | awk 'NR==2 {print $4}')"
