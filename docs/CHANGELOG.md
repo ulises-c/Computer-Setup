@@ -57,6 +57,11 @@ in [UNIFICATION.md](UNIFICATION.md).
   (`server-*`, `game-*`, `pi-*`, `nas-*`, optional default). It resumes from the
   last relayed id, skips messages older than 24h, honours rate limits and
   disables mentions.
+- Restore tests: `server-base/backup/restore-check.sh` restores a host's latest
+  snapshot to a root-only scratch dir and verifies it (repository check, file
+  count, SQLite integrity, sha256 sidecars) without touching live data;
+  `linux-game-server/backup/restore-drill.sh` restores the stopped world, checks
+  it is byte-identical and has the game load it. Both passed on every host.
 
 ### Changed
 - Homepage is pinned to v2.4.0 on every host (the main server and Pi used `:latest`,
