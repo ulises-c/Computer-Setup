@@ -398,8 +398,9 @@ docker compose up -d --force-recreate
 docker logs adguardhome-sync 2>&1 | grep -i replica
 ```
 
-Finally, in the router's DHCP settings add `<game-lan-ip>` as the third DNS
-server, after the main server and the Pi, and renew a client lease.
+The router only forwards to two DNS servers (main server, Pi), so this replica
+is not in the clients' path: it is the main server backup's `DNS_PEERS` peer and
+a drop-in replacement in the router if the Pi is down.
 
 If the LAN address changes, update `LAN_IP` in `.env` and the `bind_hosts` and
 `http.address` entries in the root-owned `conf/AdGuardHome.yaml` (or

@@ -254,9 +254,11 @@ kept the primary AdGuard from recovering.
 - [x] **DHCP is not single-homed on the server.** The router does DHCP (AdGuard's
       DHCP is disabled everywhere) and hands out the resolvers, so a server outage
       does not stop leases.
-- [ ] **Router: add the game server as the third DNS server** (`<game-lan-ip>`,
-      after the main server and the Pi) in its DHCP settings —
-      `linux-game-server/README.md#adguard-replica`.
+- [ ] **Router DNS has two slots.** The router hands clients itself as DNS and
+      forwards to two upstreams (main server, Pi), so the game-server replica
+      is not in the client path; it serves as a `DNS_PEERS` backup peer and a
+      drop-in if the Pi is down. To use all replicas, list them as tailnet DNS
+      nameservers or move DHCP to a server that can hand out three.
 - [ ] **AdGuard replica on the NAS once deployed** — extend
       `server-base/adguard-replica` and add it as the next `REPLICA<n>` in the
       Pi's syncer.

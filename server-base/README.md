@@ -61,9 +61,10 @@ first sync.
 | Pi | `linux-pi/adguard` | `:80`, tailnet via `adguard-pi-ts` | all interfaces |
 | game server | `linux-game-server/adguard` (`setup.sh`) | `<game-lan-ip>:3053`, LAN only | LAN address only, beside systemd-resolved's stub |
 
-The router does DHCP and hands out the resolvers in order (main server, Pi, game
-server). Most clients fail over down that list after a timeout rather than
-racing them, so a replica mainly carries load while the primary is down.
+The router does DHCP and hands clients itself as DNS, forwarding to two
+upstreams (main server, Pi); it has no third slot, so further replicas serve as
+backup peers (`DNS_PEERS`) and drop-in replacements rather than in the client
+path.
 
 ## Time zone
 
