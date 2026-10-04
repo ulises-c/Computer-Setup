@@ -80,6 +80,8 @@ linux-game-server/dragonwilds/status/
 linux-game-server/homepage/config/logs/
 linux-game-server/homepage/config/kubernetes.yaml
 linux-game-server/homepage/config/proxmox.yaml
+linux-game-server/adguard/work/
+linux-game-server/adguard/conf/
 
 # Homepage artwork fetched at deploy time (server-base/homepage/fetch-assets.sh)
 linux-*/homepage/assets/
