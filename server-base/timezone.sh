@@ -111,40 +111,47 @@ recreate() {
   for file in $config_files; do
     args+=(-f "$file")
   done
-  run_compose "${args[@]}" up -d --no-deps "$@"
+  # Every running service of the project, without --no-deps: recreating a
+  # Tailscale sidecar alone leaves apps on network_mode: service:<sidecar>
+  # attached to the old container's dead network namespace.
+  run_compose "${args[@]}" up -d "$@"
 }
 
 current=0 skipped=0 projects=0 recreated=0
 project="" workdir="" config_files=""
 services=()
+project_stale=false
 flush() {
-  if (( ${#services[@]} > 0 )); then
+  if [[ "$project_stale" == true ]] && (( ${#services[@]} > 0 )); then
     recreate "$project" "$workdir" "$config_files" "${services[@]}"
     projects=$((projects + 1))
     recreated=$((recreated + ${#services[@]}))
   fi
   services=()
+  project_stale=false
 }
 
 while IFS=$'\x1f' read -r name tz c_project c_workdir c_files c_service; do
   [[ -n "$name" ]] || continue
+  is_compose=true
+  [[ -n "$c_project" && -n "$c_workdir" && -n "$c_files" && -n "$c_service" ]] || is_compose=false
   if [[ "$tz" == "$ZONE" ]]; then
     current=$((current + 1))
-    continue
-  fi
-  if [[ -z "$c_project" || -z "$c_workdir" || -z "$c_files" || -z "$c_service" ]]; then
+  elif [[ "$is_compose" == false ]]; then
     printf 'skip %s: TZ=%s but not a compose service; recreate it by hand\n' "$name" "${tz:-(unset)}"
     skipped=$((skipped + 1))
-    continue
+  else
+    printf 'stale %s (%s/%s): TZ=%s\n' "$name" "$c_project" "$c_service" "${tz:-(unset)}"
   fi
+  [[ "$is_compose" == true ]] || continue
   if [[ "$c_project" != "$project" ]]; then
     flush
     project="$c_project" workdir="$c_workdir" config_files="$c_files"
   fi
+  [[ "$tz" == "$ZONE" ]] || project_stale=true
   if (( ${#services[@]} == 0 )) || [[ "${services[${#services[@]}-1]}" != "$c_service" ]]; then
     services+=("$c_service")
   fi
-  printf 'stale %s (%s/%s): TZ=%s\n' "$name" "$c_project" "$c_service" "${tz:-(unset)}"
 done <<< "$containers"
 flush
 
