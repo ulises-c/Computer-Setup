@@ -44,6 +44,19 @@ in [UNIFICATION.md](UNIFICATION.md).
   runtime files from redirecting privileged backup work. The standalone installer
   now uses the same gate for existing worlds, and the copied world helper is
   hash-pinned in the rendered backup unit.
+- Dragonwilds player history: a root timer parses join/leave events from the
+  game journal into `/var/lib/dragonwilds/player-log` (aggregate per identity,
+  90-day event retention, no raw messages or join codes), in bounded pages so a
+  backlog drains over a few runs. Summary and state share a commit generation,
+  so a rollback of either file fails closed. The directory is in both hosts'
+  backup sources, and restic reads it under a shared lock the parser takes
+  exclusively; a parser run that cannot get the lock in 20s skips cleanly. A
+  failed run sends one ntfy alert per 6 hours (`OnFailure`).
+- `linux-server/ntfy-discord/`: a stdlib relay that subscribes to every ntfy
+  topic and posts each message as a Discord embed, routed by topic prefix
+  (`server-*`, `game-*`, `pi-*`, `nas-*`, optional default). It resumes from the
+  last relayed id, skips messages older than 24h, honours rate limits and
+  disables mentions.
 
 ### Changed
 - Homepage is pinned to v2.4.0 on every host (the main server and Pi used `:latest`,
@@ -51,6 +64,17 @@ in [UNIFICATION.md](UNIFICATION.md).
 - Backups on the main server and Pi now share the Pi's hardened failure handling:
   one alert from `OnFailure`, and a failed second copy marks the run "second copy
   incomplete" instead of failing it.
+- Every server's nightly backup runs at 03:00 host local time (was 03:30, 03:45
+  and 04:15); Watchtower updates images at 02:30 host local time (was 03:00 UTC).
+- The Dragonwilds update check asks Steam every 15 minutes (was every 2 hours),
+  and the auto-updater logs local time with the zone name.
+- The main server keeps backing up the old Dragonwilds saves left on its disk; the
+  install-path cross-check applies only while that host runs `dragonwilds.service`.
+
+### Fixed
+- The shared backup lock check rejected the always-empty lock file (`stat %F`
+  reports `regular empty file`), which failed the pre-update backup gate and so
+  blocked game starts.
 
 ## 2026-10-02 — RuneScape: Dragonwilds session configuration
 

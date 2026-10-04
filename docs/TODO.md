@@ -13,8 +13,10 @@ unified-layout design rationale is in [UNIFICATION.md](UNIFICATION.md).
 - [x] Nightly off-host backups cover this host's `Saved/Config`,
       `Saved/SaveGames`, private deployment `.env`, and a verified live world
       copy through `linux-game-server/backup/`.
-- [ ] Test a restore from the game server's restic repository before enabling
-      automatic restarts.
+- [ ] Load a restored world in the game. Restoring the verified world copy from
+      the game server's restic repository was tested; starting the server on a
+      restored save was not. Automatic restarts are already on, behind a pre-update
+      backup gate that was verified live.
 
 ## Live-run cleanup & follow-ups (unification / dotfiles)
 
@@ -298,10 +300,11 @@ Dragonwilds server, migrated off the NAS host.
 - [x] **Backups.** `linux-game-server/backup/` uses the shared restic engine and
       is deployed to the NAS SFTP target; the nightly service has completed a
       successful run. A tested restore remains open below.
-- [ ] **Backup restore.** Restore a game snapshot and verify the world loads
-      before enabling automatic restarts.
-- [ ] After a verified restore, set `AUTO_UPDATE_RESTART=true` and configure
-      ntfy in `linux-game-server/dragonwilds/.env`
+- [ ] **Backup restore.** Verify a restored world loads in the game (see the
+      Dragonwilds follow-up above; automatic restarts are already on).
+- [x] `AUTO_UPDATE_RESTART=true` and ntfy (`game-dragonwilds` topic) configured in
+      `linux-game-server/dragonwilds/.env`, after a live check of the pre-update
+      backup gate
 - [ ] Reserve the game host's LAN address in the router's DHCP table so the
       Direct-connect address and the Homepage card stay stable
 - [ ] Independent review of `feat/linux-game-server`, then open the PR
@@ -319,23 +322,24 @@ still separate from the unified Ubuntu Server profile.
       engine, without a fifth root platform
 - [ ] Run `linux-pi/setup.sh` and `serve.sh` on the Pi and record the result
       (untested on hardware: Debian release, arm64 installers, Cockpit on the node)
-- [ ] Re-render the Pi backup units (`sudo bash linux-pi/backup/setup.sh`) and
-      confirm a nightly run with the shared engine
+- [x] Re-render the Pi backup units (`sudo bash linux-pi/backup/setup.sh`)
+- [ ] Confirm the first nightly Pi run on the re-rendered units (03:00); until it
+      runs, the Pi's Homepage backups card shows an API error because the status
+      file moved to `/var/lib/computer-setup-backup/pi-backup/`
 
 ## Server base (`server-base/`)
 
 Shared layer for every server; see [server-base/README.md](../server-base/README.md).
 
-- [ ] Deploy on the main server: `git pull`, `python3 server-base/homepage/generate.py --check`,
-      `bash server-base/homepage/fetch-assets.sh linux-server`, then
-      `docker compose up -d` in `homepage`, `glances`, `portainer`, `watchtower`
-      (recreates them from the base; config is otherwise identical) and revalidate Homepage
-- [ ] Main server: `sudo bash linux-server/backup/setup.sh` to re-render the failure
-      unit with `EnvironmentFile`, then check one nightly run on the shared engine
-- [ ] Game server: recreate Homepage with the assets mounts (`sudo docker compose up -d`
-      in `homepage/`) so the Dragonwilds icon and artwork load
-- [ ] Add `HOMEPAGE_VAR_MAIN_GLANCES_URL` to the game server and Pi Homepage `.env`
-      files (and the Pi's `HOMEPAGE_VAR_PI_NODE_DOMAIN` + Shared services domains)
+- [x] Deployed on the main server: `generate.py --check` passes, assets fetched, and
+      `homepage`, `glances`, `portainer`, `watchtower` run from the base compose files
+- [x] Main server backup units re-rendered; a run on the shared engine succeeded
+- [x] Game server Homepage runs with the assets mounts
+- [x] `HOMEPAGE_VAR_MAIN_GLANCES_URL` set on the game server and Pi, and
+      `HOMEPAGE_VAR_PI_NODE_DOMAIN` on the Pi
+- [ ] Independent review of the commits after `eb73735` (player-log alert, Discord
+      relay, schedules, backup lock and main-server Dragonwilds fixes, host time zone
+      and `timezone.sh --apply`)
 - [ ] Once #86 lands on the main server and Pi: point `MAIN_GLANCES_URL` /
       `PI_HOMEPAGE_DOMAIN` at the host nodes and give the Pi's Servers card a
       `glances_url` in `fleet.json`
