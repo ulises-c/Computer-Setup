@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 # Restore drill for the game server: proves the latest restic snapshot restores
 # byte-identical saves and that the game loads them. It stops the empty server,
@@ -18,6 +18,7 @@ readonly BACKUP_UNIT=game-backup.service
 readonly LOAD_TIMEOUT_SECONDS=600
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+trap 'printf "error: restore-drill stopped at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
 log() { printf '[drill] %s\n' "$*"; }
 # grep -c reads the whole stream: grep -q would exit on the first match, SIGPIPE
 # journalctl, and under pipefail the match would read as a failure.

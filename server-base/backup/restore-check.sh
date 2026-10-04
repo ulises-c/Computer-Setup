@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 # Restore check: restores a host's latest snapshot into a root-only scratch dir
 # and verifies it without touching live data. Checks the repository structure,
@@ -12,6 +12,7 @@ set -euo pipefail
 #   --keep      leave the restored tree in place for inspection
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+trap 'printf "error: restore-check stopped at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
 log() { printf '[restore-check] %s\n' "$*"; }
 
 host_dir="" second=false keep=false
@@ -74,7 +75,7 @@ while IFS= read -r -d '' db; do
     log "sqlite3 not installed; skipping $(basename "$db")"
     continue
   fi
-  result="$(sqlite3 "file:$db?mode=ro" 'PRAGMA integrity_check;' 2>&1 | head -1)"
+  result="$(sqlite3 "file:$db?mode=ro" 'PRAGMA integrity_check;' 2>&1 | head -1)" || true
   [[ "$result" == ok ]] || die "integrity_check failed for ${db#"$scratch"}: $result"
   checked=$((checked + 1))
 done < <(find "$scratch" -path '*-staging/sqlite/*' -type f -print0)
