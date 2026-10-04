@@ -6,6 +6,9 @@ services:
     image: portainer/portainer-ce:latest
     container_name: portainer
     restart: unless-stopped
+    env_file:
+      - path: ../timezone.env
+        required: true
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data

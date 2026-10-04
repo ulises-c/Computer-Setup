@@ -7,6 +7,9 @@ services:
     image: nginx:alpine
     container_name: pi-backup-status
     restart: unless-stopped
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     ports:
       - "127.0.0.1:8099:80"
     volumes:

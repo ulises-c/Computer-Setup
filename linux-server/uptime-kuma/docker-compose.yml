@@ -5,6 +5,9 @@ services:
     image: tailscale/tailscale:latest
     container_name: uptime-kuma-ts
     hostname: uptime-kuma
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
       - TS_STATE_DIR=/var/lib/tailscale

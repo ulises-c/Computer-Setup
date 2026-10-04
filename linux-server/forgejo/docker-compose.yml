@@ -5,6 +5,9 @@ services:
     image: tailscale/tailscale:latest
     container_name: forgejo-ts
     hostname: forgejo
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
       - TS_STATE_DIR=/var/lib/tailscale
@@ -58,6 +61,9 @@ services:
     image: nginx:alpine
     container_name: forgejo-runner-status
     restart: unless-stopped
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     ports:
       - "127.0.0.1:8098:80"
     volumes:

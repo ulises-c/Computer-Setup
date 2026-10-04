@@ -9,6 +9,9 @@ services:
     container_name: adguardhome
     network_mode: host
     restart: unless-stopped
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     volumes:
       - ./work:/opt/adguardhome/work
       - ./conf:/opt/adguardhome/conf
@@ -22,6 +25,9 @@ services:
     image: tailscale/tailscale:latest
     container_name: adguard-pi-ts
     hostname: adguard-pi
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
       - TS_STATE_DIR=/var/lib/tailscale
