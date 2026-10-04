@@ -310,8 +310,8 @@ elif [[ -n "$BACKUP_SHARED_LOCK_PATH" ]]; then
   lock_fd_target="$(readlink -- "/proc/$$/fd/$BACKUP_SHARED_LOCK_FD")" || die "cannot inspect shared backup lock"
   [[ "$lock_fd_target" == "$BACKUP_SHARED_LOCK_PATH" ]] \
     || die "shared backup lock redirected to: $lock_fd_target"
-  lock_fd_info="$(stat -Lc '%u:%a:%F' -- "/proc/$$/fd/$BACKUP_SHARED_LOCK_FD")" || die "cannot stat shared backup lock"
-  [[ "$lock_fd_info" == '0:600:regular file' ]] \
+  lock_fd_info="$(stat -Lc '%u:%a' -- "/proc/$$/fd/$BACKUP_SHARED_LOCK_FD")" || die "cannot stat shared backup lock"
+  [[ -f "/proc/$$/fd/$BACKUP_SHARED_LOCK_FD" && "$lock_fd_info" == '0:600' ]] \
     || die "shared backup lock ownership or mode is unsafe: $lock_fd_info"
   flock -s "$BACKUP_SHARED_LOCK_FD" || die "could not acquire shared backup lock"
 fi
