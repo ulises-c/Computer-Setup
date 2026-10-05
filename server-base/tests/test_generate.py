@@ -121,6 +121,30 @@ class GenerateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "OpenRGB card"):
             generate.render_settings(fleet, "linux-game-server", "")
 
+    def test_grouped_storage_contract_and_host_capabilities_are_explicit(self):
+        import copy
+        fleet = copy.deepcopy(FLEET)
+        for host in fleet['hosts']:
+            top = fleet['hosts'][host]['topbar']
+            top.update(grouped=True, safeSSDHealth=False, filesystemIntervalMs=600000,
+                       smartIntervalMs=900000, wifi=host == 'linux-pi',
+                       gpu=host != 'linux-pi', diskLabels={'/etc/hostname': 'System SSD'},
+                       temperatureLabels=['NVMe'])
+            text = generate.render_settings(fleet, host, '')
+            for expected in ['safeSSDHealth: false', 'filesystemIntervalMs: 600000', 'smartIntervalMs: 900000',
+                             'diskLabels:', 'temperatureLabels:', 'wifi:', 'gpu:']:
+                self.assertIn(expected, text, host)
+            css = generate.render_css(fleet, host)
+            self.assertIn('@media (scripting:enabled)', css)
+            self.assertIn('Host metrics loading', css)
+            self.assertIn('monitor-native-fallback', css)
+            self.assertIn('data:image/svg+xml,', css)
+
+
+
+
+
+
     def test_emitted_strings_are_quoted(self):
         lines = generate.emit([{"g": [{"svc": {"description": "NAS: storage", "n": 4, "b": True}}]}])
         self.assertIn('        description: "NAS: storage"', lines)

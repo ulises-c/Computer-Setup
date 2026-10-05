@@ -15,6 +15,9 @@ topbarExtras:
   label: "game server"
   disks:
     - "/etc/hostname"
+  safeSSDHealth: false
+  filesystemIntervalMs: 300000
+  smartIntervalMs: 600000
   gpuTypes:
     nvidia0: "dGPU"
 

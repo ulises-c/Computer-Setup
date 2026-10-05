@@ -52,12 +52,12 @@ test('runtime uses one extras timer, no sensor/native polling, and preserves nat
   const control=api().start(root,{glances:'https://example.test/glances',net:'eth0',disks:[]});
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(timers.length,1);assert.equal(timers[0][1],5000);
-  assert.deepEqual(calls.map(c=>new URL(c[0]).pathname).sort(),['/glances/api/4/gpu','/glances/api/4/network','/glances/api/4/smart','/glances/api/4/wifi']);
+  assert.deepEqual(calls.map(c=>new URL(c[0]).pathname).sort(),['/glances/api/4/gpu','/glances/api/4/network','/glances/api/4/wifi']);
   assert.ok(calls.every(c=>c[1].credentials==='omit'));
   const actual=await root.fetch('/api/widgets/glances?index=0');
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(actual,response);assert.deepEqual(control.samples.native.data,native);
-  root.document.hidden=true;await timers[0][0]();assert.equal(calls.length,5);
+  root.document.hidden=true;await timers[0][0]();assert.equal(calls.length,4);
   control.stop();
 });
 test('compact compute folds CPU temperature into CPU, and host clock into uptime', () => {

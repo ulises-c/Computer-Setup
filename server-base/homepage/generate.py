@@ -12,6 +12,9 @@ homepage/services.local.yaml and homepage/settings.local.yaml.
 """
 import json
 import sys
+from html import escape
+from math import ceil
+from urllib.parse import quote
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -131,8 +134,14 @@ def render_settings(fleet, host_dir, local_text):
     if host.get("topbar", {}).get("grouped"):
         extras.update({"grouped": True, "label": host["topbar"]["label"],
                        "disks": host["topbar"]["disks"]})
-    if host.get("topbar", {}).get("grouped") and host["topbar"].get("gpuTypes"):
-        extras["gpuTypes"] = host["topbar"]["gpuTypes"]
+    if host.get("topbar", {}).get("grouped"):
+        top = host["topbar"]
+        extras.update({"safeSSDHealth": top.get("safeSSDHealth", False),
+                       "filesystemIntervalMs": max(300000, top.get("filesystemIntervalMs", 300000)),
+                       "smartIntervalMs": max(600000, top.get("smartIntervalMs", 600000))})
+        for key in ["gpuTypes", "gpuFields", "gpu", "wifi", "diskLabels", "temperatureLabels", "hddDisks"]:
+            if key in top:
+                extras[key] = top[key]
     base["topbarExtras"] = extras
     head = "\n".join(emit(base)) + "\n\nlayout:\n"
     servers = "  Servers:\n    style: row\n    columns: 3\n"
@@ -168,10 +177,106 @@ def render_js(fleet, host_dir):
     return template
 
 
+def loading_css(top):
+    """CSS-first, no-HTTP shell that has the same geometry as the live panel.
+
+    Homepage loads custom.js after hydration. Hide its known native slot only
+    when scripting is enabled, and reserve the grouped footprint in CSS (an SVG
+    data URI whose text is decorative; a pseudo-element carries the accessible
+    "loading" text). If the enhancement script never arrives, fail open to the
+    native widget after 12 seconds. Tile heights come from each host's row
+    counts, so the shell and live tiles share one set of custom properties.
+    """
+    health = top.get("safeSSDHealth", False) is True
+    state = "Loading"
+    compute = [("CPU", ["Usage", "Load · 15m", "Temp", "Warn"], state), ("RAM", ["Used", "Free", "Total"], state)]
+    gpus = [(kind, top.get("gpuFields", {}).get(device,
+                                              ["Usage", "Temp", "VRAM" if kind == "dGPU" else "Memory", "Memory used", "Fan"]), state)
+            for device, kind in top.get("gpuTypes", {}).items()]
+    storage = []
+    for label in top.get("temperatureLabels", []):
+        rows = ["Temp", "Warn"] + (["Health", "Wear"] if health and label == "NVMe" else [])
+        storage.append((label if label == "NVMe" else f"{label} temperature", rows, state))
+    if health and "NVMe" not in top.get("temperatureLabels", []):
+        storage.append(("NVMe health", ["Health", "Wear"], state))
+    hdd = set(top.get("hddDisks", []))
+    storage += [(top.get("diskLabels", {}).get(mount, "System disk" if mount == "/etc/hostname" else mount),
+                 ["Used", "Free", "Total"], "Not monitored · HDD" if mount in hdd else state) for mount in top["disks"]]
+    connectivity = [(top["net"], ["Upload", "Download"], state)] if top.get("net") else []
+    if top.get("wifi"):
+        connectivity.append(("Wi-Fi", ["Signal", "Link"], state))
+    system = [("Host", ["Uptime", "Clock"], state)]
+    groups = [("Compute", compute + gpus), ("Storage", storage), ("Connectivity", connectivity), ("System", system)]
+
+    # Fixed row heights (px): h3 22 + detail 18 (GPU 44) + 18 per row + meter 8 + state 32 (storage 46).
+    def tallest(tiles):
+        return max((len(rows) for _, rows, _ in tiles), default=0)
+    heights = {"compute": 80 + 18 * tallest(compute), "storage": 94 + 18 * tallest(storage),
+               "net": 80 + 18 * tallest(connectivity), "system": 80 + 18 * tallest(system)}
+    if gpus:
+        heights["gpu"] = 106 + 18 * tallest(gpus)
+    tile_h = [[heights["compute"] if i < 2 else heights["gpu"] for i in range(len(compute + gpus))],
+              [heights["storage"]] * len(storage), [heights["net"]] * len(connectivity), [heights["system"]] * len(system)]
+
+    def group_height(hs, cols):
+        rows = [hs[i:i + cols] for i in range(0, len(hs), cols)]
+        return 46 + sum(max(r) for r in rows) + 10 * (len(rows) - 1) if rows else 46
+
+    storage_cols = 3 if len(storage) > 4 else 2
+    body = '<div class="monitor-groups">'
+    for title, tiles in groups:
+        body += f'<section class="monitor-group"><h2>{escape(title)}</h2><div class="monitor-tiles">'
+        for label, rows, tile_state in tiles:
+            body += f'<article class="monitor-tile"><h3>{escape(label)}</h3><p class="monitor-detail"></p><dl>'
+            body += ''.join(f'<div><dt>{escape(row)}</dt><dd>—</dd></div>' for row in rows)
+            body += f'</dl><div class="monitor-meter"></div><p class="monitor-state">{escape(tile_state)}</p></article>'
+        body += '</div></section>'
+    body += '</div>'
+    vars_ = "".join(f" --monitor-h-{key}: {value}px;" for key, value in heights.items())
+    vars_ += f" --monitor-storage-cols: {storage_cols}; --monitor-storage-fr: {'1.8fr' if storage_cols == 3 else '1.2fr'};"
+    css = f"#information-widgets {{{vars_} }}\n"
+    for width, columns, media, header in [
+            (1368, [3, storage_cols, 1, 1], "", 44),
+            (768, [3, 2, 2, 2], "@media (max-width:1050px)", 44),
+            (350, [2, 2, 2, 2], "@media (max-width:600px)", 76)]:
+        sizes = [group_height(hs, cols) for hs, cols in zip(tile_h, columns)]
+        height = header + 48 + (max(sizes) if width > 1050 else max(sizes[:2]) + max(sizes[2:]) if width > 600 else sum(sizes))
+        # Grid borders occupy 1px on subsequent mobile/tablet rows.
+        height += 0 if width > 1050 else 1 if width > 600 else 3
+        style = (HERE / "grouped-topbar.css").read_text()
+        style += f' *{{box-sizing:border-box}} .host-monitor{{font-family:Arial,sans-serif;{vars_.replace(" --", "--")}}}'
+        # Media queries inside an SVG use its own viewport.
+        html = (f'<div xmlns="http://www.w3.org/1999/xhtml" class="host-monitor"><style>{escape(style)}</style>'
+                f'<header class="monitor-header"><span class="monitor-host">{escape(top["label"])}</span>'
+                '<span class="monitor-cadence">Waiting for metrics</span></header>'
+                '<p class="monitor-notice"></p>' + body + '</div>')
+        svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}"><foreignObject width="100%" height="100%">{html}</foreignObject></svg>'
+        rule = f'''#information-widgets:not(.host-monitor-ready)::before {{
+  content: "Host metrics loading…"; display: block; box-sizing: border-box;
+  height: {height}px; padding: {header + 16}px 14px 0; color: #fde68a;
+  font-size: 11px; line-height: 14px;
+  background: url("data:image/svg+xml,{quote(svg, safe='')}") 0 0 / 100% 100% no-repeat;
+  animation: monitor-shell-fallback 0s 12s forwards;
+}}'''
+        css += f"@media (scripting:enabled) {{ {media + ' {' if media else ''}\n{rule}\n{'}' if media else ''} }}\n"
+    css += '''@media (scripting:enabled) {
+  #information-widgets:not(.host-monitor-ready) { display:block; padding:0; border:0; }
+  #information-widgets:not(.host-monitor-ready) #widgets-wrap,
+  #information-widgets:not(.host-monitor-ready) .information-widget-datetime {
+    visibility:hidden; position:absolute; animation:monitor-native-fallback 0s 12s forwards;
+  }
+}
+@keyframes monitor-shell-fallback { to { display:none; } }
+@keyframes monitor-native-fallback { to { visibility:visible; position:static; } }
+'''
+    return css
+
+
 def render_css(fleet, host_dir):
     css = (HERE / "custom.css").read_text()
     if fleet["hosts"][host_dir]["topbar"].get("grouped"):
         css += "\n" + (HERE / "grouped-topbar.css").read_text()
+        css += "\n" + loading_css(fleet["hosts"][host_dir]["topbar"])
     return css
 
 

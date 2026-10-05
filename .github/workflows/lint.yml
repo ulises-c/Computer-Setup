@@ -81,7 +81,7 @@ jobs:
         run: |
           node --check server-base/homepage/grouped-topbar.js
           node --check linux-game-server/homepage/config/custom.js
-          node --test linux-game-server/tests/test_grouped_topbar.cjs
+          node --test linux-game-server/tests/test_grouped_topbar.cjs linux-game-server/tests/test_grouped_loading.cjs
 
   dryrun-smoke:
     runs-on: ubuntu-latest
