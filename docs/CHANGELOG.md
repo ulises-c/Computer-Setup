@@ -98,6 +98,13 @@ in [UNIFICATION.md](UNIFICATION.md).
   RAM, GPU (model, type, VRAM used and total), labelled disks, NVMe health and
   wear, network and uptime, with stale and error states. The main server and Pi
   keep the previous bar.
+- Grouped top bar loading polish: generated CSS skeleton at first paint (no native
+  widget flash, same tile geometry, dashes and "Loading", no request), stable heights
+  per host, honest fallbacks (no JS, blocked script, silent or malformed native
+  payload), per-host `topbar` config (`hddDisks`, `safeSSDHealth`, cadence floors of
+  5 min filesystem and 10 min health, GPU/Wi-Fi/disk labels) and storage ages from the
+  collector instead of the HTTP response. Main and Pi output is unchanged until each
+  opts in.
 - Glances reports GPU memory in bytes on NVML hosts (`GLANCES_GPU_MEMORY`) and
   discovers only NVMe controllers for SMART (sysfs, cached 60 seconds), so
   spinning disks are never enumerated or woken for health data.

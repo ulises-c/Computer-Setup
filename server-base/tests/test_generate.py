@@ -140,10 +140,79 @@ class GenerateTests(unittest.TestCase):
             self.assertIn('monitor-native-fallback', css)
             self.assertIn('data:image/svg+xml,', css)
 
+    def test_hdds_are_declared_per_host_and_never_polled_or_displayed(self):
+        import copy
+        fleet = copy.deepcopy(FLEET)
+        main = fleet['hosts']['linux-server']['topbar']
+        self.assertEqual(sorted(main['hddDisks']), ['/mnt/seagate4tb', '/mnt/wd14tb', '/mnt/wd1tb'])
+        self.assertTrue(set(main['hddDisks']) <= set(main['disks']))
+        main['grouped'] = True
+        settings = generate.render_settings(fleet, 'linux-server', '')
+        for mount in main['hddDisks']:
+            self.assertIn(f'- \"{mount}\"', settings.split('hddDisks:')[1])
+        css = generate.render_css(fleet, 'linux-server')
+        self.assertEqual(css.count('Not monitored'), 0)  # skeleton is URL-encoded inside the SVG data URI
+        from urllib.parse import quote
+        self.assertGreaterEqual(css.count(quote('Not monitored · HDD', safe='')), 3)
+        self.assertNotIn('storageMetadataUrl', settings)
+        for host in ('linux-pi', 'linux-game-server'):
+            self.assertNotIn('hddDisks', fleet['hosts'][host]['topbar'])
 
+    def test_ssd_health_requests_are_opt_in_per_host(self):
+        # Game keeps its existing NVMe health (backend is NVMe-only and cached);
+        # main stays off until the parent verifies it, Pi has no NVMe at all.
+        hosts = FLEET['hosts']
+        self.assertTrue(hosts['linux-game-server']['topbar']['safeSSDHealth'])
+        self.assertFalse(hosts['linux-server']['topbar']['safeSSDHealth'])
+        self.assertFalse(hosts['linux-pi']['topbar']['safeSSDHealth'])
+        self.assertNotIn('temperatureLabels', hosts['linux-pi']['topbar'])
+        for host in hosts.values():
+            self.assertGreaterEqual(host['topbar']['filesystemIntervalMs'], 300000)
+            self.assertGreaterEqual(host['topbar']['smartIntervalMs'], 600000)
 
+    def test_tile_heights_follow_each_hosts_row_counts_and_match_live_css(self):
+        import copy, re
+        fleet = copy.deepcopy(FLEET)
+        fleet['hosts']['linux-game-server']['topbar']['grouped'] = True
+        css = generate.render_css(fleet, 'linux-game-server')
+        root = re.search(r'#information-widgets \{([^}]*--monitor-h-[^}]*)\}', css).group(1)
+        # dGPU: 5 rows; NVMe+health: 4 rows; CPU: 4 rows. 106 + 18n, 94 + 18n, 80 + 18n.
+        self.assertIn('--monitor-h-gpu: 196px', root)
+        self.assertIn('--monitor-h-storage: 166px', root)
+        self.assertIn('--monitor-h-compute: 152px', root)
+        live = (generate.HERE / 'grouped-topbar.css').read_text()
+        for var in ('compute', 'gpu', 'storage', 'net', 'system'):
+            self.assertIn(f'var(--monitor-h-{var}', live)
+        # An iGPU with only a Usage row is not given a dGPU-sized tile.
+        main = copy.deepcopy(FLEET)
+        main['hosts']['linux-server']['topbar']['grouped'] = True
+        def root_vars(css):
+            return re.search(r'#information-widgets \{([^}]*--monitor-h-[^}]*)\}', css).group(1)
+        self.assertIn('--monitor-h-gpu: 124px', root_vars(generate.render_css(main, 'linux-server')))
+        # Hosts with no GPU declare no GPU height at all (Pi).
+        pi = copy.deepcopy(FLEET)
+        pi['hosts']['linux-pi']['topbar']['grouped'] = True
+        self.assertNotIn('--monitor-h-gpu', root_vars(generate.render_css(pi, 'linux-pi')))
 
+    def test_skeleton_reserves_health_rows_only_when_the_host_opts_in(self):
+        import copy
+        from urllib.parse import quote
+        fleet = copy.deepcopy(FLEET)
+        for host in ('linux-game-server', 'linux-server'):
+            fleet['hosts'][host]['topbar']['grouped'] = True
+        game = generate.render_css(fleet, 'linux-game-server')
+        main = generate.render_css(fleet, 'linux-server')
+        self.assertIn(quote('<dt>Health</dt>', safe=''), game)
+        self.assertNotIn(quote('<dt>Health</dt>', safe=''), main)
 
+    def test_storage_columns_scale_with_many_disks_to_keep_main_topbar_short(self):
+        import copy
+        fleet = copy.deepcopy(FLEET)
+        fleet['hosts']['linux-server']['topbar']['grouped'] = True
+        css = generate.render_css(fleet, 'linux-server')
+        self.assertIn('--monitor-storage-cols: 3', css)
+        fleet['hosts']['linux-game-server']['topbar']['grouped'] = True
+        self.assertIn('--monitor-storage-cols: 2', generate.render_css(fleet, 'linux-game-server'))
 
     def test_emitted_strings_are_quoted(self):
         lines = generate.emit([{"g": [{"svc": {"description": "NAS: storage", "n": 4, "b": True}}]}])
