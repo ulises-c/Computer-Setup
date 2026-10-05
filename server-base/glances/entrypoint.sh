@@ -43,7 +43,8 @@ for section in ("fs", "sensors"):
         text += f"[{section}]\n" + "\n".join(lines) + "\n"
 config.write_text(text, encoding="utf-8")
 rename_disks.patch()
-# Fail closed: install NVMe-only discovery before any Glances plugin updates.
+# Fail closed before any plugin construction/update (including sensors startup):
+# no broad SMART discovery, no HDD/unknown statvfs, slow backend storage caches.
 telemetry.install(gpu=os.environ.get("GLANCES_GPU_MEMORY", "false") == "true")
 
 from glances import main

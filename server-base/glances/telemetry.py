@@ -7,28 +7,243 @@ import re
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from copy import deepcopy
+from threading import RLock
 
 
-def nvme_provider(device, root=Path('/sys/class/nvme'), clock=time.monotonic):
-    cached, deadline = [], None
+class SampleCache:
+    """Cache successes, empty results and errors; requests cannot bypass the TTL."""
+    def __init__(self, interval, clock=time.monotonic, wall=time.time, copy_data=deepcopy):
+        self.interval, self.clock, self.wall = interval, clock, wall
+        self.copy_data = copy_data
+        self.data, self.deadline = [], None
+        self.collected_at = self.collected_mono = self.attempted_at = None
+        self.status, self.collection_count = 'never', 0
+        self.lock = RLock()
+
+    def get(self, collect):
+        with self.lock:
+            now = self.clock()
+            if self.deadline is None or now >= self.deadline:
+                self.deadline = now + self.interval
+                self.attempted_at = self.wall()
+                self.collection_count += 1
+                try:
+                    self.data = collect()
+                except Exception:
+                    # Keep the last real sample and its timestamp, never a fake zero.
+                    self.status = 'error'
+                else:
+                    self.collected_at, self.collected_mono = self.wall(), self.clock()
+                    self.status = 'ok' if self.data else 'empty'
+                self.deadline = self.clock() + self.interval
+            return self.copy_data(self.data)
+
+    def metadata(self):
+        with self.lock:
+            age = None if self.collected_mono is None else max(0, self.clock() - self.collected_mono)
+            return dict(interval_seconds=self.interval, collected_at=self.collected_at,
+                        collection_age_seconds=age, attempted_at=self.attempted_at,
+                        status=self.status, collection_count=self.collection_count)
+
+
+def nvme_provider(device, root=Path('/sys/class/nvme'), clock=time.monotonic,
+                  interval=600, wall=time.time, enabled=True):
+    # pySMART's deepcopy/pickle hooks convert typed NVMe attributes to dicts.
+    cache = SampleCache(max(600, interval), clock, wall, copy_data=list)
+
+    def collect():
+        devices = []
+        if not enabled:
+            return devices
+        for entry in sorted(root.glob('nvme*')):
+            if not re.fullmatch(r'nvme\d+', entry.name):
+                continue
+            try:
+                devices.append(device('/dev/' + entry.name, interface='nvme'))
+            except Exception:
+                # Never retry through ATA/SAT, nor manufacture a healthy sample.
+                continue
+        return devices
 
     def get_devices():
-        nonlocal cached, deadline
-        now = clock()
-        if deadline is None or now >= deadline:
-            cached = []
-            deadline = now + 60
-            for entry in sorted(root.glob('nvme*')):
-                if not re.fullmatch(r'nvme\d+', entry.name):
+        return SimpleNamespace(devices=cache.get(collect))
+
+    get_devices.cache = cache
+    return get_devices
+
+
+def solid_state_backing(node, seen=None):
+    """Fail closed using sysfs only, including every mapper/RAID slave."""
+    seen = set() if seen is None else set(seen)
+    try:
+        node = node.resolve(strict=True)
+        if node in seen:
+            return False
+        seen.add(node)
+        if (node / 'partition').exists():
+            return solid_state_backing(node.parent, seen)
+        slaves = list((node / 'slaves').iterdir()) if (node / 'slaves').is_dir() else []
+        if slaves:
+            return all(solid_state_backing(slave, seen) for slave in slaves)
+        if node.name.startswith(('dm-', 'md', 'loop', 'ram', 'zram')):
+            return False
+        return (node / 'device').exists() and (node / 'queue/rotational').read_text().strip() == '0'
+    except OSError:
+        return False
+
+
+def mount_records(path):
+    """Decode proc mountinfo, never walk or stat mounted trees."""
+    def unescape(value):
+        return re.sub(r'\\([0-7]{3})', lambda match: chr(int(match[1], 8)), value)
+    for line in path.read_text().splitlines():
+        parts = line.split()
+        try:
+            separator = parts.index('-')
+            yield dict(devno=parts[2], mnt_point=unescape(parts[4]), options=parts[5],
+                       fs_type=parts[separator + 1], device_name=unescape(parts[separator + 2]))
+        except (ValueError, IndexError):
+            continue
+
+
+def filesystem_rows(cache):
+    with cache.lock:
+        metadata = cache.metadata()
+        return [dict(row, collected_at=metadata['collected_at'],
+                     collection_age_seconds=metadata['collection_age_seconds'],
+                     collection_interval_seconds=cache.interval,
+                     collection_status=metadata['status']) for row in deepcopy(cache.data)]
+
+
+def filesystem_provider(usage, block_root=Path('/sys/dev/block'),
+                        mountinfo=Path('/proc/self/mountinfo'), clock=time.monotonic,
+                        interval=300, wall=time.time):
+    cache = SampleCache(max(300, interval), clock, wall)
+
+    def get_filesystems(plugin):
+        def collect():
+            rows = []
+            for record in mount_records(mountinfo):
+                # Even a slow statvfs can cause pathname I/O on a sleeping HDD.
+                # Never call it there; also omit unknown and network backing.
+                if record['fs_type'] not in ('ext4', 'xfs'):
+                    continue
+                if not solid_state_backing(block_root / record['devno']):
+                    continue
+                if not plugin.is_display_any(record['mnt_point'], record['device_name']):
+                    continue
+                current = usage(record['mnt_point'])
+                row = {key: value for key, value in record.items() if key != 'devno'}
+                row.update(size=current.total, used=current.used, free=current.free,
+                           percent=current.percent, key=plugin.get_key(),
+                           storage_class='solid_state', collection_source='cached_statvfs')
+                alias = plugin.has_alias(record['mnt_point'])
+                if alias is not None:
+                    row['alias'] = alias
+                rows.append(row)
+            return rows
+        cache.get(collect)
+        return filesystem_rows(cache)
+
+    get_filesystems.cache = cache
+    return get_filesystems
+
+
+def temperature_provider(health, hwmon=Path('/sys/class/hwmon')):
+    """Known CPU/board chips only; NVMe temperature uses an existing SMART sample."""
+    def get_temperatures():
+        result = {}
+        for node in sorted(hwmon.glob('hwmon*')):
+            try:
+                chip = (node / 'name').read_text().strip()
+                # Filter BEFORE opening temp*_input. Unknown chips are omitted.
+                if not re.fullmatch(r'coretemp|k[0-9]+temp|cpu_thermal|soc_thermal|acpitz|pch_[a-z0-9_]+|nct[0-9]+|it[0-9]+', chip):
+                    continue
+                if '/nvme/' in str(node.resolve()) or '/block/' in str(node.resolve()):
+                    continue
+            except OSError:
+                continue
+            temperatures = []
+            for input_path in sorted(node.glob('temp[0-9]*_input')):
+                base = input_path.name.removesuffix('_input')
+                def value(suffix):
+                    try:
+                        return float((node / (base + suffix)).read_text().strip()) / 1000
+                    except (OSError, ValueError):
+                        return None
+                current = value('_input')
+                if current is None:
                     continue
                 try:
-                    cached.append(device('/dev/' + entry.name, interface='nvme'))
-                except Exception:
-                    # No fabricated healthy sample on permission/driver errors.
-                    continue
-        return SimpleNamespace(devices=cached)
+                    label = (node / (base + '_label')).read_text().strip()
+                except OSError:
+                    label = ''
+                temperatures.append(SimpleNamespace(label=label, current=current,
+                                                    high=value('_max'), critical=value('_crit')))
+            if temperatures:
+                result[chip] = temperatures
+        with health.cache.lock:
+            nvme = []
+            for index, device in enumerate(health.cache.data):
+                temperature = getattr(device, 'temperature', None)
+                if isinstance(temperature, (int, float)):
+                    nvme.append(SimpleNamespace(label='Composite' if index == 0 else 'NVMe ' + device.name,
+                                                current=temperature, high=None, critical=None))
+            if nvme:
+                result['nvme'] = nvme
+        return result
+    return get_temperatures
 
-    return get_devices
+
+class StoragePolicy:
+    """Read-only collection metadata; snapshot never collects FS or SMART."""
+    def __init__(self, filesystems, health, blocks=Path('/sys/class/block'),
+                 clock=time.monotonic, wall=time.time, health_enabled=True):
+        self.filesystems, self.health, self.blocks = filesystems, health, blocks
+        self.health_enabled = health_enabled
+        self.diskio_interval = 60
+        self.temperatures = temperature_provider(health)
+        self.inventory = SampleCache(3600, clock, wall)
+
+    def _inventory(self):
+        rows = []
+        for entry in sorted(self.blocks.iterdir()):
+            try:
+                if (entry / 'partition').exists() or not (entry / 'device').exists():
+                    continue
+                rotational = (entry / 'queue/rotational').read_text().strip()
+                path = str(entry.resolve())
+                transport = ('usb' if '/usb' in path else 'nvme' if entry.name.startswith('nvme')
+                             else 'mmc' if entry.name.startswith('mmcblk') else 'ata' if '/ata' in path else 'unknown')
+                storage_class = ('hdd' if rotational == '1' else 'nvme_ssd' if rotational == '0' and transport == 'nvme'
+                                 else 'flash' if rotational == '0' and transport == 'mmc' else 'ssd' if rotational == '0' else 'unknown')
+                rows.append(dict(name=entry.name, rotational=rotational == '1' if rotational in ('0', '1') else None,
+                                 storage_class=storage_class, transport=transport,
+                                 capacity_bytes=int((entry / 'size').read_text().strip()) * 512,
+                                 health='nvme_only' if storage_class == 'nvme_ssd' and self.health_enabled else 'disabled',
+                                 filesystem_usage='cached' if solid_state_backing(entry) else 'disabled'))
+            except (OSError, ValueError):
+                continue
+        return rows
+
+    def snapshot(self):
+        inventory = self.inventory.get(self._inventory)
+        health_meta = self.health.cache.metadata()
+        # Do not add nonnumeric metadata to SMART rows: Glances' SMART renderer
+        # interprets every key other than DeviceName as an attribute number.
+        with self.health.cache.lock:
+            devices = [dict(DeviceName=f'{dev.name} {dev.model}',
+                            collected_at=health_meta['collected_at'],
+                            collection_age_seconds=health_meta['collection_age_seconds'])
+                       for dev in self.health.cache.data]
+        return dict(version=1, hdd_health_enabled=False, non_nvme_health_enabled=False,
+                    filesystem_hdd_enabled=False, filesystem_unknown_enabled=False,
+                    diskio_source='proc_diskstats', diskio_interval_seconds=self.diskio_interval,
+                    hdd_temperature_enabled=False, nvme_temperature_source='nvme_smart_cache',
+                    fs=dict(self.filesystems.cache.metadata(), scope='proven_solid_state_ext4_xfs'),
+                    smart=dict(health_meta, enabled=self.health_enabled, scope='nvme_only', devices=devices),
+                    inventory=dict(self.inventory.metadata(), source='sysfs_only', devices=inventory))
 
 
 def gpu_memory(stats, handles, get_memory):
@@ -42,18 +257,99 @@ def gpu_memory(stats, handles, get_memory):
     return stats
 
 
-def install(gpu=False):
+def install(gpu=False, policy=None):
+    """Install before Glances creates ANY plugin, not just before API requests."""
+    import os
     import glances.plugins.smart as smart
-    try:
-        from pySMART import Device
-    except ImportError:
-        # Missing dependency already disables the upstream plugin. Still replace
-        # its broad discovery binding, so it cannot become a scan accidentally.
+    if not getattr(smart, '_storage_policy', None):
+        # Replace broad discovery immediately, even if a later interface check
+        # fails (the launcher aborts rather than starting an unsafe collector).
         smart.DeviceList = lambda: SimpleNamespace(devices=[])
-    else:
-        if not getattr(smart, '_nvme_only', False):
-            smart.DeviceList = nvme_provider(Device)
-            smart._nvme_only = True
+        import glances.plugins.fs as fs
+        from glances.stats import GlancesStats
+        from glances.plugins.plugin.model import GlancesPluginModel
+        try:
+            import pySMART
+            device = pySMART.Device
+        except ImportError:
+            device = None
+        if policy is None:
+            def interval(name, minimum):
+                value = int(os.environ.get(name, str(minimum)))
+                return max(minimum, value)
+            enabled = os.environ.get('GLANCES_NVME_HEALTH_ENABLED', 'true') == 'true' and device is not None
+            health = nvme_provider(device, interval=interval('GLANCES_NVME_HEALTH_INTERVAL', 600), enabled=enabled)
+            filesystems = filesystem_provider(fs.psutil.disk_usage,
+                                              interval=interval('GLANCES_FS_INTERVAL', 300))
+            policy = StoragePolicy(filesystems, health, health_enabled=enabled)
+            policy.diskio_interval = interval('GLANCES_DISKIO_INTERVAL', 60)
+        smart.DeviceList = policy.health
+        if device is not None:
+            # Future imports from pySMART cannot restore broad discovery either.
+            pySMART.DeviceList = policy.health
+        # Bypass the unsafe upstream enumerator/statvfs path entirely. The cache
+        # protects direct updates, /all, /fs and repeated updates independently
+        # of both Glances' timers and the browser's HTTP cadence.
+        fs.FsPlugin.update_local = lambda plugin: policy.filesystems(plugin)
+        fs.FsPlugin.get_raw = lambda plugin: filesystem_rows(policy.filesystems.cache)
+        import glances.plugins.sensors as sensors
+        from glances.plugins.sensors.sensor.glances_hddtemp import GlancesGrabHDDTemp
+        # HDDtemp does not honor --disable-hddtemp in every internal path.
+        GlancesGrabHDDTemp.get = lambda grabber: []
+        GlancesGrabHDDTemp.fetch = lambda grabber: ''
+        grabber = sensors.GlancesGrabSensors
+        original_fetch = grabber._GlancesGrabSensors__fetch_data
+        original_update = grabber.update
+
+        def fetch_sensor_data(sensor):
+            if sensor.sensor_type == 'temperature_core':
+                return policy.temperatures()
+            return original_fetch(sensor)
+
+        def update_sensor(sensor):
+            rows = original_update(sensor)
+            metadata = policy.health.cache.metadata()
+            for row in rows:
+                if row['label'] == 'Composite' or row['label'].startswith('NVMe '):
+                    row.update(collected_at=metadata['collected_at'],
+                               collection_age_seconds=metadata['collection_age_seconds'],
+                               collection_interval_seconds=metadata['interval_seconds'],
+                               collection_source='nvme_smart_cache')
+            return rows
+
+        grabber._GlancesGrabSensors__fetch_data = fetch_sensor_data
+        grabber.update = update_sensor
+
+        class StoragepolicyPlugin(GlancesPluginModel):
+            def __init__(self, args=None, config=None):
+                super().__init__(args=args, config=config, stats_init_value={}, fields_description={})
+                self.display_curse = False
+
+            def update(self):
+                self.stats = policy.snapshot()
+                return self.stats
+
+            def get_raw(self):
+                return policy.snapshot()
+
+        StoragepolicyPlugin.__module__ = 'glances.plugins.storagepolicy'
+        original_load = GlancesStats.load_plugins
+
+        def load_plugins(stats, args=None):
+            original_load(stats, args=args)
+            stats._plugins['storagepolicy'] = StoragepolicyPlugin(args=args, config=stats.config)
+            if args is not None:
+                args.disable_storagepolicy = False
+            # Per-plugin cadence too; HTTP API requests remain cheap cache reads.
+            stats._plugins['fs'].set_refresh(policy.filesystems.cache.interval)
+            stats._plugins['smart'].set_refresh(policy.health.cache.interval)
+            if 'diskio' in stats._plugins:
+                stats._plugins['diskio'].set_refresh(max(60, policy.diskio_interval))
+            if args is not None:
+                args.disable_hddtemp = True
+
+        GlancesStats.load_plugins = load_plugins
+        smart._storage_policy = policy
     if gpu:
         import glances.plugins.gpu.cards.nvidia as nvidia
         if not getattr(nvidia, '_memory_bytes', False) and hasattr(nvidia, 'pynvml'):

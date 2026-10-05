@@ -26,7 +26,10 @@ class TelemetryTests(unittest.TestCase):
             self.assertEqual([d.name for d in provider().devices], ['/dev/nvme0','/dev/nvme1'])
             provider()
             self.assertEqual(len(calls), 2)
-            now[0] = 61
+            now[0] = 600
+            provider()
+            self.assertEqual(len(calls), 2, 'NVMe health must not be recollected before 600s')
+            now[0] = 601
             provider()
             self.assertEqual(calls, [('/dev/nvme0','nvme'),('/dev/nvme1','nvme')] * 2)
 
@@ -56,8 +59,38 @@ class TelemetryTests(unittest.TestCase):
         nvidia.NvidiaGPU = NvidiaGPU
         nvidia.pynvml = SimpleNamespace(nvmlDeviceGetMemoryInfo=lambda h: SimpleNamespace(used=2,total=8))
         pysmart = types.ModuleType('pySMART')
-        pysmart.Device = lambda *a, **k: SimpleNamespace()
+        pysmart.Device = lambda *a, **k: SimpleNamespace(name='nvme0', model='fixture')
+        fs = types.ModuleType('glances.plugins.fs')
+        fs.psutil = SimpleNamespace(disk_usage=lambda *a: None)
+        class FsPlugin:
+            def update_local(self):
+                self.fail('uncached filesystem collector invoked')
+            def get_raw(self):
+                return []
+        fs.FsPlugin = FsPlugin
+        stats = types.ModuleType('glances.stats')
+        class GlancesStats:
+            def load_plugins(self, args=None):
+                pass
+        stats.GlancesStats = GlancesStats
+        model = types.ModuleType('glances.plugins.plugin.model')
+        model.GlancesPluginModel = type('GlancesPluginModel', (), {})
+        sensors = types.ModuleType('glances.plugins.sensors')
+        class GlancesGrabSensors:
+            def _GlancesGrabSensors__fetch_data(self):
+                return {}
+            def update(self):
+                return []
+        sensors.GlancesGrabSensors = GlancesGrabSensors
+        hddtemp = types.ModuleType('glances.plugins.sensors.sensor.glances_hddtemp')
+        hddtemp.GlancesGrabHDDTemp = type('GlancesGrabHDDTemp', (), {})
         modules = {'glances':types.ModuleType('glances'), 'glances.plugins':types.ModuleType('glances.plugins'),
+                   'glances.plugins.sensors':sensors,
+                   'glances.plugins.sensors.sensor':types.ModuleType('glances.plugins.sensors.sensor'),
+                   'glances.plugins.sensors.sensor.glances_hddtemp':hddtemp,
+                   'glances.plugins.fs':fs, 'glances.stats':stats,
+                   'glances.plugins.plugin':types.ModuleType('glances.plugins.plugin'),
+                   'glances.plugins.plugin.model':model,
                    'glances.plugins.smart':smart, 'glances.plugins.gpu':types.ModuleType('glances.plugins.gpu'),
                    'glances.plugins.gpu.cards':types.ModuleType('glances.plugins.gpu.cards'),
                    'glances.plugins.gpu.cards.nvidia':nvidia, 'pySMART':pysmart}
