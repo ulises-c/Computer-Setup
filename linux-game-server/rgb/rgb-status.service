@@ -8,7 +8,13 @@ TimeoutStartSec=5min
 Nice=10
 # OpenRGB keeps its config under $HOME; give it a private state dir.
 Environment=HOME=/var/lib/rgb-status
+Environment=PYTHONDONTWRITEBYTECODE=1
+# The device-info cache (devices.json) lives in the state dir, so the 10-minute
+# run does not probe the hardware again.
 StateDirectory=rgb-status
+# Shared with rgb-off.service: list-devices and set-colour calls never overlap.
+RuntimeDirectory=rgb-lock
+RuntimeDirectoryPreserve=yes
 ProtectHome=yes
 ProtectSystem=strict
 ReadWritePaths=/var/lib/host-status
