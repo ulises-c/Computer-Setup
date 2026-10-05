@@ -15,10 +15,10 @@ const api = () => require(source);
 const native = {cpu:{total:12.3}, load:{min15:0.4}, mem:{total:32e9,available:28e9,percent:12.5}, fs:[{mnt_point:'/etc/hostname',alias:'system',free:450e9,size:500e9,used:25e9,percent:5}], sensors:[{type:'temperature_core',label:'CPU',value:33,warning:84},{type:'temperature_core',label:'NVMe',value:30,warning:74}],uptime:'4 days, 13:02:20'};
 const sample = (data) => ({data,at:1000,error:false});
 test('groups preserve real native and available extras, including zero GPU readings', () => {
-  const groups = api().model({native:sample(native),gpu:sample([{name:'GTX 1070',proc:0,temperature:37,fan_speed:0,mem:1.4}]),network:sample([{interface_name:'eth0',bytes_sent_rate_per_sec:200,bytes_recv_rate_per_sec:300}]),wifi:sample([]),smart:sample([]),rgb:sample({updated:1,devices:[{name:'Omen',mode:'Direct'}]})}, {net:'eth0',disks:['/etc/hostname']}, 1000, '10/5/26, 10:00');
+  const groups = api().model({native:sample(native),gpu:sample([{name:'GTX 1070',proc:0,temperature:37,fan_speed:0,mem:1.4}]),network:sample([{interface_name:'eth0',bytes_sent_rate_per_sec:200,bytes_recv_rate_per_sec:300}]),wifi:sample([]),smart:sample([])}, {net:'eth0',disks:['/etc/hostname']}, 1000, '10/5/26, 10:00');
   assert.deepEqual(groups.map(g=>g.title), ['Compute','Storage','Connectivity','System']);
   const text = JSON.stringify(groups);
-  for (const label of ['CPU','RAM','Temp','GPU','VRAM','Fan','System disk','NVMe','eth0','Upload','Download','Uptime','Clock','RGB','Direct','Warn']) assert.ok(text.includes(label),label);
+  for (const label of ['CPU','RAM','Temp','GPU','VRAM','Fan','System disk','NVMe','eth0','Upload','Download','Uptime','Clock','Warn']) assert.ok(text.includes(label),label);
   assert.ok(text.includes('0%'));
   assert.ok(text.includes('Used'));
   assert.ok(text.includes('Free'));
@@ -43,7 +43,7 @@ test('renderer escapes API text, clamps usage, and rejects credential-bearing li
   assert.ok(html.includes('Stale · last value'));
   assert.equal(api().publicUrl('https://user:password@example.test/glances','https://example.test'),null);
   assert.equal(api().publicUrl('javascript:alert(1)','https://example.test'),null);
-  assert.equal(api().publicUrl('/host-status/rgb.json','https://example.test'),'https://example.test/host-status/rgb.json');
+  assert.equal(api().publicUrl('/glances','https://example.test'),'https://example.test/glances');
 });
 test('runtime uses one extras timer, no sensor/native polling, and preserves native responses', async () => {
   const calls=[]; const timers=[]; const listeners={};
@@ -59,10 +59,6 @@ test('runtime uses one extras timer, no sensor/native polling, and preserves nat
   assert.equal(actual,response);assert.deepEqual(control.samples.native.data,native);
   root.document.hidden=true;await timers[0][0]();assert.equal(calls.length,5);
   control.stop();
-});
-test('RGB exporter age is not mistaken for a successful recent HTTP fetch', () => {
-  const groups=api().model({native:sample(native),rgb:{...sample({updated:1,devices:[{name:'Omen',mode:'Direct'}]}),at:1801001}},{},1801001,'');
-  assert.equal(groups[3].tiles.find(t=>t.label==='RGB').state,'Stale · last value');
 });
 test('compact compute folds CPU temperature into CPU, and host clock into uptime', () => {
   const groups=api().model({native:sample(native),gpu:sample([{proc:0}])},{},1000,'date');
@@ -109,26 +105,36 @@ test('GPU identifies configured dGPU/iGPU and reports byte gauges without derivi
   assert.ok(groups[0].tiles.find(t=>t.detail?.includes('Unclassified')).detail.includes('type unknown'));
 });
 
-test('RGB zone detection is not color or independent mode readback; old exporter is explicit', () => {
-  const groups=api().model({native:sample(native),rgb:sample({updated:1,devices:[
-    {name:'Omen',mode:'Static',zones:2,available_modes:['Direct','Static'],mode_source:'last-set / device-wide; not hardware readback',zone_details:[
-      {name:'Logo',status:'detected',color:null,readback:false},
-      {name:'Front Fan',status:'detected',color:null,readback:false}
-    ]}, {name:'Old',mode:'Direct',zones:7}
-  ]})},{},1000,'');
-  const rgb=groups[3].tiles.filter(t=>t.label==='RGB');
-  assert.ok(rgb[0].rows.some(r=>r[0]==='Logo' && r[1]==='Detected · color unknown'));
-  assert.ok(rgb[0].rows.some(r=>r[0]==='Modes' && r[1]==='Direct, Static'));
-  assert.ok(rgb[0].rows.some(r=>r[0]==='Mode scope' && r[1]==='Device-wide · not readback'));
-  assert.ok(rgb[1].rows.some(r=>r[0]==='Zones' && r[1]==='7 · names need exporter update'));
-  const html=api().markup(groups);
-  assert.ok(!html.includes('background:#'));
+test('top bar has no RGB tile and makes no RGB request, even if a stale sample or setting is supplied', async () => {
+  const groups=api().model({native:sample(native),rgb:sample({updated:1,devices:[{name:'Omen',mode:'Static'}]})},{rgb:'/host-status/rgb.json'},1000,'clock');
+  const text=JSON.stringify(groups);
+  assert.ok(!/rgb|Omen|Static/i.test(text), text);
+  const calls=[];
+  const root={location:{origin:'https://example.test'},document:{hidden:false,querySelector:()=>null,addEventListener:()=>{},removeEventListener:()=>{}},fetch:async(url)=>{calls.push(String(url));return {ok:true,json:async()=>[]};},setInterval:()=>1,clearInterval:()=>{},addEventListener:()=>{},AbortSignal};
+  const control=api().start(root,{glances:'https://example.test/glances',rgb:'/host-status/rgb.json'});
+  await new Promise(r=>setImmediate(r));
+  assert.ok(calls.length>0);
+  assert.ok(calls.every(url=>!/rgb|host-status/i.test(url)), calls.join());
+  assert.equal(control.samples.rgb,undefined);
+  control.stop();
 });
 
-test('RGB successful HTTP with exporter failure is unavailable, not healthy fresh status', async () => {
-  const root={location:{origin:'https://example.test'},document:{hidden:false,querySelector:()=>null,addEventListener:()=>{},removeEventListener:()=>{}},fetch:async()=>({ok:true,json:async()=>({updated:1,devices:[],error:'openrgb exited 1'})}),setInterval:()=>1,clearInterval:()=>{},addEventListener:()=>{},AbortSignal};
-  const control=api().start(root,{rgb:'/host-status/rgb.json'});
-  await new Promise(r=>setImmediate(r));
-  assert.equal(control.samples.rgb.error,true);
+test('System group is the host tile with uptime and clock, and the panel keeps the Open Glances link', async () => {
+  const groups=api().model({native:sample(native)},{},1000,'10/5/26, 10:00');
+  assert.equal(groups[3].title,'System');
+  assert.deepEqual(groups[3].tiles.map(t=>t.label),['Host']);
+  assert.deepEqual(groups[3].tiles[0].rows,[['Uptime','4 days, 13:02:20'],['Clock','10/5/26, 10:00']]);
+  const body={innerHTML:''};
+  const panel={className:'',innerHTML:'',setAttribute(){},querySelector:(sel)=>sel==='.monitor-body'?body:null};
+  const host={classList:{add(){}},panel:null,querySelector(sel){return sel===':scope > .host-monitor'?this.panel:null;},prepend(el){this.panel=el;}};
+  const document={hidden:true,querySelector:(sel)=>sel==='#information-widgets'?host:sel==='.information-widget-datetime'?{textContent:' 10/5/26, 10:00 '}:null,createElement:()=>panel,addEventListener(){},removeEventListener(){}};
+  const root={location:{origin:'https://example.test'},document,fetch:async()=>({ok:true,clone:()=>({json:async()=>native}),json:async()=>[]}),setInterval:()=>1,clearInterval:()=>{},addEventListener:()=>{},AbortSignal};
+  const control=api().start(root,{glances:'https://example.test/glances',label:'game server'});
+  await root.fetch('/api/widgets/glances?index=0');await new Promise(r=>setImmediate(r));
+  assert.match(panel.innerHTML,/href="https:\/\/example\.test\/glances"[^>]*>Open Glances/);
+  assert.ok(body.innerHTML.includes('System'));
+  assert.ok(body.innerHTML.includes('4 days, 13:02:20'));
+  assert.ok(body.innerHTML.includes('10/5/26, 10:00'));
+  assert.ok(!/rgb/i.test(panel.innerHTML+body.innerHTML));
   control.stop();
 });

@@ -98,19 +98,6 @@
       add(2,'Wi-Fi',[['Signal',`${w.quality_level} dBm`],['Link',pct(w.quality_link)]],'wifi');
     }
     add(3,'Host',[['Uptime',d.uptime || '—'],['Clock',clock || '—']], 'native',undefined,'Clock · browser local time');
-    for (const device of samples.rgb?.data?.devices || []) {
-      const rows = [['Mode',device.mode || '—'],['Mode scope','Device-wide · not readback']];
-      if (Array.isArray(device.available_modes) && device.available_modes.length) rows.push(['Modes',device.available_modes.join(', ')]);
-      if (Array.isArray(device.zone_details)) {
-        for (const zone of device.zone_details) rows.push([zone.name || 'Unnamed zone',zone.status === 'detected' ? 'Detected · color unknown' : 'Status unknown · color unknown']);
-      } else {
-        rows.push(['Zones',number(device.zones) ? `${device.zones} · names need exporter update` : 'Unknown · exporter update needed']);
-      }
-      add(3,'RGB',rows, 'rgb',undefined,`${device.name || ''} · last-set mode`);
-      const age = now / 1000 - samples.rgb.data.updated;
-      if (age > 1800 || !number(samples.rgb.data.updated)) groups[3].tiles.at(-1).state = 'Stale · last value';
-      else if (age < -300) groups[3].tiles.at(-1).state = 'Exporter clock skew';
-    }
     return groups;
   };
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -126,7 +113,6 @@
     const {document} = root;
     const originalFetch = root.fetch;
     const glances = publicUrl(config.glances, root.location.origin);
-    const rgb = publicUrl(config.rgb, root.location.origin);
     const samples = {};
     let busy = false, stopped = false, smartAttempt = 0, lastMarkup = '';
     const record = (key,data,error = false) => {
@@ -181,7 +167,7 @@
         const response = await originalFetch.call(root,url,{cache:'no-store',credentials:'omit',signal:root.AbortSignal.timeout(4000)});
         if (!response.ok) throw new Error('endpoint unavailable');
         const data = await response.json();
-        if (key === 'rgb' ? !Array.isArray(data?.devices) || !number(data.updated) || data.error : !Array.isArray(data)) throw new Error('invalid endpoint shape or exporter failure');
+        if (!Array.isArray(data)) throw new Error('invalid endpoint shape');
         if (!stopped) record(key,data);
       } catch { if (!stopped) record(key,null,true); }
     };
@@ -199,7 +185,6 @@
           }
         }
         // Sensors already arrive in the native response: no duplicate request.
-        if (rgb) jobs.push(get('rgb',rgb));
         await Promise.all(jobs);
       } finally { busy = false; if (!stopped) render(); }
     };

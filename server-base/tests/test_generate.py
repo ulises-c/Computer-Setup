@@ -102,6 +102,25 @@ class GenerateTests(unittest.TestCase):
                 self.assertIn(server['facts']['platform'], str(widgets))
                 self.assertIn(server['facts']['graphics'], str(widgets))
 
+    def test_game_host_top_bar_carries_no_rgb(self):
+        # Lighting lives on the OpenRGB card; the top bar has no RGB tile, chip or URL.
+        top = FLEET["hosts"]["linux-game-server"]["topbar"]
+        self.assertNotIn("rgb", top)
+        repo = ROOT.parent
+        settings = (repo / "linux-game-server/homepage/config/settings.yaml").read_text()
+        self.assertNotIn("rgb", settings.lower())
+        self.assertNotIn("host-status", settings)
+        self.assertIn("grouped: true", settings)
+        self.assertNotIn("rgb", (ROOT / "homepage/grouped-topbar.js").read_text().lower())
+        self.assertNotIn("rgb", (repo / "linux-game-server/homepage/config/custom.js").read_text().lower())
+
+    def test_top_bar_rgb_url_is_rejected_so_it_cannot_return_by_config(self):
+        import copy
+        fleet = copy.deepcopy(FLEET)
+        fleet["hosts"]["linux-game-server"]["topbar"]["rgb"] = "/host-status/rgb.json"
+        with self.assertRaisesRegex(ValueError, "OpenRGB card"):
+            generate.render_settings(fleet, "linux-game-server", "")
+
     def test_emitted_strings_are_quoted(self):
         lines = generate.emit([{"g": [{"svc": {"description": "NAS: storage", "n": 4, "b": True}}]}])
         self.assertIn('        description: "NAS: storage"', lines)

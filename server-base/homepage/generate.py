@@ -126,8 +126,8 @@ def render_settings(fleet, host_dir, local_text):
     extras = {"glances": own["glances_url"]}
     if host.get("topbar", {}).get("net"):
         extras["net"] = host["topbar"]["net"]
-    if host.get("topbar", {}).get("rgb"):
-        extras["rgb"] = host["topbar"]["rgb"]
+    if "rgb" in host.get("topbar", {}):
+        raise ValueError("topbar.rgb is not supported: RGB lighting belongs on the OpenRGB card, not the top bar")
     if host.get("topbar", {}).get("grouped"):
         extras.update({"grouped": True, "label": host["topbar"]["label"],
                        "disks": host["topbar"]["disks"]})

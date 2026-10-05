@@ -11,7 +11,6 @@ useEqualHeights: true
 topbarExtras:
   glances: "https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/glances"
   net: "enp2s0"
-  rgb: "/host-status/rgb.json"
   grouped: true
   label: "game server"
   disks:
