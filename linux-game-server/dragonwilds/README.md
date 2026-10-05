@@ -13,20 +13,26 @@ resolve hostnames — see pain point 10.
 Bootstrap, migration and activation live in [the game-server guide](../README.md).
 This file explains how the server behaves and where the official guide is wrong.
 
-## Session snapshot — October 2, 2026
+## Session snapshot — October 5, 2026
 
-The server was configured as follows during the rename and Homepage work:
+The server is configured as follows:
 
 - Server display name: `Ollie-GS` (shortened to stay within the documented community
   name-length guidance).
-- World name: `1` (`DefaultWorldName=1`, `SaveGames/1.sav`). A hand rename to
-  `Main` (editing the save header and filename) failed: the game logged
-  "Skipping save game (Main) as cannot be loaded in current version" and created
-  an empty `Main` world instead, which ran from 2026-10-02 to 2026-10-03 until
-  `1.sav` was restored. A byte-level header edit leaves the chunk lengths and
-  offset tables stale; the only supported route is
-  [Renaming a world offline](#renaming-a-world-offline). The empty world is archived
-  in `Saved/SaveGames-archive/`.
+- World name: `Ashenfall` (`DefaultWorldName=Ashenfall`,
+  `SaveGames/Ashenfall.sav`), renamed from `1` on 2026-10-05 with
+  [Renaming a world offline](#renaming-a-world-offline). The world GUID
+  (`918AD376…`) did not change. The game's load log showed
+  `World load SUCCEEDED` with `WorldName[Ashenfall]` and `SlotName[Ashenfall]`
+  and no `NewGame(`, and a client join found the world intact (build
+  `25630937`). The pre-rename `1.sav` and its `.sav.backup` are archived in
+  `Saved/SaveGames-archive/1-before-ashenfall-<timestamp>/`.
+- History: a hand rename to `Main` on 2026-10-02 (editing the save header and
+  filename) failed: the game logged "Skipping save game (Main) as cannot be
+  loaded in current version" and created an empty `Main` world instead, which
+  ran from 2026-10-02 to 2026-10-03 until `1.sav` was restored. A byte-level
+  header edit leaves the chunk lengths and offset tables stale. The empty world
+  is archived in `Saved/SaveGames-archive/`.
 - A world join password is configured in the private `DedicatedServer.ini`; it is
   shown as **Join pass** below **Join code** on the tailnet-only Homepage card. The
   password value is not stored in Git or this documentation.
@@ -813,7 +819,14 @@ Fields: `status` (`running` / `starting` / `stopped` / `failed` / `unknown`),
 `connect_lan`, `connect_tailnet`, `memory_bytes`, `save_bytes`,
 `install_bytes`, `installation_footprint`, `uptime_seconds`, `listening`, `owner_configured`,
 `world_password`, `build`, `latest_build`, `update_status`, `update_checked`,
-`last_save`, `updated`.
+`last_save`, `updated`, `game_version`, `world_id`, `world_owner`,
+`worlds_on_disk`, `world_count`, `last_join`, `last_join_name`, `auto_update`,
+`backup_status`, `last_backup`, `tasks_current`, `restarts`, `invocation`,
+`unit_status`, `uptime_display`, the resource fields described under
+[Rolling 24-hour resources](#rolling-24-hour-resources) and the cache fields
+`metadata_refresh_seconds` / `metadata_age_seconds`. The grouped text fields
+(`cpu_summary`, `memory_summary`, `software_summary`, `process_summary`,
+`worlds_summary`, `update_summary`) are what the cards display.
 
 ### Software/process and active-world cards
 
@@ -916,11 +929,13 @@ systemctl show dragonwilds-status.timer -p TimersMonotonic -p AccuracyUSec -p La
 ```
 
 Verify successive endpoint `updated` timestamps/`uptime_seconds` over at least
-three timer firings. On October 5, 2026, noninteractive sudo was unavailable:
-the live installed timer was still configured for **60s** with **10s accuracy**
-(observed endpoint gaps of **71s and 70s**), while three bounded manual fast runs
-proved second-level uptime changed after five-second waits. Do not replace the
-system timer with an unprivileged background loop as a workaround.
+three timer firings. This was applied on October 5, 2026: the installed timer
+reads `OnUnitActiveSec=5s` with `AccuracySec=1s`, and consecutive endpoint
+`updated` stamps (10:35:39Z, 10:35:44Z) and `uptime_display` advanced five
+seconds apart. Until then the installed timer was still the one-minute one
+(observed endpoint gaps of 71s and 70s), because an agent session has no
+noninteractive sudo. Do not replace the system timer with an unprivileged
+background loop as a workaround.
 
 Regenerate via `python3 server-base/homepage/generate.py` and verify its
 `--check` mode; do not hand-edit `homepage/config/services.yaml`. Only the game
