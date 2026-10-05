@@ -2,6 +2,7 @@
   "servers": [
     {
       "key": "main",
+      "facts": {"platform": "Dell OptiPlex 5060", "board": "Dell 030VXY · Intel Q370", "cpu": "Intel Core i5-8500T · 6 cores / 6 threads", "graphics": "Intel UHD 630 · iGPU · shared RAM"},
       "dir": "linux-server",
       "name": "main server",
       "icon": "sh-ubuntu.svg",
@@ -11,6 +12,7 @@
     },
     {
       "key": "pi",
+      "facts": {"platform": "Raspberry Pi 4 Model B Rev 1.2", "board": "BCM2711 SoC", "cpu": "Cortex-A72 · 4 cores / 4 threads", "graphics": "Integrated GPU · shared RAM · capacity unavailable"},
       "dir": "linux-pi",
       "name": "pi",
       "icon": "sh-raspberry-pi.svg",
@@ -20,6 +22,7 @@
     },
     {
       "key": "game",
+      "facts": {"platform": "HP OMEN 25L GT12", "board": "HP 8704 · Intel H470", "cpu": "Intel Core i5-10400 · 6 cores / 12 threads", "graphics": "NVIDIA GeForce GTX 1070 · dGPU · 8 GiB dedicated"},
       "dir": "linux-game-server",
       "name": "game server",
       "icon": "sh-steam.svg",

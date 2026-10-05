@@ -49,34 +49,43 @@ def emit(node, indent=0):
     return lines
 
 
-def spec_widgets(base):
-    """The host's fixed facts (OS, kernel, hostname, CPU, RAM) from its Glances API."""
+def spec_widgets(base, facts):
+    """Six compact facts; inventory snapshot + native hourly usable RAM/software."""
     api = f"{base}/api/4"
     slow = 3600000
+
+    def fixed(label, value):
+        # Homepage native remapping avoids a second custom card renderer/poller.
+        return {"field": "hostname", "label": label, "format": "text",
+                "remap": [{"any": True, "to": value}]}
+
     return [
         {"type": "customapi", "url": f"{api}/system", "refreshInterval": slow, "display": "list",
-         "mappings": [{"field": "linux_distro", "label": "OS"}, {"field": "os_version", "label": "Kernel"},
-                      {"field": "hostname", "label": "Hostname"}]},
-        {"type": "customapi", "url": f"{api}/quicklook", "refreshInterval": slow, "display": "list",
-         "mappings": [{"field": "cpu_name", "label": "CPU"}, {"field": "cpu_log_core", "label": "Threads"}]},
+         "mappings": [fixed("Platform", facts["platform"]), fixed("Board / SoC", facts["board"]),
+                      fixed("CPU", facts["cpu"])]},
         {"type": "customapi", "url": f"{api}/mem", "refreshInterval": slow, "display": "list",
-         "mappings": [{"field": "total", "label": "RAM", "format": "bytes"}]},
+         "mappings": [{"field": "total", "label": "Memory", "format": "float",
+                       "scale": "1/1073741824", "suffix": "GiB usable"}]},
+        {"type": "customapi", "url": f"{api}/system", "refreshInterval": slow, "display": "list",
+         "mappings": [fixed("Graphics", facts["graphics"]),
+                      {"field": "linux_distro", "label": "Software", "format": "text",
+                       "additionalField": {"field": "os_version", "format": "text", "prefix": "·"}}]},
     ]
 
 
 def server_card(server, this_dir):
     local = server["dir"] == this_dir
     domain = f"{{{{HOMEPAGE_VAR_{server['domain_var']}}}}}"
-    card = {"icon": server["icon"]}
+    card = {"icon": server["icon"], "id": "server-" + server["key"]}
     if local:
         card["description"] = f"{server['description']} (this server)"
-        card["widgets"] = spec_widgets(LOCAL_GLANCES)
+        card["widgets"] = spec_widgets(LOCAL_GLANCES, server["facts"])
     else:
         card["href"] = f"https://{domain}/"
         card["description"] = server["description"]
         card["siteMonitor"] = f"https://{domain}"
         if server.get("glances_url"):
-            card["widgets"] = spec_widgets(server["glances_url"])
+            card["widgets"] = spec_widgets(server["glances_url"], server["facts"])
     return {server["name"]: card}
 
 

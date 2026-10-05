@@ -84,6 +84,24 @@ class GenerateTests(unittest.TestCase):
         self.assertNotIn('gpuTypes', generate.render_settings(fleet,'linux-server',''))
         self.assertNotIn('gpuTypes', generate.render_settings(fleet,'linux-pi',''))
 
+    def test_compact_server_inventory_is_consistent_and_native_facts_are_hourly(self):
+        for host in FLEET['hosts']:
+            for server in FLEET['servers']:
+                card = generate.server_card(server,host)[server['name']]
+                self.assertEqual(card.get('id'), 'server-'+server['key'])
+                widgets = card['widgets']
+                self.assertEqual(len(widgets),3)
+                self.assertEqual([m['label'] for w in widgets for m in w['mappings']],
+                                 ['Platform','Board / SoC','CPU','Memory','Graphics','Software'])
+                self.assertEqual(widgets[1]['mappings'][0]['scale'],'1/1073741824')
+                self.assertEqual(widgets[1]['mappings'][0]['suffix'],'GiB usable')
+                software=widgets[2]['mappings'][1]
+                self.assertEqual(software['field'],'linux_distro')
+                self.assertEqual(software['additionalField']['field'],'os_version')
+                self.assertEqual([w['refreshInterval'] for w in widgets],[3600000]*3)
+                self.assertIn(server['facts']['platform'], str(widgets))
+                self.assertIn(server['facts']['graphics'], str(widgets))
+
     def test_emitted_strings_are_quoted(self):
         lines = generate.emit([{"g": [{"svc": {"description": "NAS: storage", "n": 4, "b": True}}]}])
         self.assertIn('        description: "NAS: storage"', lines)

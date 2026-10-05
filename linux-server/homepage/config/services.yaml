@@ -3,6 +3,7 @@
 - Servers:
     - main server:
         icon: "sh-ubuntu.svg"
+        id: "server-main"
         description: "NAS — storage, media and core services (this server)"
         widgets:
           - type: "customapi"
@@ -10,31 +11,55 @@
             refreshInterval: 3600000
             display: "list"
             mappings:
-              - field: "linux_distro"
-                label: "OS"
-              - field: "os_version"
-                label: "Kernel"
               - field: "hostname"
-                label: "Hostname"
-          - type: "customapi"
-            url: "http://127.0.0.1:61208/api/4/quicklook"
-            refreshInterval: 3600000
-            display: "list"
-            mappings:
-              - field: "cpu_name"
+                label: "Platform"
+                format: "text"
+                remap:
+                  - any: true
+                    to: "Dell OptiPlex 5060"
+              - field: "hostname"
+                label: "Board / SoC"
+                format: "text"
+                remap:
+                  - any: true
+                    to: "Dell 030VXY · Intel Q370"
+              - field: "hostname"
                 label: "CPU"
-              - field: "cpu_log_core"
-                label: "Threads"
+                format: "text"
+                remap:
+                  - any: true
+                    to: "Intel Core i5-8500T · 6 cores / 6 threads"
           - type: "customapi"
             url: "http://127.0.0.1:61208/api/4/mem"
             refreshInterval: 3600000
             display: "list"
             mappings:
               - field: "total"
-                label: "RAM"
-                format: "bytes"
+                label: "Memory"
+                format: "float"
+                scale: "1/1073741824"
+                suffix: "GiB usable"
+          - type: "customapi"
+            url: "http://127.0.0.1:61208/api/4/system"
+            refreshInterval: 3600000
+            display: "list"
+            mappings:
+              - field: "hostname"
+                label: "Graphics"
+                format: "text"
+                remap:
+                  - any: true
+                    to: "Intel UHD 630 · iGPU · shared RAM"
+              - field: "linux_distro"
+                label: "Software"
+                format: "text"
+                additionalField:
+                  field: "os_version"
+                  format: "text"
+                  prefix: "·"
     - pi:
         icon: "sh-raspberry-pi.svg"
+        id: "server-pi"
         href: "https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}/"
         description: "MotionEye, CUPS and backup DNS"
         siteMonitor: "https://{{HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}}"
@@ -44,31 +69,55 @@
             refreshInterval: 3600000
             display: "list"
             mappings:
-              - field: "linux_distro"
-                label: "OS"
-              - field: "os_version"
-                label: "Kernel"
               - field: "hostname"
-                label: "Hostname"
-          - type: "customapi"
-            url: "{{HOMEPAGE_VAR_PI_GLANCES_URL}}/api/4/quicklook"
-            refreshInterval: 3600000
-            display: "list"
-            mappings:
-              - field: "cpu_name"
+                label: "Platform"
+                format: "text"
+                remap:
+                  - any: true
+                    to: "Raspberry Pi 4 Model B Rev 1.2"
+              - field: "hostname"
+                label: "Board / SoC"
+                format: "text"
+                remap:
+                  - any: true
+                    to: "BCM2711 SoC"
+              - field: "hostname"
                 label: "CPU"
-              - field: "cpu_log_core"
-                label: "Threads"
+                format: "text"
+                remap:
+                  - any: true
+                    to: "Cortex-A72 · 4 cores / 4 threads"
           - type: "customapi"
             url: "{{HOMEPAGE_VAR_PI_GLANCES_URL}}/api/4/mem"
             refreshInterval: 3600000
             display: "list"
             mappings:
               - field: "total"
-                label: "RAM"
-                format: "bytes"
+                label: "Memory"
+                format: "float"
+                scale: "1/1073741824"
+                suffix: "GiB usable"
+          - type: "customapi"
+            url: "{{HOMEPAGE_VAR_PI_GLANCES_URL}}/api/4/system"
+            refreshInterval: 3600000
+            display: "list"
+            mappings:
+              - field: "hostname"
+                label: "Graphics"
+                format: "text"
+                remap:
+                  - any: true
+                    to: "Integrated GPU · shared RAM · capacity unavailable"
+              - field: "linux_distro"
+                label: "Software"
+                format: "text"
+                additionalField:
+                  field: "os_version"
+                  format: "text"
+                  prefix: "·"
     - game server:
         icon: "sh-steam.svg"
+        id: "server-game"
         href: "https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/"
         description: "Dedicated game servers"
         siteMonitor: "https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}"
@@ -78,29 +127,52 @@
             refreshInterval: 3600000
             display: "list"
             mappings:
-              - field: "linux_distro"
-                label: "OS"
-              - field: "os_version"
-                label: "Kernel"
               - field: "hostname"
-                label: "Hostname"
-          - type: "customapi"
-            url: "https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/glances/api/4/quicklook"
-            refreshInterval: 3600000
-            display: "list"
-            mappings:
-              - field: "cpu_name"
+                label: "Platform"
+                format: "text"
+                remap:
+                  - any: true
+                    to: "HP OMEN 25L GT12"
+              - field: "hostname"
+                label: "Board / SoC"
+                format: "text"
+                remap:
+                  - any: true
+                    to: "HP 8704 · Intel H470"
+              - field: "hostname"
                 label: "CPU"
-              - field: "cpu_log_core"
-                label: "Threads"
+                format: "text"
+                remap:
+                  - any: true
+                    to: "Intel Core i5-10400 · 6 cores / 12 threads"
           - type: "customapi"
             url: "https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/glances/api/4/mem"
             refreshInterval: 3600000
             display: "list"
             mappings:
               - field: "total"
-                label: "RAM"
-                format: "bytes"
+                label: "Memory"
+                format: "float"
+                scale: "1/1073741824"
+                suffix: "GiB usable"
+          - type: "customapi"
+            url: "https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/glances/api/4/system"
+            refreshInterval: 3600000
+            display: "list"
+            mappings:
+              - field: "hostname"
+                label: "Graphics"
+                format: "text"
+                remap:
+                  - any: true
+                    to: "NVIDIA GeForce GTX 1070 · dGPU · 8 GiB dedicated"
+              - field: "linux_distro"
+                label: "Software"
+                format: "text"
+                additionalField:
+                  field: "os_version"
+                  format: "text"
+                  prefix: "·"
 
 - Core:
     - Management:
