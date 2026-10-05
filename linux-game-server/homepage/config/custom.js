@@ -17,138 +17,196 @@
   new MutationObserver(apply).observe(document.body, { childList: true, subtree: true });
 })();
 
-// Top bar extras the Glances info widget cannot show: GPUs, fans, network,
-// Wi-Fi and NVMe health from this host's Glances, and RGB lighting from its
-// status JSON when it has one. The
-// URLs come from settings.yaml (topbarExtras), so private names stay in .env.
-(() => {
-  const extras = window.__NEXT_DATA__?.props?.pageProps?.initialSettings?.topbarExtras || {};
-  if (!extras.glances && !extras.rgb) return;
-  const svg = {
-    gpu: '<path d="M2 7h18v10H2zM20 10h2v4h-2M6 17v2M10 17v2M14 17v2"/><circle cx="8" cy="12" r="2"/><circle cx="14" cy="12" r="2"/>',
-    fan: '<circle cx="12" cy="12" r="2"/><path d="M12 10c0-4 1-7 4-7s3 4-2 7M14 12c4 0 7 1 7 4s-4 3-7-2M12 14c0 4-1 7-4 7s-3-4 2-7M10 12c-4 0-7-1-7-4s4-3 7 2"/>',
-    rgb: '<circle cx="12" cy="8" r="5"/><circle cx="8" cy="15" r="5"/><circle cx="16" cy="15" r="5"/>',
-    net: '<path d="M7 17V5M3 9l4-4 4 4M17 7v12M13 15l4 4 4-4"/>',
-    wifi: '<path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1"/>',
-    disk: '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h4M7 14h2M15 12h2"/>',
+/* Opt-in Homepage monitor; native requests are observed, never duplicated. */
+((root) => {
+  const isNativeRequest = (input, origin) => {
+    try {
+      const url = new URL(typeof input === 'string' ? input : input.url, origin);
+      return url.origin === origin && url.pathname === '/api/widgets/glances' && url.searchParams.get('index') === '0';
+    } catch { return false; }
   };
-  const rate = (b) => {
-    const units = ["B/s", "kB/s", "MB/s", "GB/s"];
-    let v = Number(b) || 0;
+  const number = (n) => typeof n === 'number' && Number.isFinite(n);
+  const decimal = (n) => number(n) ? String(Math.round(n * 10) / 10) : '—';
+  const pct = (n) => number(n) ? `${decimal(n)}%` : '—';
+  const bytes = (n, binary = false) => {
+    if (!number(n)) return '—';
+    const base = binary ? 1024 : 1000;
+    const units = binary ? ['B','KiB','MiB','GiB','TiB'] : ['B','kB','MB','GB','TB'];
     let i = 0;
-    while (v >= 1000 && i < units.length - 1) { v /= 1000; i += 1; }
-    return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
+    while (n >= base && i < units.length - 1) { n /= base; i++; }
+    return `${decimal(n)} ${units[i]}`;
   };
-  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-  const chip = (icon, rows, pct) => {
-    const line = ([value, label]) =>
-      `<div class="text-theme-800 dark:text-theme-200 text-xs flex flex-row justify-between gap-2">` +
-      `<div class="pl-0.5">${esc(value)}</div><div class="pr-1">${esc(label)}</div></div>`;
-    const bar = pct == null ? "" :
-      `<div class="mt-0.5 w-full bg-theme-800/30 rounded-full h-1 dark:bg-theme-200/20 resource-usage">` +
-      `<div class="bg-theme-800/70 h-1 rounded-full dark:bg-theme-200/50" style="width:${Math.min(100, Math.max(0, pct))}%"></div></div>`;
-    return `<div class="flex-none flex flex-row items-center mr-3 py-1.5 information-widget-resource topbar-extra">` +
-      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-theme-800 dark:text-theme-200 w-5 h-5 resource-icon">${svg[icon]}</svg>` +
-      `<div class="flex flex-col ml-3 text-left expanded min-w-[85px]">${rows.map(line).join("")}${bar}</div></div>`;
+  const status = (sample, now, ttl = 15000) => sample?.error ? (sample.at ? 'Unavailable · last value' : 'Unavailable') : !sample?.at ? 'Loading' : now - sample.at > ttl ? 'Stale · last value' : '';
+  const model = (samples, config, now, clock) => {
+    const groups = ['Compute','Storage','Connectivity','System'].map(title => ({title, tiles:[]}));
+    const add = (group, label, rows, source = 'native', usage, detail, ttl) => {
+      groups[group].tiles.push({label, rows, usage, detail, state:status(samples[source],now,ttl)});
+    };
+    const d = samples.native?.data || {};
+    add(0,'CPU',[['Usage',pct(d.cpu?.total)],['Load · 15m',decimal(d.load?.min15)]], 'native', d.cpu?.total);
+    add(0,'RAM',[['Used',pct(d.mem?.percent)],['Free',bytes(d.mem?.available,true)],['Total',bytes(d.mem?.total,true)]], 'native', d.mem?.percent);
+    for (const s of d.sensors || []) {
+      if (s.type === 'temperature_core' && number(s.value)) {
+        if (s.label === 'CPU') {
+          groups[0].tiles[0].rows.push(['Temp',`${decimal(s.value)}°C`]);
+          if (number(s.warning)) groups[0].tiles[0].rows.push(['Warn',`${decimal(s.warning)}°C`]);
+        } else {
+          add(1,s.label === 'NVMe' ? 'NVMe' : `${s.label} temperature`,[['Temp',`${decimal(s.value)}°C`],['Warn',number(s.warning) ? `${decimal(s.warning)}°C` : '—']]);
+        }
+      } else if (s.type === 'fan_speed' && number(s.value) && s.value > 0) {
+        add(0,s.label,[['Fan',`${decimal(s.value)} RPM`]]);
+      }
+    }
+    for (const g of samples.gpu?.data || []) {
+      const rows = [];
+      if (number(g.proc)) rows.push(['Usage',pct(g.proc)]);
+      if (number(g.temperature)) rows.push(['Temp',`${decimal(g.temperature)}°C`]);
+      if (number(g.mem)) rows.push(['VRAM',pct(g.mem)]);
+      if (number(g.fan_speed)) rows.push(['Fan',pct(g.fan_speed)]);
+      add(0,'GPU',rows,'gpu',g.proc,g.name);
+    }
+    for (const mount of config.disks || []) {
+      const f = (d.fs || []).find(f=>f.mnt_point === mount);
+      add(1, f?.alias === 'system' ? 'System disk' : f?.alias || mount,
+        [['Used',pct(f?.percent)],['Free',bytes(f?.free)],['Total',bytes(f?.size)]], 'native',f?.percent, f?.fs_type);
+    }
+    for (const [i, disk] of (samples.smart?.data || []).entries()) {
+      const attrs = Object.values(disk).filter(a=>a && typeof a === 'object' && 'key' in a);
+      const get = key => attrs.find(a=>a.key===key)?.value;
+      if (get('percentageUsed') == null) continue;
+      const health = get('criticalWarning') == null || get('integrityErrors') == null ? 'Unknown' : (Number(get('criticalWarning')) || Number(get('integrityErrors'))) ? 'WARN' : 'OK';
+      // Merge only when there is exactly one device; don't imply a thermal
+      // sensor belongs to a particular drive in a multi-NVMe host.
+      const thermal = samples.smart.data.length === 1 && groups[1].tiles.find(t=>t.label === 'NVMe');
+      if (thermal) {
+        thermal.rows.push(['Health',health],['Wear',`${get('percentageUsed')}%`]);
+        thermal.state = status(samples.smart,now,130000) || thermal.state;
+      } else {
+        add(1,`NVMe health${i ? ` ${i+1}` : ''}`,[['Health',health],['Wear',`${get('percentageUsed')}%`]],'smart',undefined,undefined,130000);
+      }
+    }
+    if (config.net) {
+      const nic = (samples.network?.data || []).find(n=>n.interface_name===config.net);
+      add(2,config.net,[['Upload',number(nic?.bytes_sent_rate_per_sec) ? `${bytes(nic.bytes_sent_rate_per_sec)}/s` : '—'],['Download',number(nic?.bytes_recv_rate_per_sec) ? `${bytes(nic.bytes_recv_rate_per_sec)}/s` : '—']], 'network',undefined,nic ? 'Throughput' : 'Interface unavailable');
+    }
+    for (const w of samples.wifi?.data || []) {
+      if (w.quality_level == null) continue;
+      add(2,'Wi-Fi',[['Signal',`${w.quality_level} dBm`],['Link',pct(w.quality_link)]],'wifi');
+    }
+    add(3,'Host',[['Uptime',d.uptime || '—'],['Clock',clock || '—']], 'native',undefined,'Clock · browser local time');
+    for (const device of samples.rgb?.data?.devices || []) {
+      add(3,'RGB',[['Mode',device.mode || '—']], 'rgb',undefined,`${device.name || ''} · last-set mode`);
+      const age = now / 1000 - samples.rgb.data.updated;
+      if (age > 1800 || !number(samples.rgb.data.updated)) groups[3].tiles.at(-1).state = 'Stale · last value';
+      else if (age < -300) groups[3].tiles.at(-1).state = 'Exporter clock skew';
+    }
+    return groups;
   };
-  const getJson = async (url) => {
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const publicUrl = (value, origin) => {
+    if (!value) return null;
     try {
-      const r = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(4000) });
-      return r.ok ? await r.json() : null;
-    } catch {
-      return null;
-    }
+      const url = new URL(value,origin);
+      return !url.username && !url.password && (url.protocol === 'https:' || (url.protocol === 'http:' && url.origin === origin)) ? url.href : null;
+    } catch { return null; }
   };
-  let html = "";
-  // Homepage re-renders the widget, so the extras box is re-attached when lost.
-  const render = () => {
-    const row = document.querySelector(".information-widget-glances > div");
-    if (!row) return;
-    // The widget links to its (loopback) API URL; point it at the browsable Glances.
-    const link = row.closest("a");
-    if (link && extras.glances && link.getAttribute("href") !== extras.glances) link.setAttribute("href", extras.glances);
-    let box = row.querySelector(":scope > .topbar-extras");
-    if (!box) {
-      box = document.createElement("div");
-      box.className = "topbar-extras flex flex-row flex-wrap";
-      row.appendChild(box);
-    }
-    // Compare against what was last written: the browser normalises innerHTML,
-    // so comparing to it would rewrite (and re-trigger the observer) forever.
-    if (box.dataset.src !== html) {
-      box.dataset.src = html;
-      box.innerHTML = html;
-    }
+  const markup = (groups) => groups.map((group,i)=>`<section class="monitor-group" aria-labelledby="monitor-heading-${i}"><h2 id="monitor-heading-${i}">${esc(group.title)}</h2><div class="monitor-tiles">${group.tiles.map(tile=>`<article class="monitor-tile${tile.state ? ' has-warning' : ''}"><h3>${esc(tile.label)}</h3>${tile.detail ? `<p class="monitor-detail">${esc(tile.detail)}</p>` : ''}<dl>${tile.rows.map(([label,value])=>`<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>${number(tile.usage) ? `<div class="monitor-meter" aria-hidden="true"><span style="width:${Math.min(100,Math.max(0,tile.usage))}%"></span></div>` : ''}${tile.state ? `<p class="monitor-state">${esc(tile.state)}</p>` : ''}</article>`).join('')}</div></section>`).join('');
+  const start = (root, config) => {
+    const {document} = root;
+    const originalFetch = root.fetch;
+    const glances = publicUrl(config.glances, root.location.origin);
+    const rgb = publicUrl(config.rgb, root.location.origin);
+    const samples = {};
+    let busy = false, stopped = false, smartAttempt = 0, lastMarkup = '';
+    const record = (key,data,error = false) => {
+      samples[key] = error ? {...samples[key],error:true} : {data,at:Date.now(),error:false};
+    };
+    const render = () => {
+      // Leave native markup visible until a compatible native payload exists.
+      // React owns it: never move/remove its children or attach an observer here.
+      const host = document.querySelector('#information-widgets');
+      if (!host || !samples.native?.data) return;
+      const clock = document.querySelector('.information-widget-datetime')?.textContent.trim() || '';
+      const groups = model(samples,config,Date.now(),clock);
+      const failed = Object.entries(samples).filter(([key,s])=>key !== 'native' && s.error).map(([key])=>key.toUpperCase());
+      const nativeState = status(samples.native,Date.now());
+      const content = `${nativeState || failed.length ? `<p class="monitor-notice" role="status">${esc([nativeState,failed.length ? `Extras unavailable: ${failed.join(', ')}` : ''].filter(Boolean).join(' · '))}</p>` : ''}<div class="monitor-groups">${markup(groups)}</div>`;
+      let panel = host.querySelector(':scope > .host-monitor');
+      if (!panel) {
+        panel = document.createElement('div');
+        panel.className = 'host-monitor';
+        panel.setAttribute('aria-label','Host metrics');
+        panel.innerHTML = `<header class="monitor-header"><span class="monitor-host">${esc(config.label || 'Host metrics')}</span><span class="monitor-cadence">Native auto · extras 5s · health 60s</span>${glances ? `<a href="${esc(glances)}" target="_blank" rel="noopener noreferrer">Open Glances ↗</a>` : ''}</header><div class="monitor-body"></div>`;
+        host.prepend(panel);
+        lastMarkup = '';
+      }
+      // Keep the keyboard-focusable link stable while readings change.
+      if (content !== lastMarkup) { panel.querySelector('.monitor-body').innerHTML = content; lastMarkup = content; }
+      host.classList.add('host-monitor-ready');
+    };
+    const wrappedFetch = async function(input,...args) {
+      const native = isNativeRequest(input,root.location.origin);
+      try {
+        const response = await originalFetch.call(this,input,...args);
+        if (native && !stopped) {
+          // A clone is consumed, never the Response SWR needs. This is passive:
+          // Homepage alone owns native request scheduling and visibility policy.
+          Promise.resolve().then(()=>response.clone().json()).then(data=>{
+            if (stopped) return;
+            if (response.ok && !data.error && data.cpu && data.mem && Array.isArray(data.fs)) record('native',data);
+            else record('native',null,true);
+            render();
+          }).catch(()=>{record('native',null,true);render();});
+        }
+        return response;
+      } catch (error) {
+        if (native && !stopped) {record('native',null,true);render();}
+        throw error;
+      }
+    };
+    root.fetch = wrappedFetch;
+    const get = async (key,url) => {
+      try {
+        const response = await originalFetch.call(root,url,{cache:'no-store',credentials:'omit',signal:root.AbortSignal.timeout(4000)});
+        if (!response.ok) throw new Error('endpoint unavailable');
+        const data = await response.json();
+        if (key === 'rgb' ? !Array.isArray(data?.devices) || !number(data.updated) : !Array.isArray(data)) throw new Error('invalid endpoint shape');
+        if (!stopped) record(key,data);
+      } catch { if (!stopped) record(key,null,true); }
+    };
+    const refresh = async () => {
+      render(); // Also age samples when a tab returns from background.
+      if (busy || stopped || document.hidden) return;
+      busy = true;
+      try {
+        const jobs = [];
+        if (glances) {
+          for (const key of ['gpu','wifi',...(config.net ? ['network'] : [])]) jobs.push(get(key,`${glances.replace(/\/$/,'')}/api/4/${key}`));
+          if (!smartAttempt || Date.now() - smartAttempt >= 60000) {
+            smartAttempt = Date.now();
+            jobs.push(get('smart',`${glances.replace(/\/$/,'')}/api/4/smart`));
+          }
+        }
+        // Sensors already arrive in the native response: no duplicate request.
+        if (rgb) jobs.push(get('rgb',rgb));
+        await Promise.all(jobs);
+      } finally { busy = false; if (!stopped) render(); }
+    };
+    const timer = root.setInterval(refresh,5000);
+    document.addEventListener('visibilitychange',refresh);
+    const stop = () => {
+      stopped = true;
+      root.clearInterval(timer);
+      document.removeEventListener('visibilitychange',refresh);
+      if (root.fetch === wrappedFetch) root.fetch = originalFetch;
+    };
+    root.addEventListener('pagehide',event=>{if (!event.persisted) stop();});
+    refresh();
+    return {samples,stop};
   };
-  // SMART data changes slowly; poll it once a minute and reuse it in between.
-  let smart = null;
-  let smartAt = 0;
-  let busy = false;
-  const refresh = async () => {
-    if (busy || document.hidden) return;
-    busy = true;
-    try {
-      await update();
-    } finally {
-      busy = false;
-    }
-  };
-  const update = async () => {
-    const parts = [];
-    if (extras.glances) {
-      const fetchSmart = Date.now() - smartAt > 60000;
-      const [gpus, sensors, nets, wifi, freshSmart] = await Promise.all([
-        getJson(`${extras.glances}/api/4/gpu`),
-        getJson(`${extras.glances}/api/4/sensors`),
-        extras.net ? getJson(`${extras.glances}/api/4/network`) : null,
-        getJson(`${extras.glances}/api/4/wifi`),
-        fetchSmart ? getJson(`${extras.glances}/api/4/smart`) : null,
-      ]);
-      if (fetchSmart) {
-        smart = freshSmart;
-        smartAt = Date.now();
-      }
-      const nic = (nets || []).find((n) => n.interface_name === extras.net);
-      if (nic) {
-        parts.push(chip("net", [[`${rate(nic.bytes_sent_rate_per_sec)}`, "Up"], [`${rate(nic.bytes_recv_rate_per_sec)}`, "Down"]], null));
-      }
-      for (const w of wifi || []) {
-        if (w.quality_level == null) continue;
-        parts.push(chip("wifi", [[`${w.quality_level} dBm`, "Wi-Fi"], [`${Math.round(w.quality_link ?? 0)}%`, "Link"]], w.quality_link));
-      }
-      for (const d of smart || []) {
-        const attrs = Object.values(d).filter((a) => a && typeof a === "object" && "key" in a);
-        const get = (k) => attrs.find((a) => a.key === k)?.value;
-        const used = get("percentageUsed");
-        if (used == null) continue;
-        const healthy = !get("criticalWarning") && !get("integrityErrors");
-        parts.push(chip("disk", [[healthy ? "OK" : "WARN", "NVMe"], [`${used}%`, "Wear"]], used));
-      }
-      for (const g of gpus || []) {
-        const rows = [[`${Math.round(g.proc ?? 0)}%`, "GPU"]];
-        if (g.temperature != null) rows.push([`${g.temperature}°C`, "Temp"]);
-        if (g.fan_speed != null) rows.push([`${g.fan_speed}%`, "Fan"]);
-        if (g.mem != null) rows.push([`${Math.round(g.mem)}%`, "VRAM"]);
-        parts.push(chip("gpu", rows.slice(0, 2), g.proc ?? 0));
-        if (rows.length > 2) parts.push(chip("fan", rows.slice(2, 4), null));
-      }
-      for (const f of (sensors || []).filter((s) => s.type === "fan_speed")) {
-        parts.push(chip("fan", [[`${f.value} RPM`, f.label]], null));
-      }
-    }
-    if (extras.rgb) {
-      const rgb = await getJson(extras.rgb);
-      // The exporter runs every 10 minutes; hide stale data rather than show it as live.
-      const fresh = rgb && Date.now() / 1000 - (rgb.updated || 0) < 1800;
-      for (const d of fresh ? rgb.devices || [] : []) {
-        parts.push(chip("rgb", [[d.mode || "?", "RGB"], [d.name || "", ""]], null));
-      }
-    }
-    html = parts.join("");
-    render();
-  };
-  refresh();
-  setInterval(refresh, 5000);
-  document.addEventListener("visibilitychange", refresh);
-  new MutationObserver(render).observe(document.body, { childList: true, subtree: true });
-})();
+  if (typeof module !== 'undefined') module.exports = { isNativeRequest, model, status, markup, publicUrl, start };
+  else {
+    const config = root.__NEXT_DATA__?.props?.pageProps?.initialSettings?.topbarExtras;
+    if (config?.grouped && !root.__homepageGroupedTopbar) root.__homepageGroupedTopbar = start(root,config);
+  }
+})(typeof window === 'undefined' ? globalThis : window);

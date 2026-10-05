@@ -56,6 +56,26 @@ class GenerateTests(unittest.TestCase):
                 for widget in card.get("widgets", []):
                     self.assertEqual(widget["refreshInterval"], 3600000, (host, server["name"]))
 
+    def test_grouped_renderer_is_opt_in_and_other_hosts_are_byte_identical(self):
+        import copy
+        original = copy.deepcopy(FLEET)
+        original["hosts"]["linux-game-server"]["topbar"].pop("grouped", None)
+        grouped = copy.deepcopy(original)
+        grouped["hosts"]["linux-game-server"]["topbar"]["grouped"] = True
+        before = dict(generate.outputs(original))
+        after = dict(generate.outputs(grouped))
+        changed = [str(p.relative_to(ROOT.parent)) for p in after if after[p] != before[p]]
+        self.assertEqual(sorted(changed), sorted([
+            "linux-game-server/homepage/config/custom.js",
+            "linux-game-server/homepage/config/custom.css",
+            "linux-game-server/homepage/config/settings.yaml",
+        ]))
+        self.assertIn("grouped: true", generate.render_settings(grouped, "linux-game-server", ""))
+        js = generate.render_js(grouped, "linux-game-server")
+        self.assertNotIn("new MutationObserver(render)", js)
+        self.assertNotIn("const chip =", js)
+        self.assertIn("const start =", js)
+
     def test_emitted_strings_are_quoted(self):
         lines = generate.emit([{"g": [{"svc": {"description": "NAS: storage", "n": 4, "b": True}}]}])
         self.assertIn('        description: "NAS: storage"', lines)

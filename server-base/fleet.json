@@ -54,7 +54,7 @@
     },
     "linux-game-server": {
       "title": "Game Server",
-      "topbar": {"label": "game server", "net": "enp2s0", "disks": ["/etc/hostname"], "rgb": "/host-status/rgb.json"},
+      "topbar": {"label": "game server", "grouped": true, "net": "enp2s0", "disks": ["/etc/hostname"], "rgb": "/host-status/rgb.json"},
       "accents": {"Servers": "indigo", "Game server": "blue", "Games": "rose", "Shared services": "cyan"}
     }
   }

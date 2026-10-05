@@ -70,6 +70,19 @@ jobs:
         working-directory: linux-game-server/tests
         run: python3 -m unittest discover -v -p 'test_*.py'
 
+  homepage-js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test opt-in game-host grouped metrics
+        run: |
+          node --check server-base/homepage/grouped-topbar.js
+          node --check linux-game-server/homepage/config/custom.js
+          node --test linux-game-server/tests/test_grouped_topbar.cjs
+
   dryrun-smoke:
     runs-on: ubuntu-latest
     steps:

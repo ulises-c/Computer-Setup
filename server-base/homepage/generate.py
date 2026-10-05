@@ -119,6 +119,9 @@ def render_settings(fleet, host_dir, local_text):
         extras["net"] = host["topbar"]["net"]
     if host.get("topbar", {}).get("rgb"):
         extras["rgb"] = host["topbar"]["rgb"]
+    if host.get("topbar", {}).get("grouped"):
+        extras.update({"grouped": True, "label": host["topbar"]["label"],
+                       "disks": host["topbar"]["disks"]})
     base["topbarExtras"] = extras
     head = "\n".join(emit(base)) + "\n\nlayout:\n"
     servers = "  Servers:\n    style: row\n    columns: 3\n"
@@ -143,11 +146,25 @@ def render_widgets(fleet, host_dir):
 
 def render_js(fleet, host_dir):
     accents = json.dumps(fleet["hosts"][host_dir]["accents"], sort_keys=True)
-    return (HERE / "custom.js.in").read_text().replace("@ACCENTS@", accents)
+    template = (HERE / "custom.js.in").read_text().replace("@ACCENTS@", accents)
+    if fleet["hosts"][host_dir]["topbar"].get("grouped"):
+        # Replace the legacy extras poller, not add a second scheduler. Keep
+        # other hosts' generated scripts byte-identical and React untouched.
+        marker = "// Top bar extras the Glances info widget cannot show:"
+        if marker not in template:
+            raise ValueError("custom.js.in is missing its extras boundary")
+        template = template.split(marker, 1)[0] + (HERE / "grouped-topbar.js").read_text()
+    return template
+
+
+def render_css(fleet, host_dir):
+    css = (HERE / "custom.css").read_text()
+    if fleet["hosts"][host_dir]["topbar"].get("grouped"):
+        css += "\n" + (HERE / "grouped-topbar.css").read_text()
+    return css
 
 
 def outputs(fleet):
-    css = (HERE / "custom.css").read_text()
     for host_dir in fleet["hosts"]:
         hp = REPO / host_dir / "homepage"
         cfg = hp / "config"
@@ -156,7 +173,7 @@ def outputs(fleet):
         header = HEADER.format(local=f"{host_dir}/homepage/settings.local.yaml")
         yield cfg / "settings.yaml", header + render_settings(fleet, host_dir, (hp / "settings.local.yaml").read_text())
         yield cfg / "widgets.yaml", HEADER.format(local="this host's topbar entry") + render_widgets(fleet, host_dir)
-        yield cfg / "custom.css", "/* Generated copy of server-base/homepage/custom.css. */\n" + css
+        yield cfg / "custom.css", "/* Generated copy of server-base/homepage/custom.css. */\n" + render_css(fleet, host_dir)
         yield cfg / "custom.js", "// Generated from server-base/homepage/custom.js.in.\n" + render_js(fleet, host_dir)
 
 
