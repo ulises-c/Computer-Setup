@@ -720,9 +720,73 @@ Fields: `status` (`running` / `starting` / `stopped` / `failed` / `unknown`),
 `online_capacity`,
 `player_names`,
 `connect_lan`, `connect_tailnet`, `memory_bytes`, `save_bytes`,
-`disk_free_bytes`, `uptime_seconds`, `listening`, `owner_configured`,
+`install_bytes`, `installation_footprint`, `uptime_seconds`, `listening`, `owner_configured`,
 `world_password`, `build`, `latest_build`, `update_status`, `update_checked`,
 `last_save`, `updated`.
+
+### Software/process and active-world cards
+
+The primary **RuneScape: Dragonwilds** card reports the native game service,
+not the nginx container. **Running version** comes from `LogNetVersion: Set
+ProjectVersion` in the journal filtered by the current systemd `InvocationID`;
+it is `unknown` when unavailable, stopped, or a restart races the refresh.
+**Steam build** remains the installed manifest build ID, a separate value (not
+proof that a running process loaded a subsequently modified installation).
+Tasks/threads (`TasksCurrent`) and automatic service restarts (`NRestarts`) are
+cheap service-specific counters; restarts do not count manual restarts or lifetime
+crashes. **Installation on disk** is allocated bytes from `du -s -B1` over the
+entire game installation, including `Saved`, not disk free space or download size.
+An incomplete/failed size scan is unknown. World-save count and names are also
+reported. Player counts, online names and last-join details belong only to the
+**Active world** card, alongside save identity/size/time and join information.
+The join password intentionally stays visible on this private dashboard.
+
+The game host's `dragonwilds-status.sh` is deliberately a regular host-specific
+file rather than its former shared symlink. The main server's producer and all
+other files under the main-server tree remain unchanged.
+
+### Rolling 24-hour resources
+
+`status_metrics.py` keeps up to **2880 samples** from the previous **86400
+seconds**, atomically persisted in `.metrics/history.json` beside the producer
+(mode 0600 in a 0700 directory, gitignored and outside nginx's served directory).
+The minute timer starts building real history immediately; pulling this change
+does not create any past samples. A lower sample count/span on the card is
+expected during warm-up or after missing/corrupt history. Invalid or oversized
+history resets with a warning and a visible reset marker on that refresh.
+
+- **CPU current** is the average since the preceding valid sample, as percent of
+  one core (100% = one fully used core; values above 100% are valid).
+- CPU deltas require matching boot and invocation IDs, nondecreasing CPU counters,
+  forward monotonic/wall clocks that agree within 5 seconds, and a sampling gap
+  no longer than 180 seconds. The first sample, restart, unavailable counter or
+  larger gap is unknown, never zero. The next valid same-invocation sample warms
+  it up again. Historical valid samples from prior invocations remain in-window.
+- **CPU average** is weighted by observed interval duration, clipped at the 24h
+  boundary; **CPU maximum** is the highest sampled interval average, not an
+  instantaneous peak. No downtime or missing intervals are imputed as zero.
+- **Memory current** is systemd `MemoryCurrent` for the whole service cgroup,
+  not just the wrapper PID. Average and maximum use available point samples,
+  not interpolation or a lifetime peak. Unavailable/inactive gauges are null in
+  the JSON and `unknown` on the card.
+- **Sample coverage** shows the elapsed sample span, actual CPU interval hours
+  observed out of the requested 24h, and memory sample count. Span is not coverage
+  across gaps; memory point samples do not prove continuous memory observation.
+
+The endpoint retains numeric `cpu_percent`, `cpu_avg_percent`,
+`cpu_max_percent`, `memory_bytes`, `memory_avg_bytes`, `memory_max_bytes`,
+`cpu_coverage_seconds`, `history_span_seconds`, and `memory_samples` for consumers.
+Homepage uses the corresponding text fields (`cpu_current/avg/max`,
+`memory_current/avg/max`, `sample_window`) so unavailable values cannot be
+formatted as misleading zeros. No metrics network calls or new privileged
+exporters are needed. Timer/manual refreshes serialize with a private lock.
+
+Existing installed units execute the user-owned checkout as the game user. No
+unit change, `sudo`, daemon reload or game restart is needed for these producer
+and Homepage source changes. Regenerate only the game host's output with the
+shared generator API, then verify `python3 server-base/homepage/generate.py
+--check`; do not hand-edit `homepage/config/services.yaml`. The normal whole-fleet
+generator also produces exactly the same output.
 
 ### Player history
 

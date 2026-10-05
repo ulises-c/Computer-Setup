@@ -59,11 +59,10 @@
             label: mode
 
 - Games:
-    - game server:
+    - "RuneScape: Dragonwilds":
+        id: dragonwilds-server
         icon: /icons/dragonwilds.ico
-        description: Dragonwilds dedicated server — host, build, backups
-        server: my-docker
-        container: dragonwilds-status
+        description: Native dedicated server — process, installation and sampled 24h resources
         widget:
           type: customapi
           url: http://127.0.0.1:8096/dragonwilds-status.json
@@ -76,29 +75,50 @@
             - field: server_name
               label: Name
               format: text
-            - field: online_capacity
-              label: Players
+            - field: game_version
+              label: Running version
               format: text
-            - field: last_join_name
-              label: Last join
+            - field: build
+              label: Steam build
               format: text
-            - field: last_join
-              label: Last join at
-              format: relativeDate
             - field: uptime_seconds
               label: Uptime
               format: duration
-            - field: cpu_percent
-              label: CPU (1 core)
-              format: percent
-            - field: memory_bytes
-              label: Memory
-              format: bytes
-            - field: disk_free_bytes
-              label: Disk free
-              format: bytes
-            - field: build
-              label: Build
+            - field: cpu_current
+              label: CPU current (1 core)
+              format: text
+            - field: cpu_avg
+              label: CPU avg (24h sampled)
+              format: text
+            - field: cpu_max
+              label: CPU max (24h sampled)
+              format: text
+            - field: memory_current
+              label: Memory current
+              format: text
+            - field: memory_avg
+              label: Memory avg (24h sampled)
+              format: text
+            - field: memory_max
+              label: Memory max (24h sampled)
+              format: text
+            - field: sample_window
+              label: Sample coverage
+              format: text
+            - field: tasks_current
+              label: Tasks / threads
+              format: text
+            - field: restarts
+              label: Automatic restarts
+              format: text
+            - field: installation_footprint
+              label: Installation on disk
+              format: text
+            - field: world_count
+              label: World saves
+              format: text
+            - field: worlds_on_disk
+              label: Worlds on disk
               format: text
             - field: update_status
               label: Update
@@ -115,15 +135,10 @@
             - field: last_backup
               label: Last backup
               format: relativeDate
-            - field: worlds_on_disk
-              label: Worlds
-              format: text
-    - Ollie-GS:
+    - Active world:
         id: dragonwilds-world
         icon: /icons/dragonwilds.ico
-        description: Active world — UDP 7777 (LAN + tailnet)
-        server: my-docker
-        container: dragonwilds-status
+        description: Active save — players and joining (LAN + tailnet)
         widget:
           type: customapi
           url: http://127.0.0.1:8096/dragonwilds-status.json
@@ -145,6 +160,12 @@
             - field: player_names
               label: Online
               format: text
+            - field: last_join_name
+              label: Last join
+              format: text
+            - field: last_join
+              label: Last join at
+              format: relativeDate
             - field: join_code
               label: Join code
               format: text
