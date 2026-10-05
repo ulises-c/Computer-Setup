@@ -348,17 +348,32 @@ the game. `server-base/backup/restore-check.sh linux-game-server` verifies a
 restore without stopping anything. Rerun both after any change to the backup
 engine, `backup/sources.sh`, the pre-update gate or the save layout.
 
-## RGB status on Homepage
+## RGB lighting: kept off, and shown on Homepage
 
-`sudo bash linux-game-server/rgb/setup.sh` installs a timer that runs OpenRGB
-every 10 minutes as root (the case's HP TracerLED controller is a root-only
-HID device) and writes the detected devices and their active mode to
-`/var/lib/host-status/rgb.json`. `serve.sh` publishes that one file at
-`/host-status/rgb.json`, and the Homepage top bar and the `rgb lighting` card
-show one entry per device (hidden once the data is over 30 minutes old).
-OpenRGB's CLI prints no colours, and for this controller the mode is the one
-OpenRGB last set, not one read back from the hardware.
+The user wants lighting off by default. `sudo bash linux-game-server/rgb/setup.sh`
+(idempotent, `--dry-run` supported) installs two root-owned scripts and their units:
 
+- `rgb-off.service` forces every OpenRGB-detected device to black (`#000000`) at
+  boot and on `sudo systemctl start rgb-off.service`; `rgb-off-resume.service`
+  does the same after suspend/hibernate. Per device it uses the `Off` mode when
+  that device lists one, else `Direct`/`Static` with colour `000000`, never a mode
+  the device does not list, and retries for about 2 minutes because boot-time
+  enumeration can race device readiness. It exits non-zero with a journal line if
+  nothing could be turned off. There is no periodic re-assert (it would fight
+  lighting you set on purpose; it is documented as an opt-in). "On login" does not
+  apply: this host is headless and the unit runs at boot, independent of any session.
+- `rgb-status.timer` runs `rgb-status` every 10 minutes (the case's HP TracerLED
+  controller is a root-only HID device) and writes the detected devices, their
+  last-set mode, the keep-off state (`policy`) and ready-made display `rows` to
+  `/var/lib/host-status/rgb.json`. It reuses a cached device list instead of
+  probing the hardware on every run. `serve.sh` publishes that one file at
+  `/host-status/rgb.json`; the Homepage `rgb lighting` card shows one entry per
+  device and zone (hidden once the data is over 30 minutes old).
+
+OpenRGB's CLI prints no colours, so the card says "commanded off #000000 at
+HH:MM" and lists zones as detected; it never shows a colour as current. How to hold
+the lights on deliberately, the opt-in timer, the JSON contract and what is
+untested on the hardware: [`rgb/README.md`](rgb/README.md).
 ## AdGuard replica
 
 `adguard/` is the third AdGuard resolver, after the main server's primary and
