@@ -101,6 +101,17 @@ in [UNIFICATION.md](UNIFICATION.md).
 - Glances reports GPU memory in bytes on NVML hosts (`GLANCES_GPU_MEMORY`) and
   discovers only NVMe controllers for SMART (sysfs, cached 60 seconds), so
   spinning disks are never enumerated or woken for health data.
+- RGB keep-off policy: root-owned `rgb-off.service` at boot/manual start and
+  `rgb-off-resume.service` after sleep, with bounded device-readiness retries,
+  actual per-device mode selection and shared locking. One `rgb/setup.sh`
+  installs the services and exporter; the real HP controller accepted `Off`
+  on 2026-10-05. No periodic lighting override is enabled by default.
+- The **OpenRGB** card replaces the old lighting summary with all detected zones,
+  last accepted off-command time/trigger/result and export freshness. RGB is
+  removed from the game top bar. The CLI cannot read colors back, so the card
+  says "commanded off", never "currently black". The 10-minute exporter caches
+  hardware inventory and re-probes only on cache miss, new boot, expiry (24h)
+  or explicit refresh. Physical lights-off and reboot/resume checks remain open.
 
 ### Changed
 - The Dragonwilds world was renamed from `1` to `Ashenfall` on 2026-10-05 with the

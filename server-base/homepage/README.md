@@ -1,4 +1,13 @@
-# Compact Servers inventory
+# Homepage generation and compact Servers inventory
+
+The game host's opt-in grouped bar shows Compute, Storage, Connectivity and
+System. Lighting is deliberately separate on the **OpenRGB** card, never
+in `topbarExtras`; `topbar.rgb` is rejected by the generator. The card maps
+the installed RGB exporter's flat `rows` array and shows its update age.
+See [the game dashboard guide](../../linux-game-server/homepage/README.md)
+and [the keep-off service guide](../../linux-game-server/rgb/README.md).
+
+## Servers inventory
 
 Every dashboard gets the same six-row Servers cards from `fleet.json`:
 Platform, Board / SoC, CPU (model + cores / threads), Memory (OS-visible usable

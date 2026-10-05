@@ -116,7 +116,8 @@ or use the opt-in timer below.
 * Until the next boot/resume: just set the colours with OpenRGB. Nothing
   re-applies the policy in between.
 * Across reboots: `sudo systemctl disable rgb-off.service rgb-off-resume.service`
-  (current lighting is untouched; the card then shows `never applied`). While a
+  (current lighting is untouched; the card still shows the last accepted command
+  until the next boot, when its boot-ID check reports `never applied`). While a
   boot run is still retrying, `sudo systemctl stop rgb-off.service` aborts it.
 * Restore the default (off at every boot/resume):
   `sudo systemctl enable rgb-off.service rgb-off-resume.service && sudo systemctl start rgb-off.service`,
@@ -177,12 +178,23 @@ sudo systemctl start rgb-off.service   # apply again now (trigger: manual)
 
 Tests (stub `openrgb`, no hardware): `cd linux-game-server/tests && python3 -m unittest test_rgb_common test_rgb_off test_rgb_status test_rgb_units`.
 
-## Not verified on the real machine
+## Verified deployment and remaining hardware checks
 
-Physical lights going dark, the real OpenRGB mode names beyond what the
-exporter already reported, and root enumeration/commands against the real
-controller (none of this could be run without root). Also not exercised on the
-host: the `boot` vs `manual` classification at a real boot, the sleep-target
-wiring on a real resume, and `ExecStopPost=systemctl start --no-block` from
-inside the sandbox (it is `-`-prefixed, so a failure there cannot fail the unit).
-`systemd-analyze verify` and the stub tests pass.
+On October 5, 2026 the installer completed on the game host. The installed
+root-owned scripts match the committed source; `rgb-off.service` and
+`rgb-off-resume.service` are enabled, as is `rgb-status.timer`. The real
+controller accepted `--mode Off` at 11:51 PDT on the first attempt, and
+`rgb-off.service` and `rgb-status.service` exited successfully. The policy
+reports `result: applied`, `trigger: manual`; the exporter publishes all
+seven detected zone names and the corresponding command status. Homepage's
+OpenRGB card renders these rows and export freshness on desktop and at 390px.
+An inactive, successfully exited oneshot is normal; it need not remain running.
+
+This proves command acceptance, not physical color readback. Still needed:
+confirmation by eye that the lights are off, and a natural reboot/resume
+check that the policy runs again and the lights remain off. No reboot or
+suspend was initiated during dashboard work, because the host runs games.
+The `boot` classification and sleep-target behavior on real hardware are
+not yet validated. `systemd-analyze verify` and the stub tests pass.
+The exporter started immediately after applying the policy; its normal
+10-minute timer remains enabled.

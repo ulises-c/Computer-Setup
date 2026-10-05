@@ -318,6 +318,11 @@ Dragonwilds server, migrated off the NAS host.
       backup gate
 - [ ] Reserve the game host's LAN address in the router's DHCP table so the
       Direct-connect address and the Homepage card stay stable
+- [ ] RGB hardware acceptance: confirm lighting is physically off, then on the next
+      natural reboot/resume check the `rgb-policy.json` trigger/result and that
+      lighting remains off. The service and OpenRGB card are deployed; the manual
+      Off command was accepted on 2026-10-05. Do not disrupt a running game just
+      to exercise these triggers
 - [ ] Independent review of the game-server work on PR #106 (the commits after
       `eb73735`); not started
 - [ ] Roll the grouped top bar out to the main server and Pi; today only the game
