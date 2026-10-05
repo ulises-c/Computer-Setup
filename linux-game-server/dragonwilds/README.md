@@ -23,8 +23,10 @@ The server was configured as follows during the rename and Homepage work:
   `Main` (editing the save header and filename) failed: the game logged
   "Skipping save game (Main) as cannot be loaded in current version" and created
   an empty `Main` world instead, which ran from 2026-10-02 to 2026-10-03 until
-  `1.sav` was restored. Never edit a save header to rename a world; the empty
-  world is archived in `Saved/SaveGames-archive/`.
+  `1.sav` was restored. A byte-level header edit leaves the chunk lengths and
+  offset tables stale; the only supported route is
+  [Renaming a world offline](#renaming-a-world-offline). The empty world is archived
+  in `Saved/SaveGames-archive/`.
 - A world join password is configured in the private `DedicatedServer.ini`; it is
   shown as **Join pass** below **Join code** on the tailnet-only Homepage card. The
   password value is not stored in Git or this documentation.
@@ -98,6 +100,9 @@ the rule is:
 
 A mismatch produces **no error and no load attempt**. The server quietly creates a
 fresh world, which overwrites the import on the next save.
+
+To change the name stored inside a save, see
+[Renaming a world offline](#renaming-a-world-offline).
 
 ### 5. A client save's world name is a slot number, and the owner name looks like it
 
@@ -676,6 +681,92 @@ journalctl -u dragonwilds.service | grep -E 'LoadGameFromSaveGame|NewGame'
 
 `LoadGameFromSaveGame()` means it worked. `NewGame()` means the name did not
 match and a fresh world was created instead.
+
+## Renaming a world offline
+
+The server keys a world by the name stored inside its save (pain point 4), so a
+rename has to rewrite that name, not only the filename and config. A hand edit of
+the header fails: the strings are length-prefixed, so growing one shifts chunk
+lengths and offset tables behind it. `dragonwilds/spud_world_rename.py` rewrites
+the name through the save's own schema, recomputes every dependent length and
+offset, and writes a verified copy. It leaves its input untouched, refuses to write
+into a `SaveGames` directory, and never starts or stops anything.
+
+Jagex documents no supported way to rename a world. The tool makes the file
+change exact and checkable; whether the game then accepts the renamed save is
+proven only by the load log after a deliberate restart (see below).
+
+### What the tool changes
+
+A `.sav` is a tree of chunks (4-byte tag, `uint32` length, body):
+`SAVE` holds `INFO`, `GLOB` and `LVLS`. The world name is stored three times and is
+found by schema, not by searching for text:
+
+| Where | Field |
+| --- | --- |
+| `INFO` > `CINF` (a property-name list, an offset table, then the data) | `WorldName` |
+| `GLOB` > `GOBS` > `NOBJ` > `PROP` | `WorldSaveSettings/WorldName` and `WorldSaveSettings/WorldSlotName`, located through `META`'s class definition (storage type 30, string) and property-name index |
+
+Renaming to a name that is `n` characters longer grows the file by `3n` bytes and
+rewrites the lengths of `SAVE`, `INFO`, `CINF`, `GLOB`, `GOBS`, `NOBJ` and `PROP`,
+the two data-size fields, and the offset of every property stored after a changed
+string. The world GUID (stored as four `uint32` in `CINF` and as 16 bytes in
+`PROP`), every other property, `META`, `GLAI` and the level data in `LVLS` are
+copied byte for byte.
+
+The tool refuses, and writes nothing, when:
+
+- the save does not parse exactly (chunk lengths, offset tables, string encoding,
+  class definitions, a single object defining the world identity);
+- the three name fields do not all hold the `--from` name, the two GUID copies
+  differ, or the old name's string also appears anywhere the schema did not select;
+- the new name is not 1-32 characters of `A-Z a-z 0-9 _ -`, equals the old one, or
+  the output already exists, sits in a `SaveGames` directory, or is the input.
+
+### Use
+
+Work on a copy taken while the game is stopped and maintenance is entered (see the
+guide's maintenance section; the stopped-state backup includes `Config`,
+`SaveGames` and `SpudCache`):
+
+```bash
+cd linux-game-server/dragonwilds
+python3 spud_world_rename.py inspect ~/backups/1.sav
+python3 spud_world_rename.py rename --input ~/backups/1.sav \
+  --output ~/backups/<new name>.sav --from 1 --to <new name>
+python3 spud_world_rename.py verify --original ~/backups/1.sav \
+  --candidate ~/backups/<new name>.sav --from 1 --to <new name>
+```
+
+`rename` checks its own result before writing: the candidate parses, differs from
+the original only in the three name fields, equals a fresh rename of the original,
+and renaming it back reproduces the original byte for byte. It then writes the
+file mode 600, without overwriting, and prints both SHA-256 hashes and the
+unchanged world GUID. Keep saves, archives and candidates outside Git;
+`tests/test_spud_world_rename.py` builds synthetic saves and contains no real
+data. Set `DRAGONWILDS_PRIVATE_SAVE` to a private copy to run the same round-trip
+and rename checks against it.
+
+### Installing a candidate
+
+Only after a stopped-state backup and an explicit decision to restart:
+
+1. Enter maintenance and confirm it; keep the backup and its hash.
+2. Copy the candidate to `SaveGames/<new name>.sav` (mode 600, same owner) and
+   check its SHA-256 against the `rename` output.
+3. Move `<old>.sav` and `<old>.sav.backup` out of `SaveGames/` into an archive
+   directory. Community reports say the game deduplicates worlds by GUID, so
+   leaving both can hide one.
+4. Set `DefaultWorldName=<new name>` in `DedicatedServer.ini` (edit it while the
+   server is stopped; it is rewritten on shutdown).
+5. Leave maintenance, start the server and read the log: `LoadGameFromSaveGame`,
+   `World load SUCCEEDED` with the same world GUID as before the change, the new
+   name, and no `NewGame(`. Then join with a real client.
+
+Rollback: stop the game, remove `<new name>.sav`, move the archived `<old>.sav`
+files back (or extract `SaveGames` from the stopped-state backup), set
+`DefaultWorldName=<old>`, and start. Leave `SpudCache` as it is unless the log
+shows a cache problem; it is part of the backup.
 
 ## Backups
 

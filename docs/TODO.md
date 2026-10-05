@@ -10,6 +10,10 @@ unified-layout design rationale is in [UNIFICATION.md](UNIFICATION.md).
       and test real joins beyond six before treating it as usable.
 - [ ] Retest the join-code route from a Tailscale client; the documented evidence
       shows EOS can advertise the WAN address while direct tailnet-IP connect works.
+- [ ] Rename world `1` with `spud_world_rename.py` after a stopped-state backup,
+      then restart deliberately and confirm in the load log that the renamed
+      world loaded with its original GUID (no `NewGame(`) and a client joins;
+      until then the renamed save is unproven in the game.
 - [x] Nightly off-host backups cover this host's `Saved/Config`,
       `Saved/SaveGames`, private deployment `.env`, and a verified live world
       copy through `linux-game-server/backup/`.

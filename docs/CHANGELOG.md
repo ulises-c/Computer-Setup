@@ -69,6 +69,13 @@ in [UNIFICATION.md](UNIFICATION.md).
   count, SQLite integrity, sha256 sidecars) without touching live data;
   `linux-game-server/backup/restore-drill.sh` restores the stopped world, checks
   it is byte-identical and has the game load it. Both passed on every host.
+- `linux-game-server/dragonwilds/spud_world_rename.py`: offline, schema-driven
+  rename of a Dragonwilds world. It rewrites the three stored name fields,
+  recomputes the chunk lengths and offset tables behind them, leaves the GUID,
+  every other property and the level data byte-identical, verifies that renaming
+  back reproduces the original, and writes only a private copy. The unit tests
+  build synthetic saves; whether the game accepts a renamed save is still checked
+  by the post-restart load log.
 
 ### Changed
 - Homepage is pinned to v2.4.0 on every host (the main server and Pi used `:latest`,
