@@ -24,9 +24,9 @@ in [UNIFICATION.md](UNIFICATION.md).
 - `server-base` tag in `packages.json` (shell, terminal tools, git/gh, Tailscale,
   Docker, Cockpit, claude-code, opencode); opencode installs on servers via a new
   `opencode_step`, zoxide gains a server apt entry.
-- Servers cards show each host's fixed facts (OS, kernel, hostname, CPU, threads,
-  RAM) from its Glances; each dashboard's top bar shows its own host's live CPU,
-  memory, disks, CPU temperature and uptime (generated `widgets.yaml`).
+- Each dashboard's top bar shows its own host's live CPU, memory, disks, CPU
+  temperature and uptime (generated `widgets.yaml`); the game host's bar is the
+  grouped one described below.
 - Homepage design system: colour selfh.st logos, per-group accents (heading, card
   rule and wash, tinted charts), and the official Dragonwilds icon, logo and key
   art fetched from Steam at deploy time (not committed).
@@ -74,10 +74,38 @@ in [UNIFICATION.md](UNIFICATION.md).
   recomputes the chunk lengths and offset tables behind them, leaves the GUID,
   every other property and the level data byte-identical, verifies that renaming
   back reproduces the original, and writes only a private copy. The unit tests
-  build synthetic saves; whether the game accepts a renamed save is still checked
-  by the post-restart load log.
+  build synthetic saves; the game accepted the renamed world on 2026-10-05
+  (original GUID loaded, no `NewGame(`, a client joined).
+- Servers cards are a compact six-row inventory generated from `fleet.json` for
+  all three hosts: platform, board and chipset (SoC on the Pi), CPU with cores and
+  threads, OS-visible memory, graphics (model, dGPU/iGPU, dedicated VRAM or
+  shared memory) and software (OS and kernel). Live usage stays in the top bar.
+- Dragonwilds cards: `RuneScape: Dragonwilds` carries the server process (status,
+  the running game version from the current invocation's journal beside the Steam
+  build, installation footprint from `du`, now / 24h average / sampled maximum CPU
+  and memory, tasks, automatic restarts, update and backup health, uptime to the
+  second) and `Active world` carries the world, players, last join, join details
+  and save metrics. Filesystem free space is no longer on the game card.
+- Dragonwilds status collector: runs every 5 seconds (`dragonwilds-status.timer`)
+  through `fast_status.py`, which caches the expensive scans (`du`, journal,
+  inventory, backup and update state) for 60 seconds; `status_metrics.py` keeps a
+  day of samples in 1441 private minute buckets and shows its coverage while it
+  warms up. Measured on the host: about 0.09 s per run against about 2 s for the
+  previous full producer.
+- Grouped top bar for the game host (`server-base/homepage/grouped-topbar.{js,css}`,
+  enabled per host by `topbar.grouped` in `fleet.json`): Compute, Storage,
+  Connectivity and System sections with the host's own CPU, load, temperature,
+  RAM, GPU (model, type, VRAM used and total), labelled disks, NVMe health and
+  wear, network and uptime, with stale and error states. The main server and Pi
+  keep the previous bar.
+- Glances reports GPU memory in bytes on NVML hosts (`GLANCES_GPU_MEMORY`) and
+  discovers only NVMe controllers for SMART (sysfs, cached 60 seconds), so
+  spinning disks are never enumerated or woken for health data.
 
 ### Changed
+- The Dragonwilds world was renamed from `1` to `Ashenfall` on 2026-10-05 with the
+  offline tool; the GUID is unchanged and the old save and its `.sav.backup` are
+  archived under `Saved/SaveGames-archive/`.
 - Homepage is pinned to v2.4.0 on every host (the main server and Pi used `:latest`,
   which resolved to v2.4.0).
 - Backups on the main server and Pi now share the Pi's hardened failure handling:

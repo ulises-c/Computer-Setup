@@ -10,10 +10,10 @@ unified-layout design rationale is in [UNIFICATION.md](UNIFICATION.md).
       and test real joins beyond six before treating it as usable.
 - [ ] Retest the join-code route from a Tailscale client; the documented evidence
       shows EOS can advertise the WAN address while direct tailnet-IP connect works.
-- [ ] Rename world `1` with `spud_world_rename.py` after a stopped-state backup,
-      then restart deliberately and confirm in the load log that the renamed
-      world loaded with its original GUID (no `NewGame(`) and a client joins;
-      until then the renamed save is unproven in the game.
+- [ ] Re-check `spud_world_rename.py` after Dragonwilds game updates: the game
+      documents no world rename. `1` → `Ashenfall` was accepted on build
+      25630937 (original GUID loaded, no `NewGame(`, a client joined). Take a
+      stopped-state backup first and read the load log after the restart.
 - [x] Nightly off-host backups cover this host's `Saved/Config`,
       `Saved/SaveGames`, private deployment `.env`, and a verified live world
       copy through `linux-game-server/backup/`.
@@ -318,7 +318,14 @@ Dragonwilds server, migrated off the NAS host.
       backup gate
 - [ ] Reserve the game host's LAN address in the router's DHCP table so the
       Direct-connect address and the Homepage card stay stable
-- [ ] Independent review of `feat/linux-game-server`, then open the PR
+- [ ] Independent review of the game-server work on PR #106 (the commits after
+      `eb73735`); not started
+- [ ] Roll the grouped top bar out to the main server and Pi; today only the game
+      host enables `topbar.grouped` in `server-base/fleet.json`
+- [ ] Roll the NVMe-only, cached Glances SMART default out to the main server and
+      Pi (their Glances is unchanged). Spinning disks stay asleep: an intentional
+      HDD check uses `smartctl -n standby`, and the drive's power state is read
+      before and after
 
 ## linux-pi — Raspberry Pi 4
 
