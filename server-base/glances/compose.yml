@@ -20,6 +20,11 @@ services:
       # The host's root filesystem, seen through the /etc/hostname bind mount.
       GLANCES_FS_SHOW: "^/etc/hostname$$"
       GLANCES_FS_ALIAS: "/etc/hostname:system"
+      # Backend safety floors, independent of Homepage/Web UI HTTP polling.
+      GLANCES_FS_INTERVAL: "${GLANCES_FS_INTERVAL:-300}"
+      GLANCES_NVME_HEALTH_INTERVAL: "${GLANCES_NVME_HEALTH_INTERVAL:-600}"
+      GLANCES_NVME_HEALTH_ENABLED: "${GLANCES_NVME_HEALTH_ENABLED:-true}"
+      GLANCES_DISKIO_INTERVAL: "${GLANCES_DISKIO_INTERVAL:-60}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /etc/os-release:/etc/os-release:ro
