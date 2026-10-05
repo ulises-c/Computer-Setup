@@ -13,6 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, "/")
 import rename_disks
+import telemetry
 
 allowed_hosts = os.environ.get("GLANCES_ALLOWED_HOSTS", "").strip()
 if not allowed_hosts:
@@ -42,6 +43,8 @@ for section in ("fs", "sensors"):
         text += f"[{section}]\n" + "\n".join(lines) + "\n"
 config.write_text(text, encoding="utf-8")
 rename_disks.patch()
+# Fail closed: install NVMe-only discovery before any Glances plugin updates.
+telemetry.install(gpu=os.environ.get("GLANCES_GPU_MEMORY", "false") == "true")
 
 from glances import main
 

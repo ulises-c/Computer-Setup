@@ -55,7 +55,7 @@ jobs:
 
       - name: Test Glances disk aliases
         working-directory: server-base/glances
-        run: python3 -m unittest -v test_rename_disks.py
+        run: python3 -m unittest -v test_rename_disks.py test_telemetry.py
 
       - name: Test server-base Homepage generator (outputs current, cross-links)
         run: python3 server-base/tests/test_generate.py -v

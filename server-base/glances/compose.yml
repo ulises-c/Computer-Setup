@@ -27,5 +27,6 @@ services:
       # kernel devices and patches Glances' diskio plugin (see rename_disks.py).
       - ./entrypoint.sh:/entrypoint.sh:ro
       - ./rename_disks.py:/rename_disks.py:ro
+      - ./telemetry.py:/telemetry.py:ro
       - /sys/class/block:/sys/class/block:ro
     command: /bin/sh /entrypoint.sh
