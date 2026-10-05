@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Writes the JSON behind the homepage "dragonwilds" card, served by the loopback
-# nginx in this folder's docker-compose.yml. Run on a 1-minute systemd timer
+# nginx in this folder's docker-compose.yml. Run on a 5-second systemd timer
 # (dragonwilds-status.timer); safe to run by hand.
 #
 # The game server is a host systemd unit rather than a container, so the card
@@ -25,6 +25,11 @@ fi
 : "${LATEST_BUILD_FILE:=$SCRIPT_DIR/status/.latest-build}"
 : "${STATUS_HISTORY_FILE:=$SCRIPT_DIR/.metrics/history.json}"
 : "${BACKUP_STATUS_JSON:=/var/lib/computer-setup-backup/game-backup/backup-status.json}"
+
+# Keep configuration loading in this entrypoint for both scheduled and manual runs.
+if [[ "${1:-}" != --slow ]]; then
+  exec python3 "$SCRIPT_DIR/fast_status.py"
+fi
 
 command -v jq >/dev/null || { printf 'error: jq not installed (apt install jq)\n' >&2; exit 1; }
 [[ "$MAX_PLAYERS" =~ ^[1-9][0-9]*$ ]] || { printf 'error: MAX_PLAYERS must be a positive integer\n' >&2; exit 1; }
@@ -181,11 +186,10 @@ if [[ -d "$savegames" ]]; then
   [[ -n "$worlds_on_disk" ]] && world_count="$(tr ',' '\n' <<<"$worlds_on_disk" | wc -l | tr -d ' ')"
 fi
 
-# Private bounded rolling history. Unknown counters and the first sample are
-# null, not fabricated zeros. CPU deltas require the same boot/invocation.
-metrics="$(python3 "$SCRIPT_DIR/status_metrics.py" --unit "$UNIT" --history "$STATUS_HISTORY_FILE")"
+# Fast metrics/history are added by fast_status.py after this cached scan.
+metrics="{}"
 # A restart during this refresh invalidates the earlier journal version.
-if [[ "$(jq -r '.invocation' <<<"$metrics")" != "$invocation" ]]; then
+if [[ "$(systemctl show -p InvocationID --value "$UNIT" 2>/dev/null || true)" != "$invocation" ]]; then
   game_version=unknown
 fi
 

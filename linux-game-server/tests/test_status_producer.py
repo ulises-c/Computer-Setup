@@ -17,9 +17,11 @@ if name == 'systemctl':
     if args[0] == 'is-active': sys.exit(3)
     values = dict(ActiveState=os.environ.get('TEST_STATE', 'active'),
                   ActiveEnterTimestamp='Mon 2026-10-05 00:00:00 UTC',
-                  InvocationID='fixture-run', CPUUsageNSec='123000000000',
+                  InvocationID=os.environ.get('TEST_INVOCATION', 'fixture-run'), CPUUsageNSec='123000000000',
                   MemoryCurrent=os.environ.get('TEST_MEMORY', '2048'),
                   NRestarts='2', TasksCurrent='31')
+    if os.environ.get('TEST_RESTART_DURING_JOURNAL') and pathlib.Path(os.environ['MOCK_JOURNAL_ARGS']).exists():
+        values['InvocationID'] = 'fixture-run-new'
     props = [args[i + 1] for i, a in enumerate(args[:-1]) if a == '-p']
     for p in props:
         print(values.get(p, '') if '--value' in args else p + '=' + values.get(p, ''))
@@ -33,7 +35,8 @@ elif name == 'journalctl':
     else:
         print('LogNetVersion: Set ProjectVersion to 9.9.9.9. Version Checksum will be recalculated on next use.')
 elif name == 'ss':
-    print('State Recv-Q Send-Q Local Address:Port Peer Address:Port\nUNCONN 0 0 0.0.0.0:7777 0.0.0.0:*')
+    print('State Recv-Q Send-Q Local Address:Port Peer Address:Port')
+    if os.environ.get('TEST_LISTEN', 'yes') == 'yes': print('UNCONN 0 0 0.0.0.0:7777 0.0.0.0:*')
 elif name == 'ip':
     if 'route' in args: print('default via 192.0.2.1 dev eth0')
     else: print('2: eth0 inet 192.0.2.2/24 scope global eth0')
@@ -49,7 +52,7 @@ class ProducerTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.scripts = self.root / 'scripts'
         self.scripts.mkdir()
-        for name in ('dragonwilds-status.sh', 'status_metrics.py'):
+        for name in ('dragonwilds-status.sh', 'status_metrics.py', 'fast_status.py'):
             source = ROOT / 'dragonwilds' / name
             if source.exists(): shutil.copyfile(source, self.scripts / name)
         players = self.scripts / 'dragonwilds-players.sh'
@@ -103,6 +106,49 @@ class ProducerTests(unittest.TestCase):
         self.assertIn('_SYSTEMD_INVOCATION_ID=fixture-run', (self.root / 'journal-args').read_text())
         self.assertEqual(self.output.stat().st_mode & 0o777, 0o644)
         self.assertFalse((self.output.parent / 'history.json').exists())
+
+    def test_fast_refresh_caches_slow_scans_and_formats_seconds(self):
+        first = self.run_producer()
+        before = (self.root / 'journal-args').read_text()
+        second = self.run_producer()
+        self.assertEqual(before, (self.root / 'journal-args').read_text())
+        self.assertRegex(second['uptime_display'], r'^\d+d \d+h \d+m \d+s$')
+        self.assertIn('avg', second['cpu_summary'])
+        self.assertIn('max', second['memory_summary'])
+        self.assertEqual(second['metadata_refresh_seconds'], 60)
+
+    def test_restart_invalidates_metadata_cache(self):
+        self.run_producer()
+        before = (self.root / 'journal-args').read_text()
+        self.env['TEST_INVOCATION'] = 'fixture-run-new'
+        status = self.run_producer()
+        self.assertGreater(len((self.root / 'journal-args').read_text()), len(before))
+        self.assertEqual(status['invocation'], 'fixture-run-new')
+        self.assertIsNone(status['cpu_percent'])
+
+    def test_expired_metadata_cache_is_refreshed(self):
+        self.run_producer()
+        cache = self.root / 'private/metadata.json'
+        state = json.loads(cache.read_text())
+        state['_cached_at'] = 0
+        cache.write_text(json.dumps(state))
+        before = (self.root / 'journal-args').read_text()
+        self.run_producer()
+        self.assertGreater(len((self.root / 'journal-args').read_text()), len(before))
+
+    def test_socket_readiness_updates_without_slow_scan(self):
+        self.run_producer()
+        before = (self.root / 'journal-args').read_text()
+        self.env['TEST_LISTEN'] = 'no'
+        status = self.run_producer()
+        self.assertEqual(status['status'], 'starting')
+        self.assertFalse(status['listening'])
+        self.assertEqual(before, (self.root / 'journal-args').read_text())
+
+    def test_restart_during_journal_scan_does_not_claim_a_running_version(self):
+        self.env['TEST_RESTART_DURING_JOURNAL'] = 'yes'
+        status = self.run_producer()
+        self.assertEqual(status['game_version'], 'unknown')
 
     def test_unavailable_memory_is_null_not_zero(self):
         self.env['TEST_MEMORY'] = '[not set]'

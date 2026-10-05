@@ -21,6 +21,34 @@ class MetricsTests(unittest.TestCase):
         return dict(epoch=epoch, monotonic=mono, cpu_ns=cpu * 1_000_000_000 if cpu is not None else None,
                     memory_bytes=memory, invocation=invocation, boot=boot)
 
+    def test_five_second_samples_aggregate_without_losing_counts_or_maxima(self):
+        state = {}
+        for i in range(13):
+            state, result = self.m.update(state, self.sample(1200+i*5, 1200+i*5, 100+i, 1024+i))
+        self.assertEqual(len(state['samples']), 2)
+        self.assertEqual(result['memory_samples'], 13)
+        self.assertEqual(result['memory_max_bytes'], 1036)
+        self.assertEqual(result['cpu_coverage_seconds'], 60)
+        self.assertAlmostEqual(result['cpu_percent'], 20)
+        self.assertEqual(result['cpu_max_percent'], 20)
+
+    def test_full_day_of_five_second_samples_remains_bounded(self):
+        state = {}
+        for i in range(17281):
+            state, result = self.m.update(state, self.sample(1200+i*5, 1200+i*5, 100+i, 1024+i))
+        self.assertLessEqual(len(state['samples']), 1441)
+        self.assertEqual(result['cpu_coverage_seconds'], 86400)
+        self.assertEqual(result['history_span_seconds'], 86400)
+        self.assertEqual(result['memory_samples'], 17281)
+        self.assertAlmostEqual(result['cpu_avg_percent'], 20)
+        self.assertEqual(result['memory_max_bytes'], 18304)
+
+    def test_corrupt_aggregate_is_rejected(self):
+        state, _ = self.m.update({}, self.sample())
+        row = state['samples'][0]
+        row['memory_count'] = -1
+        self.assertFalse(self.m.valid_sample(row, True))
+
     def test_first_sample_is_unknown_cpu_not_zero(self):
         state, result = self.m.update({}, self.sample())
         self.assertIsNone(result['cpu_percent'])
@@ -77,7 +105,7 @@ class MetricsTests(unittest.TestCase):
         for i in range(3000):
             state, result = self.m.update(state, self.sample(90000 + i, 90000 + i, 200 + i))
         self.assertLessEqual(len(state['samples']), self.m.MAX_SAMPLES)
-        self.assertEqual(self.m.MAX_SAMPLES, 2880)
+        self.assertEqual(self.m.MAX_SAMPLES, 1441)
 
 
     def test_cli_persists_private_bounded_state_and_recovers_corruption(self):
@@ -98,7 +126,7 @@ class MetricsTests(unittest.TestCase):
             self.assertEqual(result['cpu_avg'], '50.0%')
             self.assertEqual(result['memory_current'], '1.0 KiB')
             self.assertIn('2 memory samples', result['sample_window'])
-            self.assertIn('/ 24h', result['sample_window'])
+            self.assertIn('/24h', result['sample_window'])
             path.write_text('{bad json')
             result, stderr = run(self.sample(1120, 1120, 160))
             self.assertIsNone(result['cpu_percent'])

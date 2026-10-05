@@ -14,7 +14,7 @@ import time
 import tempfile
 
 WINDOW_SECONDS = 86400
-MAX_SAMPLES = 2880
+MAX_SAMPLES = 1441  # one-minute buckets covering 24h plus the partial boundary
 
 
 def update(state, sample):
@@ -36,22 +36,47 @@ def update(state, sample):
     cutoff = sample['epoch'] - WINDOW_SECONDS
     samples = [s for s in state.get('samples', [])
                if cutoff <= s['epoch'] < sample['epoch']]
+    # Minute buckets retain weighted CPU totals and sampled gauge sums/maxima;
+    # five-second ticks never truncate the day to four hours. Keep current CPU
+    # separate from the aggregate so it still describes the latest interval.
+    current = row['cpu_percent']
+    row.update(memory_sum=row['memory_bytes'] or 0,
+               memory_count=int(row['memory_bytes'] is not None),
+               memory_peak=row['memory_bytes'], cpu_peak=current,
+               start_epoch=row['epoch'])
+    for old in samples:
+        old.setdefault('memory_sum', old['memory_bytes'] or 0)
+        old.setdefault('memory_count', int(old['memory_bytes'] is not None))
+        old.setdefault('memory_peak', old['memory_bytes'])
+        old.setdefault('cpu_peak', old['cpu_percent'])
+        old.setdefault('start_epoch', old['epoch'])
+    if samples and int(samples[-1]['epoch'] // 60) == int(row['epoch'] // 60):
+        old = samples.pop()
+        duration = old['duration'] + row['duration']
+        row['cpu_percent'] = ((old['cpu_percent'] or 0) * old['duration'] +
+                              (current or 0) * row['duration']) / duration if duration else None
+        row['duration'] = duration
+        row['start_epoch'] = old['start_epoch']
+        row['memory_sum'] += old['memory_sum']
+        row['memory_count'] += old['memory_count']
+        row['memory_peak'] = max((v for v in (old['memory_peak'], row['memory_peak']) if v is not None), default=None)
+        row['cpu_peak'] = max((v for v in (old['cpu_peak'], current) if v is not None), default=None)
     samples = (samples + [row])[-MAX_SAMPLES:]
     cpu_rows = [(s, min(s['duration'], max(0, s['epoch'] - cutoff)))
                 for s in samples if s['cpu_percent'] is not None]
     coverage = sum(duration for _, duration in cpu_rows)
-    memory = [s['memory_bytes'] for s in samples if s['memory_bytes'] is not None]
-    current = row['cpu_percent']
+    memory = [s for s in samples if s['memory_count']]
+    memory_count = sum(s['memory_count'] for s in memory)
     result = {
         'cpu_percent': current,
         'cpu_current': 'unknown (warming up)' if current is None else f'{current:.1f}%',
         'cpu_avg_percent': sum(s['cpu_percent'] * duration for s, duration in cpu_rows) / coverage if coverage else None,
-        'cpu_max_percent': max((s['cpu_percent'] for s, duration in cpu_rows if duration > 0), default=None),
-        'history_span_seconds': sample['epoch'] - samples[0]['epoch'],
+        'cpu_max_percent': max((s['cpu_peak'] for s, duration in cpu_rows if duration > 0), default=None),
+        'history_span_seconds': sample['epoch'] - samples[0]['start_epoch'],
         'memory_bytes': sample['memory_bytes'],
-        'memory_avg_bytes': sum(memory) / len(memory) if memory else None,
-        'memory_max_bytes': max(memory, default=None),
-        'memory_samples': len(memory),
+        'memory_avg_bytes': sum(s['memory_sum'] for s in memory) / memory_count if memory_count else None,
+        'memory_max_bytes': max((s['memory_peak'] for s in memory), default=None),
+        'memory_samples': memory_count,
         'cpu_coverage_seconds': coverage,
     }
     for key, value in [('cpu_avg', result['cpu_avg_percent']), ('cpu_max', result['cpu_max_percent'])]:
@@ -60,9 +85,9 @@ def update(state, sample):
         raw = 'memory_bytes' if key == 'current' else f'memory_{key}_bytes'
         value = result[raw]
         result[f'memory_{key}'] = format_bytes(value)
-    result['sample_window'] = (f"{result['history_span_seconds'] / 3600:.2f}h span; "
-                               f"{coverage / 3600:.2f}h CPU observed / 24h; "
-                               f"{len(memory)} memory samples")
+    result['sample_window'] = (f"{result['history_span_seconds'] / 3600:.2f}h/24h · "
+                               f"CPU {coverage / 3600:.2f}h · "
+                               f"{memory_count} memory samples")
     return {'schema': 1, 'samples': samples, 'previous': sample}, result
 
 
@@ -90,10 +115,27 @@ def valid_sample(sample, row=False):
     if row:
         duration = sample.get('duration')
         cpu = sample.get('cpu_percent')
-        if type(duration) not in (int, float) or not 0 <= duration <= 180:
+        if type(duration) not in (int, float) or not 0 <= duration <= 86400:
             return False
         if cpu is not None and (type(cpu) not in (int, float) or not math.isfinite(cpu) or cpu < 0):
             return False
+        # Old schema-1 samples remain readable; aggregate fields, when present,
+        # must be a complete, finite set rather than trusting corrupt totals.
+        keys = ('memory_sum', 'memory_count', 'memory_peak', 'cpu_peak', 'start_epoch')
+        if any(key in sample for key in keys):
+            if not all(key in sample for key in keys):
+                return False
+            count = sample['memory_count']
+            if type(count) is not int or not 0 <= count <= 10000:
+                return False
+            for key in keys:
+                value = sample[key]
+                if value is None and key in ('memory_peak', 'cpu_peak'):
+                    continue
+                if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+                    return False
+            if not 0 <= sample['epoch'] - sample['start_epoch'] < 60:
+                return False
     return True
 
 
@@ -117,7 +159,7 @@ def load_history(path):
 
 
 def collect_unit(unit):
-    properties = ('ActiveState', 'InvocationID', 'CPUUsageNSec', 'MemoryCurrent', 'TasksCurrent', 'NRestarts')
+    properties = ('ActiveState', 'InvocationID', 'CPUUsageNSec', 'MemoryCurrent', 'TasksCurrent', 'NRestarts', 'ActiveEnterTimestampMonotonic', 'ActiveEnterTimestamp')
     command = ['systemctl', 'show', unit]
     for key in properties:
         command += ['-p', key]
@@ -138,6 +180,16 @@ def collect_unit(unit):
     for key in ('tasks_current', 'restarts'):
         if extras[key] is None:
             extras[key] = 'unknown'
+    started = counter('ActiveEnterTimestampMonotonic')
+    if active and started is not None:
+        uptime = max(0, int(time.monotonic() - started / 1e6))
+    elif active:
+        parsed = subprocess.run(['date', '-d', values.get('ActiveEnterTimestamp', ''), '+%s'],
+                                capture_output=True, text=True, check=False)
+        uptime = max(0, int(time.time()) - int(parsed.stdout)) if parsed.returncode == 0 else 0
+    else:
+        uptime = 0
+    extras.update(uptime_seconds=uptime, unit_status=values.get('ActiveState', 'unknown'))
     return sample, extras
 
 

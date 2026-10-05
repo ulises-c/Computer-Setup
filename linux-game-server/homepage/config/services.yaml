@@ -170,7 +170,7 @@
         widget:
           type: customapi
           url: http://127.0.0.1:8096/dragonwilds-status.json
-          refreshInterval: 60000
+          refreshInterval: 5000
           display: list
           mappings:
             - field: status
@@ -179,60 +179,36 @@
             - field: server_name
               label: Name
               format: text
-            - field: game_version
-              label: Running version
+            - field: software_summary
+              label: Software
               format: text
-            - field: build
-              label: Steam build
-              format: text
-            - field: uptime_seconds
+            - field: uptime_display
               label: Uptime
-              format: duration
-            - field: cpu_current
-              label: CPU current (1 core)
               format: text
-            - field: cpu_avg
-              label: CPU avg (24h sampled)
+            - field: cpu_summary
+              label: CPU · 1 core / 24h
               format: text
-            - field: cpu_max
-              label: CPU max (24h sampled)
-              format: text
-            - field: memory_current
-              label: Memory current
-              format: text
-            - field: memory_avg
-              label: Memory avg (24h sampled)
-              format: text
-            - field: memory_max
-              label: Memory max (24h sampled)
+            - field: memory_summary
+              label: Memory · 24h
               format: text
             - field: sample_window
-              label: Sample coverage
+              label: Coverage
               format: text
-            - field: tasks_current
-              label: Tasks / threads
-              format: text
-            - field: restarts
-              label: Automatic restarts
+            - field: process_summary
+              label: Process
               format: text
             - field: installation_footprint
               label: Installation on disk
               format: text
-            - field: world_count
+            - field: worlds_summary
               label: World saves
               format: text
-            - field: worlds_on_disk
-              label: Worlds on disk
-              format: text
-            - field: update_status
-              label: Update
+            - field: update_summary
+              label: Updates
               format: text
             - field: update_checked
               label: Checked
               format: relativeDate
-            - field: auto_update
-              label: Auto-update
-              format: text
             - field: backup_status
               label: Backup
               format: text
@@ -246,7 +222,7 @@
         widget:
           type: customapi
           url: http://127.0.0.1:8096/dragonwilds-status.json
-          refreshInterval: 60000
+          refreshInterval: 5000
           display: list
           mappings:
             - field: world

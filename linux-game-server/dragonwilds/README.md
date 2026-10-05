@@ -701,7 +701,7 @@ alongside it.
 
 ## Status card
 
-`dragonwilds-status.timer` runs `dragonwilds-status.sh` every minute, writing
+`dragonwilds-status.timer` targets `dragonwilds-status.sh` every five seconds, writing
 `status/dragonwilds-status.json` (gitignored). The nginx container serves it on
 `127.0.0.1:8096`, and homepage — host-networked — reads it via a `customapi`
 widget.
@@ -727,7 +727,12 @@ Fields: `status` (`running` / `starting` / `stopped` / `failed` / `unknown`),
 ### Software/process and active-world cards
 
 The primary **RuneScape: Dragonwilds** card reports the native game service,
-not the nginx container. **Running version** comes from `LogNetVersion: Set
+not the nginx container. Compact rows group current / rolling-24h average / sampled
+maximum CPU and memory, version with Steam build, tasks with automatic restarts,
+world count with save names, and update health with automatic-update mode. All
+underlying numeric and individual text fields remain in the status JSON.
+**Uptime** uses days, hours, minutes and seconds (`uptime_display`), not
+Homepage's rounded duration formatter. **Running version** comes from `LogNetVersion: Set
 ProjectVersion` in the journal filtered by the current systemd `InvocationID`;
 it is `unknown` when unavailable, stopped, or a restart races the refresh.
 **Steam build** remains the installed manifest build ID, a separate value (not
@@ -747,10 +752,10 @@ other files under the main-server tree remain unchanged.
 
 ### Rolling 24-hour resources
 
-`status_metrics.py` keeps up to **2880 samples** from the previous **86400
-seconds**, atomically persisted in `.metrics/history.json` beside the producer
+`status_metrics.py` retains the previous **86400 seconds** in at most **1441
+one-minute buckets**, atomically persisted in `.metrics/history.json` beside the producer
 (mode 0600 in a 0700 directory, gitignored and outside nginx's served directory).
-The minute timer starts building real history immediately; pulling this change
+The timer starts building real history immediately; pulling this change
 does not create any past samples. A lower sample count/span on the card is
 expected during warm-up or after missing/corrupt history. Invalid or oversized
 history resets with a warning and a visible reset marker on that refresh.
@@ -763,7 +768,8 @@ history resets with a warning and a visible reset marker on that refresh.
   larger gap is unknown, never zero. The next valid same-invocation sample warms
   it up again. Historical valid samples from prior invocations remain in-window.
 - **CPU average** is weighted by observed interval duration, clipped at the 24h
-  boundary; **CPU maximum** is the highest sampled interval average, not an
+  boundary (the partial boundary bucket assumes uniform CPU within that minute);
+  **CPU maximum** is the highest sampled interval average, not an
   instantaneous peak. No downtime or missing intervals are imputed as zero.
 - **Memory current** is systemd `MemoryCurrent` for the whole service cgroup,
   not just the wrapper PID. Average and maximum use available point samples,
@@ -772,21 +778,91 @@ history resets with a warning and a visible reset marker on that refresh.
 - **Sample coverage** shows the elapsed sample span, actual CPU interval hours
   observed out of the requested 24h, and memory sample count. Span is not coverage
   across gaps; memory point samples do not prove continuous memory observation.
+- Buckets preserve CPU interval-duration totals and maximum, and memory sum,
+  sample count and maximum. Five-second sampling retains an entire day rather
+  than truncating it to four hours with the old 2880-point cap. Memory counts,
+  maxima and sample span can include up to 59 seconds before the exact cutoff
+  in the boundary bucket; this is minute-resolution retention, not a claim of
+  exact sub-minute historical expiry. Existing schema-1 minute samples migrate
+  without losing their valid measurements.
 
 The endpoint retains numeric `cpu_percent`, `cpu_avg_percent`,
 `cpu_max_percent`, `memory_bytes`, `memory_avg_bytes`, `memory_max_bytes`,
 `cpu_coverage_seconds`, `history_span_seconds`, and `memory_samples` for consumers.
-Homepage uses the corresponding text fields (`cpu_current/avg/max`,
-`memory_current/avg/max`, `sample_window`) so unavailable values cannot be
+Homepage uses grouped text fields (`cpu_summary`, `memory_summary`,
+`sample_window`) with explicit now / avg / max labels so unavailable values cannot be
 formatted as misleading zeros. No metrics network calls or new privileged
 exporters are needed. Timer/manual refreshes serialize with a private lock.
 
-Existing installed units execute the user-owned checkout as the game user. No
-unit change, `sudo`, daemon reload or game restart is needed for these producer
-and Homepage source changes. Regenerate only the game host's output with the
-shared generator API, then verify `python3 server-base/homepage/generate.py
---check`; do not hand-edit `homepage/config/services.yaml`. The normal whole-fleet
-generator also produces exactly the same output.
+### Fast metrics, slower metadata and applying the cadence
+
+The shell entrypoint loads the private `.env` and executes `fast_status.py`.
+Every tick reads service counters and UDP socket readiness, samples resources,
+and atomically publishes JSON. `du`, world/config/manifest inventory, backup and
+update metadata, whole-invocation journal parsing, last join and online players
+are cached for **60 seconds** in private `.metrics/metadata.json` (mode 0600).
+A changed invocation or an expired cache forces a refresh; a failed slow refresh
+fails the tick rather than claiming newly refreshed metadata. Thus players and
+joining/save/update details can lag by about a minute even with fast metrics.
+`metadata_age_seconds` exposes the actual age; a cold/expired-cache tick is slower.
+No Steam/network query is added. The full producer is never scheduled at 1/5s
+without this cache. Private locks serialize manual and timer runs.
+
+Homepage polls both cards every **5000 ms**. The host-specific timer is now a
+regular file, not a shared symlink, and targets `OnUnitActiveSec=5s` with
+`AccuracySec=1s`. Timer scheduling and an occasional ~2s cache refresh mean this
+is a five-second target, not a guaranteed real-time heartbeat. Pulling the code
+updates the installed user-owned ExecStart, but **does not change an already
+installed one-minute timer**. Install only this timer, without restarting the game:
+
+```bash
+cd ~/github/Computer-Setup
+sudo install -m 644 linux-game-server/dragonwilds/dragonwilds-status.timer /etc/systemd/system/dragonwilds-status.timer
+sudo systemctl daemon-reload
+sudo systemctl restart dragonwilds-status.timer
+sudo systemctl start dragonwilds-status.service
+systemctl show dragonwilds-status.timer -p TimersMonotonic -p AccuracyUSec -p LastTriggerUSec
+```
+
+Verify successive endpoint `updated` timestamps/`uptime_seconds` over at least
+three timer firings. On October 5, 2026, noninteractive sudo was unavailable:
+the live installed timer was still configured for **60s** with **10s accuracy**
+(observed endpoint gaps of **71s and 70s**), while three bounded manual fast runs
+proved second-level uptime changed after five-second waits. Do not replace the
+system timer with an unprivileged background loop as a workaround.
+
+Regenerate via `python3 server-base/homepage/generate.py` and verify its
+`--check` mode; do not hand-edit `homepage/config/services.yaml`. Only the game
+host's generated output changes. Reload Homepage with `/api/revalidate`.
+
+### Measured polling cost (October 5, 2026)
+
+Three real runs on the live game host, without restarting the game:
+
+| Producer path | Wall seconds/run | CPU seconds/run (children included) |
+| --- | --- | --- |
+| Original full producer | 2.044 / 2.069 / 2.075 | 2.213 / 2.239 / 2.243 |
+| New cold metadata cache | 2.157 | 2.328 |
+| New warm fast path | 0.090 / 0.091 / 0.092 | 0.087 / 0.089 / 0.090 |
+| New warm path, synthetic full-day 1441-bucket history (544427 bytes) | 0.115 / 0.114 / 0.115 | 0.113 / 0.112 / 0.113 |
+
+The full-day benchmark is explicitly synthetic history used for workload sizing,
+not invented live historical observations. CPU accounting includes subprocess
+CPU, but not systemd/journald daemon work or Homepage/browser overhead. Few warm
+runs are not a sustained load test; journal cost can grow during a long session.
+Estimated average utilization of **one logical core**, using measured mean fast
+cost plus one incremental metadata refresh per minute:
+
+| Target cadence | Original full scan every tick (unsafe model) | Split fast/60s metadata estimate |
+| --- | --- | --- |
+| 1s | 223.19% (wall time also exceeds interval) | 15.01% |
+| 5s | 44.64% | 5.99% |
+| 60s | 3.72% | 3.92% |
+
+These are estimates, not measured sustained host percentages. **Recommend 5s**:
+visible seconds and responsive metrics without paying the 1s interpreter/history
+cost. Slower journal/disk refreshes can be split further if profiling later shows
+this producer is material. No one-second mode is enabled.
 
 ### Player history
 
@@ -880,7 +956,7 @@ publishes `update_status` (`up to date` / `update available (<build>)` /
 `unknown`). The query takes about 4 seconds.
 
 It is a separate timer because it is the only part of this that touches the
-network — the status script runs every minute and must stay local. The check
+network — fast status ticks remain local and metadata refreshes every minute. The check
 never modifies the install.
 
 ### Applying updates automatically
@@ -937,10 +1013,10 @@ The document is assembled with `jq -n` (`--arg` for strings, `--argjson` for
 numbers and booleans) rather than a heredoc. `ServerName` and `DefaultWorldName`
 are operator-editable free text, and the hand-rolled escaper this replaced handled
 only `\` and `"` — a tab in `ServerName` was enough to emit invalid JSON and blank
-the card. jq is already installed by the bootstrap, and starts
-faster than a Python interpreter for something running every minute.
+the card. jq is already installed by the bootstrap; this JSON construction belongs to the
+cached slow path, not each fast tick.
 
-The card's Docker container field tracks only the status nginx — the game server
+Neither game card keys health off the status nginx container — the game server
 is a host unit, so its real state is the `status` field.
 
 ### Player count
