@@ -22,6 +22,32 @@ test('mounts grouped loading dashes synchronously before a native response', () 
   control.stop();
 });
 
+test('normal cache ages are calm; stale, unknown and failed states remain warnings', () => {
+  const html = api.markup([{title:'Storage',tiles:[
+    {label:'a',rows:[],state:'Cached · collected 5s ago'},
+    {label:'b',rows:[],state:'Stale · collected 25m ago'},
+    {label:'c',rows:[],state:'Cached · age unknown'},
+    {label:'d',rows:[],state:'Collection error · last value, 3m old'},
+    {label:'e',rows:[],state:''},
+  ]}]);
+  const tile = label => html.split('<article ').find(part => part.includes(`<h3>${label}</h3>`));
+  assert.match(tile('a'), /^class="monitor-tile"/, 'a healthy cache is not a warning tile');
+  assert.match(tile('a'), /<p class="monitor-state is-calm">Cached · collected 5s ago<\/p>/);
+  for (const label of ['b','c','d']) {
+    assert.match(tile(label), /^class="monitor-tile has-warning"/, label);
+    assert.doesNotMatch(tile(label), /monitor-state is-calm/, label);
+  }
+  assert.match(tile('e'), /<p class="monitor-state is-calm"><\/p>/, 'empty state reserves space without a warning');
+});
+
+test('normal informational notice is calm; outages and stale native data stay warnings', () => {
+  assert.equal(api.noticeLevel('Core metrics update automatically · filesystem and health values are cached snapshots'), 'calm');
+  assert.equal(api.noticeLevel('Loading host metrics'), 'calm');
+  assert.equal(api.noticeLevel('Unavailable · awaiting native data'), 'warn');
+  assert.equal(api.noticeLevel('Extras unavailable: GPU'), 'warn');
+  assert.equal(api.noticeLevel('Stale · last value'), 'warn');
+});
+
 module.exports={runtime};
 
 test('native failure is not double-reported as a filesystem extras failure, and hidden tabs do not claim outage', async () => {

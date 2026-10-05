@@ -40,6 +40,7 @@
 .monitor-meter:empty { background: transparent; }
 .monitor-meter span { display: block; height: 100%; background: rgb(var(--monitor-accent) / .85); }
 .monitor-state, .monitor-notice { color: #fde68a; font-size: 11px; line-height: 14px; }
+.monitor-state.is-calm, .monitor-notice.is-calm { color: rgb(148 163 184); }
 .monitor-state { height: 14px; margin: 4px 0 0; }
 .monitor-group:nth-child(2) .monitor-state { height: 28px; }
 .monitor-notice { height: 30px; margin: 0; padding: 0 14px; border-bottom: 1px solid rgb(148 163 184 / .14); display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -135,7 +135,12 @@
       return !url.username && !url.password && (url.protocol === 'https:' || (url.protocol === 'http:' && url.origin === origin)) ? url.href : null;
     } catch { return null; }
   };
-  const markup = (groups) => groups.map((group,i)=>`<section class="monitor-group" aria-labelledby="monitor-heading-${i}"><h2 id="monitor-heading-${i}">${esc(group.title)}</h2><div class="monitor-tiles">${group.tiles.map(tile=>`<article class="monitor-tile${tile.state ? ' has-warning' : ''}"><h3>${esc(tile.label)}</h3><p class="monitor-detail">${esc(tile.detail || '')}</p><dl>${tile.rows.map(([label,value])=>`<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl><div class="monitor-meter" aria-hidden="true">${number(tile.usage) ? `<span style="width:${Math.min(100,Math.max(0,tile.usage))}%"></span>` : ''}</div><p class="monitor-state">${esc(tile.state || '')}</p></article>`).join('')}</div></section>`).join('');
+  // A healthy cache age and the standing info banner are routine, not warnings:
+  // amber is reserved for stale, unknown, failed or unavailable data.
+  const calmState = text => !text || /^Cached · collected /.test(text);
+  const noticeLevel = text => (!text || text === 'Loading host metrics' ||
+    text.startsWith('Core metrics update automatically')) ? 'calm' : 'warn';
+  const markup = (groups) => groups.map((group,i)=>`<section class="monitor-group" aria-labelledby="monitor-heading-${i}"><h2 id="monitor-heading-${i}">${esc(group.title)}</h2><div class="monitor-tiles">${group.tiles.map(tile=>`<article class="monitor-tile${tile.state && !calmState(tile.state) ? ' has-warning' : ''}"><h3>${esc(tile.label)}</h3><p class="monitor-detail">${esc(tile.detail || '')}</p><dl>${tile.rows.map(([label,value])=>`<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl><div class="monitor-meter" aria-hidden="true">${number(tile.usage) ? `<span style="width:${Math.min(100,Math.max(0,tile.usage))}%"></span>` : ''}</div><p class="monitor-state${calmState(tile.state) ? ' is-calm' : ''}">${esc(tile.state || '')}</p></article>`).join('')}</div></section>`).join('');
   const start = (root, config) => {
     const {document} = root;
     const originalFetch = root.fetch;
@@ -159,7 +164,7 @@
       const waiting = !samples.native?.at && !samples.native?.error && !document.hidden && Date.now() - startedAt > 12000;
       const nativeState = waiting ? 'Unavailable · awaiting native data' : status(samples.native,Date.now());
       const notice = [nativeState,failed.length ? `Extras unavailable: ${failed.join(', ')}` : ''].filter(Boolean).join(' · ') || (samples.native?.at ? 'Core metrics update automatically · filesystem and health values are cached snapshots' : 'Loading host metrics');
-      const content = `<p class="monitor-notice" role="status" title="${esc(notice)}">${esc(notice)}</p><div class="monitor-groups">${markup(groups)}</div>`;
+      const content = `<p class="monitor-notice${noticeLevel(notice) === 'calm' ? ' is-calm' : ''}" role="status" title="${esc(notice)}">${esc(notice)}</p><div class="monitor-groups">${markup(groups)}</div>`;
       let panel = host.querySelector(':scope > .host-monitor');
       if (!panel) {
         panel = document.createElement('div');
@@ -234,7 +239,7 @@
     refresh();
     return {samples,stop};
   };
-  if (typeof module !== 'undefined') module.exports = { isNativeRequest, model, status, markup, publicUrl, start };
+  if (typeof module !== 'undefined') module.exports = { isNativeRequest, model, status, markup, noticeLevel, publicUrl, start };
   else {
     const config = root.__NEXT_DATA__?.props?.pageProps?.initialSettings?.topbarExtras;
     if (config?.grouped && !root.__homepageGroupedTopbar) root.__homepageGroupedTopbar = start(root,config);
