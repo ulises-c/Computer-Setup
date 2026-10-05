@@ -45,18 +45,28 @@
             - field: repo_size_bytes
               label: Repo size
               format: bytes
-    - rgb lighting:
+    - OpenRGB:
+        id: openrgb-lighting
         icon: mdi-palette
-        description: OpenRGB devices and active mode (refreshed every 10 min)
-        widget:
-          type: customapi
-          url: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/host-status/rgb.json
-          refreshInterval: 300000
-          display: dynamic-list
-          mappings:
-            items: devices
-            name: name
-            label: mode
+        description: Lighting zones and keep-off policy — colours cannot be read back
+        widgets:
+          - type: customapi
+            url: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/host-status/rgb.json
+            refreshInterval: 300000
+            display: dynamic-list
+            mappings:
+              items: rows
+              name: name
+              label: label
+          - type: customapi
+            url: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/host-status/rgb.json
+            refreshInterval: 300000
+            display: list
+            mappings:
+              - field: updated
+                label: Export updated
+                format: relativeDate
+                scale: 1000
 
 - Games:
     - "RuneScape: Dragonwilds":
