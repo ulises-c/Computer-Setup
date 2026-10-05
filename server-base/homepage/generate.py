@@ -208,13 +208,14 @@ def loading_css(top):
     system = [("Host", ["Uptime", "Clock"], state)]
     groups = [("Compute", compute + gpus), ("Storage", storage), ("Connectivity", connectivity), ("System", system)]
 
-    # Fixed row heights (px): h3 22 + detail 18 (GPU 44) + 18 per row + meter 8 + state 32 (storage 46).
+    # Fixed row heights (px): h3 22 + detail 18 (GPU 32) + 18 per row + meter 8 + state
+    # (4 + 14; storage 4 + 28, because its age text can wrap to two lines).
     def tallest(tiles):
         return max((len(rows) for _, rows, _ in tiles), default=0)
-    heights = {"compute": 80 + 18 * tallest(compute), "storage": 94 + 18 * tallest(storage),
-               "net": 80 + 18 * tallest(connectivity), "system": 80 + 18 * tallest(system)}
+    heights = {"compute": 66 + 18 * tallest(compute), "storage": 80 + 18 * tallest(storage),
+               "net": 66 + 18 * tallest(connectivity), "system": 66 + 18 * tallest(system)}
     if gpus:
-        heights["gpu"] = 106 + 18 * tallest(gpus)
+        heights["gpu"] = 80 + 18 * tallest(gpus)
     tile_h = [[heights["compute"] if i < 2 else heights["gpu"] for i in range(len(compute + gpus))],
               [heights["storage"]] * len(storage), [heights["net"]] * len(connectivity), [heights["system"]] * len(system)]
 
@@ -235,12 +236,12 @@ def loading_css(top):
     vars_ = "".join(f" --monitor-h-{key}: {value}px;" for key, value in heights.items())
     vars_ += f" --monitor-storage-cols: {storage_cols}; --monitor-storage-fr: {'1.8fr' if storage_cols == 3 else '1.2fr'};"
     css = f"#information-widgets {{{vars_} }}\n"
-    for width, columns, media, header in [
-            (1368, [3, storage_cols, 1, 1], "", 44),
-            (768, [3, 2, 2, 2], "@media (max-width:1050px)", 44),
-            (350, [2, 2, 2, 2], "@media (max-width:600px)", 76)]:
+    for width, columns, media, header, notice in [
+            (1368, [3, storage_cols, 1, 1], "", 44, 30),
+            (768, [3, 2, 2, 2], "@media (max-width:1050px)", 44, 30),
+            (350, [2, 2, 2, 2], "@media (max-width:600px)", 76, 44)]:
         sizes = [group_height(hs, cols) for hs, cols in zip(tile_h, columns)]
-        height = header + 48 + (max(sizes) if width > 1050 else max(sizes[:2]) + max(sizes[2:]) if width > 600 else sum(sizes))
+        height = header + notice + (max(sizes) if width > 1050 else max(sizes[:2]) + max(sizes[2:]) if width > 600 else sum(sizes))
         # Grid borders occupy 1px on subsequent mobile/tablet rows.
         height += 0 if width > 1050 else 1 if width > 600 else 3
         style = (HERE / "grouped-topbar.css").read_text()

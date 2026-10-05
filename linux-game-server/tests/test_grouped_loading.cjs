@@ -98,7 +98,7 @@ test('filesystem age comes from the collector and advances with the browser cloc
 test('filesystem rows past twice their collection interval are stale and errors keep the last real value', () => {
   assert.equal(disk(api.model({native:nativeWith([fsRow({collection_age_seconds:700})])},{disks:['/etc/hostname']},1000,'')).state,'Stale · collected 11m ago');
   const failed=disk(api.model({native:nativeWith([fsRow({collection_status:'error'})])},{disks:['/etc/hostname']},1000,''));
-  assert.equal(failed.state,'Collection error · last value · collected 4m ago');
+  assert.equal(failed.state,'Collection error · last value, 4m old');
   assert.deepEqual(failed.rows.map(r=>r[0]),['Used','Free','Total']);
   assert.equal(failed.rows[0][1],'10%');
   const never=disk(api.model({native:nativeWith([fsRow({collection_status:'never',collected_at:null,collection_age_seconds:null,percent:null,free:null,size:null})])},{disks:['/etc/hostname']},1000,''));

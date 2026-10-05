@@ -176,10 +176,12 @@ class GenerateTests(unittest.TestCase):
         fleet['hosts']['linux-game-server']['topbar']['grouped'] = True
         css = generate.render_css(fleet, 'linux-game-server')
         root = re.search(r'#information-widgets \{([^}]*--monitor-h-[^}]*)\}', css).group(1)
-        # dGPU: 5 rows; NVMe+health: 4 rows; CPU: 4 rows. 106 + 18n, 94 + 18n, 80 + 18n.
-        self.assertIn('--monitor-h-gpu: 196px', root)
-        self.assertIn('--monitor-h-storage: 166px', root)
-        self.assertIn('--monitor-h-compute: 152px', root)
+        # h3 22 + detail 18 (GPU 32) + 18/row + meter 8 + state 18 (storage 32).
+        # dGPU: 5 rows -> 80 + 18n; NVMe+health: 4 rows -> 80 + 18n; CPU: 4 rows -> 66 + 18n.
+        self.assertIn('--monitor-h-gpu: 170px', root)
+        self.assertIn('--monitor-h-storage: 152px', root)
+        self.assertIn('--monitor-h-compute: 138px', root)
+        self.assertIn('--monitor-h-net: 102px', root)
         live = (generate.HERE / 'grouped-topbar.css').read_text()
         for var in ('compute', 'gpu', 'storage', 'net', 'system'):
             self.assertIn(f'var(--monitor-h-{var}', live)
@@ -188,7 +190,7 @@ class GenerateTests(unittest.TestCase):
         main['hosts']['linux-server']['topbar']['grouped'] = True
         def root_vars(css):
             return re.search(r'#information-widgets \{([^}]*--monitor-h-[^}]*)\}', css).group(1)
-        self.assertIn('--monitor-h-gpu: 124px', root_vars(generate.render_css(main, 'linux-server')))
+        self.assertIn('--monitor-h-gpu: 98px', root_vars(generate.render_css(main, 'linux-server')))
         # Hosts with no GPU declare no GPU height at all (Pi).
         pi = copy.deepcopy(FLEET)
         pi['hosts']['linux-pi']['topbar']['grouped'] = True

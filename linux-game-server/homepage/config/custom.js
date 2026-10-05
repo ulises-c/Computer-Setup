@@ -50,7 +50,7 @@
     if (meta?.status === 'never') return 'Waiting for first collection';
     if (meta?.status === 'empty') return 'Collector returned no data';
     const age = number(meta?.age) ? meta.age * 1000 + Math.max(0, now - receivedAt) : null;
-    if (meta?.status === 'error') return `Collection error · last value${age == null ? '' : ` · collected ${ageText(age)} ago`}`;
+    if (meta?.status === 'error') return `Collection error · last value${age == null ? '' : `, ${ageText(age)} old`}`;
     if (age == null) return 'Cached · age unknown';
     const ttl = 2 * Math.max(floorMs, number(meta.interval) ? meta.interval * 1000 : 0);
     return `${age > ttl ? 'Stale' : 'Cached'} · collected ${ageText(age)} ago`;
@@ -178,7 +178,7 @@
       const waiting = !samples.native?.at && !samples.native?.error && !document.hidden && Date.now() - startedAt > 12000;
       const nativeState = waiting ? 'Unavailable · awaiting native data' : status(samples.native,Date.now());
       const notice = [nativeState,failed.length ? `Extras unavailable: ${failed.join(', ')}` : ''].filter(Boolean).join(' · ') || (samples.native?.at ? 'Core metrics update automatically · filesystem and health values are cached snapshots' : 'Loading host metrics');
-      const content = `<p class="monitor-notice" role="status">${esc(notice)}</p><div class="monitor-groups">${markup(groups)}</div>`;
+      const content = `<p class="monitor-notice" role="status" title="${esc(notice)}">${esc(notice)}</p><div class="monitor-groups">${markup(groups)}</div>`;
       let panel = host.querySelector(':scope > .host-monitor');
       if (!panel) {
         panel = document.createElement('div');
