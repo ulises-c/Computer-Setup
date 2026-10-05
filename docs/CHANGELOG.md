@@ -103,8 +103,17 @@ in [UNIFICATION.md](UNIFICATION.md).
   per host, honest fallbacks (no JS, blocked script, silent or malformed native
   payload), per-host `topbar` config (`hddDisks`, `safeSSDHealth`, cadence floors of
   5 min filesystem and 10 min health, GPU/Wi-Fi/disk labels) and storage ages from the
-  collector instead of the HTTP response. Main and Pi output is unchanged until each
-  opts in.
+  collector instead of the HTTP response. Routine cache ages and the standing info
+  banner are muted; amber is reserved for stale, unknown, failed or unavailable
+  data. Main and Pi output is unchanged until each opts in.
+- Fleet Glances storage policy (all three hosts, Glances 4.5.4): no HDD SMART,
+  HDD temperature or HDD filesystem reads and no broad `DeviceList()` scan;
+  NVMe health and temperature from one cached sample every 10 minutes, solid-state
+  ext4/xfs filesystem usage every 5 minutes, disk I/O counters from `/proc`
+  every minute and sysfs inventory hourly. The floors are enforced in the
+  backend, so dashboard polling cannot lower them, and each cached value reports
+  its collection age (`/api/4/storagepolicy`, `collection_age_seconds`). The main
+  server's three USB DAS HDDs are inventory only: no used/free figure is shown.
 - Glances reports GPU memory in bytes on NVML hosts (`GLANCES_GPU_MEMORY`) and
   discovers only NVMe controllers for SMART (sysfs, cached 60 seconds), so
   spinning disks are never enumerated or woken for health data.
