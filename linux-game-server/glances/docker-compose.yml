@@ -9,6 +9,7 @@ services:
     # /dev/nvidia*. After a driver upgrade, recreate the container.
     image: nicolargo/glances:ubuntu-4.5.4-full
     environment:
+      GLANCES_GPU_MEMORY: "true"
       GLANCES_SENSORS_SHOW: "^Package id 0$$,^Composite$$"
       GLANCES_SENSORS_ALIAS: "Package id 0:CPU,Composite:NVMe"
     volumes:

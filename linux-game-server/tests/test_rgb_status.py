@@ -23,7 +23,17 @@ SAMPLE = """0: HP Omen 30L
 class ParseTests(unittest.TestCase):
     def test_devices_modes_and_zones(self):
         devices = rgb.parse("<h2>warning</h2>\n" + SAMPLE)
-        self.assertEqual(devices[0], {"name": "HP Omen 30L", "type": "Motherboard", "mode": "Static", "zones": 6})
+        self.assertEqual(devices[0]["name"], "HP Omen 30L")
+        self.assertEqual(devices[0]["type"], "Motherboard")
+        self.assertEqual(devices[0]["mode"], "Static")
+        self.assertEqual(devices[0]["zones"], 6)
+        self.assertEqual(devices[0].get("zone_details"), [
+            {"name": name, "status": "detected", "color": None, "readback": False}
+            for name in ["Logo", "Bar", "Front Fan", "Bottom Fan LED", "Middle Fan LED", "Top Fan LED"]
+        ])
+        self.assertEqual(devices[0]["available_modes"], ["Direct","Static","Breathing","Color Cycle"])
+        self.assertEqual(devices[0]["mode_source"], "last-set / device-wide; not hardware readback")
+        self.assertEqual(devices[0]["led_names"], ["Logo","Bar"])
         self.assertEqual(devices[1]["mode"], "Direct")
 
     def test_empty_output(self):

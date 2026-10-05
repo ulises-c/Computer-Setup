@@ -76,6 +76,14 @@ class GenerateTests(unittest.TestCase):
         self.assertNotIn("const chip =", js)
         self.assertIn("const start =", js)
 
+    def test_gpu_inventory_only_emitted_for_opted_in_host(self):
+        import copy
+        fleet = copy.deepcopy(FLEET)
+        fleet['hosts']['linux-game-server']['topbar']['gpuTypes'] = {'nvidia0':'dGPU'}
+        self.assertIn('nvidia0: "dGPU"', generate.render_settings(fleet,'linux-game-server',''))
+        self.assertNotIn('gpuTypes', generate.render_settings(fleet,'linux-server',''))
+        self.assertNotIn('gpuTypes', generate.render_settings(fleet,'linux-pi',''))
+
     def test_emitted_strings_are_quoted(self):
         lines = generate.emit([{"g": [{"svc": {"description": "NAS: storage", "n": 4, "b": True}}]}])
         self.assertIn('        description: "NAS: storage"', lines)

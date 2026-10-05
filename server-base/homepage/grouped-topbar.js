@@ -40,11 +40,15 @@
     }
     for (const g of samples.gpu?.data || []) {
       const rows = [];
+      // Hardware inventory is explicit per host; vendor alone is not a type.
+      const kind = ['dGPU','iGPU'].includes(config.gpuTypes?.[g.gpu_id]) ? config.gpuTypes[g.gpu_id] : 'GPU';
       if (number(g.proc)) rows.push(['Usage',pct(g.proc)]);
       if (number(g.temperature)) rows.push(['Temp',`${decimal(g.temperature)}°C`]);
-      if (number(g.mem)) rows.push(['VRAM',pct(g.mem)]);
+      const memory = number(g.memory_used) && number(g.memory_total) && g.memory_used >= 0 && g.memory_total > 0 && g.memory_used <= g.memory_total;
+      rows.push([kind === 'iGPU' ? 'Memory' : 'VRAM',memory ? `${bytes(g.memory_used,true)} / ${bytes(g.memory_total,true)}` : '— / —']);
+      if (number(g.mem)) rows.push(['Memory used',pct(g.mem)]);
       if (number(g.fan_speed)) rows.push(['Fan',pct(g.fan_speed)]);
-      add(0,'GPU',rows,'gpu',g.proc,g.name);
+      add(0,kind,rows,'gpu',g.proc,`${g.name || 'Unknown model'}${kind === 'GPU' ? ' · type unknown' : ''}`);
     }
     for (const mount of config.disks || []) {
       const f = (d.fs || []).find(f=>f.mnt_point === mount);
@@ -76,7 +80,14 @@
     }
     add(3,'Host',[['Uptime',d.uptime || '—'],['Clock',clock || '—']], 'native',undefined,'Clock · browser local time');
     for (const device of samples.rgb?.data?.devices || []) {
-      add(3,'RGB',[['Mode',device.mode || '—']], 'rgb',undefined,`${device.name || ''} · last-set mode`);
+      const rows = [['Mode',device.mode || '—'],['Mode scope','Device-wide · not readback']];
+      if (Array.isArray(device.available_modes) && device.available_modes.length) rows.push(['Modes',device.available_modes.join(', ')]);
+      if (Array.isArray(device.zone_details)) {
+        for (const zone of device.zone_details) rows.push([zone.name || 'Unnamed zone',zone.status === 'detected' ? 'Detected · color unknown' : 'Status unknown · color unknown']);
+      } else {
+        rows.push(['Zones',number(device.zones) ? `${device.zones} · names need exporter update` : 'Unknown · exporter update needed']);
+      }
+      add(3,'RGB',rows, 'rgb',undefined,`${device.name || ''} · last-set mode`);
       const age = now / 1000 - samples.rgb.data.updated;
       if (age > 1800 || !number(samples.rgb.data.updated)) groups[3].tiles.at(-1).state = 'Stale · last value';
       else if (age < -300) groups[3].tiles.at(-1).state = 'Exporter clock skew';
@@ -151,7 +162,7 @@
         const response = await originalFetch.call(root,url,{cache:'no-store',credentials:'omit',signal:root.AbortSignal.timeout(4000)});
         if (!response.ok) throw new Error('endpoint unavailable');
         const data = await response.json();
-        if (key === 'rgb' ? !Array.isArray(data?.devices) || !number(data.updated) : !Array.isArray(data)) throw new Error('invalid endpoint shape');
+        if (key === 'rgb' ? !Array.isArray(data?.devices) || !number(data.updated) || data.error : !Array.isArray(data)) throw new Error('invalid endpoint shape or exporter failure');
         if (!stopped) record(key,data);
       } catch { if (!stopped) record(key,null,true); }
     };

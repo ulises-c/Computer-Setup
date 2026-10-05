@@ -122,6 +122,8 @@ def render_settings(fleet, host_dir, local_text):
     if host.get("topbar", {}).get("grouped"):
         extras.update({"grouped": True, "label": host["topbar"]["label"],
                        "disks": host["topbar"]["disks"]})
+    if host.get("topbar", {}).get("grouped") and host["topbar"].get("gpuTypes"):
+        extras["gpuTypes"] = host["topbar"]["gpuTypes"]
     base["topbarExtras"] = extras
     head = "\n".join(emit(base)) + "\n\nlayout:\n"
     servers = "  Servers:\n    style: row\n    columns: 3\n"

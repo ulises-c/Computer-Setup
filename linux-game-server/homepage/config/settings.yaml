@@ -16,6 +16,8 @@ topbarExtras:
   label: "game server"
   disks:
     - "/etc/hostname"
+  gpuTypes:
+    nvidia0: "dGPU"
 
 layout:
   Servers:

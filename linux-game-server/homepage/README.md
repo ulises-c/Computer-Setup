@@ -67,3 +67,54 @@ docker exec homepage wget -qO- http://127.0.0.1:3000/api/revalidate
 No container or game restart is needed. Disabling this host's `grouped` flag
 and regenerating restores its legacy native/extras appearance. Never enable
 other hosts or edit `linux-server/` as part of a game-host-only rollout.
+
+
+## GPU bytes, lighting zones and spindle-safe health
+
+The game host explicitly inventories `nvidia0` as a **dGPU**. Live PCI and
+Glances discovery expose one NVIDIA GeForce GTX 1070 and no active iGPU adapter;
+do not invent an iGPU tile. The GPU model stays visible in its tile. With this
+host's `GLANCES_GPU_MEMORY=true`, the shared NVML adapter adds byte-valued
+`memory_used` and `memory_total` to Glances `/api/4/gpu`. The tile shows used /
+total binary units alongside the original percentage. Missing byte readings
+are `— / —`, never estimated from percent. Future hosts set `topbar.gpuTypes`
+by actual `gpu_id` inventory; unspecified types remain explicitly unknown.
+
+The existing root-owned OpenRGB exporter/timer is still a read-only
+`openrgb --noautoconnect --list-devices` collector every ten minutes. There is
+no SDK listener on this host. The CLI can expose detected device/type, available
+modes, last-set **device-wide** mode, quoted zone names and LED names; it cannot
+report real zone colors, independent zone modes, LED count/type/capability
+flags, on/off state or hardware readback. The new producer preserves numeric
+`zones` and adds `zone_details` with name, `status: detected`, `color: null`,
+`readback: false`, plus `available_modes`, `mode_source`, and `led_names`.
+The renderer lists every reported zone as **Detected · color unknown**.
+It neither uses a mode as evidence of illumination nor fabricates colors.
+Exporter errors over HTTP 200 are unavailable, not healthy fresh samples.
+
+The currently installed exporter publishes HP Omen 30L / Motherboard /
+Direct / 7 zones, but discards zone names and supported modes. Unprivileged
+OpenRGB cannot open the controller. Root authentication is required to replace
+the installed copy; until that step the dashboard explicitly says **7 · names
+need exporter update**. Real current zone names/capabilities cannot be verified
+from the old JSON. Install only the producer (the timer/unit need no changes):
+
+```sh
+cd ~/github/Computer-Setup
+sudo install -o root -g root -m 755 linux-game-server/rgb/rgb-status.py /usr/local/libexec/rgb-status
+sudo systemctl start rgb-status.service
+cat /var/lib/host-status/rgb.json
+systemctl show rgb-status.service -p ExecStart -p Result
+```
+
+Read back the new JSON and dashboard after installation; a Git push alone does
+not complete this step. No RGB write flags, SDK control commands, permissions
+changes, or privileged-container workarounds are used.
+
+See `server-base/glances/README.md`: upstream Glances SMART discovery is **not**
+standby-safe (pySMART scans/queries all drives before display filtering).
+The shared default now discovers only NVMe controllers via sysfs and caches
+health for sixty seconds. Only game-host Glances has been recreated. Other
+hosts are unchanged until their own opt-in deployment. Intentional HDD checks
+require a known transport and `smartctl -n standby,3,5`; skipped/unsupported
+checks remain unknown. No sleeping HDD was probed and no fleet rollout occurred.

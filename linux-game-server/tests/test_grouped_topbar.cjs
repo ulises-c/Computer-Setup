@@ -93,3 +93,42 @@ test('native HTTP failures and clone failures preserve SWR response and mark las
   control.stop();
 });
 
+
+test('GPU identifies configured dGPU/iGPU and reports byte gauges without deriving them from percent', () => {
+  const groups=api().model({native:sample(native),gpu:sample([
+    {gpu_id:'nvidia0',name:'NVIDIA GeForce GTX 1070',mem:12.5,memory_used:1073741824,memory_total:8589934592},
+    {gpu_id:'intel0',name:'Intel graphics',mem:20},
+    {gpu_id:'other0',name:'Unclassified',mem:20}
+  ])},{gpuTypes:{nvidia0:'dGPU',intel0:'iGPU'}},1000,'');
+  const gpu=groups[0].tiles.find(t=>t.label==='dGPU');
+  assert.ok(gpu, 'explicit dGPU designation');
+  assert.ok(gpu.detail.includes('NVIDIA GeForce GTX 1070'));
+  assert.ok(gpu.rows.some(r=>r[0]==='VRAM' && r[1]==='1 GiB / 8 GiB'));
+  const igpu=groups[0].tiles.find(t=>t.label==='iGPU');
+  assert.ok(igpu.rows.some(r=>r[0]==='Memory' && r[1]==='— / —'));
+  assert.ok(groups[0].tiles.find(t=>t.detail?.includes('Unclassified')).detail.includes('type unknown'));
+});
+
+test('RGB zone detection is not color or independent mode readback; old exporter is explicit', () => {
+  const groups=api().model({native:sample(native),rgb:sample({updated:1,devices:[
+    {name:'Omen',mode:'Static',zones:2,available_modes:['Direct','Static'],mode_source:'last-set / device-wide; not hardware readback',zone_details:[
+      {name:'Logo',status:'detected',color:null,readback:false},
+      {name:'Front Fan',status:'detected',color:null,readback:false}
+    ]}, {name:'Old',mode:'Direct',zones:7}
+  ]})},{},1000,'');
+  const rgb=groups[3].tiles.filter(t=>t.label==='RGB');
+  assert.ok(rgb[0].rows.some(r=>r[0]==='Logo' && r[1]==='Detected · color unknown'));
+  assert.ok(rgb[0].rows.some(r=>r[0]==='Modes' && r[1]==='Direct, Static'));
+  assert.ok(rgb[0].rows.some(r=>r[0]==='Mode scope' && r[1]==='Device-wide · not readback'));
+  assert.ok(rgb[1].rows.some(r=>r[0]==='Zones' && r[1]==='7 · names need exporter update'));
+  const html=api().markup(groups);
+  assert.ok(!html.includes('background:#'));
+});
+
+test('RGB successful HTTP with exporter failure is unavailable, not healthy fresh status', async () => {
+  const root={location:{origin:'https://example.test'},document:{hidden:false,querySelector:()=>null,addEventListener:()=>{},removeEventListener:()=>{}},fetch:async()=>({ok:true,json:async()=>({updated:1,devices:[],error:'openrgb exited 1'})}),setInterval:()=>1,clearInterval:()=>{},addEventListener:()=>{},AbortSignal};
+  const control=api().start(root,{rgb:'/host-status/rgb.json'});
+  await new Promise(r=>setImmediate(r));
+  assert.equal(control.samples.rgb.error,true);
+  control.stop();
+});

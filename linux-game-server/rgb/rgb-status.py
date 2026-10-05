@@ -23,7 +23,8 @@ def parse(text):
     for line in text.splitlines():
         head = re.fullmatch(r"(\d+): (.+)", line)
         if head:
-            devices.append({"name": head.group(2).strip()})
+            devices.append({"name": head.group(2).strip(),
+                            "mode_source": "last-set / device-wide; not hardware readback"})
             continue
         if not devices or not line.startswith("  "):
             continue
@@ -33,9 +34,21 @@ def parse(text):
             devices[-1]["type"] = value
         elif key == "Modes":
             current = re.search(r"\[([^\]]+)\]", value)
-            devices[-1]["mode"] = current.group(1).strip("'") if current else None
-        elif key == "Zones":
-            devices[-1]["zones"] = len(re.findall(r"'[^']*'|\S+", value))
+            devices[-1]["mode"] = current.group(1).strip("'\"") if current else None
+            modes = value.replace("[", "").replace("]", "")
+            devices[-1]["available_modes"] = [
+                token.strip("'\"") for token in re.findall(r"'[^']*'|\"[^\"]*\"|\S+", modes)
+            ]
+        elif key in ("Zones", "LEDs"):
+            names = [token.strip("'\"") for token in re.findall(r"'[^']*'|\"[^\"]*\"|\S+", value)]
+            if key == "LEDs":
+                devices[-1]["led_names"] = names
+            else:
+                devices[-1]["zones"] = len(names)  # Existing API/card compatibility.
+                devices[-1]["zone_details"] = [
+                    {"name": name, "status": "detected", "color": None, "readback": False}
+                    for name in names
+                ]
     return devices
 
 
