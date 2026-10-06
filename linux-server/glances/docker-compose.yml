@@ -43,8 +43,13 @@ services:
       GLANCES_FS_ALIAS: "/etc/hostname:system,/mnt/seagate4tb:media 4TB,/mnt/wd14tb:backup 14TB,/mnt/wd1tb:backup 1TB"
       GLANCES_SENSORS_SHOW: "^Package id 0$$,^Composite$$"
       GLANCES_SENSORS_ALIAS: "Package id 0:CPU,Composite:NVMe"
+      # The DAS HDDs' used/free is read only while they are already in use (see
+      # ../../server-base/glances/README.md); the last sample and its date persist here.
+      GLANCES_HDD_ACTIVITY_STATS: "true"
+      GLANCES_HDD_CACHE_FILE: "/var/lib/glances-hdd/hdd-cache.json"
     volumes:
       # NAS mounts (read-only) so glances `fs:` can report capacity.
       - /mnt:/mnt:ro
+      - ./hdd-cache:/var/lib/glances-hdd
       # by-label names feed the shared disk-alias patch (WD14TB, WD_1TB, ...).
       - /dev/disk/by-label:/dev/disk/by-label:ro

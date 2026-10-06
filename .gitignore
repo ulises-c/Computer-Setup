@@ -38,6 +38,7 @@ linux-server/forgejo/data/
 
 # Tailscale sidecar node state (HTTPS.md) — holds node keys, never commit
 linux-server/*/ts-state/
+linux-server/glances/hdd-cache/
 
 linux-server/qbittorrent/config/
 linux-server/qbittorrent/downloads/
