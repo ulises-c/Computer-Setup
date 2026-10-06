@@ -14,7 +14,8 @@ the image; adapter failures stop the launcher rather than start unprotected.
 | NVMe SSD SMART | 600 seconds | only explicit `/dev/nvmeN`, `interface=nvme`, sysfs controller discovery |
 | NVMe temperature | same cached SMART sample | no independent hwmon or SMART query |
 | Filesystem used/free | 300 seconds | statvfs only after sysfs proves **all** backing devices nonrotational; local ext4/xfs only |
-| HDD/unknown/network filesystem used/free | **disabled** | no statvfs, pathname walk or tree scan |
+| HDD filesystem used/free | **disabled** unless `GLANCES_HDD_ACTIVITY_STATS=true` | only while the kernel's I/O counters show the drive in use (below) |
+| Unknown/network filesystem used/free | **disabled** | no statvfs, pathname walk or tree scan |
 | Disk I/O rates | 60 seconds | psutil's Linux `/proc/diskstats` counters, not drive queries |
 | Hardware storage inventory | 3600 seconds | sysfs names, rotational flag, transport path and block capacity only |
 | CPU/board temperature | existing live sensor cadence | explicit non-storage hwmon chip allowlist, filtered before reading inputs |
@@ -33,10 +34,35 @@ also blocked, and the broad psutil temperature read is bypassed, including durin
 sensor construction. NVMe hwmon inputs are not read at all. Unknown temperature
 chips are omitted; CPU/board/fan readings do not rely on a drive-health scan.
 
+### Spinning disks: read only while they are in use
+
+With `GLANCES_HDD_ACTIVITY_STATS=true` (main server only) a sampler thread reads
+each registered HDD mount's backing disks' completed read/write counters from
+sysfs (`/sys/dev/block/.../stat`: kernel memory, no drive query) every 10 seconds
+(`GLANCES_HDD_ACTIVITY_POLL`, floor 10). Counters that moved since the previous
+reading mean something else is already using the drive, so one `statvfs` then
+cannot spin it up. Idle drives are never touched: their last sample is reported
+as is, with the epoch time it was taken (`collected_at`), and it is persisted to
+`GLANCES_HDD_CACHE_FILE` so it survives restarts.
+
+- At most one read per mount per `GLANCES_HDD_INTERVAL` (default and floor 300 s),
+  however busy the drive is. The first reading after startup only sets the baseline.
+- Rows appear in `/api/4/fs` only after a first sample (`storage_class=hdd`,
+  `collection_source=activity_gated_statvfs`, `collection_age_seconds` counted from
+  `collected_at` by the wall clock, so it spans restarts). Before that the mount is
+  absent, never zero.
+- Every disk behind a mapper/RAID node must be rotational and is watched; a mixed,
+  unproven or non-ext4/xfs backing stays omitted.
+- No SMART, power-state command, hdparm or smartctl is involved, and the USB
+  bridges in front of the DAS disks are never asked anything.
+- Residual risk: the read happens up to one poll (10 s) after the I/O it piggybacks
+  on, which sits far inside any drive's idle spindown timer, and `statvfs` on a
+  mounted ext4 normally reads in-memory superblock counters anyway.
+
 ### Filesystem tradeoff
 
-The three sleeping DAS HDDs on the main server remain inventory, not refreshed
-used/free gauges. Their raw **block capacity** is not filesystem capacity/free
+Without the switch above, the three sleeping DAS HDDs on the main server remain
+inventory, not refreshed used/free gauges. Their raw **block capacity** is not filesystem capacity/free
 space. It would be misleading to display an invented 0% usage or describe their
 capacity as a fresh 5-second reading. Even occasional statvfs path resolution
 can require disk I/O after cached inodes are evicted, so this policy does **not**
@@ -62,11 +88,17 @@ GLANCES_FS_INTERVAL=300
 GLANCES_NVME_HEALTH_INTERVAL=600
 GLANCES_NVME_HEALTH_ENABLED=true
 GLANCES_DISKIO_INTERVAL=60
+# Main server only (set in its compose file): HDD used/free while in use.
+# GLANCES_HDD_ACTIVITY_STATS=true
+# GLANCES_HDD_CACHE_FILE=/var/lib/glances-hdd/hdd-cache.json
+# GLANCES_HDD_INTERVAL=300
+# GLANCES_HDD_ACTIVITY_POLL=10
 ```
 
 Intervals below their minimum are clamped; malformed intervals stop startup.
 Only literal `true` enables NVMe health. Set it to `false` to collect no hardware
-storage health/temperature at all. There is deliberately **no HDD opt-in switch**.
+storage health/temperature at all. HDD health and temperature have deliberately **no opt-in switch**;
+HDD *capacity* has the activity-gated one above.
 Preserve the host's existing environment, network mode and any Tailscale sidecar;
 do not recreate a sidecar alone or restart unrelated projects.
 
@@ -90,6 +122,11 @@ seconds, not HTTP response time. Frequent HTTP reads **do not imply freshness**.
 The illustrated timestamps/values above and below are schema examples, not live
 measurements. Null timestamps/ages mean not collected. Status is `never`, `ok`,
 `empty` or `error`. `collection_count` counts collection attempts since startup.
+
+With the HDD switch on, `/api/4/storagepolicy` also carries `filesystem_hdd_enabled: true`
+and an `hdd` object (`scope`, `interval_seconds`, per-mount `collected_at` and
+`collection_age_seconds`); inventory rows for those disks say
+`filesystem_usage: "activity_gated"`.
 
 `/api/4/storagepolicy` is a normal Glances plugin (also in `/api/4/all`), not a
 new service. It reads only metadata and the slow sysfs inventory, and never
@@ -170,10 +207,11 @@ normally and are not the game application's invocation.
 Run from this directory:
 
 ```sh
-python3 -m unittest -v test_rename_disks.py test_telemetry.py test_storage.py
+python3 -m unittest -v test_rename_disks.py test_telemetry.py test_storage.py test_hdd_activity.py
 ```
 
-`test_installed_storage.py` also runs **inside each installed Glances image**
+`test_installed_storage.py` and `test_installed_hdd.py` (each in its own process,
+because `telemetry.install` is one-shot) also run **inside each installed Glances image**
 with synthetic provider data: real plugin construction and REST handlers for
 `/all`, `/smart`, `/fs`, `/storagepolicy`, top/views/limits/history, forced plugin
 updates, forbidden broad SMART/hwmon/HDDtemp call traps, and cache age/counters.

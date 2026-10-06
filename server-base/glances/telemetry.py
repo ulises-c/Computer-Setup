@@ -3,12 +3,14 @@
 Never call pySMART DeviceList: it scans/queries every drive without a standby
 check. Discover NVMe controllers through sysfs only; no SATA/USB health probes.
 """
+import json
+import os
 import re
 import time
 from pathlib import Path
 from types import SimpleNamespace
 from copy import deepcopy
-from threading import RLock
+from threading import Event, RLock, Thread
 
 
 class SampleCache:
@@ -93,6 +95,143 @@ def solid_state_backing(node, seen=None):
         return False
 
 
+def backing_disks(node, seen=None):
+    """Whole-disk sysfs nodes behind a block node, or None when any link is unproven."""
+    seen = set() if seen is None else set(seen)
+    try:
+        node = node.resolve(strict=True)
+        if node in seen:
+            return None
+        seen.add(node)
+        if (node / 'partition').exists():
+            return backing_disks(node.parent, seen)
+        if (node / 'slaves').is_dir():
+            slaves = list((node / 'slaves').iterdir())
+            if slaves:
+                disks = []
+                for slave in slaves:
+                    found = backing_disks(slave, seen)
+                    if found is None:
+                        return None
+                    disks += found
+                return disks
+        if node.name.startswith(('dm-', 'md', 'loop', 'ram', 'zram')):
+            return None
+        return [node] if (node / 'device').exists() else None
+    except OSError:
+        return None
+
+
+def hdd_backing(node):
+    """The disks behind a mount only when every one of them is rotational."""
+    disks = backing_disks(node)
+    try:
+        if disks and all((disk / 'queue/rotational').read_text().strip() == '1' for disk in disks):
+            return disks
+    except OSError:
+        pass
+    return None
+
+
+def io_counters(disks):
+    """Completed reads and writes from sysfs: kernel memory, never a drive query."""
+    try:
+        counters = []
+        for disk in disks:
+            fields = (disk / 'stat').read_text().split()
+            counters.append((int(fields[0]), int(fields[4])))
+        return tuple(counters)
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+class HddActivityStats:
+    """Filesystem usage of spinning disks, read only while something else uses them.
+
+    A drive whose completed-I/O counters moved since the last tick is awake, so
+    a read then cannot spin it up. Idle drives are never touched; their last
+    sample keeps the date it was taken and survives restarts.
+    """
+    def __init__(self, usage, cache_file=None, interval=300, wall=time.time):
+        self.usage, self.wall = usage, wall
+        self.interval = max(300, interval)
+        self.cache_file = None if cache_file is None else Path(cache_file)
+        self.mounts, self.baselines = {}, {}
+        self.lock = RLock()
+        self.samples = self._load()
+
+    def _load(self):
+        try:
+            mounts = json.loads(self.cache_file.read_text())['mounts']
+            return {mnt: {key: float(sample[key]) for key in ('collected_at', 'size', 'used', 'free', 'percent')}
+                    for mnt, sample in mounts.items()}
+        except (AttributeError, OSError, ValueError, KeyError, TypeError):
+            return {}
+
+    def _save(self):
+        if self.cache_file is None:
+            return
+        # Best effort: a read-only or missing state directory only loses restarts.
+        try:
+            temporary = self.cache_file.with_name(self.cache_file.name + '.tmp')
+            temporary.write_text(json.dumps(dict(version=1, mounts=self.samples)))
+            os.replace(temporary, self.cache_file)
+        except OSError:
+            pass
+
+    def register(self, mounts):
+        with self.lock:
+            self.mounts = {mount['row']['mnt_point']: mount for mount in mounts}
+            self.baselines = {mnt: value for mnt, value in self.baselines.items() if mnt in self.mounts}
+
+    def tick(self):
+        with self.lock:
+            mounts = list(self.mounts.values())
+        for mount in mounts:
+            mnt, disks = mount['row']['mnt_point'], mount['disks']
+            current, previous = io_counters(disks), self.baselines.get(mnt)
+            self.baselines[mnt] = current
+            if current is None or previous is None or current == previous:
+                continue
+            now = self.wall()
+            sample = self.samples.get(mnt)
+            if sample and 0 <= now - sample['collected_at'] < self.interval:
+                continue
+            try:
+                usage = self.usage(mnt)
+            except OSError:
+                continue
+            with self.lock:
+                self.samples[mnt] = dict(collected_at=now, size=usage.total, used=usage.used,
+                                         free=usage.free, percent=usage.percent)
+                self._save()
+
+    def rows(self):
+        with self.lock:
+            now = self.wall()
+            return [dict(mount['row'], size=sample['size'], used=sample['used'], free=sample['free'],
+                         percent=sample['percent'], storage_class='hdd',
+                         collection_source='activity_gated_statvfs',
+                         collected_at=sample['collected_at'],
+                         collection_age_seconds=max(0, now - sample['collected_at']),
+                         collection_interval_seconds=self.interval, collection_status='ok')
+                    for mnt, mount in self.mounts.items() if (sample := self.samples.get(mnt))]
+
+    def start(self, period=30):
+        stop = Event()
+
+        def run():
+            while not stop.wait(period):
+                try:
+                    self.tick()
+                except Exception:
+                    # The sampler must outlive any single bad reading.
+                    continue
+
+        Thread(target=run, name='hdd-activity', daemon=True).start()
+        return stop.set
+
+
 def mount_records(path):
     """Decode proc mountinfo, never walk or stat mounted trees."""
     def unescape(value):
@@ -118,35 +257,47 @@ def filesystem_rows(cache):
 
 def filesystem_provider(usage, block_root=Path('/sys/dev/block'),
                         mountinfo=Path('/proc/self/mountinfo'), clock=time.monotonic,
-                        interval=300, wall=time.time):
+                        interval=300, wall=time.time, hdd=None):
     cache = SampleCache(max(300, interval), clock, wall)
 
     def get_filesystems(plugin):
         def collect():
-            rows = []
+            rows, spinning = [], []
             for record in mount_records(mountinfo):
-                # Even a slow statvfs can cause pathname I/O on a sleeping HDD.
-                # Never call it there; also omit unknown and network backing.
+                # Solid-state mounts are read here on a slow timer. Spinning disks
+                # are only registered: `hdd` reads them while they are in use.
+                # Unknown, mixed and network backing is omitted.
                 if record['fs_type'] not in ('ext4', 'xfs'):
                     continue
-                if not solid_state_backing(block_root / record['devno']):
+                backing = block_root / record['devno']
+                solid = solid_state_backing(backing)
+                disks = None if solid or hdd is None else hdd_backing(backing)
+                if not solid and not disks:
                     continue
                 if not plugin.is_display_any(record['mnt_point'], record['device_name']):
                     continue
-                current = usage(record['mnt_point'])
                 row = {key: value for key, value in record.items() if key != 'devno'}
-                row.update(size=current.total, used=current.used, free=current.free,
-                           percent=current.percent, key=plugin.get_key(),
-                           storage_class='solid_state', collection_source='cached_statvfs')
+                row.update(key=plugin.get_key())
                 alias = plugin.has_alias(record['mnt_point'])
                 if alias is not None:
                     row['alias'] = alias
+                if disks:
+                    spinning.append(dict(row=row, disks=disks))
+                    continue
+                current = usage(record['mnt_point'])
+                row.update(size=current.total, used=current.used, free=current.free,
+                           percent=current.percent, storage_class='solid_state',
+                           collection_source='cached_statvfs')
                 rows.append(row)
+            if hdd is not None:
+                hdd.register(spinning)
             return rows
         cache.get(collect)
-        return filesystem_rows(cache)
+        return get_filesystems.rows()
 
+    get_filesystems.rows = lambda: filesystem_rows(cache) + ([] if hdd is None else hdd.rows())
     get_filesystems.cache = cache
+    get_filesystems.hdd = hdd
     return get_filesystems
 
 
@@ -201,6 +352,7 @@ class StoragePolicy:
     def __init__(self, filesystems, health, blocks=Path('/sys/class/block'),
                  clock=time.monotonic, wall=time.time, health_enabled=True):
         self.filesystems, self.health, self.blocks = filesystems, health, blocks
+        self.hdd = getattr(filesystems, 'hdd', None)
         self.health_enabled = health_enabled
         self.diskio_interval = 60
         self.temperatures = temperature_provider(health)
@@ -222,7 +374,8 @@ class StoragePolicy:
                                  storage_class=storage_class, transport=transport,
                                  capacity_bytes=int((entry / 'size').read_text().strip()) * 512,
                                  health='nvme_only' if storage_class == 'nvme_ssd' and self.health_enabled else 'disabled',
-                                 filesystem_usage='cached' if solid_state_backing(entry) else 'disabled'))
+                                 filesystem_usage='cached' if solid_state_backing(entry)
+                                 else 'activity_gated' if self.hdd is not None and hdd_backing(entry) else 'disabled'))
             except (OSError, ValueError):
                 continue
         return rows
@@ -237,13 +390,20 @@ class StoragePolicy:
                             collected_at=health_meta['collected_at'],
                             collection_age_seconds=health_meta['collection_age_seconds'])
                        for dev in self.health.cache.data]
-        return dict(version=1, hdd_health_enabled=False, non_nvme_health_enabled=False,
-                    filesystem_hdd_enabled=False, filesystem_unknown_enabled=False,
-                    diskio_source='proc_diskstats', diskio_interval_seconds=self.diskio_interval,
-                    hdd_temperature_enabled=False, nvme_temperature_source='nvme_smart_cache',
-                    fs=dict(self.filesystems.cache.metadata(), scope='proven_solid_state_ext4_xfs'),
-                    smart=dict(health_meta, enabled=self.health_enabled, scope='nvme_only', devices=devices),
-                    inventory=dict(self.inventory.metadata(), source='sysfs_only', devices=inventory))
+        snapshot = dict(version=1, hdd_health_enabled=False, non_nvme_health_enabled=False,
+                        filesystem_hdd_enabled=self.hdd is not None, filesystem_unknown_enabled=False,
+                        diskio_source='proc_diskstats', diskio_interval_seconds=self.diskio_interval,
+                        hdd_temperature_enabled=False, nvme_temperature_source='nvme_smart_cache',
+                        fs=dict(self.filesystems.cache.metadata(), scope='proven_solid_state_ext4_xfs'),
+                        smart=dict(health_meta, enabled=self.health_enabled, scope='nvme_only', devices=devices),
+                        inventory=dict(self.inventory.metadata(), source='sysfs_only', devices=inventory))
+        if self.hdd is not None:
+            snapshot['hdd'] = dict(enabled=True, scope='activity_gated_statvfs',
+                                   interval_seconds=self.hdd.interval,
+                                   mounts=[dict(mnt_point=row['mnt_point'], collected_at=row['collected_at'],
+                                                collection_age_seconds=row['collection_age_seconds'])
+                                           for row in self.hdd.rows()])
+        return snapshot
 
 
 def gpu_memory(stats, handles, get_memory):
@@ -279,8 +439,13 @@ def install(gpu=False, policy=None):
                 return max(minimum, value)
             enabled = os.environ.get('GLANCES_NVME_HEALTH_ENABLED', 'true') == 'true' and device is not None
             health = nvme_provider(device, interval=interval('GLANCES_NVME_HEALTH_INTERVAL', 600), enabled=enabled)
+            hdd = None
+            if os.environ.get('GLANCES_HDD_ACTIVITY_STATS', 'false') == 'true':
+                hdd = HddActivityStats(fs.psutil.disk_usage, os.environ.get('GLANCES_HDD_CACHE_FILE') or None,
+                                       interval('GLANCES_HDD_INTERVAL', 300))
+                hdd.start(interval('GLANCES_HDD_ACTIVITY_POLL', 10))
             filesystems = filesystem_provider(fs.psutil.disk_usage,
-                                              interval=interval('GLANCES_FS_INTERVAL', 300))
+                                              interval=interval('GLANCES_FS_INTERVAL', 300), hdd=hdd)
             policy = StoragePolicy(filesystems, health, health_enabled=enabled)
             policy.diskio_interval = interval('GLANCES_DISKIO_INTERVAL', 60)
         smart.DeviceList = policy.health
@@ -291,7 +456,7 @@ def install(gpu=False, policy=None):
         # protects direct updates, /all, /fs and repeated updates independently
         # of both Glances' timers and the browser's HTTP cadence.
         fs.FsPlugin.update_local = lambda plugin: policy.filesystems(plugin)
-        fs.FsPlugin.get_raw = lambda plugin: filesystem_rows(policy.filesystems.cache)
+        fs.FsPlugin.get_raw = lambda plugin: policy.filesystems.rows()
         import glances.plugins.sensors as sensors
         from glances.plugins.sensors.sensor.glances_hddtemp import GlancesGrabHDDTemp
         # HDDtemp does not honor --disable-hddtemp in every internal path.
