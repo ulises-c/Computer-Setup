@@ -147,6 +147,29 @@ test('configured HDDs are never monitored: no values, no loading, no unavailable
   }
 });
 
+test('activity-gated HDD rows show their values with the date they were read', () => {
+  const config={disks:['/etc/hostname','/mnt/das'],diskLabels:{'/mnt/das':'DAS 4 TB'},hddDisks:['/mnt/das'],hddActivityStats:true};
+  const row=fsRow({mnt_point:'/mnt/das',percent:50,free:2e12,size:4e12,fs_type:'ext4',collection_source:'activity_gated_statvfs',collected_at:Date.UTC(2026,9,5,22,4)/1000});
+  const hdd=disk(api.model({native:nativeWith([fsRow(),row])},config,Date.UTC(2026,9,6),''),'DAS 4 TB');
+  assert.deepEqual(hdd.rows,[['Used','50%'],['Free','2 TB'],['Total','4 TB']]);
+  assert.equal(hdd.usage,50);
+  assert.match(hdd.state,/^Last read Oct \d+, \d+:04\s?(AM|PM)$/);
+  assert.equal(api.readDate(Date.UTC(2025,0,2,12)/1000,Date.UTC(2026,9,6)).includes('2025'),true,'a different year is spelled out');
+  assert.ok(api.markup(api.model({native:nativeWith([fsRow(),row])},config,Date.UTC(2026,9,6),'')).includes('monitor-state is-calm'));
+});
+
+test('HDD without an activity-gated row says it waits for activity, never zero or unavailable', () => {
+  const config={disks:['/mnt/das'],diskLabels:{'/mnt/das':'DAS'},hddDisks:['/mnt/das'],hddActivityStats:true};
+  const unmarked=fsRow({mnt_point:'/mnt/das',percent:50,size:4e12});
+  for (const fs of [[],[unmarked]]) {
+    const hdd=disk(api.model({native:nativeWith(fs)},config,1000,''),'DAS');
+    assert.equal(hdd.state,'Not read yet · waits for drive activity');
+    assert.deepEqual(hdd.rows,[['Used','—'],['Free','—'],['Total','—']]);
+    assert.equal(hdd.usage,undefined);
+  }
+  assert.equal(disk(api.model({},config,1000,''),'DAS').state,'Loading');
+});
+
 test('NVMe health age is matched by device name from the storage policy and policy outages stay explicit', () => {
   const device={DeviceName:'nvme0 Example',a:{key:'percentageUsed',value:2},b:{key:'criticalWarning',value:0},c:{key:'integrityErrors',value:0}};
   const policy=(age)=>({data:{smart:{enabled:true,status:'ok',devices:[{DeviceName:'nvme0 Example',collected_at:1,collection_age_seconds:age}]}},at:1000});

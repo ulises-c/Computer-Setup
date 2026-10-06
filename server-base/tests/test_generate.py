@@ -140,10 +140,13 @@ class GenerateTests(unittest.TestCase):
             self.assertIn('monitor-native-fallback', css)
             self.assertIn('data:image/svg+xml,', css)
 
-    def test_hdds_are_declared_per_host_and_never_polled_or_displayed(self):
+    def test_hdds_are_declared_per_host_and_never_polled_by_the_page(self):
         import copy
         fleet = copy.deepcopy(FLEET)
         main = fleet['hosts']['linux-server']['topbar']
+        self.assertTrue(main['hddActivityStats'])
+        self.assertIn('hddActivityStats: true', generate.render_settings(fleet, 'linux-server', ''))
+        del main['hddActivityStats']
         self.assertEqual(sorted(main['hddDisks']), ['/mnt/seagate4tb', '/mnt/wd14tb', '/mnt/wd1tb'])
         self.assertTrue(set(main['hddDisks']) <= set(main['disks']))
         main['grouped'] = True
@@ -157,6 +160,16 @@ class GenerateTests(unittest.TestCase):
         self.assertNotIn('storageMetadataUrl', settings)
         for host in ('linux-pi', 'linux-game-server'):
             self.assertNotIn('hddDisks', fleet['hosts'][host]['topbar'])
+
+    def test_activity_stats_skeleton_does_not_claim_hdds_are_unmonitored(self):
+        import copy
+        from urllib.parse import quote
+        fleet = copy.deepcopy(FLEET)
+        fleet['hosts']['linux-server']['topbar']['grouped'] = True
+        css = generate.render_css(fleet, 'linux-server')
+        self.assertNotIn(quote('Not monitored', safe=''), css)
+        for host in ('linux-pi', 'linux-game-server'):
+            self.assertNotIn('hddActivityStats', fleet['hosts'][host]['topbar'])
 
     def test_ssd_health_requests_are_opt_in_per_host(self):
         # Game keeps its existing NVMe health (backend is NVMe-only and cached);

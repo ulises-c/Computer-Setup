@@ -38,6 +38,7 @@ topbarExtras:
     - "/mnt/seagate4tb"
     - "/mnt/wd14tb"
     - "/mnt/wd1tb"
+  hddActivityStats: true
 
 layout:
   Servers:

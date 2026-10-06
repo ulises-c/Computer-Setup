@@ -139,7 +139,7 @@ def render_settings(fleet, host_dir, local_text):
         extras.update({"safeSSDHealth": top.get("safeSSDHealth", False),
                        "filesystemIntervalMs": max(300000, top.get("filesystemIntervalMs", 300000)),
                        "smartIntervalMs": max(600000, top.get("smartIntervalMs", 600000))})
-        for key in ["gpuTypes", "gpuFields", "gpu", "wifi", "diskLabels", "temperatureLabels", "hddDisks"]:
+        for key in ["gpuTypes", "gpuFields", "gpu", "wifi", "diskLabels", "temperatureLabels", "hddDisks", "hddActivityStats"]:
             if key in top:
                 extras[key] = top[key]
     base["topbarExtras"] = extras
@@ -201,7 +201,7 @@ def loading_css(top):
         storage.append(("NVMe health", ["Health", "Wear"], state))
     hdd = set(top.get("hddDisks", []))
     storage += [(top.get("diskLabels", {}).get(mount, "System disk" if mount == "/etc/hostname" else mount),
-                 ["Used", "Free", "Total"], "Not monitored · HDD" if mount in hdd else state) for mount in top["disks"]]
+                 ["Used", "Free", "Total"], "Not monitored · HDD" if mount in hdd and not top.get("hddActivityStats") else state) for mount in top["disks"]]
     connectivity = [(top["net"], ["Upload", "Download"], state)] if top.get("net") else []
     if top.get("wifi"):
         connectivity.append(("Wi-Fi", ["Signal", "Link"], state))

@@ -55,7 +55,8 @@ output is byte-identical (tested).
 |---|---|---|
 | `label`, `net`, `disks` | host label, NIC tile, filesystem mounts to show | required |
 | `diskLabels` | `{mount: label}` | `/etc/hostname` = System disk, else the mount |
-| `hddDisks` | mounts that are spinning disks: shown as **Not monitored · HDD**, never polled or displayed, even if a backend row leaks through | none |
+| `hddDisks` | mounts that are spinning disks: the page never polls them; shown as **Not monitored · HDD** unless `hddActivityStats` is on | none |
+| `hddActivityStats` | the host's Glances reads HDD used/free only while the drive is in use (`GLANCES_HDD_ACTIVITY_STATS`); `hddDisks` tiles then show that cached sample as **Last read \<date\>**, or **Not read yet · waits for drive activity**. Only rows marked `collection_source=activity_gated_statvfs` are accepted | no |
 | `gpuTypes`, `gpuFields`, `gpu` | `{gpu_id: dGPU/iGPU}`, rows kept per GPU id (e.g. an iGPU with no VRAM figure keeps `["Usage"]`), `false` = no GPU tile (Pi) | none |
 | `temperatureLabels` | storage thermal sensors (`["NVMe"]`) reserved from first paint | none |
 | `wifi` | reserve a Wi-Fi tile | no |

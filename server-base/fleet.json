@@ -47,7 +47,7 @@
   "hosts": {
     "linux-server": {
       "title": "Home Server",
-      "topbar": {"label": "main server", "grouped": true, "net": "eno2", "disks": ["/etc/hostname", "/mnt/seagate4tb", "/mnt/wd14tb", "/mnt/wd1tb"], "diskLabels": {"/etc/hostname": "System disk", "/mnt/seagate4tb": "seagate4tb", "/mnt/wd14tb": "wd14tb", "/mnt/wd1tb": "wd1tb"}, "gpuTypes": {"intel0": "iGPU"}, "gpuFields": {"intel0": ["Usage"]}, "temperatureLabels": ["NVMe"], "hddDisks": ["/mnt/seagate4tb", "/mnt/wd14tb", "/mnt/wd1tb"], "wifi": false, "safeSSDHealth": true, "filesystemIntervalMs": 300000, "smartIntervalMs": 600000},
+      "topbar": {"label": "main server", "grouped": true, "net": "eno2", "disks": ["/etc/hostname", "/mnt/seagate4tb", "/mnt/wd14tb", "/mnt/wd1tb"], "diskLabels": {"/etc/hostname": "System disk", "/mnt/seagate4tb": "seagate4tb", "/mnt/wd14tb": "wd14tb", "/mnt/wd1tb": "wd1tb"}, "gpuTypes": {"intel0": "iGPU"}, "gpuFields": {"intel0": ["Usage"]}, "temperatureLabels": ["NVMe"], "hddDisks": ["/mnt/seagate4tb", "/mnt/wd14tb", "/mnt/wd1tb"], "hddActivityStats": true, "wifi": false, "safeSSDHealth": true, "filesystemIntervalMs": 300000, "smartIntervalMs": 600000},
       "accents": {"Servers": "indigo", "Management": "blue", "Network": "teal", "Storage": "amber", "NAS": "orange"}
     },
     "linux-pi": {

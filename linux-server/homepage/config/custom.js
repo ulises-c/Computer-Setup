@@ -55,6 +55,12 @@
     const ttl = 2 * Math.max(floorMs, number(meta.interval) ? meta.interval * 1000 : 0);
     return `${age > ttl ? 'Stale' : 'Cached'} · collected ${ageText(age)} ago`;
   };
+  const readDate = (epochSeconds, now) => {
+    const date = new Date(epochSeconds * 1000);
+    const options = {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'};
+    if (date.getFullYear() !== new Date(now).getFullYear()) options.year = 'numeric';
+    return date.toLocaleString(undefined, options);
+  };
   const rowMeta = row => row && {status:row.collection_status,age:row.collection_age_seconds,interval:row.collection_interval_seconds};
   const model = (samples, config, now, clock) => {
     const groups = ['Compute','Storage','Connectivity','System'].map(title => ({title, tiles:[]}));
@@ -96,10 +102,13 @@
     for (const mount of config.disks || []) {
       const label = config.diskLabels?.[mount] || (mount === '/etc/hostname' ? 'System disk' : mount);
       if (hdd.has(mount)) {
-        // Policy: spinning disks are never polled or displayed, even if an older
-        // backend still returns a row for them.
-        add(1,label,[['Used','—'],['Free','—'],['Total','—']],'native');
-        groups[1].tiles.at(-1).state = 'Not monitored · HDD';
+        // Spinning disks are never polled by this page. Their figures come from
+        // the host's activity-gated sample (taken only while the drive was in
+        // use) and are always shown with the date they were read; a row without
+        // that marker is ignored, as is any row when the host has not opted in.
+        const row = config.hddActivityStats ? (d.fs || []).find(f=>f.mnt_point === mount && f.collection_source === 'activity_gated_statvfs' && number(f.collected_at)) : null;
+        add(1,label,row ? [['Used',pct(row.percent)],['Free',bytes(row.free)],['Total',bytes(row.size)]] : [['Used','—'],['Free','—'],['Total','—']],'native',row?.percent,row?.fs_type);
+        groups[1].tiles.at(-1).state = !config.hddActivityStats ? 'Not monitored · HDD' : row ? `Last read ${readDate(row.collected_at,now)}` : samples.native?.at ? 'Not read yet · waits for drive activity' : status(samples.native,now);
         continue;
       }
       const f = (d.fs || []).find(f=>f.mnt_point === mount);
@@ -156,7 +165,7 @@
   };
   // A healthy cache age and the standing info banner are routine, not warnings:
   // amber is reserved for stale, unknown, failed or unavailable data.
-  const calmState = text => !text || /^Cached · collected /.test(text);
+  const calmState = text => !text || /^(Cached · collected |Last read |Not read yet)/.test(text);
   const noticeLevel = text => (!text || text === 'Loading host metrics' ||
     text.startsWith('Core metrics update automatically')) ? 'calm' : 'warn';
   const markup = (groups) => groups.map((group,i)=>`<section class="monitor-group" aria-labelledby="monitor-heading-${i}"><h2 id="monitor-heading-${i}">${esc(group.title)}</h2><div class="monitor-tiles">${group.tiles.map(tile=>`<article class="monitor-tile${tile.state && !calmState(tile.state) ? ' has-warning' : ''}"><h3>${esc(tile.label)}</h3><p class="monitor-detail">${esc(tile.detail || '')}</p><dl>${tile.rows.map(([label,value])=>`<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl><div class="monitor-meter" aria-hidden="true">${number(tile.usage) ? `<span style="width:${Math.min(100,Math.max(0,tile.usage))}%"></span>` : ''}</div><p class="monitor-state${calmState(tile.state) ? ' is-calm' : ''}">${esc(tile.state || '')}</p></article>`).join('')}</div></section>`).join('');
@@ -258,7 +267,7 @@
     refresh();
     return {samples,stop};
   };
-  if (typeof module !== 'undefined') module.exports = { isNativeRequest, model, status, markup, noticeLevel, publicUrl, start };
+  if (typeof module !== 'undefined') module.exports = { isNativeRequest, readDate, model, status, markup, noticeLevel, publicUrl, start };
   else {
     const config = root.__NEXT_DATA__?.props?.pageProps?.initialSettings?.topbarExtras;
     if (config?.grouped && !root.__homepageGroupedTopbar) root.__homepageGroupedTopbar = start(root,config);
