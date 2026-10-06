@@ -45,8 +45,10 @@ cannot spin it up. Idle drives are never touched: their last sample is reported
 as is, with the epoch time it was taken (`collected_at`), and it is persisted to
 `GLANCES_HDD_CACHE_FILE` so it survives restarts.
 
-- At most one read per mount per `GLANCES_HDD_INTERVAL` (default and floor 300 s),
-  however busy the drive is. The first reading after startup only sets the baseline.
+- At most one read attempt per mount per `GLANCES_HDD_INTERVAL` (default and floor 300 s),
+  however busy the drive is and whether or not the read succeeds. A damaged or
+  hand-edited cache file loses its invalid samples on load (non-finite, negative,
+  future-dated, percent over 100). The first reading after startup only sets the baseline.
 - Rows appear in `/api/4/fs` only after a first sample (`storage_class=hdd`,
   `collection_source=activity_gated_statvfs`, `collection_age_seconds` counted from
   `collected_at` by the wall clock, so it spans restarts). Before that the mount is

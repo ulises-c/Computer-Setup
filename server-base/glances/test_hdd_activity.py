@@ -245,5 +245,51 @@ class HddActivityTests(unittest.TestCase):
         self.assertEqual(stats.interval, 300)
 
 
+    def test_failed_reads_are_throttled_like_successful_ones(self):
+        def failing(mount):
+            self.calls.append(mount)
+            raise OSError('stale handle')
+        stats = telemetry.HddActivityStats(failing, wall=lambda: self.wall[0])
+        provider = telemetry.filesystem_provider(lambda *a: [], self.fx.blocks, self.fx.mountinfo,
+                                                 wall=lambda: self.wall[0], hdd=stats)
+        provider(self.plugin)
+        stats.tick()
+        for step in range(1, 31):
+            self.fx.set_io('sda', step, step)
+            self.advance(10)
+            stats.tick()
+        self.assertLessEqual(len(self.calls), 2)
+        self.assertEqual(stats.rows(), [])
+
+    def test_invalid_cache_values_are_dropped_on_load(self):
+        cache = Path(self.tmp.name) / 'hdd.json'
+        good = dict(collected_at=900, size=10, used=5, free=5, percent=50.0)
+        bad = [dict(good, size=float('inf')), dict(good, used=-1), dict(good, percent=150),
+               dict(good, collected_at=float('nan')), dict(good, collected_at=5000), dict(good, collected_at=0)]
+        mounts = {f'/mnt/bad{i}': sample for i, sample in enumerate(bad)}
+        mounts['/mnt/good'] = good
+        cache.write_text(json.dumps(dict(version=1, mounts=mounts)))
+        stats = telemetry.HddActivityStats(self.usage, cache_file=cache, wall=lambda: self.wall[0])
+        self.assertEqual(list(stats.samples), ['/mnt/good'])
+
+    def test_registration_does_not_race_the_sampler_on_baselines(self):
+        stats, provider = self.stats()
+        provider(self.plugin)
+        stats.tick()
+        stats.register([])
+        stats.tick()
+        self.assertEqual(stats.baselines, {})
+
+    def test_environment_wiring(self):
+        self.assertIsNone(telemetry.hdd_from_environment({}, self.usage))
+        self.assertIsNone(telemetry.hdd_from_environment({'GLANCES_HDD_ACTIVITY_STATS': 'yes'}, self.usage))
+        stats = telemetry.hdd_from_environment(dict(GLANCES_HDD_ACTIVITY_STATS='true',
+                                                    GLANCES_HDD_CACHE_FILE='/var/lib/x/hdd.json',
+                                                    GLANCES_HDD_INTERVAL='900', GLANCES_HDD_ACTIVITY_POLL='1'),
+                                               self.usage)
+        self.assertEqual((stats.interval, stats.poll, str(stats.cache_file)), (900, 10, '/var/lib/x/hdd.json'))
+        self.assertIsNone(telemetry.hdd_from_environment(dict(GLANCES_HDD_ACTIVITY_STATS='true'), self.usage).cache_file)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -4,6 +4,7 @@ Never call pySMART DeviceList: it scans/queries every drive without a standby
 check. Discover NVMe controllers through sysfs only; no SATA/USB health probes.
 """
 import json
+import math
 import os
 import re
 import time
@@ -152,21 +153,26 @@ class HddActivityStats:
     a read then cannot spin it up. Idle drives are never touched; their last
     sample keeps the date it was taken and survives restarts.
     """
-    def __init__(self, usage, cache_file=None, interval=300, wall=time.time):
+    def __init__(self, usage, cache_file=None, interval=300, wall=time.time, poll=10):
         self.usage, self.wall = usage, wall
-        self.interval = max(300, interval)
+        self.interval, self.poll = max(300, interval), max(10, poll)
         self.cache_file = None if cache_file is None else Path(cache_file)
-        self.mounts, self.baselines = {}, {}
+        self.mounts, self.baselines, self.attempts = {}, {}, {}
         self.lock = RLock()
         self.samples = self._load()
 
     def _load(self):
         try:
             mounts = json.loads(self.cache_file.read_text())['mounts']
-            return {mnt: {key: float(sample[key]) for key in ('collected_at', 'size', 'used', 'free', 'percent')}
-                    for mnt, sample in mounts.items()}
+            samples = {mnt: {key: float(sample[key]) for key in ('collected_at', 'size', 'used', 'free', 'percent')}
+                       for mnt, sample in mounts.items()}
         except (AttributeError, OSError, ValueError, KeyError, TypeError):
             return {}
+        # A hand-edited or damaged file must not reach the API or the dashboard.
+        now = self.wall()
+        return {mnt: sample for mnt, sample in samples.items()
+                if all(math.isfinite(value) and value >= 0 for value in sample.values())
+                and 0 < sample['collected_at'] <= now and sample['percent'] <= 100}
 
     def _save(self):
         if self.cache_file is None:
@@ -182,11 +188,12 @@ class HddActivityStats:
     def register(self, mounts):
         with self.lock:
             self.mounts = {mount['row']['mnt_point']: mount for mount in mounts}
-            self.baselines = {mnt: value for mnt, value in self.baselines.items() if mnt in self.mounts}
 
     def tick(self):
         with self.lock:
             mounts = list(self.mounts.values())
+        for stale in set(self.baselines) - {mount['row']['mnt_point'] for mount in mounts}:
+            del self.baselines[stale]
         for mount in mounts:
             mnt, disks = mount['row']['mnt_point'], mount['disks']
             current, previous = io_counters(disks), self.baselines.get(mnt)
@@ -197,6 +204,10 @@ class HddActivityStats:
             sample = self.samples.get(mnt)
             if sample and 0 <= now - sample['collected_at'] < self.interval:
                 continue
+            # Failures are throttled like successes.
+            if 0 <= now - self.attempts.get(mnt, -math.inf) < self.interval:
+                continue
+            self.attempts[mnt] = now
             try:
                 usage = self.usage(mnt)
             except OSError:
@@ -217,7 +228,8 @@ class HddActivityStats:
                          collection_interval_seconds=self.interval, collection_status='ok')
                     for mnt, mount in self.mounts.items() if (sample := self.samples.get(mnt))]
 
-    def start(self, period=30):
+    def start(self, period=None):
+        period = self.poll if period is None else period
         stop = Event()
 
         def run():
@@ -230,6 +242,15 @@ class HddActivityStats:
 
         Thread(target=run, name='hdd-activity', daemon=True).start()
         return stop.set
+
+
+def hdd_from_environment(environ, usage, wall=time.time):
+    """HddActivityStats when the host opted in with GLANCES_HDD_ACTIVITY_STATS=true."""
+    if environ.get('GLANCES_HDD_ACTIVITY_STATS', 'false') != 'true':
+        return None
+    return HddActivityStats(usage, environ.get('GLANCES_HDD_CACHE_FILE') or None,
+                            int(environ.get('GLANCES_HDD_INTERVAL', '300')), wall,
+                            int(environ.get('GLANCES_HDD_ACTIVITY_POLL', '10')))
 
 
 def mount_records(path):
@@ -439,11 +460,9 @@ def install(gpu=False, policy=None):
                 return max(minimum, value)
             enabled = os.environ.get('GLANCES_NVME_HEALTH_ENABLED', 'true') == 'true' and device is not None
             health = nvme_provider(device, interval=interval('GLANCES_NVME_HEALTH_INTERVAL', 600), enabled=enabled)
-            hdd = None
-            if os.environ.get('GLANCES_HDD_ACTIVITY_STATS', 'false') == 'true':
-                hdd = HddActivityStats(fs.psutil.disk_usage, os.environ.get('GLANCES_HDD_CACHE_FILE') or None,
-                                       interval('GLANCES_HDD_INTERVAL', 300))
-                hdd.start(interval('GLANCES_HDD_ACTIVITY_POLL', 10))
+            hdd = hdd_from_environment(os.environ, fs.psutil.disk_usage)
+            if hdd is not None:
+                hdd.start()
             filesystems = filesystem_provider(fs.psutil.disk_usage,
                                               interval=interval('GLANCES_FS_INTERVAL', 300), hdd=hdd)
             policy = StoragePolicy(filesystems, health, health_enabled=enabled)
