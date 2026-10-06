@@ -31,7 +31,7 @@ refresh hourly; there is no new card JS renderer, polling loop or endpoint.
 `additionalField` groups OS and kernel into one row. All rows use list layout.
 
 The generator writes all three hosts' `services.yaml`. Card changes do not
-enable the grouped topbar on main/Pi. During a card-only rollout, transfer only
+change the top bar. During a card-only rollout, transfer only
 the Servers block after checking the rest of each destination config. Preserve
 the host's private `.env`, other service groups and topbar artifacts. Revalidate
 with the **actual container PORT** (main/game 3000; Pi 3001), then reload and
@@ -62,9 +62,9 @@ output is byte-identical (tested).
 | `safeSSDHealth` | **opt in** to `/api/4/smart` + `/api/4/storagepolicy`; with `false` the page never requests either | `false` |
 | `filesystemIntervalMs` / `smartIntervalMs` | expected backend cache cadence: header text, stale threshold (2x) and request cadence; values below 5 min / 10 min are clamped up | 300000 / 600000 |
 
-Current fleet: game opts in to SSD health (its backend is NVMe-only and cached);
-main and Pi keep `safeSSDHealth: false` until the parent verifies the backend
-(Pi has no NVMe at all); main declares its three DAS HDD mounts in `hddDisks`.
+Current fleet: all three hosts enable the grouped bar. Game and main opt in to SSD
+health (their backend is NVMe-only and cached; main declares its three DAS HDD
+mounts in `hddDisks`); the Pi has no NVMe, so it stays `false`.
 
 ### First paint, loading and failure behaviour
 

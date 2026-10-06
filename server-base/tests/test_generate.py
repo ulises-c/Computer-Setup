@@ -81,7 +81,7 @@ class GenerateTests(unittest.TestCase):
         fleet = copy.deepcopy(FLEET)
         fleet['hosts']['linux-game-server']['topbar']['gpuTypes'] = {'nvidia0':'dGPU'}
         self.assertIn('nvidia0: "dGPU"', generate.render_settings(fleet,'linux-game-server',''))
-        self.assertNotIn('gpuTypes', generate.render_settings(fleet,'linux-server',''))
+        self.assertIn('intel0: "iGPU"', generate.render_settings(fleet,'linux-server',''))
         self.assertNotIn('gpuTypes', generate.render_settings(fleet,'linux-pi',''))
 
     def test_compact_server_inventory_is_consistent_and_native_facts_are_hourly(self):
@@ -160,10 +160,10 @@ class GenerateTests(unittest.TestCase):
 
     def test_ssd_health_requests_are_opt_in_per_host(self):
         # Game keeps its existing NVMe health (backend is NVMe-only and cached);
-        # main stays off until the parent verifies it, Pi has no NVMe at all.
+        # main (NVMe-only backend, verified live) opts in, Pi has no NVMe at all.
         hosts = FLEET['hosts']
         self.assertTrue(hosts['linux-game-server']['topbar']['safeSSDHealth'])
-        self.assertFalse(hosts['linux-server']['topbar']['safeSSDHealth'])
+        self.assertTrue(hosts['linux-server']['topbar']['safeSSDHealth'])
         self.assertFalse(hosts['linux-pi']['topbar']['safeSSDHealth'])
         self.assertNotIn('temperatureLabels', hosts['linux-pi']['topbar'])
         for host in hosts.values():
@@ -202,6 +202,7 @@ class GenerateTests(unittest.TestCase):
         fleet = copy.deepcopy(FLEET)
         for host in ('linux-game-server', 'linux-server'):
             fleet['hosts'][host]['topbar']['grouped'] = True
+        fleet['hosts']['linux-server']['topbar']['safeSSDHealth'] = False
         game = generate.render_css(fleet, 'linux-game-server')
         main = generate.render_css(fleet, 'linux-server')
         self.assertIn(quote('<dt>Health</dt>', safe=''), game)
