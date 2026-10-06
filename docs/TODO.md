@@ -327,12 +327,12 @@ Dragonwilds server, migrated off the NAS host.
       `eb73735`); not started
 - [x] Grouped top bar rolled out to the main server (`safeSSDHealth: true`) and Pi
       (off, no NVMe); generated config deployed and revalidated, verified live
-- [ ] Decide whether the main server's three DAS HDD mounts should show used/free
-      again. Glances now omits them from `/api/4/fs`, so the main server's live
-      native top bar shows only the system disk. ext4 `statvfs` normally reads
-      in-memory counters, but no-wake is not proven for every drive and bridge;
-      any opt-in needs a slow cadence, a visible age and a before/after power-state
-      check
+- [x] Main server DAS HDD used/free: read only while the drive is already in use
+      (sysfs I/O counters, at most once per 5 min) and shown as "Last read <date>";
+      deployed, first samples appear on the next natural activity
+- [ ] After the next backup or NAS activity, confirm the three HDD tiles on the main
+      dashboard fill in with a date, and `hdd-cache/hdd-cache.json` appears under
+      `linux-server/glances/`
 - [ ] Physically confirm that the DAS HDDs stay asleep over a multi-day idle
       period with the new Glances policy (the code paths are blocked and tested,
       but drive power state was deliberately not queried)

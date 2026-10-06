@@ -108,6 +108,13 @@ in [UNIFICATION.md](UNIFICATION.md).
   data. Enabled on the main server (NVMe health on, its three DAS HDDs shown as
   "Not monitored · HDD") and the Pi (no NVMe, health off), both verified live with real
   data after the Glances storage policy was already running there.
+- Main server DAS HDD used/free (`GLANCES_HDD_ACTIVITY_STATS`, `telemetry.HddActivityStats`):
+  Glances reads an HDD's filesystem usage only after the kernel's completed-I/O
+  counters for it moved (so something else already has it awake), at most once per
+  5 minutes per mount, and keeps the sample with the time it was taken in a
+  persisted cache. The top bar shows it as "Last read <date>", or "Not read yet" until
+  the first activity. Independently reviewed; its findings (failed reads throttled,
+  cache validated on load, baseline race) are fixed.
 - Fleet Glances storage policy (all three hosts, Glances 4.5.4): no HDD SMART,
   HDD temperature or HDD filesystem reads and no broad `DeviceList()` scan;
   NVMe health and temperature from one cached sample every 10 minutes, solid-state
