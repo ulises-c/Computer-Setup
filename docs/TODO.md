@@ -325,11 +325,8 @@ Dragonwilds server, migrated off the NAS host.
       to exercise these triggers
 - [ ] Independent review of the game-server work on PR #106 (the commits after
       `eb73735`); not started
-- [ ] Roll the grouped top bar out to the main server and Pi; today only the game
-      host enables `topbar.grouped` in `server-base/fleet.json`. Previews of both
-      render with no native flash and no overflow. Set `safeSSDHealth: true` for
-      the main server (NVMe) and leave it off for the Pi (no NVMe), regenerate,
-      deploy their generated config and revalidate
+- [x] Grouped top bar rolled out to the main server (`safeSSDHealth: true`) and Pi
+      (off, no NVMe); generated config deployed and revalidated, verified live
 - [ ] Decide whether the main server's three DAS HDD mounts should show used/free
       again. Glances now omits them from `/api/4/fs`, so the main server's live
       native top bar shows only the system disk. ext4 `statvfs` normally reads
@@ -339,10 +336,8 @@ Dragonwilds server, migrated off the NAS host.
 - [ ] Physically confirm that the DAS HDDs stay asleep over a multi-day idle
       period with the new Glances policy (the code paths are blocked and tested,
       but drive power state was deliberately not queried)
-- [ ] Reconcile the main server and Pi checkouts with this branch: they still sit
-      at `d524014` with the deployed Glances files (`compose.yml`, `entrypoint.sh`,
-      untracked `telemetry.py`) as uncommitted edits identical to the pushed ones.
-      Restore those files and remove the untracked `telemetry.py` before pulling
+- [x] Main server and Pi checkouts reconciled with this branch (Glances files
+      matched the pushed ones byte for byte, restored, then fast-forwarded)
 
 ## linux-pi — Raspberry Pi 4
 

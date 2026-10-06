@@ -97,7 +97,7 @@ in [UNIFICATION.md](UNIFICATION.md).
   Connectivity and System sections with the host's own CPU, load, temperature,
   RAM, GPU (model, type, VRAM used and total), labelled disks, NVMe health and
   wear, network and uptime, with stale and error states. The main server and Pi
-  keep the previous bar.
+  enabled it later (see the loading polish entry).
 - Grouped top bar loading polish: generated CSS skeleton at first paint (no native
   widget flash, same tile geometry, dashes and "Loading", no request), stable heights
   per host, honest fallbacks (no JS, blocked script, silent or malformed native
@@ -105,7 +105,9 @@ in [UNIFICATION.md](UNIFICATION.md).
   5 min filesystem and 10 min health, GPU/Wi-Fi/disk labels) and storage ages from the
   collector instead of the HTTP response. Routine cache ages and the standing info
   banner are muted; amber is reserved for stale, unknown, failed or unavailable
-  data. Main and Pi output is unchanged until each opts in.
+  data. Enabled on the main server (NVMe health on, its three DAS HDDs shown as
+  "Not monitored · HDD") and the Pi (no NVMe, health off), both verified live with real
+  data after the Glances storage policy was already running there.
 - Fleet Glances storage policy (all three hosts, Glances 4.5.4): no HDD SMART,
   HDD temperature or HDD filesystem reads and no broad `DeviceList()` scan;
   NVMe health and temperature from one cached sample every 10 minutes, solid-state
