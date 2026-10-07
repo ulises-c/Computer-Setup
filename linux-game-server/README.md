@@ -417,10 +417,18 @@ The router only forwards to two DNS servers (main server, Pi), so this replica
 is not in the clients' path: it is the main server backup's `DNS_PEERS` peer and
 a drop-in replacement in the router if the Pi is down.
 
+Homepage's **adguard (replica dns)** card reads the same LAN-only UI.
+`scaffold.py` (run by `serve.sh`) copies `LAN_IP`, `ADGUARD_USER` and
+`ADGUARD_PASSWORD` from `adguard/.env` into `homepage/.env` as
+`HOMEPAGE_VAR_ADGUARD_{LAN_URL,USER,PASS}` when they are missing there. Its
+link works from the LAN only.
+
 If the LAN address changes, update `LAN_IP` in `.env` and the `bind_hosts` and
 `http.address` entries in the root-owned `conf/AdGuardHome.yaml` (or
 `sudo rm -r conf` to reinstall; the next sync restores the config), then rerun
-`setup.sh` and delete the old address's ufw rules.
+`setup.sh` and delete the old address's ufw rules. Update
+`HOMEPAGE_VAR_ADGUARD_LAN_URL` in `homepage/.env` too; the scaffold never
+overwrites it.
 
 ## Scope left for later
 

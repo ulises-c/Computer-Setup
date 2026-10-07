@@ -43,6 +43,26 @@ def add_missing(path, values):
     path.chmod(0o600)
 
 
+def adguard_card_values():
+    """The Homepage AdGuard card's URL and login, from the replica's own .env."""
+    env = ROOT / "adguard/.env"
+    if not env.exists():
+        return {}
+    raw = {}
+    for line in env.read_text().splitlines():
+        key, sep, value = line.partition("=")
+        if sep and not key.startswith("#"):
+            raw[key.strip()] = value.strip()
+    lan_ip = "".join(shlex.split(raw.get("LAN_IP", "")))
+    # Both files are read by the same compose dotenv parser, so the credentials
+    # are copied with their original quoting rather than re-quoted.
+    return {
+        "HOMEPAGE_VAR_ADGUARD_LAN_URL": f"http://{lan_ip}:3053" if lan_ip else "",
+        "HOMEPAGE_VAR_ADGUARD_USER": raw.get("ADGUARD_USER", ""),
+        "HOMEPAGE_VAR_ADGUARD_PASS": raw.get("ADGUARD_PASSWORD", ""),
+    }
+
+
 def main():
     homepage_env = ROOT / "homepage/.env"
     hosts = allowed_hosts()
@@ -62,6 +82,7 @@ def main():
         homepage_env.chmod(0o600)
 
     add_missing(homepage_env, {"HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN": domain})
+    add_missing(homepage_env, adguard_card_values())
     add_missing(ROOT / "glances/.env",
                 {"GLANCES_ALLOWED_HOSTS": ",".join(["localhost", "127.0.0.1"] + ([domain] if domain else []))})
 

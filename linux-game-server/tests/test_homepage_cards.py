@@ -25,6 +25,16 @@ class HomepageCardsTests(unittest.TestCase):
         generated = (ROOT / 'homepage/config/services.yaml').read_text()
         self.assertIn(card.strip(), generated)
 
+    def test_adguard_replica_card_reads_the_lan_only_ui(self):
+        source = (ROOT / 'homepage/services.local.yaml').read_text()
+        card = source.split('    - adguard (replica dns):', 1)[1].split('\n    - ', 1)[0]
+        self.assertIn('container: adguardhome', card)
+        self.assertIn('type: adguard', card)
+        self.assertIn('url: "{{HOMEPAGE_VAR_ADGUARD_LAN_URL}}"', card)
+        env = (ROOT / 'homepage/.env.example').read_text()
+        for var in ('ADGUARD_LAN_URL', 'ADGUARD_USER', 'ADGUARD_PASS'):
+            self.assertIn('HOMEPAGE_VAR_' + var + '=', env)
+
     def test_primary_card_is_software_and_secondary_card_is_world(self):
         text = (ROOT / 'homepage/services.local.yaml').read_text().split('- Games:', 1)[1]
         self.assertIn('- "RuneScape: Dragonwilds":', text)

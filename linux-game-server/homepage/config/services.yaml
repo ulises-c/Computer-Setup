@@ -202,6 +202,17 @@
         href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/cockpit/
         description: Server admin UI
         ping: https://127.0.0.1:9090
+    - adguard (replica dns):
+        icon: sh-adguard-home.svg
+        href: "{{HOMEPAGE_VAR_ADGUARD_LAN_URL}}/"
+        description: DNS replica — UI on the LAN only
+        server: my-docker
+        container: adguardhome
+        widget:
+          type: adguard
+          url: "{{HOMEPAGE_VAR_ADGUARD_LAN_URL}}"
+          username: "{{HOMEPAGE_VAR_ADGUARD_USER}}"
+          password: "{{HOMEPAGE_VAR_ADGUARD_PASS}}"
     - backups:
         icon: sh-restic
         description: restic → main server (wd1tb + wd14tb)
