@@ -1,0 +1,37 @@
+services:
+  # System monitor shared by every server. Host networking so it sees the
+  # host's interfaces and processes, bound to loopback: Homepage and host
+  # `tailscale serve` reach it there, and Docker-published ports bypass ufw.
+  # Hosts extend this service and add their own mounts (NAS drives, labels).
+  glances:
+    image: nicolargo/glances:4.5.4-full
+    container_name: glances
+    restart: unless-stopped
+    pid: host
+    privileged: true
+    network_mode: host
+    env_file:
+      - path: ../timezone.env
+        required: true
+    environment:
+      GLANCES_OPT: "-w -B 127.0.0.1"
+      # Unset falls back to the entrypoint's local proxy names (incl. host.docker.internal).
+      GLANCES_ALLOWED_HOSTS: "${GLANCES_ALLOWED_HOSTS:-}"
+      # The host's root filesystem, seen through the /etc/hostname bind mount.
+      GLANCES_FS_SHOW: "^/etc/hostname$$"
+      GLANCES_FS_ALIAS: "/etc/hostname:system"
+      # Backend safety floors, independent of Homepage/Web UI HTTP polling.
+      GLANCES_FS_INTERVAL: "${GLANCES_FS_INTERVAL:-300}"
+      GLANCES_NVME_HEALTH_INTERVAL: "${GLANCES_NVME_HEALTH_INTERVAL:-600}"
+      GLANCES_NVME_HEALTH_ENABLED: "${GLANCES_NVME_HEALTH_ENABLED:-true}"
+      GLANCES_DISKIO_INTERVAL: "${GLANCES_DISKIO_INTERVAL:-60}"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /etc/os-release:/etc/os-release:ro
+      # Stable disk aliasing: the entrypoint maps /dev/disk/by-label names to
+      # kernel devices and patches Glances' diskio plugin (see rename_disks.py).
+      - ./entrypoint.sh:/entrypoint.sh:ro
+      - ./rename_disks.py:/rename_disks.py:ro
+      - ./telemetry.py:/telemetry.py:ro
+      - /sys/class/block:/sys/class/block:ro
+    command: /bin/sh /entrypoint.sh

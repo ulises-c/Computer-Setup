@@ -1,0 +1,11 @@
+services:
+  # Docker manager, reached through host `tailscale serve` (HTTPS :9443).
+  portainer:
+    extends:
+      file: ../../server-base/portainer/compose.yml
+      service: portainer
+    ports:
+      - "127.0.0.1:9000:9000"
+
+volumes:
+  portainer_data:

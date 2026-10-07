@@ -1,1 +1,10 @@
-../../linux-server/dragonwilds/dragonwilds-status.timer
+[Unit]
+Description=Refresh the Dragonwilds status JSON every five seconds
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

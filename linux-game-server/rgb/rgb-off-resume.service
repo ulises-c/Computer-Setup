@@ -1,0 +1,24 @@
+[Unit]
+Description=Keep RGB lighting off (force #000000 after resume from sleep)
+# Standard sleep.target pattern: ordered after the sleep targets and pulled in
+# by them, so it runs once the machine has resumed.
+After=suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/rgb-off --trigger resume
+ExecStopPost=-/usr/bin/systemctl start --no-block rgb-status.service
+TimeoutStartSec=10min
+Environment=HOME=/var/lib/rgb-off
+Environment=PYTHONDONTWRITEBYTECODE=1
+StateDirectory=rgb-off
+RuntimeDirectory=rgb-lock
+RuntimeDirectoryPreserve=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/host-status
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target

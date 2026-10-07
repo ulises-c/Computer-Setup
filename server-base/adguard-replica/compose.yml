@@ -1,0 +1,16 @@
+services:
+  # AdGuard Home replica: a backup resolver mirroring the primary on the main
+  # server via adguardhome-sync. DELIBERATELY host-networked and independent of
+  # Tailscale: :53 must keep serving LAN clients even when the tailnet or
+  # internet is down. The primary rides its sidecar's netns; that coupling
+  # caused a bootstrap deadlock — never move a replica into a sidecar's netns.
+  # Hosts extend this service and declare the ./work and ./conf mounts (relative
+  # paths in an extended file resolve against this directory, not the host's).
+  adguardhome:
+    image: adguard/adguardhome:latest
+    container_name: adguardhome
+    network_mode: host
+    restart: unless-stopped
+    env_file:
+      - path: ../timezone.env
+        required: true

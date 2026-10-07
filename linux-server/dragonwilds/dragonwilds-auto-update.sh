@@ -33,7 +33,7 @@ readonly UNIT=dragonwilds.service
 readonly APPID=4019830
 manifest="$DRAGONWILDS_INSTALL_DIR/steamapps/appmanifest_$APPID.acf"
 
-log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
+log() { printf '%s %s\n' "$(date '+%F %T %Z')" "$*"; }
 
 installed_build() {
   [[ -r "$manifest" ]] || return 0

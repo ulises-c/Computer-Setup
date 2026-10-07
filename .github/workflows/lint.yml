@@ -54,8 +54,34 @@ jobs:
           bash scripts/check-python-syntax.sh "${files[@]}"
 
       - name: Test Glances disk aliases
-        working-directory: linux-server/glances
-        run: python3 -m unittest -v test_rename_disks.py
+        working-directory: server-base/glances
+        run: python3 -m unittest -v test_rename_disks.py test_telemetry.py test_storage.py test_hdd_activity.py
+
+      - name: Test server-base Homepage generator (outputs current, cross-links)
+        run: python3 server-base/tests/test_generate.py -v
+
+      - name: Check every compose service loads timezone.env
+        run: python3 scripts/check-compose-timezone.py
+
+      - name: Test ntfy to Discord relay
+        run: python3 -m unittest discover -v -s linux-server/ntfy-discord/tests
+
+      - name: Test game server (Dragonwilds, player log, backups)
+        working-directory: linux-game-server/tests
+        run: python3 -m unittest discover -v -p 'test_*.py'
+
+  homepage-js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test opt-in game-host grouped metrics
+        run: |
+          node --check server-base/homepage/grouped-topbar.js
+          node --check linux-game-server/homepage/config/custom.js
+          node --test linux-game-server/tests/test_grouped_topbar.cjs linux-game-server/tests/test_grouped_loading.cjs
 
   dryrun-smoke:
     runs-on: ubuntu-latest
@@ -70,8 +96,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Test Pi backup failure status
-        run: bash linux-pi/backup/test-backup-failure.sh
+      - name: Test shared backup engine (failure status, sources, guards)
+        run: bash server-base/backup/test-backup.sh
+
+      - name: Test host time zone sync
+        run: bash server-base/tests/test-timezone.sh
 
       - name: Test CUPS policy rendering
         run: bash linux-pi/cups/test-setup.sh

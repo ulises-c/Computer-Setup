@@ -5,6 +5,9 @@ services:
     image: tailscale/tailscale:latest
     container_name: filebrowser-ts
     hostname: filebrowser
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
       - TS_STATE_DIR=/var/lib/tailscale
@@ -31,6 +34,9 @@ services:
     depends_on:
       - filebrowser-ts
     restart: unless-stopped
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     volumes:
       - ${FB_ROOT:-/}:/srv
       - ./database:/database

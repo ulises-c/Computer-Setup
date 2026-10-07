@@ -1,0 +1,8 @@
+[Unit]
+Description=Alert over ntfy when the Dragonwilds player log fails
+
+[Service]
+Type=oneshot
+User=@USER@
+Group=@GROUP@
+ExecStart=@PLAYER_LOG_NOTIFY_SCRIPT@

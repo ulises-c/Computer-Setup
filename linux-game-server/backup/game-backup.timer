@@ -1,0 +1,10 @@
+[Unit]
+Description=Nightly game server backup
+
+[Timer]
+# 03:00 local, with every other server; each writes its own repository.
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,22 +1,16 @@
 services:
-  # System monitor. Host networking so it sees the host's interfaces, bound to
-  # loopback so only Homepage and `tailscale serve` (/glances/) reach it.
-  # Docker-published ports bypass ufw, so every service here binds 127.0.0.1.
+  # Base glances, loopback-only; Homepage and `tailscale serve` (/glances/) reach it.
   glances:
-    image: nicolargo/glances:4.5.4-full
-    container_name: glances
-    restart: unless-stopped
-    pid: host
-    privileged: true
-    network_mode: host
+    extends:
+      file: ../../server-base/glances/compose.yml
+      service: glances
+    # The Ubuntu variant: NVML (libnvidia-ml, glibc) cannot load in the Alpine
+    # image. The host's driver library is bound in; privileged already exposes
+    # /dev/nvidia*. After a driver upgrade, recreate the container.
+    image: nicolargo/glances:ubuntu-4.5.4-full
     environment:
-      - GLANCES_OPT=-w -B 127.0.0.1
-      - GLANCES_ALLOWED_HOSTS=${GLANCES_ALLOWED_HOSTS:-localhost,127.0.0.1}
-      - TZ=America/Los_Angeles
+      GLANCES_GPU_MEMORY: "true"
+      GLANCES_SENSORS_SHOW: "^Package id 0$$,^Composite$$"
+      GLANCES_SENSORS_ALIAS: "Package id 0:CPU,Composite:NVMe"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /etc/os-release:/etc/os-release:ro
-      - ./entrypoint.sh:/entrypoint.sh:ro
-      - ./rename_disks.py:/rename_disks.py:ro
-      - /sys/class/block:/sys/class/block:ro
-    command: /bin/sh /entrypoint.sh
+      - /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1:/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1:ro

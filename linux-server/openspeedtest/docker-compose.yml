@@ -13,6 +13,9 @@ services:
     image: tailscale/tailscale:latest
     container_name: openspeedtest-ts
     hostname: openspeedtest
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
       - TS_STATE_DIR=/var/lib/tailscale
@@ -41,5 +44,6 @@ services:
     depends_on:
       - openspeedtest-ts
     restart: unless-stopped
-    environment:
-      - TZ=America/Los_Angeles
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true

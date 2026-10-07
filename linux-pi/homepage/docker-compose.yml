@@ -6,6 +6,9 @@ services:
     image: tailscale/tailscale:latest
     container_name: homepage-pi-ts
     hostname: homepage-pi
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
       - TS_STATE_DIR=/var/lib/tailscale
@@ -26,16 +29,18 @@ services:
     restart: unless-stopped
 
   homepage:
-    image: ghcr.io/gethomepage/homepage:latest
-    container_name: homepage
-    network_mode: host
+    extends:
+      file: ../../server-base/homepage/compose.yml
+      service: homepage
     volumes:
       - ./config:/app/config
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Fetched by server-base/homepage/fetch-assets.sh; gitignored.
+      - ./assets/icons:/app/public/icons:ro
+      - ./assets/images:/app/public/images:ro
     env_file:
       - .env
     environment:
       HOMEPAGE_ALLOWED_HOSTS: "localhost,127.0.0.1,${HOMEPAGE_VAR_PI_HOSTNAME},${HOMEPAGE_VAR_PI_HOSTNAME}.local,${HOMEPAGE_VAR_PI_LAN_IP},${HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}"
+      # LAN clients and the sidecar (via host.docker.internal) both reach :3001.
       HOSTNAME: "0.0.0.0"
       PORT: "3001"
-    restart: unless-stopped

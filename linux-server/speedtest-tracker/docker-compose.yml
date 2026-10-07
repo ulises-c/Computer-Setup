@@ -5,6 +5,9 @@ services:
     image: tailscale/tailscale:latest
     container_name: speedtest-tracker-ts
     hostname: speedtest
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
       - TS_STATE_DIR=/var/lib/tailscale
@@ -33,10 +36,11 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+      - path: ../../server-base/timezone.env
+        required: true
     environment:
       - PUID=1000
       - PGID=1000
-      - TZ=America/Los_Angeles
       - DB_CONNECTION=sqlite
     volumes:
       - ./data:/config

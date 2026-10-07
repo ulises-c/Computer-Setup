@@ -6,6 +6,170 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com). Remaining
 work lives in [TODO.md](TODO.md); the design rationale for the unified layout is
 in [UNIFICATION.md](UNIFICATION.md).
 
+## Unreleased — Shared server base and cross-linked dashboards
+
+### Added
+- `server-base/`: one layer for every server. Base Glances, Portainer, Watchtower
+  and Homepage compose services that each host `extends`; `serve.sh` publishing
+  a host's routes from its `serve.conf` (one tailnet node per host); a shared
+  restic engine that hosts symlink and configure with `sources.sh`; and
+  `fleet.json` + `homepage/generate.py`, which render every host's Homepage
+  config so the Servers and Shared services groups cannot drift (`--check` in CI).
+- `server-base/timezone.sh`: containers take `TZ` from the host's time zone via a
+  generated `server-base/timezone.env` instead of a hardcoded zone; `--apply`
+  recreates running compose services whose `TZ` is stale or unset. Every service
+  in every compose file loads it (sidecars, status servers and databases
+  included, most previously on UTC), enforced in CI by
+  `scripts/check-compose-timezone.py`.
+- `server-base` tag in `packages.json` (shell, terminal tools, git/gh, Tailscale,
+  Docker, Cockpit, claude-code, opencode); opencode installs on servers via a new
+  `opencode_step`, zoxide gains a server apt entry.
+- Each dashboard's top bar shows its own host's live CPU, memory, disks, CPU
+  temperature and uptime (generated `widgets.yaml`); the game host's bar is the
+  grouped one described below.
+- Homepage design system: colour selfh.st logos, per-group accents (heading, card
+  rule and wash, tinted charts), and the official Dragonwilds icon, logo and key
+  art fetched from Steam at deploy time (not committed).
+- `server-base/adguard-replica`: the AdGuard replica service shared by every
+  host (the Pi's replica now extends it), and a third replica on the game server.
+  Its DNS and LAN-only UI (`:3053`, also the first-run wizard's port, off
+  Homepage's `:3000`) bind the LAN address only, beside systemd-resolved's stub;
+  `linux-game-server/adguard/setup.sh` completes AdGuard's first-run install
+  through its install API, opens DNS and the UI to the LAN in ufw, and checks
+  that it resolves. The Pi's `adguardhome-sync` syncs it as `REPLICA2`.
+- `linux-pi/setup.sh`: the Pi's base bootstrap on the shared engine, plus Glances,
+  Portainer and Watchtower on the Pi's own node.
+- Game server nightly restic backup to the main server, including a verified
+  live world copy.
+- Dragonwilds restarts now wait for the host backup service after the old game
+  process flushes its world, before SteamCMD can apply a build. The gate skips
+  fresh installs with no save and fails closed once a configured world exists;
+  it replaces an already-running nightly backup with a fresh post-shutdown run,
+  and the start timeout is five hours for the observed long patches. Backup units
+  now execute root-owned bundles rather than scripts from the writable checkout;
+  fixed Dragonwilds paths and root-owned backup status state prevent user-owned
+  runtime files from redirecting privileged backup work. The standalone installer
+  now uses the same gate for existing worlds, and the copied world helper is
+  hash-pinned in the rendered backup unit.
+- Dragonwilds player history: a root timer parses join/leave events from the
+  game journal into `/var/lib/dragonwilds/player-log` (aggregate per identity,
+  90-day event retention, no raw messages or join codes), in bounded pages so a
+  backlog drains over a few runs. Summary and state share a commit generation,
+  so a rollback of either file fails closed. The directory is in both hosts'
+  backup sources, and restic reads it under a shared lock the parser takes
+  exclusively; a parser run that cannot get the lock in 20s skips cleanly. A
+  failed run sends one ntfy alert per 6 hours (`OnFailure`).
+- `linux-server/ntfy-discord/`: a stdlib relay that subscribes to every ntfy
+  topic and posts each message as a Discord embed, routed by topic prefix
+  (`server-*`, `game-*`, `pi-*`, `nas-*`, optional default). It resumes from the
+  last relayed id, skips messages older than 24h, honours rate limits and
+  disables mentions.
+- Restore tests: `server-base/backup/restore-check.sh` restores a host's latest
+  snapshot to a root-only scratch dir and verifies it (repository check, file
+  count, SQLite integrity, sha256 sidecars) without touching live data;
+  `linux-game-server/backup/restore-drill.sh` restores the stopped world, checks
+  it is byte-identical and has the game load it. Both passed on every host.
+- `linux-game-server/dragonwilds/spud_world_rename.py`: offline, schema-driven
+  rename of a Dragonwilds world. It rewrites the three stored name fields,
+  recomputes the chunk lengths and offset tables behind them, leaves the GUID,
+  every other property and the level data byte-identical, verifies that renaming
+  back reproduces the original, and writes only a private copy. The unit tests
+  build synthetic saves; the game accepted the renamed world on 2026-10-05
+  (original GUID loaded, no `NewGame(`, a client joined).
+- Servers cards are a compact six-row inventory generated from `fleet.json` for
+  all three hosts: platform, board and chipset (SoC on the Pi), CPU with cores and
+  threads, OS-visible memory, graphics (model, dGPU/iGPU, dedicated VRAM or
+  shared memory) and software (OS and kernel). Live usage stays in the top bar.
+- Dragonwilds cards: `RuneScape: Dragonwilds` carries the server process (status,
+  the running game version from the current invocation's journal beside the Steam
+  build, installation footprint from `du`, now / 24h average / sampled maximum CPU
+  and memory, tasks, automatic restarts, update and backup health, uptime to the
+  second) and `Active world` carries the world, players, last join, join details
+  and save metrics. Filesystem free space is no longer on the game card.
+- Dragonwilds status collector: runs every 5 seconds (`dragonwilds-status.timer`)
+  through `fast_status.py`, which caches the expensive scans (`du`, journal,
+  inventory, backup and update state) for 60 seconds; `status_metrics.py` keeps a
+  day of samples in 1441 private minute buckets and shows its coverage while it
+  warms up. Measured on the host: about 0.09 s per run against about 2 s for the
+  previous full producer.
+- Grouped top bar for the game host (`server-base/homepage/grouped-topbar.{js,css}`,
+  enabled per host by `topbar.grouped` in `fleet.json`): Compute, Storage,
+  Connectivity and System sections with the host's own CPU, load, temperature,
+  RAM, GPU (model, type, VRAM used and total), labelled disks, NVMe health and
+  wear, network and uptime, with stale and error states. The main server and Pi
+  enabled it later (see the loading polish entry).
+- Grouped top bar loading polish: generated CSS skeleton at first paint (no native
+  widget flash, same tile geometry, dashes and "Loading", no request), stable heights
+  per host, honest fallbacks (no JS, blocked script, silent or malformed native
+  payload), per-host `topbar` config (`hddDisks`, `safeSSDHealth`, cadence floors of
+  5 min filesystem and 10 min health, GPU/Wi-Fi/disk labels) and storage ages from the
+  collector instead of the HTTP response. Routine cache ages and the standing info
+  banner are muted; amber is reserved for stale, unknown, failed or unavailable
+  data. Enabled on the main server (NVMe health on, its three DAS HDDs shown as
+  "Not monitored · HDD") and the Pi (no NVMe, health off), both verified live with real
+  data after the Glances storage policy was already running there.
+- Main server DAS HDD used/free (`GLANCES_HDD_ACTIVITY_STATS`, `telemetry.HddActivityStats`):
+  Glances reads an HDD's filesystem usage only after the kernel's completed-I/O
+  counters for it moved (so something else already has it awake), at most once per
+  5 minutes per mount, and keeps the sample with the time it was taken in a
+  persisted cache. The top bar shows it as "Last read <date>", or "Not read yet" until
+  the first activity. Independently reviewed; its findings (failed reads throttled,
+  cache validated on load, baseline race) are fixed.
+- Fleet Glances storage policy (all three hosts, Glances 4.5.4): no HDD SMART,
+  HDD temperature or HDD filesystem reads and no broad `DeviceList()` scan;
+  NVMe health and temperature from one cached sample every 10 minutes, solid-state
+  ext4/xfs filesystem usage every 5 minutes, disk I/O counters from `/proc`
+  every minute and sysfs inventory hourly. The floors are enforced in the
+  backend, so dashboard polling cannot lower them, and each cached value reports
+  its collection age (`/api/4/storagepolicy`, `collection_age_seconds`). The main
+  server's three USB DAS HDDs are inventory only: no used/free figure is shown.
+- Glances reports GPU memory in bytes on NVML hosts (`GLANCES_GPU_MEMORY`) and
+  discovers only NVMe controllers for SMART (sysfs, cached 60 seconds), so
+  spinning disks are never enumerated or woken for health data.
+- RGB keep-off policy: root-owned `rgb-off.service` at boot/manual start and
+  `rgb-off-resume.service` after sleep, with bounded device-readiness retries,
+  actual per-device mode selection and shared locking. One `rgb/setup.sh`
+  installs the services and exporter; the real HP controller accepted `Off`
+  on 2026-10-05. No periodic lighting override is enabled by default.
+- The **OpenRGB** card replaces the old lighting summary with all detected zones,
+  last accepted off-command time/trigger/result and export freshness. RGB is
+  removed from the game top bar. The CLI cannot read colors back, so the card
+  says "commanded off", never "currently black". The 10-minute exporter caches
+  hardware inventory and re-probes only on cache miss, new boot, expiry (24h)
+  or explicit refresh. Physical lights-off and reboot/resume checks remain open.
+
+### Changed
+- The Dragonwilds world was renamed from `1` to `Ashenfall` on 2026-10-05 with the
+  offline tool; the GUID is unchanged and the old save and its `.sav.backup` are
+  archived under `Saved/SaveGames-archive/`.
+- Homepage is pinned to v2.4.0 on every host (the main server and Pi used `:latest`,
+  which resolved to v2.4.0).
+- Backups on the main server and Pi now share the Pi's hardened failure handling:
+  one alert from `OnFailure`, and a failed second copy marks the run "second copy
+  incomplete" instead of failing it.
+- Every server's nightly backup runs at 03:00 host local time (was 03:30, 03:45
+  and 04:15); Watchtower updates images at 02:30 host local time (was 03:00 UTC).
+- The Dragonwilds update check asks Steam every 15 minutes (was every 2 hours),
+  and the auto-updater logs local time with the zone name.
+- The main server keeps backing up the old Dragonwilds saves left on its disk; the
+  install-path cross-check applies only while that host runs `dragonwilds.service`.
+
+- Non-SQLite `*.db` files (BoltDB: Filebrowser, AdGuard sessions/stats) are copied
+  with the container that bind-mounts them briefly stopped, instead of raw-copied
+  live; the container is restarted even if the backup fails mid-copy. AdGuard is
+  only stopped once another resolver in `DNS_PEERS` answers (polled every 15 s
+  for up to 15 min); otherwise its files are copied live with a warning, so the
+  backup never takes down the last working DNS server.
+
+### Fixed
+- Dragonwilds was serving an empty `Main` world since a failed hand rename on
+  2026-10-02; the original world `1` is restored. The status card now reports the
+  configured world's save (not the newest `.sav`), and the cards gained world ID,
+  owner, last join, CPU, auto-update, last backup and worlds-on-disk rows.
+- The shared backup lock check rejected the always-empty lock file (`stat %F`
+  reports `regular empty file`), which failed the pre-update backup gate and so
+  blocked game starts.
+
 ## 2026-10-02 — RuneScape: Dragonwilds session configuration
 
 ### Changed
@@ -14,7 +178,8 @@ in [UNIFICATION.md](UNIFICATION.md).
   Dragonwilds systemd template. `MAX_PLAYERS=6` is now documented in both env
   examples, validated by both installers, and reused by the status JSON so the
   Homepage `online/capacity` row stays aligned with the launch command.
-- Recorded the server rename to `Ollie-GS`, the world rename to `Main`, the save
+- Recorded the server rename to `Ollie-GS`, the world rename to `Main` (it did not
+  take; see the shared-server-base Fixed entry), the save
   header/filename/config consistency requirement, and the private world-password
   placement. Homepage shows the join pass below the per-session join code and is
   intended to remain tailnet-only.

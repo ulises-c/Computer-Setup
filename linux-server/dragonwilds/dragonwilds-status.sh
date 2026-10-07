@@ -23,6 +23,8 @@ fi
 : "${SERVER_PORT:=7777}"
 : "${MAX_PLAYERS:=6}"
 : "${LATEST_BUILD_FILE:=$SCRIPT_DIR/status/.latest-build}"
+: "${CPU_SAMPLE_FILE:=$SCRIPT_DIR/status/.cpu-sample}"
+: "${BACKUP_STATUS_JSON:=/var/lib/computer-setup-backup/game-backup/backup-status.json}"
 
 command -v jq >/dev/null || { printf 'error: jq not installed (apt install jq)\n' >&2; exit 1; }
 [[ "$MAX_PLAYERS" =~ ^[1-9][0-9]*$ ]] || { printf 'error: MAX_PLAYERS must be a positive integer\n' >&2; exit 1; }
@@ -75,6 +77,8 @@ since=""
 [[ -n "$started" ]] && since="$(date -d "$started" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || true)"
 
 join_code=""
+world_id=""
+world_owner=""
 players=0
 players_max="$MAX_PLAYERS"
 player_names=""
@@ -84,6 +88,10 @@ if [[ "$status" == running && -n "$since" ]]; then
   join_code="$(printf '%s\n' "$run_log" \
     | grep -oE '"JoinCode"\] written with key\[[a-z]+\] value\[[A-Z0-9-]+\]' \
     | tail -1 | grep -oE '[A-Z0-9]{4}-[A-Z0-9]{4}' || true)"
+
+  loaded="$(printf '%s\n' "$run_log" | grep -oE 'World load SUCCEEDED .*' | tail -1 || true)"
+  world_id="$(grep -oE 'Guid\[[0-9A-F]{32}\]' <<<"$loaded" | head -1 | cut -c6-13 || true)"
+  world_owner="$(grep -oE 'OwnerName\[[^]]*\]' <<<"$loaded" | head -1 | sed -E 's/^OwnerName\[(.*)\]$/\1/' || true)"
 
   # Shared with dragonwilds-auto-update.sh, which needs the same live answer.
   # A failed read must not abort the whole refresh and freeze the card.
@@ -145,19 +153,60 @@ if [[ -r "$LATEST_BUILD_FILE" ]]; then
   fi
 fi
 
-# The newest .sav is the one the server reloads on startup.
+# The server loads DefaultWorldName.sav; any other .sav is an idle world, so the
+# newest file is not necessarily the live one.
 last_save=""
 save_bytes=0
+worlds_on_disk=""
+world_count=0
 if [[ -d "$savegames" ]]; then
-  newest="$(find "$savegames" -maxdepth 1 -name '*.sav' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)"
-  if [[ -n "$newest" ]]; then
-    last_save="$(date -u -d "@$(stat -c %Y "$newest")" +%Y-%m-%dT%H:%M:%SZ)"
-    save_bytes="$(stat -c %s "$newest" 2>/dev/null || echo 0)"
+  world_save="$savegames/$world_name.sav"
+  if [[ -n "$world_name" && -f "$world_save" ]]; then
+    last_save="$(date -u -d "@$(stat -c %Y "$world_save")" +%Y-%m-%dT%H:%M:%SZ)"
+    save_bytes="$(stat -c %s "$world_save" 2>/dev/null || echo 0)"
   fi
+  worlds_on_disk="$(find "$savegames" -maxdepth 1 -type f -name '*.sav' -printf '%f\n' 2>/dev/null \
+    | sed 's/\.sav$//' | sort | paste -sd, - | sed 's/,/, /g')"
+  [[ -n "$worlds_on_disk" ]] && world_count="$(tr ',' '\n' <<<"$worlds_on_disk" | wc -l | tr -d ' ')"
+fi
+
+# Process CPU since the previous run (the timer fires every minute), as a share
+# of one core, from systemd's cumulative counter.
+cpu_percent=0
+cpu_ns="$(systemctl show "$UNIT" -p CPUUsageNSec --value 2>/dev/null || true)"
+now_ns="$(date +%s%N)"
+if [[ "$cpu_ns" =~ ^[0-9]+$ ]]; then
+  if [[ -r "$CPU_SAMPLE_FILE" ]] && read -r prev_cpu prev_now < "$CPU_SAMPLE_FILE" \
+      && [[ "$prev_cpu" =~ ^[0-9]+$ && "$prev_now" =~ ^[0-9]+$ ]] \
+      && (( cpu_ns >= prev_cpu && now_ns > prev_now )); then
+    cpu_percent=$(( (cpu_ns - prev_cpu) * 100 / (now_ns - prev_now) ))
+  fi
+  mkdir -p "$(dirname "$CPU_SAMPLE_FILE")"
+  printf '%s %s\n' "$cpu_ns" "$now_ns" > "$CPU_SAMPLE_FILE"
+fi
+
+# Reads the journal backwards and stops at the first match, so it stays cheap.
+last_join=""
+last_join_name=""
+join_line="$(journalctl -u "$UNIT" -r -n 1 --no-pager -o short-unix --grep 'Join succeeded: ' 2>/dev/null || true)"
+if [[ "$join_line" =~ ^([0-9]+)\. ]]; then
+  last_join="$(date -u -d "@${BASH_REMATCH[1]}" +%Y-%m-%dT%H:%M:%SZ)"
+  last_join_name="$(sed -nE 's/.*Join succeeded: (.*)$/\1/p' <<<"$join_line" | tr -d '\r' | cut -c1-40)"
+fi
+
+auto_update="off"
+systemctl is-active --quiet dragonwilds-auto-update.timer 2>/dev/null && auto_update="on"
+
+backup_status="unknown"
+last_backup=""
+if [[ -r "$BACKUP_STATUS_JSON" ]]; then
+  backup_status="$(jq -r '.status // "unknown"' "$BACKUP_STATUS_JSON" 2>/dev/null || printf unknown)"
+  last_backup="$(jq -r '.last_run // ""' "$BACKUP_STATUS_JSON" 2>/dev/null || true)"
 fi
 
 # A blank row reads as a broken widget; an em dash reads as "nobody".
 [[ -z "$player_names" ]] && player_names="—"
+[[ -z "$last_join_name" ]] && last_join_name="—"
 
 mkdir -p "$(dirname "$STATUS_JSON")"
 tmp="$(mktemp "$(dirname "$STATUS_JSON")/.status.XXXXXX")"
@@ -181,6 +230,16 @@ jq -n \
   --arg update_status "$update_status" \
   --arg update_checked "$update_checked" \
   --arg last_save "$last_save" \
+  --arg world_id "$world_id" \
+  --arg world_owner "$world_owner" \
+  --arg worlds_on_disk "$worlds_on_disk" \
+  --arg last_join "$last_join" \
+  --arg last_join_name "$last_join_name" \
+  --arg auto_update "$auto_update" \
+  --arg backup_status "$backup_status" \
+  --arg last_backup "$last_backup" \
+  --argjson world_count "$world_count" \
+  --argjson cpu_percent "$cpu_percent" \
   --arg updated "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --argjson players "$players" \
   --argjson players_max "$players_max" \
@@ -215,6 +274,16 @@ jq -n \
     update_status: $update_status,
     update_checked: $update_checked,
     last_save: $last_save,
+    world_id: $world_id,
+    world_owner: $world_owner,
+    worlds_on_disk: $worlds_on_disk,
+    world_count: $world_count,
+    cpu_percent: $cpu_percent,
+    last_join: $last_join,
+    last_join_name: $last_join_name,
+    auto_update: $auto_update,
+    backup_status: $backup_status,
+    last_backup: $last_backup,
     updated: $updated
   }' > "$tmp"
 chmod 644 "$tmp"

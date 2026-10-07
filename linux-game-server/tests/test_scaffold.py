@@ -85,6 +85,22 @@ class ScaffoldTests(unittest.TestCase):
         self.assertIn('localhost', hosts)
         self.assertIn('127.0.0.1:3000', hosts)
 
+    def test_adguard_card_values_come_from_the_replica_env_with_quoting_kept(self):
+        (self.root / "adguard").mkdir()
+        (self.root / "adguard/.env").write_text(
+            "# LAN_IP=ignored\nLAN_IP=192.0.2.10\nLAN_CIDR=\nADGUARD_USER=admin\nADGUARD_PASSWORD='p$ss word'\n")
+        scaffold.main()
+        homepage = (self.root / "homepage/.env").read_text()
+        self.assertIn("HOMEPAGE_VAR_ADGUARD_LAN_URL=http://192.0.2.10:3053\n", homepage)
+        self.assertIn("HOMEPAGE_VAR_ADGUARD_USER=admin\n", homepage)
+        self.assertIn("HOMEPAGE_VAR_ADGUARD_PASS='p$ss word'\n", homepage)
+        scaffold.main()
+        self.assertEqual((self.root / "homepage/.env").read_text(), homepage)
+
+    def test_no_adguard_env_adds_no_card_values(self):
+        scaffold.main()
+        self.assertNotIn("ADGUARD", (self.root / "homepage/.env").read_text())
+
 
 if __name__ == "__main__":
     unittest.main()

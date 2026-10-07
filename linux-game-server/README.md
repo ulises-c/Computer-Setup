@@ -10,17 +10,26 @@ This is a separate service deployment entrypoint, not a fifth packages.json
 platform. Package selection and dotfile deployment reuse `lib/core.sh`; Docker
 address-pool setup and Antidote pre-cloning reuse `platforms/server.sh`.
 
-Files that are 1:1 with the NAS host are symlinks into `../linux-server`: the
-Dragonwilds unit templates, timers, status/update/player scripts,
-`read-save-info.sh`, the status container, and `docker/daemon.json`. A fix to one
-of those applies to both hosts, so change them only when the change is right for
-the NAS host too. Anything that differs on this host is a real file here instead
-of an edit under `linux-server/`: `dragonwilds/setup.sh` (it also opens the LAN
-discovery port), the Dragonwilds guide, and the maintenance, activation, install
-and backup helpers. `tests/test_isolation.py` checks that every symlink resolves
-into `linux-server/` and that no game-specific file references it.
+The layer every server shares lives in [`../server-base`](../server-base/README.md):
+the Glances, Portainer, Watchtower and Homepage compose files here `extends`
+the base services, `serve.sh` execs the shared `server-base/serve.sh` with this
+host's routes in `serve.conf`, `backup/backup.sh` and `backup/setup.sh` are
+symlinks into the shared restic engine, and the Homepage
+`config/{services,settings}.yaml` are generated from `homepage/*.local.yaml`
+(`python3 server-base/homepage/generate.py`). Dragonwilds files that are 1:1
+with the NAS host are symlinks into `../linux-server`: the unit templates,
+timers, status/update/player scripts, `read-save-info.sh`, the status container,
+and `docker/daemon.json`. A fix to one of those applies to both hosts, so change
+them only when the change is right for the NAS host too. Anything that differs
+on this host is a real file here instead of an edit under `linux-server/`:
+`dragonwilds/setup.sh` (it also opens the LAN discovery port), the Dragonwilds
+guide, and the maintenance, activation, install and backup helpers.
+`tests/test_isolation.py` checks that every symlink resolves into
+`linux-server/` or `server-base/` and that no game-specific file references
+`linux-server/`.
 
-It does not install the NAS server's DNS resolver, storage services, NUT, reverse
+It does not install the NAS server's primary DNS resolver (only an
+[AdGuard replica](#adguard-replica)), storage services, NUT, reverse
 proxy, or entire container fleet. Do not run the root `setup.sh --profile server`
 on this host: that starts the existing home-server service set.
 
@@ -33,8 +42,8 @@ bash linux-game-server/setup.sh --dry-run
 bash linux-game-server/setup.sh
 ```
 
-The shared manifest's high-priority apt base and medium-priority `terminal`
-packages are installed. Deployment prerequisites come from Ubuntu's archive;
+The shared manifest's high-priority apt base and the `server-base` tool set
+(shell, terminal tools, git/gh, Cockpit, claude-code, opencode) are installed. Deployment prerequisites come from Ubuntu's archive;
 no old Ubuntu PPA or unsupported Docker convenience-script distro fallback is
 needed. SteamCMD comes from Valve's official distribution because a fresh
 26.04 installation need not have the `steamcmd` multiverse/i386 package enabled.
@@ -74,7 +83,12 @@ no `homepage`, `glances` or similar name that the NAS host already owns.
 | Glances | `127.0.0.1:61208` | `/glances/` |
 | Cockpit (host service) | `127.0.0.1:9090` | `/cockpit/` |
 | Portainer | `127.0.0.1:9000` | `:9443` (fallback) |
+| Dragonwilds status JSON | `127.0.0.1:8096` | not served (this Homepage only) |
 | Watchtower | no listener | updates images daily at 03:00 |
+
+The status JSON (which includes the join password) is read only by this host's
+Homepage over loopback; the other dashboards show just this host's Glances
+info. `serve.sh` switches off the old `/dragonwilds` mount.
 
 `serve --set-path` strips the mount path before proxying. Glances' web UI uses
 relative URLs, so it works stripped (keep the trailing `/` in links). Cockpit
@@ -295,14 +309,129 @@ drop-ins remain inert without the marker and are reused next time. Never run
 both hosts at once. The helper controls these systemd units, not manually started
 game/SteamCMD processes, and does not prevent an administrator removing the guard.
 
-The NAS host's backup job does not cover this machine. Keep automatic game restarts off and arrange an off-host backup of
-`Saved/Config`, `Saved/SaveGames`, and the private deployment `.env`. Test a
-restore before treating this host as covered. The stopped migration archive is
-a rollback point, not recurring backup coverage.
+### Recurring backups
+
+`backup/` runs the shared restic engine nightly at 03:00 into a repository on
+the main server over SFTP (the same pattern as the Pi): `Saved/SaveGames`,
+`Saved/Config`, the Homepage config, every service `.env`, and a header-checked
+live world copy taken by `backup-save.py`. It is a live backup, not a
+stopped-server snapshot. One-time setup:
+
+1. On this host: `sudo bash server-base/backup/sftp-client.sh linux-game-server key`
+   (installs restic, creates root's key, copies the public key to
+   `/tmp/game-backup.pub`).
+2. Copy that public key to the main server, then there:
+   `sudo bash server-base/backup/sftp-target.sh game /tmp/game-backup.pub`
+   (SFTP-only `restic-game` account chrooted to `/srv/restic/game`, where
+   `/primary` and `/copy` are bind mounts of `/mnt/wd1tb/restic-game` and
+   `/mnt/wd14tb/restic-game-copy`; the Pi's account is untouched).
+3. On this host: `sudo bash server-base/backup/sftp-client.sh linux-game-server connect <server-lan-ip> <server-ed25519-sha256>`
+   (pins the host key, writes the `game-backup-target` alias, creates
+   `backup/.env` with a new `RESTIC_PASSWORD` and initializes both
+   repositories). Save the password in the password manager.
+4. Set ntfy (and an Uptime Kuma push monitor) in `backup/.env`, then
+   `sudo bash linux-game-server/backup/setup.sh`,
+   `sudo systemctl start game-backup.service`, and check the Homepage card.
+
+   The backup setup installs a root-owned executor bundle under
+   `/usr/local/libexec/computer-setup-backup/game`; the systemd unit does not run
+   backup code directly from this writable checkout. Re-run the setup after
+   changing `backup/.env`, `dragonwilds/.env`, or the backup source code; the
+   Dragonwilds install path is captured into the root-owned unit.
+
+Restore drill: with nobody online, `sudo bash linux-game-server/backup/restore-drill.sh`
+stops the game, takes a fresh snapshot of the stopped world, restores it to a
+scratch dir, checks it is byte-identical to the live saves and config, swaps the
+restored `SaveGames` in and waits for `World load SUCCEEDED`. The original
+`SaveGames` is kept beside the live one; any failure puts it back and restarts
+the game. `server-base/backup/restore-check.sh linux-game-server` verifies a
+restore without stopping anything. Rerun both after any change to the backup
+engine, `backup/sources.sh`, the pre-update gate or the save layout.
+
+## RGB lighting: kept off, and shown on Homepage
+
+The user wants lighting off by default. `sudo bash linux-game-server/rgb/setup.sh`
+(idempotent, `--dry-run` supported) installs two root-owned scripts and their units:
+
+- `rgb-off.service` forces every OpenRGB-detected device to black (`#000000`) at
+  boot and on `sudo systemctl start rgb-off.service`; `rgb-off-resume.service`
+  does the same after suspend/hibernate. Per device it uses the `Off` mode when
+  that device lists one, else `Direct`/`Static` with colour `000000`, never a mode
+  the device does not list, and retries for about 2 minutes because boot-time
+  enumeration can race device readiness. It exits non-zero with a journal line if
+  nothing could be turned off. There is no periodic re-assert (it would fight
+  lighting you set on purpose; it is documented as an opt-in). "On login" does not
+  apply: this host is headless and the unit runs at boot, independent of any session.
+- `rgb-status.timer` runs `rgb-status` every 10 minutes (the case's HP TracerLED
+  controller is a root-only HID device) and writes the detected devices, their
+  last-set mode, the keep-off state (`policy`) and ready-made display `rows` to
+  `/var/lib/host-status/rgb.json`. It reuses a cached device list instead of
+  probing the hardware on every run. `serve.sh` publishes that one file at
+  `/host-status/rgb.json`; the Homepage `rgb lighting` card shows one entry per
+  device and zone (hidden once the data is over 30 minutes old).
+
+OpenRGB's CLI prints no colours, so the card says "commanded off #000000 at
+HH:MM" and lists zones as detected; it never shows a colour as current. How to hold
+the lights on deliberately, the opt-in timer, the JSON contract and what is
+untested on the hardware: [`rgb/README.md`](rgb/README.md).
+## AdGuard replica
+
+`adguard/` is the third AdGuard resolver, after the main server's primary and
+the Pi's replica ([`server-base/adguard-replica`](../server-base/README.md#adguard-replicas)).
+It has no Tailscale front door. DNS and the UI bind the LAN address only:
+`:53` beside systemd-resolved's `127.0.0.53` stub, and the UI on `:3053`
+because Homepage owns `:3000` (`--web-addr` in the compose file moves the
+first-run wizard there too). The bind addresses live in AdGuard's own
+`conf/AdGuardHome.yaml`, written at first run; config sync never changes them.
+If the address is missing at boot AdGuard exits and Docker restarts it until it
+can bind, so the address must be stable (the router reservation in
+`docs/TODO.md`).
+
+```sh
+cd linux-game-server/adguard
+cp .env.example .env     # LAN_IP, ADGUARD_USER, ADGUARD_PASSWORD (8+ chars); LAN_CIDR optional
+bash setup.sh --dry-run
+bash setup.sh
+```
+
+`setup.sh` (login user; steps use sudo) starts the container, completes the
+first-run install through AdGuard's install API if `conf/AdGuardHome.yaml` does
+not exist yet (it never rewrites an existing one), then allows TCP/UDP 53 and
+TCP 3053 from `LAN_CIDR` to `LAN_IP` in ufw and checks
+`dig @<game-lan-ip> example.com +short`. The install runs before the ufw rules
+so the unauthenticated wizard is never reachable from the LAN.
+
+Then, on the Pi, add the replica to the syncer and restart it:
+
+```sh
+cd linux-pi/adguardhome-sync
+# add to .env, with this host's ADGUARD_USER/ADGUARD_PASSWORD:
+#   REPLICA2_URL=http://<game-lan-ip>:3053
+#   REPLICA2_USERNAME=<admin-user>
+#   REPLICA2_PASSWORD=<admin-password>
+docker compose up -d --force-recreate
+docker logs adguardhome-sync 2>&1 | grep -i replica
+```
+
+The router only forwards to two DNS servers (main server, Pi), so this replica
+is not in the clients' path: it is the main server backup's `DNS_PEERS` peer and
+a drop-in replacement in the router if the Pi is down.
+
+Homepage's **adguard (replica dns)** card reads the same LAN-only UI.
+`scaffold.py` (run by `serve.sh`) copies `LAN_IP`, `ADGUARD_USER` and
+`ADGUARD_PASSWORD` from `adguard/.env` into `homepage/.env` as
+`HOMEPAGE_VAR_ADGUARD_{LAN_URL,USER,PASS}` when they are missing there. Its
+link works from the LAN only.
+
+If the LAN address changes, update `LAN_IP` in `.env` and the `bind_hosts` and
+`http.address` entries in the root-owned `conf/AdGuardHome.yaml` (or
+`sudo rm -r conf` to reinstall; the next sync restores the config), then rerun
+`setup.sh` and delete the old address's ufw rules. Update
+`HOMEPAGE_VAR_ADGUARD_LAN_URL` in `homepage/.env` too; the scaffold never
+overwrites it.
 
 ## Scope left for later
 
-- Scheduled off-host backups and a restore test.
 - A dedicated game-only Unix account (the game runs as the login user; a
   compromised game can access that user's files).
 - Full integration with root setup/verify profiles if another game platform

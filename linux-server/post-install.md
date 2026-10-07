@@ -295,7 +295,7 @@ Three drives are attached via a TerraMas Thunderbolt DAS enclosure:
   `/dev/disk/by-label/` through sysfs on every refresh, so Homepage widgets see
   persistent label-based names even after a late mount or device reshuffle. Patch
   installation or API failures are written to the container log. See
-  `glances/rename_disks.py`.
+  `server-base/glances/rename_disks.py`.
 - **Homepage widgets** — the capacity widgets use `fs:/mnt/<path>` (stable mount
   points); the R/W speed widgets use `disk:<label>` resolved by the Glances
   patch above.

@@ -2,9 +2,9 @@
 
 Personal machine-provisioning repo: one unified installer for macOS, Linux
 desktop (Ubuntu/Arch), and an Ubuntu Server LTS home server, plus per-platform
-configs and docs. A Raspberry Pi (`<pi-hostname>`, Debian) node lives in `linux-pi/`
-— currently its own Docker Compose service stacks (a secondary AdGuard resolver);
-folding it into the `setup.sh` base provisioning is still tracked in docs/TODO.md.
+configs and docs. Two more servers have their own bootstraps on the same engine:
+the game server (`linux-game-server/`) and a Raspberry Pi (`<pi-hostname>`,
+Debian) in `linux-pi/`. All three share the layer in `server-base/`.
 
 This file is the shared instruction set for **every** coding agent working in
 this repo (Claude Code, opencode, Codex, …). `CLAUDE.md` imports it and adds
@@ -51,13 +51,22 @@ Claude-Code-only notes on top; keep cross-agent guidance here, not there.
   version managers/zoxide are command-guarded). The override system
   (`deploy_zshrc`) still lets a platform folder ship its own `zshrc.example` to
   win over the base, but no platform currently does.
+- `server-base/` — the layer every server shares (`server-base/README.md`):
+  base compose stacks that host compose files `extends`, `serve.sh` (one tailnet
+  node per host, routes in `<host>/serve.conf`), the restic engine (hosts symlink
+  `backup.sh`/`setup.sh` and keep a `sources.sh`), and `fleet.json` +
+  `homepage/generate.py`, which render every host's Homepage
+  `config/{services,settings}.yaml` from `<host>/homepage/*.local.yaml`. Never
+  edit the generated files; CI runs `generate.py --check`. The base tool set is
+  the `server-base` tag in `packages.json`.
 - `macOS/`, `linux-desktop/`, `linux-server/` — platform-specific configs,
-  docs, and thin shim scripts that exec the root entrypoints. `linux-pi/` holds
-  the Raspberry Pi node's Docker Compose service stacks (same
-  `<service>/{docker-compose.yml,.env.example,ts-serve.json}` layout as
-  `linux-server/`), not yet wired into `setup.sh`.
+  docs, and thin shim scripts that exec the root entrypoints. `linux-pi/` and
+  `linux-game-server/` hold those hosts' service stacks (same
+  `<service>/{docker-compose.yml,.env.example}` layout as `linux-server/`) and
+  their own `setup.sh` bootstraps, which source `lib/core.sh` with the
+  `server-base` tag filter instead of being root `setup.sh` platforms.
 - `scripts/dryrun-smoke.sh` — runs `setup.sh --dry-run` for every platform and
-  asserts it exits clean with install actions; also run in CI.
+  the game server / Pi bootstraps, and asserts they exit clean; also run in CI.
 
 `docs/UNIFICATION.md` is the design doc for this layout; `docs/CHANGELOG.md` records
 what shipped and `docs/TODO.md` tracks remaining work.

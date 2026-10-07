@@ -10,6 +10,9 @@ services:
     image: tailscale/tailscale:latest
     container_name: adguard-ts
     hostname: adguard
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
       - TS_STATE_DIR=/var/lib/tailscale
@@ -36,6 +39,9 @@ services:
     image: adguard/adguardhome:latest
     container_name: adguardhome
     restart: unless-stopped
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     ports:
       - "53:53/tcp"   # DNS — host-published for LAN clients
       - "53:53/udp"

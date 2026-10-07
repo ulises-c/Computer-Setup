@@ -39,8 +39,20 @@ for platform in macos ubuntu arch server; do
   fi
 done
 
+# Host bootstraps outside the root platform matrix share the server-base layer.
+for host in linux-game-server linux-pi; do
+  out=""
+  if ! out="$(bash "$REPO_ROOT/$host/setup.sh" --dry-run 2>&1)"; then
+    printf 'FAIL %s: setup.sh --dry-run exited non-zero; last lines:\n' "$host" >&2
+    tail -n 5 <<< "$out" | sed 's/^/       /' >&2
+    FAILURES=$((FAILURES + 1))
+  else
+    printf 'ok   %s: %d dry-run actions\n' "$host" "$(grep -c '\[dry-run\]' <<< "$out" || true)"
+  fi
+done
+
 if (( FAILURES > 0 )); then
   printf 'dryrun-smoke: FAILED (%d platforms)\n' "$FAILURES" >&2
   exit 1
 fi
-printf 'dryrun-smoke: PASSED — root setup.sh dry-runs clean on all four platforms\n'
+printf 'dryrun-smoke: PASSED — root setup.sh and host bootstraps dry-run clean\n'

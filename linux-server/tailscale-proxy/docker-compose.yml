@@ -5,4 +5,6 @@ services:
     network_mode: host
     env_file:
       - .env
+      - path: ../../server-base/timezone.env
+        required: true
     restart: unless-stopped
