@@ -62,6 +62,28 @@ EMAIL="jane@example.com" IS_SELF_HOSTED=true GIT_HOSTNAME="hostname.ts.net" GIT_
 
 ---
 
+### `ssh-agent-login-unlock.sh`
+
+Asks for a passphrase-protected key's passphrase once, at the first interactive login, and keeps the key unlocked for a fixed time (default `15` minutes). It does this with one agent on a fixed socket, so every later shell and every non-interactive `ssh`/`git` call can use it.
+
+**Why:** `AddKeysToAgent 15m` (from `create_ssh_key.sh`) only caches the key in the agent that `SSH_AUTH_SOCK` points to. A non-interactive session (`ssh host 'git pull'`, cron, a deploy script, an agent tool) never sources the shell's agent variables. It finds no agent, or an empty one, and fails with `Permission denied (publickey)` once the key has expired.
+
+**What it does:**
+- Adds a marked snippet to `~/.bashrc` (or `~/.zshrc` when `$SHELL` is zsh). The snippet starts `ssh-agent -a ~/.ssh/agent.sock -t <seconds>` when nothing is listening on that socket. In an interactive terminal it runs `ssh-add -t <seconds>` when the key is not already loaded. Ctrl-C skips. It also defines `sshkey_<name>` to reload the key by hand.
+- Prepends a marked `Host <host>` block with `IdentityAgent ~/.ssh/agent.sock` to `~/.ssh/config`. ssh uses the first value it finds, so this block must come before any other block for the same host.
+- Running it again replaces both blocks. `--remove` takes them out and leaves the rest of each file as it was.
+
+**Usage:**
+```bash
+KEY_NAME=bitbucket GIT_HOST=bitbucket.org bash ssh-agent-login-unlock.sh
+KEY_NAME=bitbucket GIT_HOST=bitbucket.org AGENT_TIMEOUT=30 bash ssh-agent-login-unlock.sh
+KEY_NAME=bitbucket GIT_HOST=bitbucket.org bash ssh-agent-login-unlock.sh --remove
+```
+
+**Check:** `SSH_AUTH_SOCK=~/.ssh/agent.sock ssh-add -l` lists the key and its lifetime. After the lifetime ends it prints `The agent has no identities`, and the next interactive login asks again.
+
+---
+
 ### `add_remote_host.sh`
 
 Creates an Ed25519 SSH key for a remote machine (e.g. a home server or Tailscale node), copies the public key to that machine, and wires up `~/.ssh/config`.
