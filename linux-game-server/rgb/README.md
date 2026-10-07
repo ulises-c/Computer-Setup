@@ -89,12 +89,13 @@ Every existing field is kept (`updated`, `devices[]` with `mode_source`,
   "devices":[{"name","mode_used","result":"applied|failed|skipped"}]}`.
   `result: never` (with nulls) when the file is absent, unreadable, still
   pending, or from an earlier boot.
-* `rows`: flat `{name,label}` rows for a dynamic list: per device
-  `<type> · <mode> (last-set, not readback)`; per zone `detected` /
-  `commanded off #000000 at HH:MM` (host local time) / `off command failed` /
-  `not commanded (no off-capable mode)`; last `Lighting policy` =
-  `off (#000000) · applied HH:MM by <trigger>` / `· never applied` /
-  `· last attempt failed`.
+* `rows`: flat `{name,label}` rows for a dynamic list. One row per device,
+  named `<device> · <N> zones`, because `rgb-off` commands a whole device and
+  all its zones share one result: `detected` / `commanded off #000000 at HH:MM`
+  (host local time) / `off command failed` / `not commanded (no off-capable
+  mode)`. Zone names, type and the last-set mode stay in `devices[]`. Last
+  `Lighting policy` = `off (#000000) · applied HH:MM by <trigger>` /
+  `· never applied` / `· last attempt failed`.
 * If OpenRGB fails: `error` stays and `rows` is the single row
   `OpenRGB` → `unavailable: <reason>`.
 

@@ -2,19 +2,22 @@
 set -euo pipefail
 
 # Download the official RuneScape: Dragonwilds artwork (Jagex) from Steam's CDN
-# into a host's gitignored homepage/assets dir. Not committed: the repo is
-# public and the artwork is trademarked. Homepage serves assets/icons at
-# /icons and assets/images at /images; restart Homepage after the first fetch.
+# and the OpenRGB logo from its release tag into a host's gitignored
+# homepage/assets dir. Not committed: the repo is public and the artwork is
+# trademarked. Homepage serves assets/icons at /icons and assets/images at
+# /images; restart Homepage after the first fetch.
 #
 #   bash server-base/homepage/fetch-assets.sh <host-dir> [--force]
 
 readonly APP=1374490
 readonly COMMUNITY="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/$APP"
 readonly STORE="https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/$APP"
+readonly OPENRGB="https://gitlab.com/CalcProgrammer1/OpenRGB/-/raw/release_1.0/qt/OpenRGB.ico"
 readonly ASSETS=(
   "icons/dragonwilds.ico|$COMMUNITY/8fd9d936c9900ff18eef407ae208b8557c8ab517.ico|image/"
   "images/dragonwilds-logo.png|$STORE/5f325bd6474f5d4390aca80e935bb2f28556992b/logo.png|image/png"
   "images/dragonwilds-hero.jpg|$STORE/library_hero.jpg|image/jpeg"
+  "icons/openrgb.ico|$OPENRGB|image/"
 )
 
 host_dir="${1:-}"

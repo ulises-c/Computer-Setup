@@ -141,9 +141,10 @@ refresh button (bottom right) or `curl http://127.0.0.1:<port>/api/revalidate`.
   Glances charts. Health is always also text (container state, latency in ms),
   never colour alone.
 - Dragonwilds artwork (icon, logo, key art) is Jagex's and is not committed:
-  `homepage/fetch-assets.sh <host-dir>` downloads it from Steam's CDN into the
-  host's gitignored `homepage/assets/`, mounted at `/icons` and `/images`.
-  Restart Homepage after the first fetch.
+  `homepage/fetch-assets.sh <host-dir>` downloads it from Steam's CDN, and the
+  OpenRGB logo from OpenRGB's `release_1.0` tag, into the host's gitignored
+  `homepage/assets/`, mounted at `/icons` and `/images`. Restart Homepage after
+  the first fetch.
 
 ## Backups
 

@@ -80,30 +80,28 @@ class RowsContractTests(unittest.TestCase):
     def test_applied_rows(self):
         rows = rgb.build_rows(omen_devices(), policy("applied"), None)
         self.assertEqual(rows, [
-            {"name": "HP Omen 30L", "label": "Motherboard · Direct (last-set, not readback)"},
-            {"name": "Omen Logo", "label": "commanded off #000000 at 08:02"},
-            {"name": "Light Bar", "label": "commanded off #000000 at 08:02"},
-            {"name": "Front Fan", "label": "commanded off #000000 at 08:02"},
+            {"name": "HP Omen 30L · 3 zones", "label": "commanded off #000000 at 08:02"},
             {"name": "Lighting policy", "label": "off (#000000) · applied 08:02 by boot"},
         ])
 
     def test_never_applied_rows(self):
         rows = rgb.build_rows(omen_devices(), NEVER, None)
-        self.assertEqual([r["label"] for r in rows], [
-            "Motherboard · Direct (last-set, not readback)",
-            "detected", "detected", "detected",
-            "off (#000000) · never applied"])
+        self.assertEqual([r["label"] for r in rows], ["detected", "off (#000000) · never applied"])
 
     def test_failed_rows(self):
         rows = rgb.build_rows(omen_devices(), policy("failed", applied_at=None, trigger="resume"), None)
-        self.assertEqual([r["label"] for r in rows][1:], [
-            "off command failed", "off command failed", "off command failed",
-            "off (#000000) · last attempt failed"])
+        self.assertEqual([r["label"] for r in rows],
+                         ["off command failed", "off (#000000) · last attempt failed"])
+
+    def test_zone_count_is_singular_for_one_zone_and_omitted_for_none(self):
+        self.assertEqual(rgb.device_name({"name": "Strip", "zone_details": [{"name": "A"}]}), "Strip · 1 zone")
+        self.assertEqual(rgb.device_name({"name": "Strip", "zone_details": []}), "Strip")
+        self.assertEqual(rgb.device_name({"name": "Strip"}), "Strip")
 
     def test_skipped_device_is_not_claimed_to_be_off(self):
         rows = rgb.build_rows(omen_devices(), policy("applied", devices=[
             {"name": "HP Omen 30L", "mode_used": None, "result": "skipped"}]), None)
-        self.assertEqual(rows[1]["label"], "not commanded (no off-capable mode)")
+        self.assertEqual(rows[0]["label"], "not commanded (no off-capable mode)")
 
     def test_each_device_follows_its_own_policy_result(self):
         devices = rgb.parse(lib.OMEN + lib.NO_OFF)
@@ -111,13 +109,13 @@ class RowsContractTests(unittest.TestCase):
             {"name": "HP Omen 30L", "mode_used": "Off", "result": "applied"},
             {"name": "Strip Controller", "mode_used": None, "result": "failed"}])
         labels = {r["name"]: r["label"] for r in rgb.build_rows(devices, pol, None)}
-        self.assertEqual(labels["Omen Logo"], "commanded off #000000 at 08:02")
-        self.assertEqual(labels["Strip"], "off command failed")
+        self.assertEqual(labels["HP Omen 30L · 3 zones"], "commanded off #000000 at 08:02")
+        self.assertEqual(labels["Strip Controller · 1 zone"], "off command failed")
         self.assertEqual(labels["Lighting policy"], "off (#000000) · last attempt failed")
 
     def test_device_unknown_to_the_policy_stays_detected(self):
         pol = policy("applied", devices=[{"name": "Something Else", "mode_used": "Off", "result": "applied"}])
-        self.assertEqual(rgb.build_rows(omen_devices(), pol, None)[1]["label"], "detected")
+        self.assertEqual(rgb.build_rows(omen_devices(), pol, None)[0]["label"], "detected")
 
     def test_openrgb_error_is_a_single_row(self):
         rows = rgb.build_rows([], policy("applied"), "openrgb exited 1")
@@ -212,8 +210,8 @@ class ContractOutputTests(ExporterCase):
         self.assertEqual({"name", "type", "mode", "zones", "mode_source", "available_modes",
                           "zone_details", "led_names"}, set(device))
         self.assertEqual(doc["policy"], policy("applied"))
-        self.assertEqual(doc["rows"][0], {"name": "HP Omen 30L",
-                                          "label": "Motherboard · Direct (last-set, not readback)"})
+        self.assertEqual(doc["rows"][0], {"name": "HP Omen 30L · 3 zones",
+                                          "label": "commanded off #000000 at 08:02"})
         self.assertEqual(doc["rows"][-1], {"name": "Lighting policy",
                                            "label": "off (#000000) · applied 08:02 by boot"})
         self.assertEqual(oct(self.out.stat().st_mode & 0o777), "0o644")
@@ -224,7 +222,7 @@ class ContractOutputTests(ExporterCase):
         doc = self.doc()
         self.assertEqual(doc["policy"], NEVER)
         self.assertEqual(doc["rows"][-1]["label"], "off (#000000) · never applied")
-        self.assertEqual({r["label"] for r in doc["rows"][1:4]}, {"detected"})
+        self.assertEqual(doc["rows"][0]["label"], "detected")
 
     def test_policy_from_a_previous_boot_is_not_reported_as_applied(self):
         self.stub.configure(list_outputs=[lib.OMEN])

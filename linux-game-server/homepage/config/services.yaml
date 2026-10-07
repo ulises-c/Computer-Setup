@@ -223,7 +223,7 @@
               format: bytes
     - OpenRGB:
         id: openrgb-lighting
-        icon: mdi-palette
+        icon: /icons/openrgb.ico
         description: Lighting zones and keep-off policy — colours cannot be read back
         widgets:
           - type: customapi

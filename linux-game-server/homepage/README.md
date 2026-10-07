@@ -90,17 +90,17 @@ checks remain unknown. No sleeping HDD was probed and no fleet rollout occurred.
 ## OpenRGB lighting card
 
 The **OpenRGB** card is in the Game server group and uses the root exporter's
-public-safe `/host-status/rgb.json`. Two native `customapi` widgets poll every
-five minutes: the first renders the exporter's flat `rows` array (device,
-all seven detected zones and keep-off policy), and the second renders
-`updated` as **Export updated**. Epoch seconds are scaled by 1000 before
+public-safe `/host-status/rgb.json`, with OpenRGB's own logo (`/icons/openrgb.ico`,
+fetched by `fetch-assets.sh`). Two native `customapi` widgets poll every
+five minutes: the first renders the exporter's flat `rows` array (one row per
+device with its zone count and off-command result, then the keep-off policy),
+and the second renders `updated` as **Export updated**. Epoch seconds are scaled by 1000 before
 Homepage's relative-date formatter; an old export stays visibly old instead
 of being presented as a new sample. No dedicated browser polling loop is added.
 
-The zone rows say **commanded off #000000 at HH:MM**, meaning the command was
-accepted, not that a color was read back. Device mode is cached reported
-inventory, not proof of current illumination. Failures and never-applied
-policy states come from the exporter, not guessed from the displayed mode.
+The device row says **commanded off #000000 at HH:MM**, meaning the command was
+accepted, not that a color was read back. Failures and never-applied
+policy states come from the exporter.
 The CLI cannot read zone colors or independent per-zone modes back.
 
 Install the exporter and boot/resume keep-off policy together, using the

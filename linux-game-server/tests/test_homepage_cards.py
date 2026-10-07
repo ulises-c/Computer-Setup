@@ -21,6 +21,7 @@ class HomepageCardsTests(unittest.TestCase):
         self.assertIn('format: relativeDate', card)
         self.assertEqual(card.count('refreshInterval: 300000'), 2)
         self.assertIn('colours cannot be read back', card)
+        self.assertIn('icon: /icons/openrgb.ico', card)
         generated = (ROOT / 'homepage/config/services.yaml').read_text()
         self.assertIn(card.strip(), generated)
 

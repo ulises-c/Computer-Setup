@@ -9,7 +9,8 @@ is ever reported as a *current* colour.
 
 Besides `devices` it writes:
   policy  the outcome of the last rgb-off run (rgb-policy.json), contract keys only
-  rows    flat {name,label} display rows for a Homepage dynamic-list
+  rows    flat {name,label} display rows for a Homepage dynamic-list: one per
+          device (its zone count and off-command result), then the policy
 
 Hardware is probed with `openrgb --list-devices` only when the cached inventory
 is missing, older than RGB_PROBE_MAX_AGE (24 h), from an earlier boot, or when
@@ -95,8 +96,19 @@ def policy_label(policy):
     return "off (#000000) · never applied"
 
 
+def device_name(device):
+    count = len(device.get("zone_details", []))
+    if not count:
+        return device["name"]
+    return f"{device['name']} · {count} zone{'' if count == 1 else 's'}"
+
+
 def build_rows(devices, policy, error):
-    """Flat display rows. Zone names and modes come from `--list-devices` only."""
+    """One display row per device plus the policy row.
+
+    rgb-off commands a whole device, so every zone of a device shares one result
+    and the zones collapse into a count; names stay in `devices[].zone_details`.
+    """
     if error:
         return [{"name": "OpenRGB", "label": f"unavailable: {error}"}]
     by_name = {}
@@ -104,13 +116,9 @@ def build_rows(devices, policy, error):
         by_name.setdefault(entry["name"], []).append(entry)
     rows = []
     for device in devices:
-        kind = device.get("type") or "Device"
-        mode = device.get("mode") or "mode unknown"
-        rows.append({"name": device["name"], "label": f"{kind} · {mode} (last-set, not readback)"})
         queue = by_name.get(device["name"], [])
         entry = queue.pop(0) if queue else None
-        for zone in device.get("zone_details", []):
-            rows.append({"name": zone["name"], "label": zone_label(entry, policy["applied_at"])})
+        rows.append({"name": device_name(device), "label": zone_label(entry, policy["applied_at"])})
     rows.append({"name": "Lighting policy", "label": policy_label(policy)})
     return rows
 
