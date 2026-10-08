@@ -25,6 +25,13 @@ cat > "$STUB_BIN/ssh-add" <<'EOF'
 exit 0
 EOF
 
+# Presents SCAN_KEY ("<type> <base64>") as the host key of any address.
+cat > "$STUB_BIN/ssh-keyscan" <<'EOF'
+#!/usr/bin/env bash
+[[ -n "${SCAN_KEY:-}" ]] && printf '%s %s\n' "${*: -1}" "$SCAN_KEY"
+exit 0
+EOF
+
 # Reachable only for addresses listed in NC_UP; the last two arguments are address and port.
 cat > "$STUB_BIN/nc" <<'EOF'
 #!/usr/bin/env bash
@@ -49,7 +56,7 @@ new_home() {
 }
 
 run_script() {
-  env HOME="$CASE_HOME" PATH="$STUB_BIN:$PATH" SSH_LOG="$SSH_LOG" NC_UP="${NC_UP:-}" \
+  env HOME="$CASE_HOME" PATH="$STUB_BIN:$PATH" SSH_LOG="$SSH_LOG" NC_UP="${NC_UP:-}" SCAN_KEY="${SCAN_KEY:-}" \
     SSH_AUTH_SOCK="$CASE_HOME/agent.sock" REMOTE_PASSWORD=unused SSH_PASSPHRASE=test-passphrase \
     "$@"
 }
@@ -91,6 +98,8 @@ for line in 'user me' 'port 22' 'identitiesonly yes' "identityfile $CASE_HOME/.s
 done
 ssh-keygen -F lab -f "$KNOWN" | grep -F "${KEY_A#* }" >/dev/null || fail "trusted key not pinned to alias"
 grep -F 'HostKeyAlias=lab' "$SSH_LOG" >/dev/null || fail "key copy did not use HostKeyAlias"
+grep -E '^-F /dev/null -o StrictHostKeyChecking=yes .*me@192\.0\.2\.10' "$SSH_LOG" >/dev/null ||
+  fail "key copy is not isolated from ~/.ssh/config or not strict"
 grep -E '(^| )me@192\.0\.2\.10( |$)' "$SSH_LOG" >/dev/null || fail "key copy went to the wrong address"
 grep -E 'BatchMode=yes .* lab exit$' "$SSH_LOG" >/dev/null || fail "connection test did not go through the alias"
 
@@ -126,8 +135,9 @@ run_script bash "$SCRIPT" --add-address lab lab.local > /dev/null
 expect_hostname lab "198.51.100.20 lab.local" lab.local
 expect_hostname lab "198.51.100.20" 198.51.100.20
 
-# A full re-run with a new address keeps the stored ones after it.
-printf 'n\n' | run_script HOST_ALIAS=lab REMOTE_HOSTS='203.0.113.5' REMOTE_USER=me PORT=22 KEY_NAME=lab \
+# A full re-run with a new address keeps the stored ones after it. Nothing is
+# trusted for this alias yet, so the scanned key is confirmed first.
+printf 'y\nn\n' | SCAN_KEY="$KEY_A" run_script HOST_ALIAS=lab REMOTE_HOSTS='203.0.113.5' REMOTE_USER=me PORT=22 KEY_NAME=lab \
   bash "$SCRIPT" > /dev/null
 expect_hostname lab "203.0.113.5 198.51.100.20" 203.0.113.5
 expect_hostname lab "lab.local" lab.local
@@ -178,6 +188,51 @@ run_script bash "$SCRIPT" --add-address lab 198.51.100.20 > /dev/null
 [[ "$(ssh-keygen -F lab -f "$KNOWN" | grep -vc '^#')" == 1 ]] || fail "shared: expected only the first address's key pinned"
 ssh-keygen -F lab -f "$KNOWN" | grep -F "${KEY_A#* }" >/dev/null || fail "shared: wrong key pinned"
 
+# Same-type keys that differ on the first address (the new one, listed first)
+# are a conflict even when another address shares one of them.
+new_home anchor-conflict
+printf '%s\n' 'Host lab' '  HostName 192.0.2.10' '  User me' "  IdentityFile $CASE_HOME/.ssh/lab" > "$CONFIG"
+printf '198.51.100.20 %s\n198.51.100.20 %s\n192.0.2.10 %s\n' "$KEY_A" "$KEY_B" "$KEY_A" > "$KNOWN"
+if run_script bash "$SCRIPT" --add-address lab 198.51.100.20 > /dev/null 2>&1; then
+  fail "anchor-conflict: accepted two different same-type keys"
+fi
+! ssh-keygen -F lab -f "$KNOWN" >/dev/null || fail "anchor-conflict: pinned"
+
+# A @revoked key for one of the addresses stops the run.
+new_home revoked
+printf '%s\n' 'Host lab' '  HostName 192.0.2.10' '  User me' "  IdentityFile $CASE_HOME/.ssh/lab" > "$CONFIG"
+printf '@revoked 198.51.100.20 %s\n' "$KEY_B" > "$KNOWN"
+cp "$CONFIG" "$CASE_HOME/config.before"
+if run_script bash "$SCRIPT" --add-address lab 198.51.100.20 > /dev/null 2> "$CASE_HOME/err"; then
+  fail "revoked: accepted"
+fi
+grep -F '@revoked' "$CASE_HOME/err" >/dev/null || fail "revoked: wrong error: $(cat "$CASE_HOME/err")"
+cmp -s "$CONFIG" "$CASE_HOME/config.before" || fail "revoked: changed the config"
+
+# First use with nothing trusted: the scanned key must be confirmed; "no" changes nothing.
+new_home first-use
+printf 'n\n' | SCAN_KEY="$KEY_B" run_script HOST_ALIAS=lab REMOTE_HOSTS='192.0.2.10' REMOTE_USER=me PORT=22 KEY_NAME=lab \
+  bash "$SCRIPT" > "$CASE_HOME/out" 2>&1 && fail "first-use: accepted without confirmation"
+grep -F 'SHA256:' "$CASE_HOME/out" >/dev/null || fail "first-use: no fingerprint shown"
+[[ ! -s "$CONFIG" && ! -s "$SSH_LOG" ]] || fail "first-use: wrote config or connected after 'no'"
+[[ ! -e "$KNOWN" ]] || ! ssh-keygen -F lab -f "$KNOWN" >/dev/null || fail "first-use: pinned after 'no'"
+printf 'y\n' | SCAN_KEY="$KEY_B" run_script HOST_ALIAS=lab REMOTE_HOSTS='192.0.2.10' REMOTE_USER=me PORT=22 KEY_NAME=lab \
+  bash "$SCRIPT" > /dev/null 2>&1 || fail "first-use: failed after 'yes'"
+ssh-keygen -F lab -f "$KNOWN" | grep -F "${KEY_B#* }" >/dev/null || fail "first-use: scanned key not pinned"
+
+# An alias named like a word the script prints internally is not special.
+new_home odd-alias
+printf '%s\n' 'Host conflict' '  HostName 192.0.2.10' '  User me' "  IdentityFile $CASE_HOME/.ssh/lab" > "$CONFIG"
+printf '192.0.2.10 %s\n' "$KEY_A" > "$KNOWN"
+run_script bash "$SCRIPT" --add-address conflict 198.51.100.20 > /dev/null || fail "odd-alias: failed"
+ssh-keygen -F conflict -f "$KNOWN" >/dev/null || fail "odd-alias: not pinned"
+new_home upper-alias
+printf '%s\n' 'Host Lab' '  HostName 192.0.2.10' '  User me' "  IdentityFile $CASE_HOME/.ssh/lab" > "$CONFIG"
+if run_script bash "$SCRIPT" --add-address Lab 198.51.100.20 > /dev/null 2> "$CASE_HOME/err"; then
+  fail "accepted an uppercase alias"
+fi
+grep -F 'invalid alias' "$CASE_HOME/err" >/dev/null || fail "upper-alias: wrong error: $(cat "$CASE_HOME/err")"
+
 # Input is validated before anything is written.
 new_home invalid
 if run_script HOST_ALIAS=lab REMOTE_HOSTS='192.0.2.10;touch /tmp/x' REMOTE_USER=me PORT=22 KEY_NAME=lab \
@@ -219,6 +274,49 @@ fi
 grep -F 'overrides the block' "$CASE_HOME/err" >/dev/null || fail "shadowed: no error"
 cmp -s "$CONFIG" "$CASE_HOME/config.before" || fail "shadowed: changed the config"
 
+# Host=alias and a trailing comment are the same legacy block; a comment that
+# introduces the next stanza stays with it.
+legacy_syntax_case() {
+  local name="$1" host_line="$2"
+  new_home "legacy-$name"
+  printf '%s\n' "$host_line" '  HostName 192.0.2.10' '  User me' "  IdentityFile $CASE_HOME/.ssh/lab" '' \
+    '# about other' 'Host other.example' '  User other' > "$CONFIG"
+  run_script bash "$SCRIPT" --add-address lab 198.51.100.20 > /dev/null || fail "legacy-$name: failed"
+  [[ "$(grep -c '192.0.2.10' "$CONFIG")" == 1 ]] || fail "legacy-$name: old block kept"
+  grep -Fx "$host_line" "$CONFIG" >/dev/null && fail "legacy-$name: old Host line kept"
+  grep -Fx '# about other' "$CONFIG" >/dev/null || fail "legacy-$name: comment of the next block lost"
+  expect_hostname lab "" 192.0.2.10
+}
+legacy_syntax_case equals 'Host=lab'
+legacy_syntax_case comment 'Host lab # the lab box'
+
+# Earlier entries that change where or how the alias connects are refused.
+shadow_case() {
+  local name="$1"
+  shift
+  new_home "shadow-$name"
+  printf '%s\n' 'Host *' "$@" '' 'Host lab' '  HostName 192.0.2.10' '  User me' "  IdentityFile $CASE_HOME/.ssh/lab" > "$CONFIG"
+  cp "$CONFIG" "$CASE_HOME/config.before"
+  if run_script bash "$SCRIPT" --add-address lab 198.51.100.20 > /dev/null 2>&1; then
+    fail "shadow-$name: accepted"
+  fi
+  cmp -s "$CONFIG" "$CASE_HOME/config.before" || fail "shadow-$name: changed the config"
+}
+shadow_case hostname '  HostName wrong.example'
+shadow_case proxyjump '  ProxyJump bastion.example'
+shadow_case knownhosts "  UserKnownHostsFile $TMP_ROOT/elsewhere"
+
+# Normal mode refuses to drop options too.
+new_home extra-normal
+printf '%s\n' 'Host lab' '  HostName 192.0.2.10' '  User me' '  ProxyJump bastion' "  IdentityFile $CASE_HOME/.ssh/lab" > "$CONFIG"
+printf '192.0.2.10 %s\n' "$KEY_A" > "$KNOWN"
+cp "$CONFIG" "$CASE_HOME/config.before"
+if printf 'n\n' | run_script HOST_ALIAS=lab REMOTE_HOSTS='198.51.100.20' REMOTE_USER=me PORT=22 KEY_NAME=lab \
+  bash "$SCRIPT" > /dev/null 2>&1; then
+  fail "extra-normal: rewrote a block with ProxyJump"
+fi
+cmp -s "$CONFIG" "$CASE_HOME/config.before" || fail "extra-normal: changed the config"
+
 # Unpaired markers would make the rewrite drop the rest of the file (lone BEGIN)
 # or keep a stale copy (two blocks): refuse both.
 marker_case() {
@@ -238,6 +336,8 @@ marker_case lone-begin '# BEGIN add_remote_host.sh: lab' "${block[@]}"
 marker_case twice '# BEGIN add_remote_host.sh: lab' "${block[@]}" '# END add_remote_host.sh: lab' \
   '# BEGIN add_remote_host.sh: lab' "${block[@]}" '# END add_remote_host.sh: lab'
 marker_case lone-end "${block[@]}" '# END add_remote_host.sh: lab'
+marker_case nested '# BEGIN add_remote_host.sh: other' 'Host other' '  User other' \
+  '# BEGIN add_remote_host.sh: lab' "${block[@]}" '# END add_remote_host.sh: lab' '# END add_remote_host.sh: other'
 
 # Values in an existing block are validated like new input before reaching Match exec.
 tainted_case() {

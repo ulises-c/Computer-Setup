@@ -69,16 +69,19 @@ Creates an Ed25519 SSH key for a remote machine (e.g. a home server or Tailscale
 **What it does:**
 - Prompts for a host alias, one or more remote addresses, username, port, key filename, and optional passphrase
 - Optionally accepts the remote account password (uses `sshpass` when available to avoid interactive prompts; install with `brew install sshpass`)
-- Copies the public key to the first reachable address using BatchMode → sshpass → interactive fallback, then verifies the key actually landed
-- Writes a managed `# BEGIN/END add_remote_host.sh: <alias>` block in `~/.ssh/config`, in place of the alias's previous block (idempotent; also migrates a block from an older version of the script), and checks with `ssh -G` that no earlier entry such as `Host *` overrides it
-- Pins the host key to the alias (`HostKeyAlias`). Keys already trusted in `known_hosts` for the first known address are pinned to the alias, and every other known address must share one of them
+- Copies the public key to the first reachable address using BatchMode → sshpass → interactive fallback, then verifies the key actually landed. The copy uses `-F /dev/null` and `StrictHostKeyChecking=yes`, so `~/.ssh/config` cannot redirect it, and it goes only to the machine whose host key was pinned
+- Writes a managed `# BEGIN/END add_remote_host.sh: <alias>` block in `~/.ssh/config`, in place of the alias's previous block (idempotent; also migrates a block from an older version of the script, including `Host=<alias>` and `Host <alias> # comment` forms), and checks with `ssh -G` that no earlier entry (such as `Host *`) changes its `HostName`, `User`, `Port`, `IdentityFile` or `UserKnownHostsFile`, or adds a proxy
+- Pins the host key to the alias (`HostKeyAlias`, with `UserKnownHostsFile` set explicitly). Keys already trusted in `known_hosts` for the first known address are pinned to the alias, and every other known address must share one of them. When nothing is trusted yet, it shows the fingerprint of the address it will copy to and asks before trusting it
 - Tests the connection through the alias before exiting
 
 It stops without changing anything when:
-- `known_hosts` already trusts different keys for two of the alias's addresses (they may be different machines)
+- `known_hosts` already trusts different keys for two of the alias's addresses (they may be different machines), or has a `@revoked` key for one of them
+- you decline the first-use fingerprint
 - an existing block also sets options the rewrite would drop (`ProxyJump`, a second `User`/`IdentityFile`, …), or has a `HostName`/`Port` that is not a plain address or number
-- the markers for the alias are unpaired or repeated
+- any `add_remote_host.sh` markers in the config are unpaired, nested or repeated
 - several addresses are given but `nc` is not installed
+
+Aliases must be lowercase, because `ssh` lowercases `HostKeyAlias`.
 
 **Multiple addresses:** addresses are tried in order. Each one except the last gets a `Match … exec "nc -z -w 1 <address> <port>"` block that is used when the address accepts a TCP connection. The last one is the plain `Host` fallback. Each unreachable address costs about 1 s per connection, and the probes run only for that alias. Because the host key is checked under the alias, a new address for the same machine does not trigger a warning, while a different machine at a stale address still fails with `REMOTE HOST IDENTIFICATION HAS CHANGED`. `.local` names need mDNS (built in on macOS, `avahi` + `nss-mdns` on Linux) and usually do not resolve across subnets, so list them alongside an IP.
 

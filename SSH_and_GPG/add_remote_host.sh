@@ -32,8 +32,9 @@ die() {
   exit 1
 }
 
+# Lowercase only: ssh lowercases HostKeyAlias, so a pin for "Lab" would never match.
 valid_alias() {
-  [[ "$1" =~ ^[A-Za-z0-9._-]+$ && "$1" != -* ]]
+  [[ "$1" =~ ^[a-z0-9._-]+$ && "$1" != -* ]] || die "invalid alias: $1 (use lowercase letters, digits, '.', '_' or '-')"
 }
 
 # Addresses end up inside a Match exec command, so allow only host/IP characters
@@ -42,18 +43,24 @@ valid_address() {
   [[ "$1" =~ ^[A-Za-z0-9._:-]+$ && "$1" != -* ]]
 }
 
-# Dies unless the alias's managed markers are absent or form one BEGIN..END pair;
-# a lone BEGIN would otherwise make the rewrite swallow the rest of the config.
+# Dies unless every add_remote_host.sh block is a closed, non-nested BEGIN..END
+# pair and no alias has two; a bad pair would make the rewrite drop or keep the
+# wrong lines.
 check_markers() {
-  local state
   [[ -f "$CFG_PATH" ]] || return 0
-  state="$(awk -v b="# BEGIN add_remote_host.sh: $1" -v e="# END add_remote_host.sh: $1" '
+  awk '
     { sub(/\r$/, "") }
-    $0 == b { if (open || done) bad = 1; open = 1 }
-    $0 == e { if (!open) bad = 1; open = 0; done = 1 }
-    END { print (bad || open) ? "bad" : "ok" }
-  ' "$CFG_PATH")"
-  [[ "$state" == ok ]] || die "$CFG_PATH has unpaired or repeated add_remote_host.sh markers for $1; fix them by hand."
+    index($0, "# BEGIN add_remote_host.sh: ") == 1 {
+      name = substr($0, 29)
+      if (open != "" || seen[name]++) exit 1
+      open = name
+    }
+    index($0, "# END add_remote_host.sh: ") == 1 {
+      if (substr($0, 27) != open) exit 1
+      open = ""
+    }
+    END { if (open != "") exit 1 }
+  ' "$CFG_PATH" || die "$CFG_PATH has unpaired, nested or repeated add_remote_host.sh markers; fix them by hand."
 }
 
 # extract: prints the alias's block. replace: prints the config with that block
@@ -69,6 +76,16 @@ config_blocks() {
       end = "# END add_remote_host.sh: " alias
     }
     { raw = $0; sub(/\r$/, "") }
+    function is_stanza(line) {
+      return line ~ /^[ \t]*([Hh][Oo][Ss][Tt]|[Mm][Aa][Tt][Cc][Hh])([ \t]|=)/
+    }
+    # "Host <alias>", "Host=<alias>" or with a trailing comment; one pattern only.
+    function is_alias_host(line) {
+      if (line !~ /^[ \t]*[Hh][Oo][Ss][Tt]([ \t]|=)/) return 0
+      sub(/^[ \t]*[Hh][Oo][Ss][Tt][ \t]*=?[ \t]*/, "", line)
+      sub(/[ \t]*(#.*)?$/, "", line)
+      return line == alias
+    }
     function put_new(    line) {
       if (placed) return
       while ((getline line < block_file) > 0) print line
@@ -84,16 +101,15 @@ config_blocks() {
       if ($0 == end) managed = 0
       next
     }
-    legacy && /^[ \t]*$/ { pending = pending raw "\n"; next }
-    legacy && (tolower($1) == "host" || tolower($1) == "match" || index($0, "# BEGIN ") == 1) {
+    legacy && /^[ \t]*(#.*)?$/ { pending = pending raw "\n"; next }
+    legacy && (is_stanza($0) || index($0, "# BEGIN ") == 1) {
       legacy = 0
       if (mode == "replace") printf "%s", pending
       pending = ""
     }
     legacy { old = old pending $0 "\n"; pending = ""; next }
-    tolower($1) == "host" && $2 == alias && NF == 2 {
+    is_alias_host($0) {
       legacy = 1
-      old = old $0 "\n"
       if (mode == "replace") put_new()
       next
     }
@@ -136,6 +152,9 @@ read_existing_block() {
           EXISTING_EXTRA+="${EXISTING_EXTRA:+, }a second $name"
         fi
         ;;
+      userknownhostsfile)
+        [[ "$value" == "$KNOWN_HOSTS" ]] || EXISTING_EXTRA+="${EXISTING_EXTRA:+, }$name"
+        ;;
       ""|\#*|host|match|hostkeyalias|addkeystoagent|usekeychain|identitiesonly) ;;
       *) EXISTING_EXTRA+="${EXISTING_EXTRA:+, }$name" ;;
     esac
@@ -175,6 +194,7 @@ render_block() {
   printf 'Host %s\n' "$alias"
   printf '  HostName %s\n' "${addresses[last]}"
   printf '  HostKeyAlias %s\n' "$alias"
+  printf '  UserKnownHostsFile %s\n' "$KNOWN_HOSTS"
   printf '  User %s\n' "$user"
   printf '  Port %s\n' "$port"
   printf '  AddKeysToAgent yes\n'
@@ -199,7 +219,7 @@ write_config() {
   chmod 600 "$tmp_cfg"
   if ! verify_effective "$tmp_cfg" "$@"; then
     rm -f "$tmp_cfg"
-    die "another entry in $CFG_PATH (e.g. an earlier Host * or multi-name Host line) overrides the block for $alias; nothing was changed."
+    die "another entry in $CFG_PATH (e.g. an earlier Host * or multi-name Host line) overrides the block for $alias, sets a proxy for it, or points UserKnownHostsFile away from $KNOWN_HOSTS; nothing was changed."
   fi
   mv "$tmp_cfg" "$CFG_PATH"
 }
@@ -207,11 +227,16 @@ write_config() {
 # OpenSSH keeps the first value it sees, so an earlier matching entry would win.
 verify_effective() {
   local cfg="$1" alias="$2" user="$3" port="$4" key="$5" out
+  shift 5
   out="$(ssh -G -F "$cfg" "$alias" 2>/dev/null)" || return 1
   grep -Fx "user $user" <<< "$out" >/dev/null &&
     grep -Fx "port $port" <<< "$out" >/dev/null &&
     grep -Fx "hostkeyalias $alias" <<< "$out" >/dev/null &&
-    awk -v key="${key#\~}" '$1 == "identityfile" && substr($2, length($2) - length(key) + 1) == key { ok = 1 } END { exit !ok }' <<< "$out"
+    grep -Fx "identitiesonly yes" <<< "$out" >/dev/null &&
+    ! grep -Eq '^(proxycommand|proxyjump) ' <<< "$out" &&
+    awk -v kh="$KNOWN_HOSTS" '$1 == "userknownhostsfile" { for (i = 2; i <= NF; i++) { sub(/^~/, ENVIRON["HOME"], $i); if ($i == kh) ok = 1 } } END { exit !ok }' <<< "$out" &&
+    awk -v key="${key/#\~/$HOME}" '$1 == "identityfile" { sub(/^~/, ENVIRON["HOME"], $2); if ($2 == key) ok = 1 } END { exit !ok }' <<< "$out" &&
+    awk -v list=" $* " '$1 == "hostname" { ok = index(list, " " $2 " ") > 0 } END { exit !ok }' <<< "$out"
 }
 
 known_hosts_name() {
@@ -228,46 +253,66 @@ known_hosts_name() {
 # the first one and have no key of the same type that differs; otherwise they may
 # be different machines, and this dies before anything is written.
 plan_host_key_pins() {
-  local alias="$1" port="$2" addr entries="" result
+  local alias="$1" port="$2" addr entries=""
   shift 2
   HOST_KEY_PINS=""
   [[ -f "$KNOWN_HOSTS" ]] || return 0
   ssh-keygen -F "$alias" -f "$KNOWN_HOSTS" >/dev/null 2>&1 && return 0
   for addr in "$@"; do
     entries+="$({ ssh-keygen -F "$(known_hosts_name "$addr" "$port")" -f "$KNOWN_HOSTS" 2>/dev/null || true; } |
-      awk -v addr="$addr" '!/^[#@]/ && NF >= 3 { print addr, $2, $3 }')"$'\n'
+      awk -v addr="$addr" '/^@revoked/ { print "REVOKED", addr; next } !/^[#@]/ && NF >= 3 { print addr, $2, $3 }')"$'\n'
   done
-  result="$(awk -v alias="$alias" '
+  if grep -q '^REVOKED ' <<< "$entries"; then
+    die "known_hosts has a @revoked key for $(awk '$1 == "REVOKED" { print $2; exit }' <<< "$entries"); resolve it by hand before using this alias."
+  fi
+  # Exit 3 = conflict. The anchor is the first address with known keys; every
+  # other address must share one of its keys and have no other key of a type
+  # the anchor has.
+  if ! HOST_KEY_PINS="$(awk -v alias="$alias" '
     !NF { next }
     anchor == "" { anchor = $1 }
     $1 == anchor {
-      if (!seen[$2 FS $3]++) { pins[++n] = $2 FS $3; key[$2] = $3 }
+      if (($2 in anchor_type) && !anchor_key[$2 FS $3]) exit 3
+      if (!seen[$2 FS $3]++) pins[++n] = $2 FS $3
+      anchor_type[$2] = 1
+      anchor_key[$2 FS $3] = 1
       next
     }
-    { others[$1] = 1; other_key[$1 FS $2] = $3 }
+    {
+      others[$1] = 1
+      if (anchor_key[$2 FS $3]) shared[$1] = 1
+      else if ($2 in anchor_type) differs[$1] = 1
+    }
     END {
-      for (k in other_key) {
-        split(k, part, FS)
-        if (!(part[2] in key)) continue
-        if (key[part[2]] == other_key[k]) shared[part[1]] = 1
-        else differs[part[1]] = 1
-      }
-      for (a in others) if (differs[a] || !shared[a]) bad = bad (bad ? ", " : "") a
-      if (bad) { print "CONFLICT", anchor, bad; exit }
+      for (a in others) if (differs[a] || !shared[a]) exit 3
       for (i = 1; i <= n; i++) print alias, pins[i]
     }
-  ' <<< "$entries")"
-  if [[ "$result" == CONFLICT* ]]; then
-    read -r _ addr result <<< "$result"
-    die "known_hosts has host keys for $result that do not match those for $addr, so they may be different machines. Remove the stale entries (ssh-keygen -R <address>) and run again."
+  ' <<< "$entries")"; then
+    die "known_hosts has host keys for the addresses of $alias that do not match each other, so they may be different machines. Remove the stale entries (ssh-keygen -R <address>) and run again."
   fi
-  HOST_KEY_PINS="$result"
+}
+
+# First use of an alias with no trusted key: show the fingerprint of the address
+# the key will be copied to and ask, instead of trusting whatever answers there
+# (with several addresses, a stale one may now belong to another machine).
+confirm_host_key() {
+  local alias="$1" addr="$2" port="$3" scanned yn
+  [[ -n "$HOST_KEY_PINS" ]] && return 0
+  [[ -f "$KNOWN_HOSTS" ]] && ssh-keygen -F "$alias" -f "$KNOWN_HOSTS" >/dev/null 2>&1 && return 0
+  scanned="$(ssh-keyscan -p "$port" -T 5 "$addr" 2>/dev/null | awk '!/^#/ && NF >= 3 { print $2, $3 }' || true)"
+  [[ -n "$scanned" ]] || die "could not read the host key of $addr port $port."
+  printf '\nNo host key is trusted for %s yet. %s port %s presents:\n' "$alias" "$addr" "$port"
+  awk -v a="$addr" '{ print a, $0 }' <<< "$scanned" | ssh-keygen -lf - | sed 's/^/  /'
+  printf 'Compare with the output of "ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub" on that machine.\n'
+  read -r -p "Trust this machine as $alias? (y/N): " yn
+  [[ "$yn" == y || "$yn" == Y ]] || die "host key not trusted; nothing was changed."
+  HOST_KEY_PINS="$(awk -v alias="$alias" '{ print alias, $1, $2 }' <<< "$scanned")"
 }
 
 apply_host_key_pins() {
   [[ -n "$HOST_KEY_PINS" ]] || return 0
   printf '%s\n' "$HOST_KEY_PINS" >> "$KNOWN_HOSTS"
-  printf 'Pinned the host keys already trusted for its addresses to %s.\n' "$1"
+  printf 'Pinned the host key to %s in %s.\n' "$1" "$KNOWN_HOSTS"
 }
 
 # Run a command with a hard wall-clock timeout; ConnectTimeout alone doesn't cover auth hangs
@@ -302,7 +347,7 @@ if [[ "${1:-}" == "--add-address" ]]; then
   (($# >= 3)) || { usage >&2; exit 1; }
   HOST_ALIAS="$2"
   shift 2
-  valid_alias "$HOST_ALIAS" || die "invalid alias: $HOST_ALIAS"
+  valid_alias "$HOST_ALIAS"
   for addr in "$@"; do
     valid_address "$addr" || die "invalid address: $addr"
   done
@@ -365,7 +410,7 @@ prompt REMOTE_USER  "Remote username"
 prompt PORT         "SSH port" "22"
 prompt KEY_NAME     "Key file name (no path)" "$HOST_ALIAS"
 
-valid_alias "$HOST_ALIAS" || die "invalid alias: $HOST_ALIAS"
+valid_alias "$HOST_ALIAS"
 [[ "$PORT" =~ ^[0-9]+$ ]] || die "invalid port: $PORT"
 [[ -n "$REMOTE_USER" && "$REMOTE_USER" != *[[:space:]]* ]] || die "invalid username: $REMOTE_USER"
 read -r -a NEW_ADDRESSES <<< "${REMOTE_HOSTS//,/ }"
@@ -376,9 +421,7 @@ done
 
 # Re-running for an existing alias keeps its addresses, after the new ones.
 read_existing_block "$HOST_ALIAS"
-if [[ -n "$EXISTING_EXTRA" ]]; then
-  printf 'Warning: the existing block for %s also sets %s; the rewritten block drops it.\n' "$HOST_ALIAS" "$EXISTING_EXTRA" >&2
-fi
+[[ -z "$EXISTING_EXTRA" ]] || die "the existing block for $HOST_ALIAS also sets $EXISTING_EXTRA, which a rewrite would drop; edit it by hand."
 dedupe_addresses "${NEW_ADDRESSES[@]}" ${EXISTING_ADDRESSES[@]+"${EXISTING_ADDRESSES[@]}"}
 require_nc_for_multiple
 plan_host_key_pins "$HOST_ALIAS" "$PORT" "${ADDRESSES[@]}"
@@ -393,6 +436,8 @@ if command -v nc &>/dev/null; then
     fi
   done
 fi
+
+confirm_host_key "$HOST_ALIAS" "$REMOTE_HOST" "$PORT"
 
 # ---- Remote account password (optional, used once for ssh-copy-id) ----
 REMOTE_PASSWORD="${REMOTE_PASSWORD:-}"
@@ -478,7 +523,10 @@ apply_host_key_pins "$HOST_ALIAS"
 # ---- Copy public key to remote ----
 echo ""
 echo "Copying public key to $REMOTE_USER@$REMOTE_HOST:$PORT ..."
-SSH_BASE_OPTS=(-o StrictHostKeyChecking=accept-new -o HostKeyAlias="$HOST_ALIAS" -o ConnectTimeout=10 -p "$PORT")
+# -F /dev/null: the copy goes to exactly $REMOTE_HOST, whatever ~/.ssh/config says
+# about that address; the host key was pinned to the alias above.
+SSH_BASE_OPTS=(-F /dev/null -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" \
+  -o HostKeyAlias="$HOST_ALIAS" -o ConnectTimeout=10 -p "$PORT")
 # Base64 is only used for the sshpass path: sshpass creates a PTY that intercepts stdin,
 # so the key must travel inline in the command string. Key-based and interactive auth
 # don't have that problem — they can use a plain stdin pipe.
