@@ -70,9 +70,15 @@ Creates an Ed25519 SSH key for a remote machine (e.g. a home server or Tailscale
 - Prompts for a host alias, one or more remote addresses, username, port, key filename, and optional passphrase
 - Optionally accepts the remote account password (uses `sshpass` when available to avoid interactive prompts; install with `brew install sshpass`)
 - Copies the public key to the first reachable address using BatchMode → sshpass → interactive fallback, then verifies the key actually landed
-- Writes a managed `# BEGIN/END add_remote_host.sh: <alias>` block in `~/.ssh/config` (idempotent; replaces a block from an older version of the script)
-- Pins the host key to the alias (`HostKeyAlias`), and moves keys already trusted for its addresses in `known_hosts` to the alias
+- Writes a managed `# BEGIN/END add_remote_host.sh: <alias>` block in `~/.ssh/config`, in place of the alias's previous block (idempotent; also migrates a block from an older version of the script), and checks with `ssh -G` that no earlier entry such as `Host *` overrides it
+- Pins the host key to the alias (`HostKeyAlias`). Keys already trusted in `known_hosts` for the first known address are pinned to the alias, and every other known address must share one of them
 - Tests the connection through the alias before exiting
+
+It stops without changing anything when:
+- `known_hosts` already trusts different keys for two of the alias's addresses (they may be different machines)
+- an existing block also sets options the rewrite would drop (`ProxyJump`, a second `User`/`IdentityFile`, …), or has a `HostName`/`Port` that is not a plain address or number
+- the markers for the alias are unpaired or repeated
+- several addresses are given but `nc` is not installed
 
 **Multiple addresses:** addresses are tried in order. Each one except the last gets a `Match … exec "nc -z -w 1 <address> <port>"` block that is used when the address accepts a TCP connection. The last one is the plain `Host` fallback. Each unreachable address costs about 1 s per connection, and the probes run only for that alias. Because the host key is checked under the alias, a new address for the same machine does not trigger a warning, while a different machine at a stale address still fails with `REMOTE HOST IDENTIFICATION HAS CHANGED`. `.local` names need mDNS (built in on macOS, `avahi` + `nss-mdns` on Linux) and usually do not resolve across subnets, so list them alongside an IP.
 
