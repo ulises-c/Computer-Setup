@@ -137,8 +137,12 @@ read_existing_block() {
   EXISTING_PORT=""
   EXISTING_KEY=""
   EXISTING_EXTRA=""
-  while read -r name value _; do
+  while read -r name value rest; do
     keyword="$(tr '[:upper:]' '[:lower:]' <<< "$name")"
+    if [[ -n "$rest" && "$keyword" != \#* && "$keyword" != host && "$keyword" != match ]]; then
+      EXISTING_EXTRA+="${EXISTING_EXTRA:+, }$name with several values"
+      continue
+    fi
     case "$keyword" in
       hostname) EXISTING_ADDRESSES+=("$value") ;;
       user|port|identityfile)
@@ -219,7 +223,7 @@ write_config() {
   chmod 600 "$tmp_cfg"
   if ! verify_effective "$tmp_cfg" "$@"; then
     rm -f "$tmp_cfg"
-    die "another entry in $CFG_PATH (e.g. an earlier Host * or multi-name Host line) overrides the block for $alias, sets a proxy for it, or points UserKnownHostsFile away from $KNOWN_HOSTS; nothing was changed."
+    die "another entry in $CFG_PATH (e.g. an earlier Host * or multi-name Host line) overrides the block for $alias, sets a proxy for it, or adds trust sources besides $KNOWN_HOSTS (UserKnownHostsFile, KnownHostsCommand); nothing was changed."
   fi
   mv "$tmp_cfg" "$CFG_PATH"
 }
@@ -234,7 +238,8 @@ verify_effective() {
     grep -Fx "hostkeyalias $alias" <<< "$out" >/dev/null &&
     grep -Fx "identitiesonly yes" <<< "$out" >/dev/null &&
     ! grep -Eq '^(proxycommand|proxyjump) ' <<< "$out" &&
-    awk -v kh="$KNOWN_HOSTS" '$1 == "userknownhostsfile" { for (i = 2; i <= NF; i++) { sub(/^~/, ENVIRON["HOME"], $i); if ($i == kh) ok = 1 } } END { exit !ok }' <<< "$out" &&
+    awk -v kh="$KNOWN_HOSTS" '$1 == "userknownhostsfile" { sub(/^~/, ENVIRON["HOME"], $2); ok = NF == 2 && $2 == kh } END { exit !ok }' <<< "$out" &&
+    ! grep -Ev '^knownhostscommand none$' <<< "$out" | grep -q '^knownhostscommand ' &&
     awk -v key="${key/#\~/$HOME}" '$1 == "identityfile" { sub(/^~/, ENVIRON["HOME"], $2); if ($2 == key) ok = 1 } END { exit !ok }' <<< "$out" &&
     awk -v list=" $* " '$1 == "hostname" { ok = index(list, " " $2 " ") > 0 } END { exit !ok }' <<< "$out"
 }
@@ -252,19 +257,38 @@ known_hosts_name() {
 # new trust-on-first-use. Every address with known keys must share a key with
 # the first one and have no key of the same type that differs; otherwise they may
 # be different machines, and this dies before anything is written.
+# Prints "<type> <key>" for each known_hosts entry of name $1 (already in
+# known_hosts form): plain keys, or with $2 = revoked, @revoked ones.
+known_keys() {
+  [[ -f "$KNOWN_HOSTS" ]] || return 0
+  { ssh-keygen -F "$1" -f "$KNOWN_HOSTS" 2>/dev/null || true; } |
+    awk -v want="${2:-plain}" '
+      /^#/ || NF < 3 { next }
+      $1 == "@revoked" { if (want == "revoked" && NF >= 4) print $3, $4; next }
+      $1 ~ /^@/ { next }
+      want == "plain" { print $2, $3 }
+    '
+}
+
+alias_is_pinned() {
+  [[ -n "$(known_keys "$1")" ]]
+}
+
 plan_host_key_pins() {
-  local alias="$1" port="$2" addr entries=""
+  local alias="$1" port="$2" addr entries="" name
   shift 2
   HOST_KEY_PINS=""
   [[ -f "$KNOWN_HOSTS" ]] || return 0
-  ssh-keygen -F "$alias" -f "$KNOWN_HOSTS" >/dev/null 2>&1 && return 0
-  for addr in "$@"; do
-    entries+="$({ ssh-keygen -F "$(known_hosts_name "$addr" "$port")" -f "$KNOWN_HOSTS" 2>/dev/null || true; } |
-      awk -v addr="$addr" '/^@revoked/ { print "REVOKED", addr; next } !/^[#@]/ && NF >= 3 { print addr, $2, $3 }')"$'\n'
+  for name in "$alias" "$@"; do
+    [[ "$name" == "$alias" ]] || name="$(known_hosts_name "$name" "$port")"
+    if [[ -n "$(known_keys "$name" revoked)" ]]; then
+      die "known_hosts has a @revoked key for $name; resolve it by hand before using $alias."
+    fi
   done
-  if grep -q '^REVOKED ' <<< "$entries"; then
-    die "known_hosts has a @revoked key for $(awk '$1 == "REVOKED" { print $2; exit }' <<< "$entries"); resolve it by hand before using this alias."
-  fi
+  alias_is_pinned "$alias" && return 0
+  for addr in "$@"; do
+    entries+="$(known_keys "$(known_hosts_name "$addr" "$port")" | awk -v addr="$addr" '{ print addr, $0 }')"$'\n'
+  done
   # Exit 3 = conflict. The anchor is the first address with known keys; every
   # other address must share one of its keys and have no other key of a type
   # the anchor has.
@@ -298,7 +322,7 @@ plan_host_key_pins() {
 confirm_host_key() {
   local alias="$1" addr="$2" port="$3" scanned yn
   [[ -n "$HOST_KEY_PINS" ]] && return 0
-  [[ -f "$KNOWN_HOSTS" ]] && ssh-keygen -F "$alias" -f "$KNOWN_HOSTS" >/dev/null 2>&1 && return 0
+  alias_is_pinned "$alias" && return 0
   scanned="$(ssh-keyscan -p "$port" -T 5 "$addr" 2>/dev/null | awk '!/^#/ && NF >= 3 { print $2, $3 }' || true)"
   [[ -n "$scanned" ]] || die "could not read the host key of $addr port $port."
   printf '\nNo host key is trusted for %s yet. %s port %s presents:\n' "$alias" "$addr" "$port"
@@ -311,6 +335,9 @@ confirm_host_key() {
 
 apply_host_key_pins() {
   [[ -n "$HOST_KEY_PINS" ]] || return 0
+  if [[ -s "$KNOWN_HOSTS" && -n "$(tail -c 1 "$KNOWN_HOSTS")" ]]; then
+    printf '\n' >> "$KNOWN_HOSTS"
+  fi
   printf '%s\n' "$HOST_KEY_PINS" >> "$KNOWN_HOSTS"
   printf 'Pinned the host key to %s in %s.\n' "$1" "$KNOWN_HOSTS"
 }

@@ -209,6 +209,42 @@ fi
 grep -F '@revoked' "$CASE_HOME/err" >/dev/null || fail "revoked: wrong error: $(cat "$CASE_HOME/err")"
 cmp -s "$CONFIG" "$CASE_HOME/config.before" || fail "revoked: changed the config"
 
+# A revocation for an address counts even when the alias already has a key, and
+# a revoked alias entry is not a trusted key.
+revoked_case() {
+  local name="$1"
+  shift
+  new_home "revoked-$name"
+  printf '%s\n' 'Host lab' '  HostName 192.0.2.10' '  User me' "  IdentityFile $CASE_HOME/.ssh/lab" > "$CONFIG"
+  printf '%s\n' "$@" > "$KNOWN"
+  cp "$CONFIG" "$CASE_HOME/config.before"
+  if run_script bash "$SCRIPT" --add-address lab 198.51.100.20 > /dev/null 2> "$CASE_HOME/err"; then
+    fail "revoked-$name: accepted"
+  fi
+  grep -F '@revoked' "$CASE_HOME/err" >/dev/null || fail "revoked-$name: wrong error: $(cat "$CASE_HOME/err")"
+  cmp -s "$CONFIG" "$CASE_HOME/config.before" || fail "revoked-$name: changed the config"
+}
+revoked_case pinned-alias "lab $KEY_A" "@revoked 198.51.100.20 $KEY_A"
+revoked_case alias-only "@revoked lab $KEY_A"
+
+# A known_hosts file without a final newline keeps its last record intact.
+new_home no-eol
+printf '%s\n' 'Host lab' '  HostName 192.0.2.10' '  User me' "  IdentityFile $CASE_HOME/.ssh/lab" > "$CONFIG"
+printf '192.0.2.10 %s' "$KEY_A" > "$KNOWN"
+run_script bash "$SCRIPT" --add-address lab 198.51.100.20 > /dev/null || fail "no-eol: failed"
+ssh-keygen -F lab -f "$KNOWN" | grep -F "${KEY_A#* }" >/dev/null || fail "no-eol: alias not pinned"
+ssh-keygen -F 192.0.2.10 -f "$KNOWN" | grep -qx "192.0.2.10 $KEY_A" || fail "no-eol: original record corrupted"
+
+# A directive with several values (here two known_hosts files) is not truncated.
+new_home multi-value
+printf '%s\n' 'Host lab' '  HostName 192.0.2.10' "  UserKnownHostsFile $CASE_HOME/.ssh/known_hosts $CASE_HOME/.ssh/extra" \
+  '  User me' "  IdentityFile $CASE_HOME/.ssh/lab" > "$CONFIG"
+cp "$CONFIG" "$CASE_HOME/config.before"
+if run_script bash "$SCRIPT" --add-address lab 198.51.100.20 > /dev/null 2>&1; then
+  fail "multi-value: dropped the second known_hosts file"
+fi
+cmp -s "$CONFIG" "$CASE_HOME/config.before" || fail "multi-value: changed the config"
+
 # First use with nothing trusted: the scanned key must be confirmed; "no" changes nothing.
 new_home first-use
 printf 'n\n' | SCAN_KEY="$KEY_B" run_script HOST_ALIAS=lab REMOTE_HOSTS='192.0.2.10' REMOTE_USER=me PORT=22 KEY_NAME=lab \
@@ -295,7 +331,9 @@ shadow_case() {
   local name="$1"
   shift
   new_home "shadow-$name"
-  printf '%s\n' 'Host *' "$@" '' 'Host lab' '  HostName 192.0.2.10' '  User me' "  IdentityFile $CASE_HOME/.ssh/lab" > "$CONFIG"
+  # @KNOWN@ stands for this case's known_hosts path, which only exists from here on.
+  printf '%s\n' 'Host *' "${@//@KNOWN@/$KNOWN}" '' 'Host lab' '  HostName 192.0.2.10' '  User me' \
+    "  IdentityFile $CASE_HOME/.ssh/lab" > "$CONFIG"
   cp "$CONFIG" "$CASE_HOME/config.before"
   if run_script bash "$SCRIPT" --add-address lab 198.51.100.20 > /dev/null 2>&1; then
     fail "shadow-$name: accepted"
@@ -305,6 +343,9 @@ shadow_case() {
 shadow_case hostname '  HostName wrong.example'
 shadow_case proxyjump '  ProxyJump bastion.example'
 shadow_case knownhosts "  UserKnownHostsFile $TMP_ROOT/elsewhere"
+shadow_case extra-knownhosts-before "  UserKnownHostsFile $TMP_ROOT/elsewhere @KNOWN@"
+shadow_case extra-knownhosts-after "  UserKnownHostsFile @KNOWN@ $TMP_ROOT/elsewhere"
+shadow_case knownhostscommand "  KnownHostsCommand /bin/echo"
 
 # Normal mode refuses to drop options too.
 new_home extra-normal
