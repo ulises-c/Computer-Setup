@@ -239,7 +239,7 @@ verify_effective() {
     grep -Fx "identitiesonly yes" <<< "$out" >/dev/null &&
     ! grep -Eq '^(proxycommand|proxyjump) ' <<< "$out" &&
     awk -v kh="$KNOWN_HOSTS" '$1 == "userknownhostsfile" { sub(/^~/, ENVIRON["HOME"], $2); ok = NF == 2 && $2 == kh } END { exit !ok }' <<< "$out" &&
-    ! grep -Ev '^knownhostscommand none$' <<< "$out" | grep -q '^knownhostscommand ' &&
+    awk '$1 == "knownhostscommand" && $2 != "none" { bad = 1 } END { exit bad }' <<< "$out" &&
     awk -v key="${key/#\~/$HOME}" '$1 == "identityfile" { sub(/^~/, ENVIRON["HOME"], $2); if ($2 == key) ok = 1 } END { exit !ok }' <<< "$out" &&
     awk -v list=" $* " '$1 == "hostname" { ok = index(list, " " $2 " ") > 0 } END { exit !ok }' <<< "$out"
 }
