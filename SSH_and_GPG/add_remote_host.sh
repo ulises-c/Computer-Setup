@@ -42,61 +42,108 @@ valid_address() {
   [[ "$1" =~ ^[A-Za-z0-9._:-]+$ && "$1" != -* ]]
 }
 
-# Prints the alias's block (extract) or the config without it (strip). A block
-# from an earlier version of this script (a bare "Host <alias>" up to the next
-# Host/Match/managed block) counts as the alias's block too.
-config_blocks() {
-  local mode="$1" alias="$2"
+# Dies unless the alias's managed markers are absent or form one BEGIN..END pair;
+# a lone BEGIN would otherwise make the rewrite swallow the rest of the config.
+check_markers() {
+  local state
   [[ -f "$CFG_PATH" ]] || return 0
-  awk -v mode="$mode" -v alias="$alias" '
+  state="$(awk -v b="# BEGIN add_remote_host.sh: $1" -v e="# END add_remote_host.sh: $1" '
+    { sub(/\r$/, "") }
+    $0 == b { if (open || done) bad = 1; open = 1 }
+    $0 == e { if (!open) bad = 1; open = 0; done = 1 }
+    END { print (bad || open) ? "bad" : "ok" }
+  ' "$CFG_PATH")"
+  [[ "$state" == ok ]] || die "$CFG_PATH has unpaired or repeated add_remote_host.sh markers for $1; fix them by hand."
+}
+
+# extract: prints the alias's block. replace: prints the config with that block
+# swapped, in place, for the contents of $3 (appended when the alias is new).
+# A block from an earlier version of this script (a bare "Host <alias>" up to
+# the next Host/Match/managed block) counts as the alias's block too.
+config_blocks() {
+  local mode="$1" alias="$2" block_file="${3:-}"
+  [[ -f "$CFG_PATH" ]] || return 0
+  awk -v mode="$mode" -v alias="$alias" -v block_file="$block_file" '
     BEGIN {
       begin = "# BEGIN add_remote_host.sh: " alias
       end = "# END add_remote_host.sh: " alias
     }
-    function emit(line) {
-      if (line ~ /^[ \t]*$/) { blanks = blanks line "\n"; return }
-      printf "%s", blanks
-      blanks = ""
-      print line
+    { raw = $0; sub(/\r$/, "") }
+    function put_new(    line) {
+      if (placed) return
+      while ((getline line < block_file) > 0) print line
+      placed = 1
     }
-    $0 == begin { managed = 1; found = 1 }
+    $0 == begin {
+      managed = 1
+      found = 1
+      if (mode == "replace") put_new()
+    }
     managed {
       if (mode == "extract") print
       if ($0 == end) managed = 0
       next
     }
-    legacy && (tolower($1) == "host" || tolower($1) == "match" || index($0, "# BEGIN ") == 1) { legacy = 0 }
-    tolower($1) == "host" && $2 == alias && NF == 2 { legacy = 1 }
-    legacy {
-      old[++n] = $0
+    legacy && /^[ \t]*$/ { pending = pending raw "\n"; next }
+    legacy && (tolower($1) == "host" || tolower($1) == "match" || index($0, "# BEGIN ") == 1) {
+      legacy = 0
+      if (mode == "replace") printf "%s", pending
+      pending = ""
+    }
+    legacy { old = old pending $0 "\n"; pending = ""; next }
+    tolower($1) == "host" && $2 == alias && NF == 2 {
+      legacy = 1
+      old = old $0 "\n"
+      if (mode == "replace") put_new()
       next
     }
-    mode == "strip" { emit($0) }
+    mode == "replace" { print raw }
     END {
-      if (mode == "extract" && !found) for (i = 1; i <= n; i++) print old[i]
+      if (mode == "extract" && !found) printf "%s", old
+      if (mode == "replace") {
+        printf "%s", pending
+        if (!placed) {
+          if (NR > 0) print ""
+          put_new()
+        }
+      }
     }
   ' "$CFG_PATH"
 }
 
 # Sets EXISTING_* from the alias's current block; its HostName lines, in order,
-# are the addresses. EXISTING_EXTRA lists options the rewritten block would drop.
+# are the addresses. EXISTING_EXTRA lists what a rewrite would drop or change.
 read_existing_block() {
-  local keyword value
+  local keyword value addr name
+  check_markers "$1"
   EXISTING_ADDRESSES=()
   EXISTING_USER=""
   EXISTING_PORT=""
   EXISTING_KEY=""
   EXISTING_EXTRA=""
-  while read -r keyword value _; do
-    case "$(tr '[:upper:]' '[:lower:]' <<< "$keyword")" in
+  while read -r name value _; do
+    keyword="$(tr '[:upper:]' '[:lower:]' <<< "$name")"
+    case "$keyword" in
       hostname) EXISTING_ADDRESSES+=("$value") ;;
-      user) EXISTING_USER="$value" ;;
-      port) EXISTING_PORT="$value" ;;
-      identityfile) EXISTING_KEY="$value" ;;
+      user|port|identityfile)
+        if [[ "$keyword" == user && -z "$EXISTING_USER" ]]; then
+          EXISTING_USER="$value"
+        elif [[ "$keyword" == port && -z "$EXISTING_PORT" ]]; then
+          EXISTING_PORT="$value"
+        elif [[ "$keyword" == identityfile && -z "$EXISTING_KEY" ]]; then
+          EXISTING_KEY="$value"
+        else
+          EXISTING_EXTRA+="${EXISTING_EXTRA:+, }a second $name"
+        fi
+        ;;
       ""|\#*|host|match|hostkeyalias|addkeystoagent|usekeychain|identitiesonly) ;;
-      *) EXISTING_EXTRA+="${EXISTING_EXTRA:+, }$keyword" ;;
+      *) EXISTING_EXTRA+="${EXISTING_EXTRA:+, }$name" ;;
     esac
   done < <(config_blocks extract "$1")
+  for addr in ${EXISTING_ADDRESSES[@]+"${EXISTING_ADDRESSES[@]}"}; do
+    valid_address "$addr" || die "the existing block for $1 has an unexpected HostName: $addr"
+  done
+  [[ -z "$EXISTING_PORT" || "$EXISTING_PORT" =~ ^[0-9]+$ ]] || die "the existing block for $1 has an unexpected Port: $EXISTING_PORT"
 }
 
 dedupe_addresses() {
@@ -107,6 +154,13 @@ dedupe_addresses() {
     seen+="$addr "
     ADDRESSES+=("$addr")
   done
+}
+
+# Without nc every Match probe fails, and only the last address would ever be used.
+require_nc_for_multiple() {
+  if ((${#ADDRESSES[@]} > 1)) && ! command -v nc &>/dev/null; then
+    die "several addresses need nc (netcat) to pick a reachable one; install it (e.g. apt install netcat-openbsd) and run again."
+  fi
 }
 
 render_block() {
@@ -133,18 +187,31 @@ render_block() {
 }
 
 write_config() {
-  local alias="$1" tmp_cfg
+  local alias="$1" tmp_cfg block_file
   mkdir -p "$SSH_DIR"
   chmod 700 "$SSH_DIR"
   touch "$CFG_PATH"
   tmp_cfg="$(mktemp "$SSH_DIR/config.XXXXXX")"
-  config_blocks strip "$alias" > "$tmp_cfg"
-  if [[ -s "$tmp_cfg" ]]; then
-    printf '\n' >> "$tmp_cfg"
-  fi
-  render_block "$@" >> "$tmp_cfg"
+  block_file="$(mktemp "$SSH_DIR/config-block.XXXXXX")"
+  render_block "$@" > "$block_file"
+  config_blocks replace "$alias" "$block_file" > "$tmp_cfg"
+  rm -f "$block_file"
   chmod 600 "$tmp_cfg"
+  if ! verify_effective "$tmp_cfg" "$@"; then
+    rm -f "$tmp_cfg"
+    die "another entry in $CFG_PATH (e.g. an earlier Host * or multi-name Host line) overrides the block for $alias; nothing was changed."
+  fi
   mv "$tmp_cfg" "$CFG_PATH"
+}
+
+# OpenSSH keeps the first value it sees, so an earlier matching entry would win.
+verify_effective() {
+  local cfg="$1" alias="$2" user="$3" port="$4" key="$5" out
+  out="$(ssh -G -F "$cfg" "$alias" 2>/dev/null)" || return 1
+  grep -Fx "user $user" <<< "$out" >/dev/null &&
+    grep -Fx "port $port" <<< "$out" >/dev/null &&
+    grep -Fx "hostkeyalias $alias" <<< "$out" >/dev/null &&
+    awk -v key="${key#\~}" '$1 == "identityfile" && substr($2, length($2) - length(key) + 1) == key { ok = 1 } END { exit !ok }' <<< "$out"
 }
 
 known_hosts_name() {
@@ -155,27 +222,52 @@ known_hosts_name() {
   fi
 }
 
-# Pins the keys already trusted for the alias's addresses to the alias, so an
-# existing host moves to HostKeyAlias without a new trust-on-first-use.
-seed_known_hosts() {
-  local alias="$1" port="$2" addr found="" lines="" new
+# Sets HOST_KEY_PINS to known_hosts lines that pin the alias to the keys already
+# trusted for its addresses, so an existing host moves to HostKeyAlias without a
+# new trust-on-first-use. Every address with known keys must share a key with
+# the first one and have no key of the same type that differs; otherwise they may
+# be different machines, and this dies before anything is written.
+plan_host_key_pins() {
+  local alias="$1" port="$2" addr entries="" result
   shift 2
+  HOST_KEY_PINS=""
   [[ -f "$KNOWN_HOSTS" ]] || return 0
   ssh-keygen -F "$alias" -f "$KNOWN_HOSTS" >/dev/null 2>&1 && return 0
   for addr in "$@"; do
-    new="$(ssh-keygen -F "$(known_hosts_name "$addr" "$port")" -f "$KNOWN_HOSTS" 2>/dev/null | grep -v '^[#@]' || true)"
-    [[ -n "$new" ]] || continue
-    found+="${found:+, }$addr"
-    lines+="$new"$'\n'
+    entries+="$({ ssh-keygen -F "$(known_hosts_name "$addr" "$port")" -f "$KNOWN_HOSTS" 2>/dev/null || true; } |
+      awk -v addr="$addr" '!/^[#@]/ && NF >= 3 { print addr, $2, $3 }')"$'\n'
   done
-  [[ -n "$lines" ]] || return 0
-  if ! awk 'NF { if (($2 in key) && key[$2] != $3) exit 1; key[$2] = $3 }' <<< "$lines"; then
-    printf 'Warning: known_hosts has different host keys for %s; not pinning any to %s.\n' "$found" "$alias" >&2
-    printf '         Remove the stale entries (ssh-keygen -R <address>), then connect once to pin the right key.\n' >&2
-    return 0
+  result="$(awk -v alias="$alias" '
+    !NF { next }
+    anchor == "" { anchor = $1 }
+    $1 == anchor {
+      if (!seen[$2 FS $3]++) { pins[++n] = $2 FS $3; key[$2] = $3 }
+      next
+    }
+    { others[$1] = 1; other_key[$1 FS $2] = $3 }
+    END {
+      for (k in other_key) {
+        split(k, part, FS)
+        if (!(part[2] in key)) continue
+        if (key[part[2]] == other_key[k]) shared[part[1]] = 1
+        else differs[part[1]] = 1
+      }
+      for (a in others) if (differs[a] || !shared[a]) bad = bad (bad ? ", " : "") a
+      if (bad) { print "CONFLICT", anchor, bad; exit }
+      for (i = 1; i <= n; i++) print alias, pins[i]
+    }
+  ' <<< "$entries")"
+  if [[ "$result" == CONFLICT* ]]; then
+    read -r _ addr result <<< "$result"
+    die "known_hosts has host keys for $result that do not match those for $addr, so they may be different machines. Remove the stale entries (ssh-keygen -R <address>) and run again."
   fi
-  awk -v alias="$alias" 'NF && !seen[$2 FS $3]++ { print alias, $2, $3 }' <<< "$lines" >> "$KNOWN_HOSTS"
-  printf 'Pinned the host key already trusted for %s to %s.\n' "$found" "$alias"
+  HOST_KEY_PINS="$result"
+}
+
+apply_host_key_pins() {
+  [[ -n "$HOST_KEY_PINS" ]] || return 0
+  printf '%s\n' "$HOST_KEY_PINS" >> "$KNOWN_HOSTS"
+  printf 'Pinned the host keys already trusted for its addresses to %s.\n' "$1"
 }
 
 # Run a command with a hard wall-clock timeout; ConnectTimeout alone doesn't cover auth hangs
@@ -220,9 +312,11 @@ if [[ "${1:-}" == "--add-address" ]]; then
   [[ -z "$EXISTING_EXTRA" ]] || die "the block for $HOST_ALIAS also sets $EXISTING_EXTRA, which a rewrite would drop; edit it by hand."
   PORT="${EXISTING_PORT:-22}"
   dedupe_addresses "$@" "${EXISTING_ADDRESSES[@]}"
+  require_nc_for_multiple
+  plan_host_key_pins "$HOST_ALIAS" "$PORT" "${ADDRESSES[@]}"
   write_config "$HOST_ALIAS" "$EXISTING_USER" "$PORT" "$EXISTING_KEY" "${ADDRESSES[@]}"
   printf 'Addresses for %s, in order: %s\n' "$HOST_ALIAS" "${ADDRESSES[*]}"
-  seed_known_hosts "$HOST_ALIAS" "$PORT" "${ADDRESSES[@]}"
+  apply_host_key_pins "$HOST_ALIAS"
   test_alias "$HOST_ALIAS"
   exit 0
 fi
@@ -273,6 +367,7 @@ prompt KEY_NAME     "Key file name (no path)" "$HOST_ALIAS"
 
 valid_alias "$HOST_ALIAS" || die "invalid alias: $HOST_ALIAS"
 [[ "$PORT" =~ ^[0-9]+$ ]] || die "invalid port: $PORT"
+[[ -n "$REMOTE_USER" && "$REMOTE_USER" != *[[:space:]]* ]] || die "invalid username: $REMOTE_USER"
 read -r -a NEW_ADDRESSES <<< "${REMOTE_HOSTS//,/ }"
 ((${#NEW_ADDRESSES[@]} > 0)) || die "REMOTE_HOSTS cannot be empty."
 for addr in "${NEW_ADDRESSES[@]}"; do
@@ -284,7 +379,9 @@ read_existing_block "$HOST_ALIAS"
 if [[ -n "$EXISTING_EXTRA" ]]; then
   printf 'Warning: the existing block for %s also sets %s; the rewritten block drops it.\n' "$HOST_ALIAS" "$EXISTING_EXTRA" >&2
 fi
-dedupe_addresses "${NEW_ADDRESSES[@]}" "${EXISTING_ADDRESSES[@]}"
+dedupe_addresses "${NEW_ADDRESSES[@]}" ${EXISTING_ADDRESSES[@]+"${EXISTING_ADDRESSES[@]}"}
+require_nc_for_multiple
+plan_host_key_pins "$HOST_ALIAS" "$PORT" "${ADDRESSES[@]}"
 
 # The key copy goes to the first address that answers on the SSH port.
 REMOTE_HOST="${ADDRESSES[${#ADDRESSES[@]} - 1]}"
@@ -376,7 +473,7 @@ fi
 # ---- Update ~/.ssh/config idempotently ----
 write_config "$HOST_ALIAS" "$REMOTE_USER" "$PORT" "$KEY_PATH" "${ADDRESSES[@]}"
 printf 'Addresses for %s, in order: %s\n' "$HOST_ALIAS" "${ADDRESSES[*]}"
-seed_known_hosts "$HOST_ALIAS" "$PORT" "${ADDRESSES[@]}"
+apply_host_key_pins "$HOST_ALIAS"
 
 # ---- Copy public key to remote ----
 echo ""

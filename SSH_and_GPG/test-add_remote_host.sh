@@ -10,9 +10,13 @@ SSH_BIN="$(command -v ssh)"
 STUB_BIN="$TMP_ROOT/bin"
 mkdir -p "$STUB_BIN"
 
-cat > "$STUB_BIN/ssh" <<'EOF'
+# Config evaluation (-G) goes to the real client; connections are only logged.
+cat > "$STUB_BIN/ssh" <<EOF
 #!/usr/bin/env bash
-printf '%s\n' "$*" >> "$SSH_LOG"
+if [[ "\$1" == -G ]]; then
+  exec "$SSH_BIN" "\$@"
+fi
+printf '%s\\n' "\$*" >> "\$SSH_LOG"
 exit 0
 EOF
 
@@ -140,13 +144,39 @@ grep -F 'exec "nc -z -w 1 box.local 2222"' "$CONFIG" >/dev/null || fail "probe d
 grep -E '(^| )me@192\.0\.2\.10( |$)' "$SSH_LOG" >/dev/null || fail "key copy skipped the reachable address"
 ssh-keygen -F box -f "$KNOWN" | grep -F "${KEY_A#* }" >/dev/null || fail "non-22 port key not pinned"
 
-# Conflicting trusted keys for two addresses: pin nothing.
-new_home conflict
+# Addresses whose trusted keys disagree may be different machines: refuse before writing.
+conflict_case() {
+  local name="$1" key_other="$2"
+  new_home "conflict-$name"
+  printf '%s\n' 'Host lab' '  HostName 192.0.2.10' '  User me' "  IdentityFile $CASE_HOME/.ssh/lab" > "$CONFIG"
+  printf '192.0.2.10 %s\n198.51.100.20 %s\n' "$KEY_A" "$key_other" > "$KNOWN"
+  cp "$CONFIG" "$CASE_HOME/config.before"
+  if run_script bash "$SCRIPT" --add-address lab 198.51.100.20 > /dev/null 2> "$CASE_HOME/err"; then
+    fail "$name: --add-address accepted conflicting host keys"
+  fi
+  grep -F 'may be different machines' "$CASE_HOME/err" >/dev/null || fail "$name: no conflict error"
+  cmp -s "$CONFIG" "$CASE_HOME/config.before" || fail "$name: changed the config despite the conflict"
+  ! ssh-keygen -F lab -f "$KNOWN" >/dev/null || fail "$name: pinned a key despite the conflict"
+
+  : > "$SSH_LOG"
+  if printf 'n\n' | run_script HOST_ALIAS=lab REMOTE_HOSTS='198.51.100.20' REMOTE_USER=me PORT=22 KEY_NAME=lab \
+    bash "$SCRIPT" > /dev/null 2>&1; then
+    fail "$name: setup run accepted conflicting host keys"
+  fi
+  [[ ! -s "$SSH_LOG" ]] || fail "$name: connected despite the conflict"
+}
+conflict_case same-type "$KEY_B"
+ssh-keygen -q -t rsa -b 2048 -N '' -C '' -f "$TMP_ROOT/hostkey-rsa"
+conflict_case other-type "$(cut -d' ' -f1,2 "$TMP_ROOT/hostkey-rsa.pub")"
+
+# Two addresses that share a key are the same machine. Only the first address's
+# keys are pinned; the others are checked against it, never added to it.
+new_home shared
 printf '%s\n' 'Host lab' '  HostName 192.0.2.10' '  User me' "  IdentityFile $CASE_HOME/.ssh/lab" > "$CONFIG"
-printf '192.0.2.10 %s\n198.51.100.20 %s\n' "$KEY_A" "$KEY_B" > "$KNOWN"
-run_script bash "$SCRIPT" --add-address lab 198.51.100.20 > /dev/null 2> "$CASE_HOME/err"
-grep -F 'different host keys' "$CASE_HOME/err" >/dev/null || fail "no conflict warning"
-! ssh-keygen -F lab -f "$KNOWN" >/dev/null || fail "pinned a key despite the conflict"
+printf '192.0.2.10 %s\n192.0.2.10 %s\n198.51.100.20 %s\n' "$KEY_A" "$(cut -d' ' -f1,2 "$TMP_ROOT/hostkey-rsa.pub")" "$KEY_A" > "$KNOWN"
+run_script bash "$SCRIPT" --add-address lab 198.51.100.20 > /dev/null
+[[ "$(ssh-keygen -F lab -f "$KNOWN" | grep -vc '^#')" == 1 ]] || fail "shared: expected only the first address's key pinned"
+ssh-keygen -F lab -f "$KNOWN" | grep -F "${KEY_A#* }" >/dev/null || fail "shared: wrong key pinned"
 
 # Input is validated before anything is written.
 new_home invalid
@@ -168,5 +198,99 @@ if run_script bash "$SCRIPT" --add-address lab 198.51.100.20 > /dev/null 2> "$CA
 fi
 grep -F 'ProxyJump' "$CASE_HOME/err" >/dev/null || fail "did not name the option it would drop"
 cmp -s "$CONFIG" "$CASE_HOME/config.before" || fail "changed the config while refusing"
+
+# The block stays where it was, so an earlier wildcard cannot override it on re-runs.
+new_home position
+printf '%s\n' 'Host lab' '  HostName 192.0.2.10' '  User me' "  IdentityFile $CASE_HOME/.ssh/lab" '' \
+  'Host *' '  User generic' > "$CONFIG"
+run_script bash "$SCRIPT" --add-address lab 198.51.100.20 > /dev/null
+run_script bash "$SCRIPT" --add-address lab 203.0.113.5 > /dev/null
+[[ "$(sed -n 1p "$CONFIG")" == '# BEGIN add_remote_host.sh: lab' ]] || fail "block moved"
+resolved lab "" | grep -Fx 'user me' >/dev/null || fail "wildcard overrides the block"
+[[ "$(tail -n 2 "$CONFIG" | head -n 1)" == 'Host *' ]] || fail "wildcard block moved"
+
+# An earlier entry that would override the block makes the run fail without writing.
+new_home shadowed
+printf '%s\n' 'Host *' '  User generic' '' 'Host lab' '  HostName 192.0.2.10' '  User me' "  IdentityFile $CASE_HOME/.ssh/lab" > "$CONFIG"
+cp "$CONFIG" "$CASE_HOME/config.before"
+if run_script bash "$SCRIPT" --add-address lab 198.51.100.20 > /dev/null 2> "$CASE_HOME/err"; then
+  fail "wrote a block that an earlier Host * overrides"
+fi
+grep -F 'overrides the block' "$CASE_HOME/err" >/dev/null || fail "shadowed: no error"
+cmp -s "$CONFIG" "$CASE_HOME/config.before" || fail "shadowed: changed the config"
+
+# Unpaired markers would make the rewrite drop the rest of the file (lone BEGIN)
+# or keep a stale copy (two blocks): refuse both.
+marker_case() {
+  local name="$1"
+  shift
+  new_home "markers-$name"
+  printf '%s\n' "$@" 'Host other.example' '  User other' > "$CONFIG"
+  cp "$CONFIG" "$CASE_HOME/config.before"
+  if run_script bash "$SCRIPT" --add-address lab 198.51.100.20 > /dev/null 2> "$CASE_HOME/err"; then
+    fail "markers-$name: accepted bad markers"
+  fi
+  grep -F 'markers' "$CASE_HOME/err" >/dev/null || fail "markers-$name: wrong error: $(cat "$CASE_HOME/err")"
+  cmp -s "$CONFIG" "$CASE_HOME/config.before" || fail "markers-$name: changed the config"
+}
+block=('Host lab' '  HostName 192.0.2.10' '  User me' "  IdentityFile $TMP_ROOT/lab")
+marker_case lone-begin '# BEGIN add_remote_host.sh: lab' "${block[@]}"
+marker_case twice '# BEGIN add_remote_host.sh: lab' "${block[@]}" '# END add_remote_host.sh: lab' \
+  '# BEGIN add_remote_host.sh: lab' "${block[@]}" '# END add_remote_host.sh: lab'
+marker_case lone-end "${block[@]}" '# END add_remote_host.sh: lab'
+
+# Values in an existing block are validated like new input before reaching Match exec.
+tainted_case() {
+  local name="$1" marker="$TMP_ROOT/pwned-$1"
+  shift
+  new_home "tainted-$name"
+  printf '%s\n' "$@" > "$CONFIG"
+  cp "$CONFIG" "$CASE_HOME/config.before"
+  if run_script bash "$SCRIPT" --add-address lab 203.0.113.5 > /dev/null 2> "$CASE_HOME/err"; then
+    fail "tainted-$name: accepted the block"
+  fi
+  grep -F 'unexpected' "$CASE_HOME/err" >/dev/null || fail "tainted-$name: wrong error: $(cat "$CASE_HOME/err")"
+  cmp -s "$CONFIG" "$CASE_HOME/config.before" || fail "tainted-$name: changed the config"
+  [[ ! -e "$marker" ]] || fail "tainted-$name: command ran"
+}
+tainted_case port 'Host lab' '  HostName 192.0.2.10' '  User me' "  Port 22\$(touch\${IFS}$TMP_ROOT/pwned-port)" \
+  "  IdentityFile $TMP_ROOT/lab"
+tainted_case hostname '# BEGIN add_remote_host.sh: lab' 'Match originalhost lab exec "true"' \
+  "  HostName 192.0.2.10;touch\${IFS}$TMP_ROOT/pwned-hostname" 'Host lab' '  HostName 192.0.2.20' '  User me' \
+  "  IdentityFile $TMP_ROOT/lab" '# END add_remote_host.sh: lab'
+
+# A second User/IdentityFile would be lost on rewrite: refuse.
+new_home duplicate
+printf '%s\n' 'Host lab' '  HostName 192.0.2.10' '  User alice' '  User bob' \
+  "  IdentityFile $CASE_HOME/.ssh/lab" "  IdentityFile $CASE_HOME/.ssh/other" > "$CONFIG"
+if run_script bash "$SCRIPT" --add-address lab 198.51.100.20 > /dev/null 2> "$CASE_HOME/err"; then
+  fail "accepted a block with two User lines"
+fi
+grep -F 'a second User' "$CASE_HOME/err" >/dev/null || fail "duplicate: did not name the second User"
+
+# CRLF line endings: the block is still found and replaced, other lines kept as they were.
+new_home crlf
+printf '%s\r\n' 'Host lab' '  HostName 192.0.2.10' '  User me' "  IdentityFile $CASE_HOME/.ssh/lab" '' \
+  'Host other.example' '  User other' > "$CONFIG"
+run_script bash "$SCRIPT" --add-address lab 198.51.100.20 > /dev/null
+[[ "$(grep -c 'HostName 192.0.2.10' "$CONFIG")" == 1 ]] || fail "crlf: old block kept"
+grep -qF $'  User other\r' "$CONFIG" || fail "crlf: other block changed"
+expect_hostname lab "198.51.100.20" 198.51.100.20
+
+# Several addresses need nc; without it the run fails before writing.
+new_home no-nc
+NO_NC_BIN="$TMP_ROOT/no-nc-bin"
+mkdir -p "$NO_NC_BIN"
+for tool in bash env awk grep tr cut mktemp chmod mkdir touch mv rm cat uname ssh-keygen; do
+  ln -sf "$(command -v "$tool")" "$NO_NC_BIN/$tool"
+done
+ln -sf "$STUB_BIN/ssh" "$NO_NC_BIN/ssh"
+printf '%s\n' 'Host lab' '  HostName 192.0.2.10' '  User me' "  IdentityFile $CASE_HOME/.ssh/lab" > "$CONFIG"
+cp "$CONFIG" "$CASE_HOME/config.before"
+if env HOME="$CASE_HOME" PATH="$NO_NC_BIN" SSH_LOG="$SSH_LOG" bash "$SCRIPT" --add-address lab 198.51.100.20 > /dev/null 2> "$CASE_HOME/err"; then
+  fail "accepted several addresses without nc"
+fi
+grep -F 'need nc' "$CASE_HOME/err" >/dev/null || fail "no-nc: no error"
+cmp -s "$CONFIG" "$CASE_HOME/config.before" || fail "no-nc: changed the config"
 
 printf 'add_remote_host.sh tests passed.\n'

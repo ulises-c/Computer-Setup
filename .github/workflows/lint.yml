@@ -82,6 +82,11 @@ jobs:
       - name: Test remote host multi-address config
         run: bash SSH_and_GPG/test-add_remote_host.sh
 
+      - name: Test remote host multi-address config on macOS's bash 3.2
+        run: |
+          docker run --rm -v "$PWD":/w:ro bash:3.2 bash -c \
+            'apk add -q --no-progress openssh-client openssh-keygen netcat-openbsd >/dev/null && cp -r /w /tmp/repo && cd /tmp/repo && bash SSH_and_GPG/test-add_remote_host.sh'
+
       - name: Test setup preflight helpers
         run: bash scripts/test-core-preflight.sh
 
