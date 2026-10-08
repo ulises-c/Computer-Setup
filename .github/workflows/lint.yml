@@ -79,6 +79,9 @@ jobs:
       - name: Test SSH config rendering
         run: bash SSH_and_GPG/test-create_ssh_key.sh
 
+      - name: Test remote host multi-address config
+        run: bash SSH_and_GPG/test-add_remote_host.sh
+
       - name: Test setup preflight helpers
         run: bash scripts/test-core-preflight.sh
 

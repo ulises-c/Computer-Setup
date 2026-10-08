@@ -64,21 +64,29 @@ EMAIL="jane@example.com" IS_SELF_HOSTED=true GIT_HOSTNAME="hostname.ts.net" GIT_
 
 ### `add_remote_host.sh`
 
-Creates an Ed25519 SSH key for a remote machine (e.g. a home server or Tailscale node), copies the public key to that machine, and wires up `~/.ssh/config`.
+Creates an Ed25519 SSH key for a remote machine (e.g. a home server or Tailscale node), copies the public key to that machine, and wires up `~/.ssh/config`. An alias can have several addresses (IPs, `<hostname>.local`, a second interface), so a machine that moves to another switch, VLAN or DHCP lease is still reachable.
 
 **What it does:**
-- Prompts for a host alias, remote hostname/IP, username, port, key filename, and optional passphrase
+- Prompts for a host alias, one or more remote addresses, username, port, key filename, and optional passphrase
 - Optionally accepts the remote account password (uses `sshpass` when available to avoid interactive prompts; install with `brew install sshpass`)
-- Copies the public key to the remote's `authorized_keys` using BatchMode → sshpass → interactive fallback, then verifies the key actually landed
-- Updates `~/.ssh/config` with a `Host` block (idempotent)
-- Tests key-based auth before exiting
+- Copies the public key to the first reachable address using BatchMode → sshpass → interactive fallback, then verifies the key actually landed
+- Writes a managed `# BEGIN/END add_remote_host.sh: <alias>` block in `~/.ssh/config` (idempotent; replaces a block from an older version of the script)
+- Pins the host key to the alias (`HostKeyAlias`), and moves keys already trusted for its addresses in `known_hosts` to the alias
+- Tests the connection through the alias before exiting
+
+**Multiple addresses:** addresses are tried in order. Each one except the last gets a `Match … exec "nc -z -w 1 <address> <port>"` block that is used when the address accepts a TCP connection. The last one is the plain `Host` fallback. Each unreachable address costs about 1 s per connection, and the probes run only for that alias. Because the host key is checked under the alias, a new address for the same machine does not trigger a warning, while a different machine at a stale address still fails with `REMOTE HOST IDENTIFICATION HAS CHANGED`. `.local` names need mDNS (built in on macOS, `avahi` + `nss-mdns` on Linux) and usually do not resolve across subnets, so list them alongside an IP.
 
 **Usage:**
 ```bash
 bash add_remote_host.sh
-# or pre-fill inputs via env vars:
-HOST_ALIAS="homepc" REMOTE_HOST="<server-ip>" REMOTE_USER="<username>" PORT="22" bash add_remote_host.sh
+# or pre-fill inputs via env vars (REMOTE_HOST still works for a single address):
+HOST_ALIAS="homepc" REMOTE_HOSTS="homepc.local <server-ip>" REMOTE_USER="<username>" PORT="22" bash add_remote_host.sh
+
+# add addresses to an existing alias (new ones are tried first; also migrates an old-style block):
+bash add_remote_host.sh --add-address homepc <wifi-ip>
 ```
+
+Re-running for an existing alias keeps the addresses it already has, after the ones you pass.
 
 ---
 
