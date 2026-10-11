@@ -627,15 +627,22 @@ Fields: `status` (`running` / `starting` / `stopped` / `failed` / `unknown`),
 
 ### Update checking
 
-`dragonwilds-update-check.timer` runs every 15 minutes, asking Steam
-for the current public build and writing it to `status/.latest-build`. The status
-script compares that against the installed build from the app manifest and
-publishes `update_status` (`up to date` / `update available (<build>)` /
-`unknown`). The query takes about 4 seconds.
+`dragonwilds-update-check.timer` runs every 15 minutes. It asks Steam for the
+public app BuildID and the public manifest GID for Linux dedicated-server depot
+3501791, then atomically writes three fields to `status/.latest-build`:
+`<app-buildid> <UTC-check-time> <linux-depot-manifest-gid>`. This check does not
+touch the install.
 
-It is a separate timer because it is the only part of this that touches the
-network — the status script runs every minute and must stay local. The check
-never modifies the install.
+The Steam app BuildID is global across its depots, so it can advance when the
+Linux server depot did not change. The status card keeps `build` and
+`latest_build` as those app BuildIDs for reference, but computes `update_status`
+from the installed `InstalledDepots.3501791.manifest` versus the current public
+Linux depot manifest. Matching manifests mean the Linux server files are up to
+date even when the app BuildIDs differ. Missing/legacy two-field metadata is
+`unknown`, never an update trigger.
+
+This is a separate timer because it is the only part that talks to Steam; status
+refreshes remain local.
 
 ### Applying updates automatically
 
@@ -659,13 +666,15 @@ timer ticks. It fails closed: if the journal cannot be read (the user needs the
 `adm` or `systemd-journal` group — `setup.sh` warns), the restart is deferred
 rather than treating an unknown count as zero.
 
-On restart it confirms the server is back on UDP 7777 **and** on the new build.
-Because `ExecStartPre`'s `-` lets a failed download start the old build, "the port
-came back" alone is not success. Any failure — the start job failing, the old
-build coming back, or the port never binding — alerts at high priority and
-records the build in `status/.failed-build`, so it is not retried every 15
-minutes. It is retried when a newer build appears, or on any manual restart. The
-unit's `TimeoutStartSec=5h` leaves room for the backup and the long download inside the start job.
+On restart it confirms the server is back on UDP 7777 **and** on the target Linux
+server depot manifest. Because `ExecStartPre`'s `-` lets a failed/no-op download
+start the existing files, a running unit or open port alone is not success.
+Any failure — the start job failing, the target depot still not installed, or
+the port never binding — alerts at high priority and records
+`linux-depot:<manifest-gid>` in `status/.failed-build`, so the same depot is not
+retried every 15 minutes. A marker from the older app-BuildID format is ignored.
+A newer Linux depot or manual restart can retry it. The unit's `TimeoutStartSec=5h`
+leaves room for the backup and the long download inside the start job.
 
 Set `AUTO_UPDATE_RESTART=false` in `.env` to be notified but apply updates
 yourself. Manual restarts still pass through the pre-update backup gate:
@@ -674,8 +683,8 @@ yourself. Manual restarts still pass through the pre-update backup gate:
 sudo systemctl restart dragonwilds.service
 ```
 
-ntfy alerts fire for "update available" (once per build, not once per tick),
-"updated", and a failed restart. Leave `NTFY_URL` empty to disable them —
+ntfy alerts fire for "update available" (once per Linux depot manifest, not once per
+timer), "updated", and a failed restart. Leave `NTFY_URL` empty to disable them —
 everything else still works.
 
 Both that `ExecStartPre` and the checker take a `flock` on
