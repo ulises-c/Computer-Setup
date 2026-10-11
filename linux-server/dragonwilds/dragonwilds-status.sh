@@ -137,19 +137,20 @@ if [[ -r "$manifest" ]]; then
   build="$(sed -n 's/^[[:space:]]*"buildid"[[:space:]]*"\([0-9]*\)".*/\1/p' "$manifest" | head -1)"
 fi
 
-# Written by dragonwilds-update-check.timer, which is the only thing that talks
-# to Steam — keep this path free of network calls, it runs every minute.
+# The helper reads the installed depot manifest; update-check.timer supplies the
+# public Linux depot manifest in the third field. The app BuildID is retained for
+# display, but only depot-content drift means this server needs an update.
+installed_manifest=""
+installed_info="$(python3 "$SCRIPT_DIR/dragonwilds_update_metadata.py" installed "$manifest" 2>/dev/null || true)"
+read -r _ installed_manifest <<< "$installed_info" || true
 latest_build=""
 update_checked=""
+latest_manifest=""
 update_status="unknown"
 if [[ -r "$LATEST_BUILD_FILE" ]]; then
-  read -r latest_build update_checked < "$LATEST_BUILD_FILE" || true
-  if [[ "$latest_build" =~ ^[0-9]+$ && "$build" =~ ^[0-9]+$ ]]; then
-    if [[ "$latest_build" == "$build" ]]; then
-      update_status="up to date"
-    else
-      update_status="update available ($latest_build)"
-    fi
+  read -r latest_build update_checked latest_manifest < "$LATEST_BUILD_FILE" || true
+  if [[ "$latest_build" =~ ^[0-9]+$ && "$installed_manifest" =~ ^[0-9]+$ && "$latest_manifest" =~ ^[0-9]+$ ]]; then
+    update_status="$(python3 "$SCRIPT_DIR/dragonwilds_update_metadata.py" status "$installed_manifest" "$latest_manifest" "$latest_build" 2>/dev/null || printf unknown)"
   fi
 fi
 
