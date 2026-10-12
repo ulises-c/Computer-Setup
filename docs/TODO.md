@@ -362,11 +362,13 @@ still separate from the unified Ubuntu Server profile.
 See [macos-server/README.md](../macos-server/README.md) and the pre-reinstall
 [INVENTORY.md](../macos-server/INVENTORY.md).
 
-- [ ] Finish OrbStack onboarding, then `bash macos-server/serve.sh` (Homepage at
-      `/`, Hermes WebUI moves to `:8787`)
-- [ ] Apply `power/power.sh` (sudo), then quit Caffeine and remove it from Login Items
-- [ ] Backups: `sftp-target.sh mac` on the main server, `connect.sh connect`,
-      `agents.sh install`, first run, then `restore-check`-style restore from the Mac
+- [x] Finish OrbStack onboarding, then `bash macos-server/serve.sh` (Homepage at
+      `/`, Hermes WebUI moves to `:8787`); all four dashboards checked in a browser
+- [x] Apply `power/power.sh` (sudo)
+- [ ] Quit Caffeine and remove it from Login Items
+- [x] Backups: `sftp-target.sh mac` on the main server, `connect.sh connect`,
+      `agents.sh install`, first run (snapshot `28ba0798`)
+- [ ] Restore check from the Mac (`restore-check.sh` is root/systemd-only today)
 - [x] Set `HOMEPAGE_VAR_MAC_HOMEPAGE_DOMAIN` in the other three hosts'
       `homepage/.env` and recreate their Homepage containers (all three list
       the mac server card; `/glances` already published on the Mac's node)
