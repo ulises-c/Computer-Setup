@@ -66,10 +66,11 @@ def _valid_id(value: Any, field: str) -> str:
 def public_build_info(text: str, app_id: str = APP_ID,
                       depot_id: str = LINUX_DEPOT_ID) -> tuple[str, str]:
     """Return (public app BuildID, public Linux depot manifest GID)."""
-    app = _named_object(text, app_id)
-    build = _valid_id(app["branches"]["public"]["buildid"], "public branch buildid")
+    depots = _named_object(text, app_id)["depots"]
+    # steamcmd nests "branches" inside "depots", beside the numeric depot IDs.
+    build = _valid_id(depots["branches"]["public"]["buildid"], "public branch buildid")
     manifest = _valid_id(
-        app["depots"][depot_id]["manifests"]["public"]["gid"],
+        depots[depot_id]["manifests"]["public"]["gid"],
         f"public depot {depot_id} manifest GID",
     )
     return build, manifest

@@ -34,11 +34,13 @@ class UpdateMetadataCliTests(unittest.TestCase):
                 "public" { "gid" "5736699466634593401" }
             }
         }
-    }
-    "branches"
-    {
-        "beta" { "buildid" "25809000" }
-        "public" { "buildid" "25808123" }
+        "baselanguages" "english"
+        "branches"
+        {
+            "beta" { "buildid" "25809000" }
+            "public" { "buildid" "25808123" }
+        }
+        "privatebranches" "1"
     }
 }
 Unloading Steam API...
@@ -71,18 +73,25 @@ Unloading Steam API...
 
     def test_inline_comments_and_quoted_slashes_parse_as_vdf_data(self):
         steam_info = '''"4019830" { "common" { "url" "https://example.test/a//b" } // app note
-  "depots" { "3501791" { "manifests" { "public" { "gid" "5736699466634593401" } } } } // depot note
-  "branches" { "public" { "buildid" "25808123" } }
+  "depots" { "3501791" { "manifests" { "public" { "gid" "5736699466634593401" } } } // depot note
+    "branches" { "public" { "buildid" "25808123" } } }
 }'''
         result = self.run_helper("steam", input_text=steam_info)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "25808123 5736699466634593401")
 
     def test_unterminated_block_comment_fails_closed(self):
-        steam_info = '''"4019830" { "depots" { "3501791" { "manifests" { "public" { "gid" "5736699466634593401" } } } } "branches" { "public" { "buildid" "25808123" } } /* missing close'''
+        steam_info = '''"4019830" { "depots" { "3501791" { "manifests" { "public" { "gid" "5736699466634593401" } } } "branches" { "public" { "buildid" "25808123" } } } /* missing close'''
         result = self.run_helper("steam", input_text=steam_info)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("unterminated VDF comment", result.stderr)
+
+    def test_branches_outside_depots_is_not_the_steamcmd_shape(self):
+        steam_info = '''"4019830" { "depots" { "3501791" { "manifests" { "public" { "gid" "5736699466634593401" } } } }
+  "branches" { "public" { "buildid" "25808123" } } }'''
+        result = self.run_helper("steam", input_text=steam_info)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
 
     def test_game_host_helper_link_resolves_with_full_repository_checkout(self):
         helper = GAME / "dragonwilds_update_metadata.py"
@@ -113,8 +122,8 @@ class UpdateCheckIntegrationTests(unittest.TestCase):
   // comment note
   "common" { "installdir" "RuneScape\\Dragonwilds" }
   /* manifest comment */
-  "depots" { "3501791" { "manifests" { "public" { "gid" "5736699466634593401" } } } }
-  "branches" { "public" { "buildid" "25808123" } }
+  "depots" { "3501791" { "manifests" { "public" { "gid" "5736699466634593401" } } }
+    "branches" { "public" { "buildid" "25808123" } } }
 }
 '''
         with tempfile.TemporaryDirectory() as temporary:
