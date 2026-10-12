@@ -5,6 +5,9 @@ set -uo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HERMES_HOME_DIR="${HERMES_HOME:-$HOME/.hermes}"
+# shellcheck source=lib/hermes-root.sh
+source "$REPO_DIR/lib/hermes-root.sh"
+PROFILES_DIR="$(hermes_root)/profiles"
 ERRORS=0
 
 pass() { printf '  [ OK ] %s\n' "$1"; }
@@ -25,11 +28,11 @@ printf '\n=== profiles ===\n'
 for profile_src in "$REPO_DIR"/profiles/*/; do
   profile="$(basename "$profile_src")"
   for file in config.yaml profile.yaml SOUL.md; do
-    check_link "$HERMES_HOME_DIR/profiles/$profile/$file" "$profile_src$file"
+    check_link "$PROFILES_DIR/$profile/$file" "$profile_src$file"
   done
   for script in "${profile_src}"scripts/*; do
     [[ -f "$script" ]] || continue
-    if cmp -s "$script" "$HERMES_HOME_DIR/profiles/$profile/scripts/$(basename "$script")"; then pass "$profile/scripts/$(basename "$script") matches"; else fail "$profile/scripts/$(basename "$script") missing or differs; run install.sh"; fi
+    if cmp -s "$script" "$PROFILES_DIR/$profile/scripts/$(basename "$script")"; then pass "$profile/scripts/$(basename "$script") matches"; else fail "$profile/scripts/$(basename "$script") missing or differs; run install.sh"; fi
   done
 done
 if assignees="$(hermes kanban assignees 2>/dev/null)"; then

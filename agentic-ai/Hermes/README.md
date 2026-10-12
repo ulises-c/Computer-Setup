@@ -17,6 +17,7 @@ account) and `hermes-config` (personal account).
 | `profiles/<role>/` | Kanban role profiles (below). |
 | `install.sh` / `validate.sh` | Idempotent links / health check (runs `hermes-config verify` once `.env` exists). |
 | `tests/hermes-config.test.sh` | E2E test: throwaway `HERMES_HOME`, local bare repos, fake Bitbucket API and session history, the real `hermes` CLI. |
+| `tests/profiles-install.test.sh` | Profile install/validate test for default, named-profile, and custom Hermes roots. |
 | `.env.example` | Repos, markers, provenance settings. Copy to `.env` (gitignored). |
 
 ## Kanban role profiles
@@ -24,9 +25,13 @@ account) and `hermes-config` (personal account).
 `profiles/<role>/` holds the config of each Kanban role profile (orchestrator,
 coder, the reviewers, ...). `install.sh` creates a profile that is missing and
 links its `config.yaml`, `profile.yaml`, and `SOUL.md` into
-`$HERMES_HOME/profiles/<role>/`. An existing real file that differs is backed
+`<hermes root>/profiles/<role>/`. The root is found the way Hermes finds it, so
+running from a named-profile session (`HERMES_HOME=~/.hermes/profiles/coder`)
+still targets the sibling profiles, not nested ones. An existing real file that differs is backed
 up as `<file>.bak-<timestamp>` first. `validate.sh` checks the links and that
 `hermes kanban assignees` lists every role as on disk.
+`tests/profiles-install.test.sh` runs both scripts twice for a default root, a
+named-profile `HERMES_HOME`, and a custom root, in a throwaway `HOME`.
 
 - **Edits go to the repo.** Hermes writes `config.yaml` through the link, so a
   `hermes -p <role> config set` shows up as a git diff here. Review it before

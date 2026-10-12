@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Idempotent setup for the Hermes pieces of this repo: puts hermes-config on
 # PATH, links each TUI widget into $HERMES_HOME/tui-widgets/, and links the
-# Kanban role profiles into $HERMES_HOME/profiles/. Wiring the
+# Kanban role profiles into <hermes root>/profiles/. Wiring the
 # private skill repos is a separate, explicit step (`hermes-config install`)
 # because it needs .env and the Forgejo repos to exist.
 set -euo pipefail
@@ -10,6 +10,9 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HERMES_HOME_DIR="${HERMES_HOME:-$HOME/.hermes}"
 LOCAL_BIN="$HOME/.local/bin"
 WIDGETS_DST="$HERMES_HOME_DIR/tui-widgets"
+# shellcheck source=lib/hermes-root.sh
+source "$REPO_DIR/lib/hermes-root.sh"
+PROFILES_DST="$(hermes_root)/profiles"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 
 [[ -d "$HERMES_HOME_DIR" ]] || { printf 'error: %s not found; install Hermes first\n' "$HERMES_HOME_DIR" >&2; exit 1; }
@@ -50,9 +53,10 @@ done
 
 for profile_src in "$REPO_DIR"/profiles/*/; do
   profile="$(basename "$profile_src")"
-  profile_dst="$HERMES_HOME_DIR/profiles/$profile"
+  profile_dst="$PROFILES_DST/$profile"
   if [[ ! -d "$profile_dst" ]]; then
     hermes profile create --no-alias "$profile" >/dev/null
+    [[ -d "$profile_dst" ]] || { printf 'error: hermes created %s outside %s\n' "$profile" "$PROFILES_DST" >&2; exit 1; }
     printf 'Created profile: %s\n' "$profile"
   fi
   for file in config.yaml profile.yaml SOUL.md; do
