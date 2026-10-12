@@ -26,6 +26,17 @@ WAIT_URL=""
 # shellcheck source=/dev/null
 source "$host_dir/serve.conf"
 
+# macOS: Docker is OrbStack's (no sudo) and the Tailscale CLI may only exist
+# inside the app bundle.
+docker_cmd=(sudo docker)
+if [[ "$(uname -s)" == Darwin ]]; then
+  docker_cmd=(docker)
+  export PATH="$HOME/.orbstack/bin:$PATH"
+  if ! command -v tailscale >/dev/null; then
+    tailscale() { /Applications/Tailscale.app/Contents/MacOS/Tailscale "$@"; }
+  fi
+fi
+
 [[ "$(tailscale status --json | jq -r .BackendState)" == Running ]] || {
   printf 'error: authenticate this host with sudo tailscale up --operator="$USER" first\n' >&2
   exit 1
@@ -43,7 +54,7 @@ if [[ ${#PRE_SERVE[@]} -gt 0 ]]; then
   (cd "$host_dir" && "${PRE_SERVE[@]}")
 fi
 for dir in "${COMPOSE_DIRS[@]}"; do
-  sudo docker compose -f "$host_dir/$dir/docker-compose.yml" up -d
+  "${docker_cmd[@]}" compose -f "$host_dir/$dir/docker-compose.yml" up -d
 done
 
 uses_cockpit=false

@@ -62,6 +62,12 @@ def spec_widgets(base, facts):
         return {"field": "hostname", "label": label, "format": "text",
                 "remap": [{"any": True, "to": value}]}
 
+    # Glances reports no distro on macOS; os_version is then the macOS release.
+    if facts.get("software_prefix"):
+        software = {"field": "os_version", "label": "Software", "format": "text", "prefix": facts["software_prefix"]}
+    else:
+        software = {"field": "linux_distro", "label": "Software", "format": "text",
+                    "additionalField": {"field": "os_version", "format": "text", "prefix": "·"}}
     return [
         {"type": "customapi", "url": f"{api}/system", "refreshInterval": slow, "display": "list",
          "mappings": [fixed("Platform", facts["platform"]), fixed("Board / SoC", facts["board"]),
@@ -70,9 +76,7 @@ def spec_widgets(base, facts):
          "mappings": [{"field": "total", "label": "Memory", "format": "float",
                        "scale": "1/1073741824", "suffix": "GiB usable"}]},
         {"type": "customapi", "url": f"{api}/system", "refreshInterval": slow, "display": "list",
-         "mappings": [fixed("Graphics", facts["graphics"]),
-                      {"field": "linux_distro", "label": "Software", "format": "text",
-                       "additionalField": {"field": "os_version", "format": "text", "prefix": "·"}}]},
+         "mappings": [fixed("Graphics", facts["graphics"]), software]},
     ]
 
 
@@ -144,7 +148,7 @@ def render_settings(fleet, host_dir, local_text):
                 extras[key] = top[key]
     base["topbarExtras"] = extras
     head = "\n".join(emit(base)) + "\n\nlayout:\n"
-    servers = "  Servers:\n    style: row\n    columns: 3\n"
+    servers = f"  Servers:\n    style: row\n    columns: {min(4, len(fleet['servers']))}\n"
     shared_dir = next(s["dir"] for s in fleet["servers"] if s["key"] == fleet["shared_services"]["host"])
     tail = ""
     if host_dir != shared_dir:

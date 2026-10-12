@@ -4,7 +4,7 @@ set -euo pipefail
 # Nightly restic backup shared by every server (server-base/backup). Each host
 # runs it through a symlink in <host>/backup/, next to that host's .env and
 # sources.sh. sources.sh names the backup (BACKUP_NAME, BACKUP_LABEL,
-# BACKUP_UNIT) and defines resolve_sources, which appends the host's paths to
+# BACKUP_UNIT, optionally BACKUP_FAILURE_HINT for hosts without systemd) and defines resolve_sources, which appends the host's paths to
 # CANDIDATES, plus an optional stage_extra hook that writes into $STAGING_DIR.
 # Only those simple assignments run at source time, so a broken host path can
 # never stop the failure notifier. Snapshots those paths plus
@@ -181,12 +181,12 @@ if [[ "${1:-}" == "notify-failure" ]]; then
   [[ -n "${NTFY_URL:-}" || -n "$KUMA_PUSH_URL" ]] \
     || printf 'warning: NTFY_URL and KUMA_PUSH_URL are both empty; failure recorded but nobody alerted\n' >&2
   if ntfy_config_valid; then
-    notify "$BACKUP_LABEL backup FAILED" urgent rotating_light "systemd OnFailure — see: journalctl -u $BACKUP_UNIT"
+    notify "$BACKUP_LABEL backup FAILED" urgent rotating_light "${BACKUP_FAILURE_HINT:-systemd OnFailure — see: journalctl -u $BACKUP_UNIT}"
   else
     printf 'warning: invalid ntfy configuration; failure status recorded without an ntfy alert\n' >&2
   fi
   if kuma_config_valid; then
-    kuma_push down "systemd OnFailure — see journalctl -u $BACKUP_UNIT"
+    kuma_push down "${BACKUP_FAILURE_HINT:-systemd OnFailure — see journalctl -u $BACKUP_UNIT}"
   else
     printf 'warning: invalid KUMA_PUSH_URL; failure status recorded without a Kuma push\n' >&2
   fi

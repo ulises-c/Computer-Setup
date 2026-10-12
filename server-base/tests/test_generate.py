@@ -96,8 +96,13 @@ class GenerateTests(unittest.TestCase):
                 self.assertEqual(widgets[1]['mappings'][0]['scale'],'1/1073741824')
                 self.assertEqual(widgets[1]['mappings'][0]['suffix'],'GiB usable')
                 software=widgets[2]['mappings'][1]
-                self.assertEqual(software['field'],'linux_distro')
-                self.assertEqual(software['additionalField']['field'],'os_version')
+                if server['facts'].get('software_prefix'):
+                    # macOS: Glances has no distro; os_version is the macOS release.
+                    self.assertEqual(software['field'],'os_version')
+                    self.assertEqual(software['prefix'],server['facts']['software_prefix'])
+                else:
+                    self.assertEqual(software['field'],'linux_distro')
+                    self.assertEqual(software['additionalField']['field'],'os_version')
                 self.assertEqual([w['refreshInterval'] for w in widgets],[3600000]*3)
                 self.assertIn(server['facts']['platform'], str(widgets))
                 self.assertIn(server['facts']['graphics'], str(widgets))
