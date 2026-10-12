@@ -11,6 +11,7 @@ touching any server's scripts.
 | `game-*`     | `DISCORD_WEBHOOK_GAME`   | game server           |
 | `pi-*`       | `DISCORD_WEBHOOK_PI`     | Raspberry Pi          |
 | `nas-*`      | `DISCORD_WEBHOOK_NAS`    | NAS                   |
+| `mac-*`      | `DISCORD_WEBHOOK_MAC`    | Mac mini              |
 | other        | `DISCORD_WEBHOOK_DEFAULT`| dropped when unset    |
 
 Messages arrive as embeds: the ntfy title, the message body, a colour from the

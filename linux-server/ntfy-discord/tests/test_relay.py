@@ -85,6 +85,7 @@ class RelayTests(unittest.TestCase):
         self.assertEqual(relay.webhook_for("other-x", {"default": "D"}), "D")
         self.assertIsNone(relay.webhook_for("other-x", {"server": "S"}))
         self.assertEqual(relay.webhook_for("nas-backup", {"nas": "N", "default": "D"}), "N")
+        self.assertEqual(relay.webhook_for("mac-backup", {"mac": "M", "default": "D"}), "M")
 
     def test_stale_messages_are_skipped_after_an_outage(self):
         sent = []
