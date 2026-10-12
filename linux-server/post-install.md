@@ -174,7 +174,7 @@ Everything Forgejo needs to restore from scratch lives in `FORGEJO_DATA_PATH` (d
 #### Runner status monitor
 
 A host timer (`runner-status.sh`) asks Forgejo whether the Mac mini Actions
-runner (see [`../macOS/forgejo-runner/`](../macOS/forgejo-runner/)) is
+runner (see [`../macos-server/forgejo-runner/`](../macos-server/forgejo-runner/)) is
 connected, and surfaces it three ways: the homepage **forgejo-runner** card,
 an Uptime Kuma push monitor, and an ntfy alert when it drops (and recovers).
 Optional — skip if you aren't running CI.
