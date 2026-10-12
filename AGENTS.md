@@ -4,7 +4,8 @@ Personal machine-provisioning repo: one unified installer for macOS, Linux
 desktop (Ubuntu/Arch), and an Ubuntu Server LTS home server, plus per-platform
 configs and docs. Two more servers have their own bootstraps on the same engine:
 the game server (`linux-game-server/`) and a Raspberry Pi (`<pi-hostname>`,
-Debian) in `linux-pi/`. All three share the layer in `server-base/`.
+Debian) in `linux-pi/`. The always-on Mac mini has its own bootstrap in
+`macos-server/` (launchd + OrbStack). All four share the layer in `server-base/`.
 
 This file is the shared instruction set for **every** coding agent working in
 this repo (Claude Code, opencode, Codex, …). `CLAUDE.md` imports it and adds
@@ -59,6 +60,10 @@ Claude-Code-only notes on top; keep cross-agent guidance here, not there.
   `config/{services,settings}.yaml` from `<host>/homepage/*.local.yaml`. Never
   edit the generated files; CI runs `generate.py --check`. The base tool set is
   the `server-base` tag in `packages.json`.
+- `macos-server/` — the Mac mini's server role: LaunchAgents rendered by
+  `agents.sh` (native Glances, status exporter, backup, local inference), OrbStack
+  compose stacks, `serve.conf`, power settings and the Forgejo runner.
+  `INVENTORY.md` records the machine's state ahead of its reinstall.
 - `macOS/`, `linux-desktop/`, `linux-server/` — platform-specific configs,
   docs, and thin shim scripts that exec the root entrypoints. `linux-pi/` and
   `linux-game-server/` hold those hosts' service stacks (same

@@ -9,6 +9,13 @@ in [UNIFICATION.md](UNIFICATION.md).
 ## Unreleased — Shared server base and cross-linked dashboards
 
 ### Added
+- `macos-server/`: the always-on Mac mini joins the fleet with its own
+  cross-linked Homepage (OrbStack), native Glances, a LaunchAgent status
+  exporter feeding its service cards, nightly restic backups to the main server
+  as the login user, `mlx_lm.server` installed but off by default, and a power
+  policy script replacing Caffeine. `INVENTORY.md` records the machine's state
+  before its reinstall. The Forgejo runner moved here from `macOS/`, and
+  `server-base/serve.sh` runs on macOS.
 - `server-base/`: one layer for every server. Base Glances, Portainer, Watchtower
   and Homepage compose services that each host `extends`; `serve.sh` publishing
   a host's routes from its `serve.conf` (one tailnet node per host); a shared

@@ -1,8 +1,10 @@
 # server-base — the layer every server shares
 
 Every server in this repo (the main NAS server in `linux-server/`, the Raspberry
-Pi in `linux-pi/`, the game server in `linux-game-server/`) runs the same base
-before its own services. This directory owns that base once; host directories
+Pi in `linux-pi/`, the game server in `linux-game-server/`, the Mac mini in
+`macos-server/`) runs the same base before its own services. The Mac mini
+follows it where macOS allows; its deviations (OrbStack, native Glances,
+launchd, no Cockpit) are listed in `macos-server/README.md`. This directory owns that base once; host directories
 consume it and add only what is genuinely theirs.
 
 ## What counts as base
@@ -45,6 +47,7 @@ report that host down.
 | main server | `setup.sh --profile server` | one sidecar node per service (moves to one node under #86) |
 | Pi | `linux-pi/setup.sh` | base services on the Pi's node; its other services keep sidecars until #86 |
 | game server | `linux-game-server/setup.sh` | one node, `/<service>` paths |
+| Mac mini | `macos-server/setup.sh` | one node, `/<service>` paths |
 
 ## AdGuard replicas
 
@@ -168,6 +171,7 @@ host's `.env` without sourcing it.
 | main server | local drive (`/mnt/wd1tb`, copy on `/mnt/wd14tb`) | `backup.service` |
 | Pi | main server over SFTP | `pi-backup.service` |
 | game server | main server over SFTP | `game-backup.service` |
+| Mac mini | main server over SFTP | LaunchAgent `net.computer-setup.mac-backup` (login user) |
 
 Install or re-render a host's units with `sudo bash <host>/backup/setup.sh`
 (`--dry-run` to preview). Setup captures the Dragonwilds install path into the

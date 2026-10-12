@@ -357,6 +357,24 @@ still separate from the unified Ubuntu Server profile.
       runs, the Pi's Homepage backups card shows an API error because the status
       file moved to `/var/lib/computer-setup-backup/pi-backup/`
 
+## macos-server — Mac mini ([#94](https://github.com/ulises-c/Computer-Setup/issues/94))
+
+See [macos-server/README.md](../macos-server/README.md) and the pre-reinstall
+[INVENTORY.md](../macos-server/INVENTORY.md).
+
+- [ ] Finish OrbStack onboarding, then `bash macos-server/serve.sh` (Homepage at
+      `/`, Hermes WebUI moves to `:8787`)
+- [ ] Apply `power/power.sh` (sudo), then quit Caffeine and remove it from Login Items
+- [ ] Backups: `sftp-target.sh mac` on the main server, `connect.sh connect`,
+      `agents.sh install`, first run, then `restore-check`-style restore from the Mac
+- [ ] Set `HOMEPAGE_VAR_MAC_HOMEPAGE_DOMAIN` in the other three hosts'
+      `homepage/.env` and recreate their Homepage containers
+- [ ] Uptime Kuma: monitor the Mac's dashboard and a backup push monitor
+- [ ] Hermes WebUI crash loop (Python environment) and its `0.0.0.0` bind
+- [ ] Reinstall decision: FileVault vs automatic login (power-cut recovery)
+- [ ] Remaining #94 items: runner labels and isolation, inference ACL before any
+      tailnet exposure, Prometheus metrics
+
 ## Server base (`server-base/`)
 
 Shared layer for every server; see [server-base/README.md](../server-base/README.md).
