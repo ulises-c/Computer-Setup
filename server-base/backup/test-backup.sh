@@ -245,7 +245,7 @@ if PATH="$stub:$PATH" RESTIC_LOG="$tmp/restic.log" bash "$server/backup/backup.s
 fi
 
 # Every host's sources.sh must source cleanly under errexit on a bare checkout.
-for host in linux-server linux-pi linux-game-server; do
+for host in linux-server linux-pi linux-game-server macos-server; do
   (
     set -euo pipefail
     # shellcheck disable=SC2034  # consumed by the sourced sources.sh
@@ -274,10 +274,43 @@ for host in linux-server linux-pi linux-game-server; do
     env_value() { :; }
     # shellcheck source=/dev/null
     source "$REPO/$host/backup/sources.sh"
-    [[ -n "$BACKUP_NAME" && -n "$BACKUP_LABEL" && "$BACKUP_UNIT" == *.service ]]
+    # The Mac's backup is a launchd agent, not a systemd service.
+    [[ -n "$BACKUP_NAME" && -n "$BACKUP_LABEL" && ( "$BACKUP_UNIT" == *.service || "$host" == macos-server ) ]]
     resolve_sources
   ) || fail "$host/backup/sources.sh does not source cleanly"
 done
+
+# Mac mini (runs as the login user): Hermes databases are staged with SQLite's
+# online backup, the install inventory is recorded, and a failure alert points
+# at the launchd log instead of journalctl.
+mac="$(make_host mac macos-server)"
+mac_home="$tmp/mac-home"
+mkdir -p "$mac_home/.hermes/skills" "$mac_home/Library/LaunchAgents" "$mac/homepage/config"
+printf 'SQLite format 3\0x' >"$mac_home/.hermes/state.db"
+printf 'model: x\n' >"$mac_home/.hermes/config.yaml"
+mac_stub="$tmp/mac-stub"
+mkdir -p "$mac_stub"
+for tool in sw_vers pmset launchctl brew; do
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >>"$MAC_TOOL_LOG"\n' >"$mac_stub/$tool"
+done
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >>"$CURL_LOG"\n' >"$mac_stub/curl"
+chmod +x "$mac_stub"/*
+printf 'RESTIC_REPOSITORY=sftp:mac-backup-target:/primary\nRESTIC_PASSWORD=test\n' >"$mac/backup/.env"
+rm -f "$tmp/restic.log"
+out="$(HOME="$mac_home" PATH="$mac_stub:$stub:$PATH" RESTIC_LOG="$tmp/restic.log" MAC_TOOL_LOG="$tmp/mac-tools.log" \
+  bash "$mac/backup/backup.sh" 2>&1)" || fail "mac run failed: $out"
+backup_line="$(grep '^backup ' "$tmp/restic.log")"
+for want in "$mac_home/.hermes/config.yaml" "$mac_home/.hermes/skills" "$mac_home/Library/LaunchAgents" \
+            "$mac/homepage/config" "$mac_home/Library/Caches/computer-setup/mac-backup-staging" "--tag mac-nightly"; do
+  [[ "$backup_line" == *"$want"* ]] || fail "mac restic backup missing $want: $backup_line"
+done
+[[ "$backup_line" != *"$mac_home/.hermes "* ]] || fail "mac backup took all of ~/.hermes: $backup_line"
+[[ "$out" == *"sqlite snapshot: ~/.hermes/state.db"* ]] || fail "mac Hermes database not staged: $out"
+grep -q '^bundle dump' "$tmp/mac-tools.log" || fail "mac Brewfile inventory not recorded"
+[[ "$(jq -r .status "$mac/status/www/backup-status.json")" == success ]] || fail "mac status JSON not written"
+HOME="$mac_home" PATH="$mac_stub:$stub:$PATH" CURL_LOG="$tmp/curl.log" NTFY_URL=https://ntfy.example \
+  bash "$mac/backup/backup.sh" notify-failure 2>/dev/null || fail "mac notifier failed"
+grep -q 'launchd run failed' "$tmp/curl.log" || fail "mac failure alert lacks the launchd log hint"
 
 # A repointed game path must fail rather than backing up a different tree.
 if bash -c '

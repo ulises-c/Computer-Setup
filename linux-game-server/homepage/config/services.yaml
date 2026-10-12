@@ -173,6 +173,61 @@
                   field: "os_version"
                   format: "text"
                   prefix: "·"
+    - mac server:
+        icon: "sh-apple-light.svg"
+        id: "server-mac"
+        href: "https://{{HOMEPAGE_VAR_MAC_HOMEPAGE_DOMAIN}}/"
+        description: "Mac mini — CI runner, Hermes and local inference"
+        siteMonitor: "https://{{HOMEPAGE_VAR_MAC_HOMEPAGE_DOMAIN}}"
+        widgets:
+          - type: "customapi"
+            url: "https://{{HOMEPAGE_VAR_MAC_HOMEPAGE_DOMAIN}}/glances/api/4/system"
+            refreshInterval: 3600000
+            display: "list"
+            mappings:
+              - field: "hostname"
+                label: "Platform"
+                format: "text"
+                remap:
+                  - any: true
+                    to: "Apple Mac mini (2024) · Mac16,10"
+              - field: "hostname"
+                label: "Board / SoC"
+                format: "text"
+                remap:
+                  - any: true
+                    to: "Apple M4 SoC"
+              - field: "hostname"
+                label: "CPU"
+                format: "text"
+                remap:
+                  - any: true
+                    to: "Apple M4 · 10 cores (4P + 6E) / 10 threads"
+          - type: "customapi"
+            url: "https://{{HOMEPAGE_VAR_MAC_HOMEPAGE_DOMAIN}}/glances/api/4/mem"
+            refreshInterval: 3600000
+            display: "list"
+            mappings:
+              - field: "total"
+                label: "Memory"
+                format: "float"
+                scale: "1/1073741824"
+                suffix: "GiB usable"
+          - type: "customapi"
+            url: "https://{{HOMEPAGE_VAR_MAC_HOMEPAGE_DOMAIN}}/glances/api/4/system"
+            refreshInterval: 3600000
+            display: "list"
+            mappings:
+              - field: "hostname"
+                label: "Graphics"
+                format: "text"
+                remap:
+                  - any: true
+                    to: "Apple M4 10-core GPU · integrated · unified memory"
+              - field: "os_version"
+                label: "Software"
+                format: "text"
+                prefix: "macOS"
 
 - Game server:
     - glances:

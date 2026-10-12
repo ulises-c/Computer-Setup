@@ -40,7 +40,7 @@ for platform in macos ubuntu arch server; do
 done
 
 # Host bootstraps outside the root platform matrix share the server-base layer.
-for host in linux-game-server linux-pi; do
+for host in linux-game-server linux-pi macos-server; do
   out=""
   if ! out="$(bash "$REPO_ROOT/$host/setup.sh" --dry-run 2>&1)"; then
     printf 'FAIL %s: setup.sh --dry-run exited non-zero; last lines:\n' "$host" >&2

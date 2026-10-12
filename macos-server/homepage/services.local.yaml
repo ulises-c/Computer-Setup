@@ -1,0 +1,111 @@
+- Mac server:
+    - glances:
+        icon: sh-glances.svg
+        href: https://{{HOMEPAGE_VAR_MAC_HOMEPAGE_DOMAIN}}/glances/
+        description: System monitor (native LaunchAgent)
+        widget:
+          type: glances
+          url: http://127.0.0.1:61208
+          version: 4
+          metric: cpu
+    - portainer:
+        icon: sh-portainer-light.svg
+        href: https://{{HOMEPAGE_VAR_MAC_HOMEPAGE_DOMAIN}}:9443/
+        description: Docker manager (OrbStack)
+        server: my-docker
+        container: portainer
+    - watchtower:
+        icon: sh-watchtower.svg
+        description: Automatic container updates
+        server: my-docker
+        container: watchtower
+    - backups:
+        icon: sh-restic
+        description: restic → main server (wd1tb + wd14tb)
+        server: my-docker
+        container: host-status
+        widget:
+          type: customapi
+          url: http://127.0.0.1:8099/backup-status.json
+          refreshInterval: 600000
+          mappings:
+            - field: status
+              label: Status
+              format: text
+            - field: last_run
+              label: Last run
+              format: relativeDate
+            - field: repo_size_bytes
+              label: Repo size
+              format: bytes
+    - launch agents:
+        icon: mdi-rocket-launch-#60a5fa
+        description: LaunchAgent state, refreshed every minute
+        widgets:
+          - type: customapi
+            url: http://127.0.0.1:8099/agents.json
+            refreshInterval: 60000
+            display: dynamic-list
+            mappings:
+              items: rows
+              name: name
+              label: label
+          - type: customapi
+            url: http://127.0.0.1:8099/agents.json
+            refreshInterval: 60000
+            display: list
+            mappings:
+              - field: updated
+                label: Export updated
+                format: relativeDate
+                scale: 1000
+
+- Mac services:
+    - forgejo runner:
+        icon: sh-forgejo.svg
+        description: Forgejo Actions runner — macos-latest jobs on the host
+        widget:
+          type: customapi
+          url: http://127.0.0.1:8099/agents.json
+          refreshInterval: 60000
+          display: list
+          mappings:
+            - field:
+                agents:
+                  forgejo-runner: state
+              label: LaunchAgent
+              format: text
+    - hermes webui:
+        icon: mdi-robot-happy-#a78bfa
+        href: https://{{HOMEPAGE_VAR_MAC_HOMEPAGE_DOMAIN}}:8787/
+        description: Hermes agent web UI
+        siteMonitor: http://127.0.0.1:8787
+    - hermes gateway:
+        icon: mdi-robot-#a78bfa
+        description: Hermes messaging gateway
+        widget:
+          type: customapi
+          url: http://127.0.0.1:8099/agents.json
+          refreshInterval: 60000
+          display: list
+          mappings:
+            - field:
+                agents:
+                  hermes-gateway: state
+              label: LaunchAgent
+              format: text
+    - local inference:
+        icon: mdi-brain-#f472b6
+        description: mlx_lm.server, loopback only — off until inference/run.sh start
+        siteMonitor: http://127.0.0.1:8080/v1/models
+        widget:
+          type: customapi
+          url: http://127.0.0.1:8099/agents.json
+          refreshInterval: 60000
+          display: list
+          mappings:
+            - field:
+                agents:
+                  mlx-server: state
+              label: LaunchAgent
+              format: text

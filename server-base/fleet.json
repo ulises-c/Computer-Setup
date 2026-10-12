@@ -29,6 +29,16 @@
       "description": "Dedicated game servers",
       "domain_var": "GAME_HOMEPAGE_DOMAIN",
       "glances_url": "https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/glances"
+    },
+    {
+      "key": "mac",
+      "facts": {"platform": "Apple Mac mini (2024) · Mac16,10", "board": "Apple M4 SoC", "cpu": "Apple M4 · 10 cores (4P + 6E) / 10 threads", "graphics": "Apple M4 10-core GPU · integrated · unified memory", "software_prefix": "macOS"},
+      "dir": "macos-server",
+      "name": "mac server",
+      "icon": "sh-apple-light.svg",
+      "description": "Mac mini — CI runner, Hermes and local inference",
+      "domain_var": "MAC_HOMEPAGE_DOMAIN",
+      "glances_url": "https://{{HOMEPAGE_VAR_MAC_HOMEPAGE_DOMAIN}}/glances"
     }
   ],
   "shared_services": {
@@ -59,6 +69,11 @@
       "title": "Game Server",
       "topbar": {"label": "game server", "grouped": true, "net": "enp2s0", "disks": ["/etc/hostname"], "diskLabels": {"/etc/hostname": "System disk"}, "gpuTypes": {"nvidia0": "dGPU"}, "temperatureLabels": ["NVMe"], "wifi": false, "safeSSDHealth": true, "filesystemIntervalMs": 300000, "smartIntervalMs": 600000},
       "accents": {"Servers": "indigo", "Game server": "blue", "Games": "rose", "Shared services": "cyan"}
+    },
+    "macos-server": {
+      "title": "Mac Server",
+      "topbar": {"label": "mac server", "grouped": true, "net": "en0", "disks": ["/System/Volumes/Data"], "diskLabels": {"/System/Volumes/Data": "System disk"}, "gpu": false, "wifi": false, "safeSSDHealth": false, "filesystemIntervalMs": 300000, "smartIntervalMs": 600000},
+      "accents": {"Servers": "indigo", "Mac server": "blue", "Mac services": "emerald", "Shared services": "cyan"}
     }
   }
 }

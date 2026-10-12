@@ -1,0 +1,12 @@
+# Rendered to glances.conf (gitignored) by agents.sh with this host's tailnet
+# name. Native Glances, not the server-base container: in OrbStack's VM it would
+# see the VM, not the Mac.
+[outputs]
+# DNS-rebinding guard: Host headers Glances answers (loopback + the tailnet name).
+webui_allowed_hosts=@ALLOWED_HOSTS@
+
+[fs]
+# The APFS data volume is the meaningful "disk"; the sealed system volume at /
+# and the other APFS helper volumes share its container.
+show=^/System/Volumes/Data$
+alias=/System/Volumes/Data:system

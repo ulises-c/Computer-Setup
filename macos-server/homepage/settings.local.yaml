@@ -1,0 +1,6 @@
+  Mac server:
+    style: row
+    columns: 3
+  Mac services:
+    style: row
+    columns: 2

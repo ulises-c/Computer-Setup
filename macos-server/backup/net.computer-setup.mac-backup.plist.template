@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>net.computer-setup.mac-backup</string>
+    <key>ProgramArguments</key>
+    <array>
+        <!-- The engine needs bash 4+; macOS ships 3.2 as /bin/bash. -->
+        <string>@BREW@/bin/bash</string>
+        <string>@REPO@/macos-server/backup/run.sh</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>@BREW@/bin:@HOME@/.orbstack/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+    <!-- 03:00 local, with every other server; each writes its own repository. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>3</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>LowPriorityIO</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>@LOG_DIR@/mac-backup.log</string>
+    <key>StandardErrorPath</key>
+    <string>@LOG_DIR@/mac-backup.log</string>
+</dict>
+</plist>

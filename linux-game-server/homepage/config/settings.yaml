@@ -29,7 +29,7 @@ topbarExtras:
 layout:
   Servers:
     style: row
-    columns: 3
+    columns: 4
   Game server:
     style: row
     columns: 2
