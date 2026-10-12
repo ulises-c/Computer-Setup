@@ -1,0 +1,4 @@
+description: 'Implementation worker (Bedrock Claude Opus): writes and tests code in
+  git worktrees, fixes bugs, runs builds and long engineering jobs. Hands code changes
+  to review-openai for review.'
+description_auto: false

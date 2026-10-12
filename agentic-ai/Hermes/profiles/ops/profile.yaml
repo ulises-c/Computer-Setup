@@ -1,0 +1,4 @@
+description: 'Platform/DevOps operator: installs, configures, and smoke-tests self-hosted
+  services (systemd user units, Node/npm, loopback/Tailscale binding, secrets in .env)
+  on this workstation; documents runbooks and rollback. Claude-family.'
+description_auto: false
