@@ -367,8 +367,9 @@ See [macos-server/README.md](../macos-server/README.md) and the pre-reinstall
 - [ ] Apply `power/power.sh` (sudo), then quit Caffeine and remove it from Login Items
 - [ ] Backups: `sftp-target.sh mac` on the main server, `connect.sh connect`,
       `agents.sh install`, first run, then `restore-check`-style restore from the Mac
-- [ ] Set `HOMEPAGE_VAR_MAC_HOMEPAGE_DOMAIN` in the other three hosts'
-      `homepage/.env` and recreate their Homepage containers
+- [x] Set `HOMEPAGE_VAR_MAC_HOMEPAGE_DOMAIN` in the other three hosts'
+      `homepage/.env` and recreate their Homepage containers (all three list
+      the mac server card; `/glances` already published on the Mac's node)
 - [ ] Uptime Kuma: monitor the Mac's dashboard and a backup push monitor
 - [ ] Hermes WebUI crash loop (Python environment) and its `0.0.0.0` bind
 - [ ] Reinstall decision: FileVault vs automatic login (power-cut recovery)
