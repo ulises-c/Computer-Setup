@@ -4,13 +4,20 @@
 server-* topics go to DISCORD_WEBHOOK_SERVER, game-* to DISCORD_WEBHOOK_GAME,
 pi-* to DISCORD_WEBHOOK_PI, nas-* to DISCORD_WEBHOOK_NAS, mac-* to
 DISCORD_WEBHOOK_MAC; anything else to DISCORD_WEBHOOK_DEFAULT if set.
+
+ntfy has no wildcard subscription, so a topic missing from RELAY_TOPICS never
+reaches Discord. When RELAY_CACHE_DB points at ntfy's message cache, a daily
+audit compares the topics ntfy actually received against RELAY_TOPICS and posts
+one warning (to the server channel) whenever a new unrelayed topic appears.
 """
 from __future__ import annotations
 
 import json
 import os
 import re
+import sqlite3
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -31,6 +38,9 @@ STREAM_TIMEOUT_SECONDS = 90
 # (30 days); anything older than this is stale and skipped rather than flooding Discord.
 MAX_MESSAGE_AGE_SECONDS = 24 * 3600
 DELIVERY_ATTEMPTS = 5
+AUDIT_INTERVAL_SECONDS = 24 * 3600
+# Let the stream connect first; the audit is not urgent.
+AUDIT_FIRST_DELAY_SECONDS = 60
 
 
 def log(message: str) -> None:
@@ -59,6 +69,8 @@ def load_config(env: dict[str, str]) -> dict[str, Any]:
         "webhooks": webhooks,
         "token": env.get("NTFY_TOKEN", ""),
         "state_file": Path(env.get("RELAY_STATE_FILE", "/state/last-id")),
+        "cache_db": env.get("RELAY_CACHE_DB", "").strip(),
+        "audit_state_file": Path(env.get("RELAY_AUDIT_STATE_FILE", "/state/unrelayed-topics")),
     }
 
 
@@ -174,11 +186,85 @@ def run_once(config: dict[str, Any], since: str | None) -> str | None:
         return relay_events(response, config, since)
 
 
+def cached_topics(db_path: str) -> dict[str, tuple[int, int]]:
+    """{topic: (message count, last message time)} from ntfy's cache, read-only."""
+    uri = "file:" + urllib.parse.quote(db_path) + "?mode=ro"
+    with sqlite3.connect(uri, uri=True, timeout=10) as db:
+        rows = db.execute("SELECT topic, COUNT(*), MAX(time) FROM messages GROUP BY topic").fetchall()
+    return {str(topic): (int(count), int(last or 0)) for topic, count, last in rows if TOPIC_RE.match(str(topic))}
+
+
+def audit_findings(config: dict[str, Any], seen: dict[str, tuple[int, int]]) -> dict[str, str]:
+    """Topics whose messages cannot reach Discord, with the reason."""
+    findings = {}
+    for topic in sorted(seen):
+        if topic not in config["topics"]:
+            findings[topic] = "not in RELAY_TOPICS"
+    for topic in config["topics"]:
+        if webhook_for(topic, config["webhooks"]) is None:
+            findings[topic] = "in RELAY_TOPICS but no webhook matches its prefix"
+    return findings
+
+
+def audit_payload(findings: dict[str, str], seen: dict[str, tuple[int, int]]) -> dict[str, Any]:
+    lines = []
+    for topic, reason in findings.items():
+        count, last = seen.get(topic, (0, 0))
+        when = f", last <t:{last}:R>" if last else ""
+        lines.append(f"`{topic}`: {reason} ({count} message{'s' if count != 1 else ''} in the ntfy cache{when})")
+    lines.append("")
+    lines.append("Add the topic to RELAY_TOPICS (and a matching DISCORD_WEBHOOK_*) in "
+                 "linux-server/ntfy-discord/.env on the main server, then `docker compose up -d`.")
+    return discord_payload({
+        "topic": "ntfy-discord-audit",
+        "title": "ntfy topics not reaching Discord",
+        "message": "\n".join(lines),
+        "priority": 4,
+        "time": int(time.time()),
+    })
+
+
+def run_audit(config: dict[str, Any], send: Callable[[str, dict[str, Any]], bool] = deliver) -> dict[str, str]:
+    """Check once; alert only when the set of problem topics gains a new entry."""
+    seen = cached_topics(config["cache_db"])
+    findings = audit_findings(config, seen)
+    path = config["audit_state_file"]
+    try:
+        known = set(path.read_text().split())
+    except OSError:
+        known = set()
+    new = set(findings) - known
+    if findings:
+        log("audit: not relayed: " + ", ".join(f"{t} ({r})" for t, r in findings.items()))
+    url = config["webhooks"].get("server") or config["webhooks"].get("default") or next(iter(config["webhooks"].values()))
+    if new and not send(url, audit_payload(findings, seen)):
+        return findings
+    try:
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text("".join(f"{t}\n" for t in sorted(findings)))
+        os.replace(tmp, path)
+    except OSError as error:
+        log(f"warning: cannot save audit state to {path}: {error}")
+    return findings
+
+
+def audit_loop(config: dict[str, Any]) -> None:
+    time.sleep(AUDIT_FIRST_DELAY_SECONDS)
+    while True:
+        try:
+            run_audit(config)
+        except (sqlite3.Error, OSError) as error:
+            log(f"warning: topic audit failed: {error}")
+        time.sleep(AUDIT_INTERVAL_SECONDS)
+
+
 def main() -> int:
     config = load_config(dict(os.environ))
     since = read_state(config["state_file"])
     log(f"relaying {len(config['topics'])} ntfy topics to Discord"
         + (f", resuming after {since}" if since else ""))
+    if config["cache_db"]:
+        threading.Thread(target=audit_loop, args=(config,), daemon=True).start()
     backoff = 5
     while True:
         try:

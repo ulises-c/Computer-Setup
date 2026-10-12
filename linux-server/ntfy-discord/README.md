@@ -42,7 +42,13 @@ Mentions are disabled, so message text can never ping anyone.
 - Discord rate limits (HTTP 429) are honoured; network and 5xx errors are
   retried five times, then the message is dropped and logged.
 - ntfy has no wildcard subscription: when a script starts using a new topic,
-  add it to `RELAY_TOPICS` and `docker compose up -d`.
+  add it to `RELAY_TOPICS` and `docker compose up -d`. A daily audit catches the
+  ones that are forgotten: it reads ntfy's message cache (mounted read-only) and,
+  when a topic that ntfy received is missing from `RELAY_TOPICS`, or a listed
+  topic has no matching webhook, posts one "ntfy topics not reaching Discord"
+  warning to the server channel. It warns again only when a new topic joins
+  the list (`state/unrelayed-topics`); the container log names every unrelayed
+  topic on each check.
 - If ntfy or this server is down, nothing reaches Discord either; the relay is a
   convenience path, not a second alerting channel.
 - Messages leave the tailnet for Discord. They are the same text ntfy already

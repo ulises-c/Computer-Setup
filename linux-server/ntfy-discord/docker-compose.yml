@@ -18,7 +18,12 @@ services:
         required: true
     environment:
       - RELAY_STATE_FILE=/state/last-id
+      # Daily audit: topics ntfy received that are not relayed (relay.py).
+      - RELAY_CACHE_DB=/ntfy-cache/cache.db
+      - RELAY_AUDIT_STATE_FILE=/state/unrelayed-topics
     volumes:
       - ./relay.py:/app/relay.py:ro
       - ./state:/state
+      # ntfy's message cache, read-only, for the audit.
+      - ../ntfy/cache:/ntfy-cache:ro
     restart: unless-stopped

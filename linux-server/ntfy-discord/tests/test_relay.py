@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import sqlite3
 import tempfile
 import threading
 import unittest
@@ -151,6 +152,66 @@ class RelayTests(unittest.TestCase):
             self.assertIsNone(relay.read_state(path))
             path.write_text("../../etc\n")
             self.assertIsNone(relay.read_state(path))
+
+
+class AuditTests(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.db = Path(self.dir.name) / "cache.db"
+        with sqlite3.connect(self.db) as db:
+            db.execute("CREATE TABLE messages (mid TEXT, time INT, topic TEXT, message TEXT)")
+            db.executemany("INSERT INTO messages VALUES (?, ?, ?, '')", [
+                ("a", NOW - 10, "server-backup"), ("b", NOW - 5, "server-backup"),
+                ("c", NOW, "mac-runner"), ("d", NOW, "../evil"),
+            ])
+        self.config = {
+            "topics": ["server-backup", "ups-power"],
+            "webhooks": {"server": "S", "mac": "M"},
+            "cache_db": str(self.db),
+            "audit_state_file": Path(self.dir.name) / "unrelayed-topics",
+        }
+        self.sent = []
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def send(self, url, payload):
+        self.sent.append((url, payload))
+        return True
+
+    def test_reads_cached_topics_read_only_and_ignores_invalid_names(self):
+        self.assertEqual(relay.cached_topics(str(self.db)), {"server-backup": (2, NOW - 5), "mac-runner": (1, NOW)})
+
+    def test_flags_unlisted_and_unroutable_topics(self):
+        findings = relay.run_audit(self.config, send=self.send)
+        self.assertEqual(findings, {"mac-runner": "not in RELAY_TOPICS",
+                                    "ups-power": "in RELAY_TOPICS but no webhook matches its prefix"})
+        self.assertEqual(len(self.sent), 1)
+        url, payload = self.sent[0]
+        self.assertEqual(url, "S")
+        text = payload["embeds"][0]["description"]
+        self.assertIn("`mac-runner`: not in RELAY_TOPICS (1 message", text)
+        self.assertIn("RELAY_TOPICS", text)
+        self.assertEqual(payload["allowed_mentions"], {"parse": []})
+
+    def test_alerts_once_per_new_topic(self):
+        relay.run_audit(self.config, send=self.send)
+        relay.run_audit(self.config, send=self.send)
+        self.assertEqual(len(self.sent), 1)
+        with sqlite3.connect(self.db) as db:
+            db.execute("INSERT INTO messages VALUES ('e', ?, 'game-new', '')", (NOW,))
+        relay.run_audit(self.config, send=self.send)
+        self.assertEqual(len(self.sent), 2)
+
+    def test_failed_delivery_retries_next_time(self):
+        relay.run_audit(self.config, send=lambda url, payload: False)
+        relay.run_audit(self.config, send=self.send)
+        self.assertEqual(len(self.sent), 1)
+
+    def test_clean_cache_sends_nothing(self):
+        self.config["topics"] = ["server-backup", "mac-runner"]
+        self.assertEqual(relay.run_audit(self.config, send=self.send), {})
+        self.assertEqual(self.sent, [])
 
 
 if __name__ == "__main__":
