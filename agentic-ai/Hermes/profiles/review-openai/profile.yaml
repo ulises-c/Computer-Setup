@@ -1,0 +1,4 @@
+description: 'Read-only reviewer on Bedrock GPT. Two roles: the OpenAI seat for double-blind-review,
+  and the kanban reviewer for work done by Claude-family workers (coder, researcher).
+  Never implements.'
+description_auto: false

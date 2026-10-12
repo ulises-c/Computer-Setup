@@ -21,6 +21,26 @@ for widget in "$REPO_DIR"/tui-widgets/*.mjs; do
   check_link "$HERMES_HOME_DIR/tui-widgets/$(basename "$widget")" "$widget"
 done
 
+printf '\n=== profiles ===\n'
+for profile_src in "$REPO_DIR"/profiles/*/; do
+  profile="$(basename "$profile_src")"
+  for file in config.yaml profile.yaml SOUL.md; do
+    check_link "$HERMES_HOME_DIR/profiles/$profile/$file" "$profile_src$file"
+  done
+  for script in "${profile_src}"scripts/*; do
+    [[ -f "$script" ]] || continue
+    if cmp -s "$script" "$HERMES_HOME_DIR/profiles/$profile/scripts/$(basename "$script")"; then pass "$profile/scripts/$(basename "$script") matches"; else fail "$profile/scripts/$(basename "$script") missing or differs; run install.sh"; fi
+  done
+done
+if assignees="$(hermes kanban assignees 2>/dev/null)"; then
+  for profile_src in "$REPO_DIR"/profiles/*/; do
+    profile="$(basename "$profile_src")"
+    if grep -qE "^$profile +yes" <<< "$assignees"; then pass "kanban assignee $profile"; else fail "kanban assignee $profile not on disk"; fi
+  done
+else
+  fail "hermes kanban assignees failed"
+fi
+
 printf '\n=== tools ===\n'
 for tool in hermes jq git; do
   if command -v "$tool" >/dev/null; then pass "$tool"; else fail "$tool not on PATH"; fi

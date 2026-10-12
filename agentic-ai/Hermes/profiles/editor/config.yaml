@@ -1,0 +1,27 @@
+model:
+  default: claude-opus-5-5
+  provider: anthropic
+_config_version: 49
+agent:
+  reasoning_effort: high
+bedrock:
+  region: us-east-1
+skills:
+  auto_load:
+    - ponytail
+    - simple-english
+    - humanizer
+  external_dirs:
+    - ~/github/Computer-Setup/agentic-ai/skills
+    - ~/forgejo/hermes-config-work/skills
+    - ~/forgejo/hermes-config/skills
+fallback_providers:
+  - provider: openai-codex
+    model: gpt-6.1-sol
+  - provider: bedrock
+    model: global.anthropic.claude-opus-5-5
+  - provider: bedrock
+    model: global.openai.gpt-6.1-sol
+onboarding:
+  seen:
+    tool_progress_prompt: true

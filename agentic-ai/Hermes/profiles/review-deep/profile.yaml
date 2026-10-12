@@ -1,0 +1,4 @@
+description: Read-only final adversarial reviewer on Bedrock GPT at extra-high reasoning
+  effort. Use for the last cross-family gate on a whole PR/integration branch (correctness,
+  security, privacy leaks, runbook safety). Never implements.
+description_auto: false

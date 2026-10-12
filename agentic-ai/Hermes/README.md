@@ -14,9 +14,30 @@ account) and `hermes-config` (personal account).
 | `bin/hermes-config` | Deterministic skill sync and cron backup (below). Linked to `~/.local/bin`. |
 | `lib/provenance.py` | Read-only edit-history classifier used by `hermes-config`. |
 | `tui-widgets/codeburn.mjs` | `/codeburn` ambient card: spend today/month + Claude/Codex quota. Linked to `$HERMES_HOME/tui-widgets/`. |
+| `profiles/<role>/` | Kanban role profiles (below). |
 | `install.sh` / `validate.sh` | Idempotent links / health check (runs `hermes-config verify` once `.env` exists). |
 | `tests/hermes-config.test.sh` | E2E test: throwaway `HERMES_HOME`, local bare repos, fake Bitbucket API and session history, the real `hermes` CLI. |
 | `.env.example` | Repos, markers, provenance settings. Copy to `.env` (gitignored). |
+
+## Kanban role profiles
+
+`profiles/<role>/` holds the config of each Kanban role profile (orchestrator,
+coder, the reviewers, ...). `install.sh` creates a profile that is missing and
+links its `config.yaml`, `profile.yaml`, and `SOUL.md` into
+`$HERMES_HOME/profiles/<role>/`. An existing real file that differs is backed
+up as `<file>.bak-<timestamp>` first. `validate.sh` checks the links and that
+`hermes kanban assignees` lists every role as on disk.
+
+- **Edits go to the repo.** Hermes writes `config.yaml` through the link, so a
+  `hermes -p <role> config set` shows up as a git diff here. Review it before
+  you commit: a runtime write can add machine state.
+- **Scripts are copied.** Hermes cron runs only real files inside the profile's
+  `scripts/` dir and rejects a symlink that leaves it. Re-run `install.sh`
+  after you change one.
+- **Not tracked:** `.env`, auth, sessions, memories, logs, caches, cron jobs,
+  and the dashboard login (`dashboard.basic_auth`). Set that login per
+  machine with `hermes dashboard`. Paths use `~`, which Hermes expands.
+- **Not here:** `default`, `claude`, `codex`, and test profiles.
 
 ## Skill sync model
 
