@@ -54,6 +54,12 @@ Re-run `bash macos-server/serve.sh` after changing routes or compose files, and
 `bash macos-server/agents.sh install` after changing an agent template.
 `bash macos-server/agents.sh status` lists every repo-managed agent.
 
+Installation renders the backup plist but defers reloading a running backup:
+it does not boot out the active job. After the backup finishes, rerun
+`bash macos-server/agents.sh install` to activate the new template. Rendering
+uses Python 3 to substitute XML-escaped text without rewriting the templates;
+`--dry-run` validates the render without installing or reloading agents.
+
 ## LaunchAgents
 
 | Label | What | Schedule |
@@ -100,6 +106,11 @@ sleeps after 10 minutes. This replaces Caffeine. See "Known issues" in
 [INVENTORY.md](INVENTORY.md): with FileVault on, a restart still waits at the
 unlock screen.
 
+`--check` reports a readable `Restart After Freeze: Off` as drift. If macOS
+requires administrator access to read that setting, it prints an explicit
+warning: the remaining settings are checked, but restart-after-freeze is not
+verified. The check never invokes sudo.
+
 ## Backups
 
 Same layout as the Pi and the game server: restic over SFTP to the main
@@ -108,6 +119,13 @@ chrooted `restic-mac` account. The shared engine (`backup/backup.sh`, a
 symlink into `server-base/backup/`) runs as the login user from a LaunchAgent at
 03:00; `backup/run.sh` calls its failure notifier, since launchd has no
 `OnFailure`. Homebrew's bash runs it (the engine needs bash 4+).
+
+The wrapper handles ordinary TERM/INT cancellation by stopping the engine's
+isolated process group, waiting for its cleanup, and then invoking the failure
+notifier once before exiting nonzero. Further TERM/INT signals cannot interrupt
+that bookkeeping. SIGKILL, a power loss, or a hung cleanup cannot offer this
+guarantee; notification delivery still depends on configured, reachable alert
+endpoints.
 
 What goes in (`backup/sources.sh`): the Homepage config, the runner config,
 `~/Library/LaunchAgents`, `~/.ssh/config`, Hermes' configuration, credentials,

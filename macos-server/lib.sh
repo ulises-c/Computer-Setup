@@ -30,19 +30,30 @@ tailnet_domain() {
 # render_plist <template> <label> [KEY=VALUE ...]: fills @HOME@, @REPO@, @BREW@,
 # @LOG_DIR@ and each @KEY@, lints the result and installs it as <label>.plist.
 render_plist() {
-  local template="$1" label="$2" dest tmp pair
+  local template="$1" label="$2" dest tmp
   shift 2
   dest="$LAUNCH_AGENTS/$label.plist"
-  local args=(-e "s|@HOME@|$HOME|g" -e "s|@REPO@|$REPO_ROOT|g" -e "s|@BREW@|$BREW_PREFIX|g" -e "s|@LOG_DIR@|$LOG_DIR|g")
-  for pair in "$@"; do
-    [[ "${pair#*=}" != *"|"* ]] || die "unsupported character in ${pair%%=*}"
-    args+=(-e "s|@${pair%%=*}@|${pair#*=}|g")
-  done
+  command -v python3 >/dev/null || die "python3 is required to render LaunchAgents"
   tmp="$(mktemp)"
-  sed "${args[@]}" "$template" >"$tmp"
-  if grep -qE '@[A-Z_]+@' "$tmp"; then
+  if ! python3 - "$template" "HOME=$HOME" "REPO=$REPO_ROOT" "BREW=$BREW_PREFIX" "LOG_DIR=$LOG_DIR" "$@" >"$tmp" <<'PY'
+import html
+from pathlib import Path
+import plistlib
+import re
+import sys
+
+values = dict(pair.split("=", 1) for pair in sys.argv[2:])
+template = Path(sys.argv[1]).read_text(encoding="utf-8")
+try:
+    rendered = re.sub(r"@([A-Z_]+)@", lambda match: html.escape(values[match[1]], quote=True), template)
+    plistlib.loads(rendered.encode("utf-8"))
+except (KeyError, ValueError, plistlib.InvalidFileException) as error:
+    sys.exit(f"invalid or unfilled plist template: {error}")
+sys.stdout.write(rendered)
+PY
+  then
     rm -f "$tmp"
-    die "unfilled placeholder in $template"
+    die "could not render $template"
   fi
   if command -v plutil >/dev/null && ! plutil -lint -s "$tmp"; then
     rm -f "$tmp"
@@ -60,10 +71,17 @@ render_plist() {
 
 # (Re)load an installed agent. bootout is asynchronous, so bootstrap retries.
 agent_load() {
-  local label="$1" plist="$LAUNCH_AGENTS/$1.plist" i
+  local label="$1" plist="$LAUNCH_AGENTS/$1.plist" i state
   if [[ "$DRY_RUN" == true ]]; then
     printf '[dry-run] launchctl bootstrap %s %s\n' "$(gui_domain)" "$plist"
     return
+  fi
+  if [[ "$label" == net.computer-setup.mac-backup ]]; then
+    state="$(agent_state "$label")"
+    if [[ -n "$state" && "${state%% *}" != - ]]; then
+      printf 'defer mac-backup reload: backup is running; rerun bash macos-server/agents.sh install after it finishes\n'
+      return 0
+    fi
   fi
   launchctl bootout "$(gui_domain)/$label" 2>/dev/null || true
   for i in 1 2 3 4 5 6 7 8 9 10; do

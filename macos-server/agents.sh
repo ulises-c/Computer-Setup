@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Install or inspect this host's repo-managed LaunchAgents.
 #
-#   bash macos-server/agents.sh install [--dry-run]   # render + (re)load every agent
+#   bash macos-server/agents.sh install [--dry-run]   # render + reload (active backup deferred)
 #   bash macos-server/agents.sh status                # loaded / running / last exit
 #
 # Agents (labels):

@@ -32,7 +32,14 @@ for ((i = 0; i < ${#WANT[@]}; i += 2)); do
   fi
 done
 restart_freeze="$(systemsetup -getrestartfreeze 2>/dev/null || true)"
-printf '  %s\n' "${restart_freeze:-restart after freeze: needs sudo to read}"
+case "$restart_freeze" in
+  'Restart After Freeze: On') printf '  ok     restartfreeze On\n' ;;
+  'Restart After Freeze: Off')
+    printf '  change restartfreeze Off -> On\n'
+    drift=1
+    ;;
+  *) printf 'warning: restart after freeze is unreadable; needs sudo to read (not verified)\n' >&2 ;;
+esac
 
 case "$mode" in
   --check) exit "$drift" ;;

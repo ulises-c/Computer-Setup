@@ -1,0 +1,241 @@
+import os
+from pathlib import Path
+import plistlib
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+
+
+SOURCE = Path(__file__).resolve().parents[1]
+
+
+def reset_child_signals():
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
+
+
+class RuntimeTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR"))
+        self.root = Path(self.tmp.name)
+        self.host = self.root / "macos-server"
+        self.host.mkdir()
+        for name in ("lib.sh", "agents.sh", "backup/run.sh", "power/power.sh"):
+            dest = self.host / name
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(SOURCE / name, dest)
+        for template in SOURCE.glob("*/*.plist.template"):
+            dest = self.host / template.relative_to(SOURCE)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(template, dest)
+        self.bin = self.root / "bin"
+        self.bin.mkdir()
+        self.env = dict(os.environ, HOME=str(self.root / "home"),
+                        PATH=f"{self.bin}:/usr/bin:/bin:/usr/sbin:/sbin",
+                        CALLS=str(self.root / "calls"))
+        self.stub("brew", 'printf "/opt/testbrew\\n"')
+        self.stub("python3", f'exec "{sys.executable}" "$@"')
+        self.stub("launchctl", 'printf "%s\\n" "$*" >> "$CALLS"\n'
+                  'if [[ "$1" == list ]]; then printf "%s\\n" "${AGENT_STATE:-123 0 net.computer-setup.mac-backup}"; fi')
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def stub(self, name, body):
+        path = self.bin / name
+        path.write_text("#!/bin/bash\n" + body + "\n")
+        path.chmod(0o755)
+
+    def bash(self, code):
+        return subprocess.run(["/bin/bash", "-c", code], env=self.env,
+                              text=True, capture_output=True, timeout=10)
+
+    def test_active_backup_reload_is_deferred(self):
+        result = self.bash(f'source "{self.host}/lib.sh"; agent_load net.computer-setup.mac-backup')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = (self.root / "calls").read_text()
+        self.assertNotIn("bootout", calls)
+        self.assertNotIn("bootstrap", calls)
+        self.assertIn("after", result.stdout.lower())
+        self.assertIn("agents.sh install", result.stdout)
+
+
+    def power_stubs(self, freeze):
+        self.stub("pmset", 'printf " sleep 0\\n disksleep 0\\n displaysleep 10\\n standby 0\\n autorestart 1\\n womp 1\\n tcpkeepalive 1\\n"')
+        self.stub("systemsetup", freeze)
+        self.stub("sudo", 'printf "unexpected sudo\\n" >&2; exit 99')
+
+    def test_plist_paths_are_literal_xml_text(self):
+        special = 'spaces & <tag> "quote" | back\\slash @HOME@ café'
+        self.env["HOME"] = str(self.root / special)
+        self.env["SPECIAL"] = special
+        result = self.bash(f'''set -e; source "{self.host}/lib.sh"
+REPO_ROOT="$HOME/repo"; BREW_PREFIX="$HOME/brew"
+render_plist "{self.host}/glances/net.computer-setup.glances.plist.template" net.test "CONF=$HOME/conf"
+''')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        dest = Path(self.env["HOME"]) / "Library/LaunchAgents/net.test.plist"
+        data = plistlib.loads(dest.read_bytes())
+        self.assertEqual(data["ProgramArguments"][0], f'{self.env["HOME"]}/brew/bin/glances')
+        self.assertEqual(data["ProgramArguments"][2], f'{self.env["HOME"]}/conf')
+        self.assertEqual(data["StandardOutPath"], f'{self.env["HOME"]}/Library/Logs/computer-setup/glances.log')
+
+    def test_plist_dry_run_has_no_installed_files(self):
+        result = self.bash(f'''set -e; source "{self.host}/lib.sh"; DRY_RUN=true
+render_plist "{self.host}/status/net.computer-setup.host-status.plist.template" net.test''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("[dry-run]", result.stdout)
+        self.assertFalse((Path(self.env["HOME"]) / "Library/LaunchAgents").exists())
+        self.assertFalse((Path(self.env["HOME"]) / "Library/Logs/computer-setup").exists())
+
+    def test_restart_freeze_off_is_drift(self):
+        self.power_stubs('printf "Restart After Freeze: Off\\n"')
+        result = self.bash(f'/bin/bash "{self.host}/power/power.sh" --check')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("change", result.stdout)
+
+    def test_restart_freeze_privilege_warning_is_not_drift(self):
+        self.power_stubs('printf "You need administrator access to run this tool... exiting!\\n"; exit 1')
+        result = self.bash(f'/bin/bash "{self.host}/power/power.sh" --check')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("warning", result.stderr)
+        self.assertIn("sudo", result.stderr)
+
+    def backup_fixture(self, body, notifier_body=""):
+        script = self.host / "backup/backup.sh"
+        script.write_text('''#!/bin/bash
+if [[ "${1:-}" == notify-failure ]]; then
+''' + notifier_body + '''
+  printf 'failed\\n' > "$CALLS.status"
+  printf 'notified\\n' >> "$CALLS"
+  exit "${NOTIFIER_EXIT:-0}"
+fi
+''' + body)
+
+    def test_backup_child_failure_notifies_once(self):
+        self.backup_fixture('/bin/bash -c "exit 7"\n')
+        self.env["NOTIFIER_EXIT"] = "9"
+        result = self.bash(f'/bin/bash "{self.host}/backup/run.sh"')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((self.root / "calls").read_text(), "notified\n")
+        self.assertEqual((self.root / "calls.status").read_text(), "failed\n")
+
+    def check_backup_cancellation(self, sig):
+        self.backup_fixture('''trap 'printf "cleaned\\n" >> "$CALLS"' EXIT
+/bin/sleep 30 &
+pid=$!
+printf '%s\\n' "$pid" > "$CALLS.child"
+printf 'running\\n' > "$CALLS.status"
+wait "$pid"
+''')
+        proc = subprocess.Popen(["/bin/bash", str(self.host / "backup/run.sh")],
+                                env=self.env, text=True, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, start_new_session=True,
+                                preexec_fn=reset_child_signals)
+        child = None
+        try:
+            deadline = time.monotonic() + 5
+            while not (self.root / "calls.child").exists():
+                if time.monotonic() > deadline:
+                    self.fail("backup did not start")
+                time.sleep(0.02)
+            child = int((self.root / "calls.child").read_text())
+            proc.send_signal(sig)
+            try:
+                stdout, stderr = proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.fail("termination left the backup child running instead of notifying")
+            self.assertNotEqual(proc.returncode, 0, stdout + stderr)
+            self.assertEqual((self.root / "calls.status").read_text(), "failed\n")
+            self.assertEqual((self.root / "calls").read_text(), "cleaned\nnotified\n")
+            with self.assertRaises(ProcessLookupError):
+                os.kill(child, 0)
+            child = None
+        finally:
+            if proc.poll() is None:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            if child is not None:
+                try:
+                    os.kill(child, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            proc.communicate(timeout=5)
+
+    def test_backup_term_notifies_after_child_cleanup(self):
+        self.check_backup_cancellation(signal.SIGTERM)
+
+    def test_backup_int_notifies_after_child_cleanup(self):
+        self.check_backup_cancellation(signal.SIGINT)
+
+    def test_idle_backup_can_reload(self):
+        self.env["AGENT_STATE"] = "- 0 net.computer-setup.mac-backup"
+        result = self.bash(f'source "{self.host}/lib.sh"; agent_load net.computer-setup.mac-backup')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = (self.root / "calls").read_text()
+        self.assertIn("bootout", calls)
+        self.assertIn("bootstrap", calls)
+
+    def test_agent_install_preserves_running_backup(self):
+        shutil.copyfile(SOURCE / "glances/glances.conf.in", self.host / "glances/glances.conf.in")
+        (self.host / "backup/.env").write_text("# isolated fixture, no secrets\n")
+        self.stub("tailscale", "exit 1")
+        self.stub("jq", "exit 0")
+        result = self.bash(f'/bin/bash "{self.host}/agents.sh" install')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("defer mac-backup reload", result.stdout)
+        calls = (self.root / "calls").read_text().splitlines()
+        self.assertFalse(any("mac-backup" in line for line in calls))
+        dest = Path(self.env["HOME"]) / "Library/LaunchAgents/net.computer-setup.mac-backup.plist"
+        data = plistlib.loads(dest.read_bytes())
+        self.assertEqual(data["StartCalendarInterval"], {"Hour": 3, "Minute": 0})
+        self.assertIn("<!-- 03:00 local", dest.read_text())
+
+    def test_backup_success_does_not_notify(self):
+        self.backup_fixture("exit 0\n")
+        result = self.bash(f'/bin/bash "{self.host}/backup/run.sh"')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.root / "calls").exists())
+
+    def test_termination_during_notifier_preserves_bookkeeping(self):
+        self.backup_fixture("exit 7\n", 'printf "%s\\n" "$$" > "$CALLS.notifier"; /bin/sleep 0.4\n')
+        proc = subprocess.Popen(["/bin/bash", str(self.host / "backup/run.sh")],
+                                env=self.env, text=True, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, start_new_session=True,
+                                preexec_fn=reset_child_signals)
+        try:
+            deadline = time.monotonic() + 5
+            while not (self.root / "calls.notifier").exists():
+                if time.monotonic() > deadline:
+                    self.fail("failure notifier did not start")
+                time.sleep(0.02)
+            notifier = int((self.root / "calls.notifier").read_text())
+            proc.send_signal(signal.SIGTERM)
+            os.kill(notifier, signal.SIGTERM)
+            proc.send_signal(signal.SIGINT)
+            stdout, stderr = proc.communicate(timeout=5)
+            self.assertNotEqual(proc.returncode, 0, stdout + stderr)
+            self.assertTrue((self.root / "calls.status").exists(), "failure bookkeeping was interrupted")
+            self.assertEqual((self.root / "calls.status").read_text(), "failed\n")
+            self.assertEqual((self.root / "calls").read_text(), "notified\n")
+        finally:
+            if proc.poll() is None:
+                os.killpg(proc.pid, signal.SIGKILL)
+                proc.communicate(timeout=5)
+
+    def test_restart_freeze_on_is_compliant(self):
+        self.power_stubs('printf "Restart After Freeze: On\\n"')
+        result = self.bash(f'/bin/bash "{self.host}/power/power.sh" --check')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("On", result.stdout)
+        self.assertNotIn("change", result.stdout)
+
+
+if __name__ == "__main__":
+    unittest.main()

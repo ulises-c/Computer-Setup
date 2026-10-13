@@ -7,8 +7,31 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 printf '=== %s\n' "$(date '+%F %T %Z')"
-if bash "$SCRIPT_DIR/backup.sh"; then
-  exit 0
-fi
-bash "$SCRIPT_DIR/backup.sh" notify-failure
-exit 1
+child_pid=""
+result=1
+
+finish() {
+  trap '' TERM INT
+  if [[ -n "$child_pid" ]]; then
+    kill -TERM -- "-$child_pid" 2>/dev/null || true
+    wait "$child_pid" 2>/dev/null || true
+  fi
+  if [[ "$result" != 0 ]]; then
+    bash "$SCRIPT_DIR/backup.sh" notify-failure \
+      || printf 'warning: backup failure notifier failed\n' >&2
+  fi
+}
+
+trap finish EXIT
+trap 'result=143; exit "$result"' TERM
+trap 'result=130; exit "$result"' INT
+
+# An isolated job group lets cancellation reach the engine's foreground children
+# without signalling this wrapper or its subsequent failure notifier.
+set -m
+bash "$SCRIPT_DIR/backup.sh" &
+child_pid=$!
+wait "$child_pid"
+result=$?
+child_pid=""
+exit "$result"
