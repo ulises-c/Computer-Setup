@@ -42,10 +42,14 @@ The review checked the staged Dragonwilds backup/update implementation for:
 - Bash syntax checks: passed.
 - ShellCheck: passed.
 - Backup setup dry-runs for server, game server, and Pi: passed.
-- Rendered units on `ollie-game-server`: `systemd-analyze verify` passed.
+- Rendered units on the game host: `systemd-analyze verify` passed.
 - `git diff --cached --check`: passed.
 
 ## Review result
+
+Privacy correction: the verification record previously named a deployed host.
+The current file uses a generic label; earlier commits and posted copies may
+still contain that identifier. This correction does not rewrite Git history.
 
 No security concerns or logic errors were found. The reviewer suggested adding a native Linux/systemd integration test in the future. The implementation was committed and pushed; deployment remained a separate privileged step.
 

@@ -81,6 +81,14 @@ short-circuit runs before any `platform_main` sets it — that keeps
 
 ## Validation & reminder semantics
 
+Downloaded shell installers, including the automatic OpenCode step, execute
+the publisher's current response without a repo-selected version or checksum.
+Selecting those packages therefore trusts the publisher and its distribution
+endpoint at installation time; HTTPS is not a reproducibility or integrity pin.
+Use `--dry-run` to inspect the command before a live bootstrap. Pinning and
+verifying installer releases remains a hardening follow-up, not a guarantee of
+the current installer.
+
 - `scripts/validate-packages.sh` (pre-commit + CI) enforces the schema: platform
   vocabulary, controlled tag set, `handled_by_setup` is a real boolean, custom
   entries carry an `install_command`, and the **"no silent drop"** rule — every
