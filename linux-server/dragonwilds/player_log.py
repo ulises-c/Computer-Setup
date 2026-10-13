@@ -58,7 +58,7 @@ MAX_FUTURE_TIMESTAMP_SKEW_US = 7 * 24 * 60 * 60 * 1_000_000
 MAX_JOURNAL_RECORDS = 8192
 # One page per run keeps every run bounded; the minute timer drains any backlog.
 JOURNAL_BATCH_RECORDS = 2000
-JOURNAL_FIELDS = "MESSAGE,PLAYER_ID,EOS_PRODUCT_USER_ID"
+JOURNAL_FIELDS = "MESSAGE,PLAYER_ID,EOS_PRODUCT_USER_ID,_SYSTEMD_INVOCATION_ID"
 MAX_JOURNAL_OUTPUT_BYTES = 8 * 1024 * 1024
 MAX_COMMAND_ERROR_BYTES = 1 * 1024 * 1024
 MAX_SYSTEMD_PROPERTY_BYTES = 64 * 1024
@@ -298,6 +298,7 @@ def parse_journal_records(
     *,
     session_id: str,
     server_build: str = "",
+    invocation_id: str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Parse only the small set of connection messages we understand."""
     next_state = _sanitize_state(state)
@@ -305,13 +306,14 @@ def parse_journal_records(
     if safe_session_id is None:
         raise RuntimeError("invalid or unstable player-log session identity")
     safe_server_build = _clean_server_build(server_build)
-    if next_state.get("session_id") != safe_session_id:
+    if invocation_id is None and next_state.get("session_id") != safe_session_id:
         next_state["active_connections"] = {}
         next_state["pending_connections"] = []
         next_state.pop("last_realtime_timestamp_us", None)
         next_state.pop("last_record_timestamp_us", None)
         next_state["processed_cursors"] = []
-    next_state["session_id"] = safe_session_id
+    if invocation_id is None:
+        next_state["session_id"] = safe_session_id
     next_state["initialized"] = True
     active = dict(next_state.get("active_connections", {}))
     pending = []
@@ -343,6 +345,24 @@ def parse_journal_records(
         if timestamp_us is None:
             _remember_cursor(next_state, cursor)
             continue
+        if invocation_id is not None:
+            raw_invocation = record.get("_SYSTEMD_INVOCATION_ID")
+            record_invocation = (
+                _normalize_invocation_id(raw_invocation) if isinstance(raw_invocation, str) else ""
+            )
+            safe_session_id = f"run:{record_invocation}" if record_invocation else None
+            safe_server_build = (
+                _clean_server_build(server_build)
+                if record_invocation and record_invocation == _normalize_invocation_id(invocation_id)
+                else None
+            )
+            if safe_session_id is None or next_state.get("session_id") != safe_session_id:
+                active = {}
+                pending = []
+            if safe_session_id is None:
+                next_state.pop("session_id", None)
+            else:
+                next_state["session_id"] = safe_session_id
         next_state["last_record_timestamp_us"] = timestamp_us
         record_timestamp = _timestamp(record)
         current_time = _parse_timestamp(record_timestamp)
@@ -1089,6 +1109,8 @@ class PlayerLog:
     def _commit_locked(self, events: Iterable[dict[str, Any]], state: dict[str, Any]) -> None:
         self._recover_transaction()
         prior_state = self.load_state()
+        if _sanitize_state(state).get("generation", 0) != prior_state.get("generation", 0):
+            raise RuntimeError("stale player-log input generation; reload and reparse before committing")
         events_exists = _regular_exists(self.events_path)
         existing = self._load_events()
         known = {
@@ -1133,6 +1155,8 @@ class PlayerLog:
         )
         if summary_exists and not summary_is_usable:
             raise RuntimeError("player-log summary is malformed or incomplete")
+        if not summary_exists and prior_state.get("generation", 0) > 0:
+            raise RuntimeError("player-log summary is missing; restore a consistent history before continuing")
         if not summary_is_usable and not existing and (
             prior_state.get("last_cursor")
             or prior_state.get("processed_cursors")
@@ -1470,6 +1494,16 @@ def _session_id(active_enter: str, invocation_id: str = "", boot_id: str = "") -
     return f"session:{digest}"
 
 
+def _adopt_legacy_session(
+    state: dict[str, Any], active_enter: str, invocation_id: str, boot_id: str, session_id: str
+) -> dict[str, Any]:
+    # Installs that stored the hashed id keep their cursor and dedupe history
+    # when the same running invocation is recorded under its new run: id.
+    if state.get("session_id") == _session_id(active_enter, invocation_id, boot_id):
+        return {**state, "session_id": session_id}
+    return state
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--unit", default="dragonwilds.service")
@@ -1491,7 +1525,8 @@ def main() -> int:
             raise RuntimeError(f"cannot read {args.unit} from systemd")
         print(f"player-log: {args.unit} has not started; nothing to record")
         return 0
-    session_id = _session_id(active_enter, invocation_id, _boot_id())
+    session_id = f"run:{_normalize_invocation_id(invocation_id)}"
+    state = _adopt_legacy_session(state, active_enter, invocation_id, _boot_id(), session_id)
     last_timestamp_us = max(
         int(state.get("last_realtime_timestamp_us", 0) or 0),
         int(state.get("last_record_timestamp_us", 0) or 0),
@@ -1510,6 +1545,7 @@ def main() -> int:
         state,
         session_id=session_id,
         server_build=_server_build(Path(args.install_dir)),
+        invocation_id=invocation_id,
     )
     log.commit(events, state)
     print(f"player-log: processed {len(records)} journal records, wrote {len(events)} events")

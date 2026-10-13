@@ -453,7 +453,7 @@ class PlayerLogTests(unittest.TestCase):
             self.assertEqual(len(event_lines), 1)
             self.assertEqual(json.loads(event_lines[0])["source_cursor"], "c1")
 
-            log.commit(events, {"last_cursor": "c1", "active_connections": {}})
+            log.commit(events, log.load_state())
             self.assertEqual(len((root / "events.jsonl").read_text().splitlines()), 1)
             self.assertEqual(json.loads((root / "players.json").read_text())["players"]["id:EOS-ABC123"]["join_count"], 1)
 
@@ -501,7 +501,7 @@ class PlayerLogTests(unittest.TestCase):
                     log.commit([event], {"last_cursor": "c1"})
 
             recovered = PlayerLog(root)
-            recovered.commit([], {"last_cursor": "c1"})
+            recovered.commit([], recovered.load_state())
             summary = json.loads((root / "players.json").read_text())
             self.assertEqual(summary["players"]["id:EOS-ABC123"]["join_count"], 1)
 
@@ -711,7 +711,7 @@ class PlayerLogTests(unittest.TestCase):
         self.assertEqual(state["last_cursor"], "bad-time")
         self.assertEqual(state["processed_cursors"], ["bad-time"])
 
-    def test_missing_summary_rebuilds_from_retained_events(self):
+    def test_missing_summary_requires_explicit_restore(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             log = PlayerLog(root)
@@ -725,10 +725,32 @@ class PlayerLogTests(unittest.TestCase):
             log.commit([event], {"last_cursor": "c1"})
             (root / "players.json").unlink()
 
-            log.commit([], {"last_cursor": "c1"})
+            with self.assertRaisesRegex(RuntimeError, "summary.*missing"):
+                log.commit([], log.load_state())
 
-            summary = json.loads((root / "players.json").read_text())
-            self.assertEqual(summary["players"]["id:EOS-ABC123"]["join_count"], 1)
+    def test_missing_summary_cannot_discard_aged_identity_with_recent_events(self):
+        now = player_log.datetime.now(player_log.timezone.utc)
+        with tempfile.TemporaryDirectory() as directory:
+            log = PlayerLog(Path(directory), retention_days=90)
+            records = [
+                self._record(1, now - player_log.timedelta(days=100), "Join succeeded: Older"),
+                self._record(2, now - player_log.timedelta(minutes=1), "Join succeeded: Recent"),
+            ]
+            events, state = parse_journal_records(records, {}, session_id=SESSION_1)
+            log.commit(events, state)
+            summary = log.players_path.read_bytes()
+            state_bytes = log.state_path.read_bytes()
+            events_bytes = log.events_path.read_bytes()
+            log.players_path.unlink()
+            with self.assertRaisesRegex(RuntimeError, "summary.*missing"):
+                log.commit([], log.load_state())
+            self.assertFalse(log.players_path.exists())
+            self.assertEqual(log.state_path.read_bytes(), state_bytes)
+            self.assertEqual(log.events_path.read_bytes(), events_bytes)
+            log.players_path.write_bytes(summary)
+            log.commit([], log.load_state())
+            self.assertEqual(set(json.loads(log.players_path.read_text())["players"]),
+                             {"name:older", "name:recent"})
 
     def test_incomplete_summary_is_rejected_against_retained_events(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -892,6 +914,7 @@ class PlayerLogTests(unittest.TestCase):
         self.assertEqual(len(events), 1)
 
     def test_journal_reads_one_bounded_page(self):
+        self.assertIn("_SYSTEMD_INVOCATION_ID", player_log.JOURNAL_FIELDS.split(","))
         with mock.patch.object(player_log, "_run_capped", return_value=(0, "", "")) as run:
             player_log._journal("dragonwilds.service", "cursor", "session-start")
         command = run.call_args.args[0]
@@ -906,7 +929,76 @@ class PlayerLogTests(unittest.TestCase):
         recovery = run.call_args_list[1].args[0]
         self.assertEqual(recovery[recovery.index("--since") + 1], "@1700000000")
 
-    def test_unstarted_unit_exits_cleanly(self):
+    def test_backlog_uses_trusted_record_invocation_and_preserves_old_leave(self):
+        now = player_log.datetime.now(player_log.timezone.utc) - player_log.timedelta(minutes=5)
+        old_id, new_id = "a" * 32, "b" * 32
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "pl"
+            log = PlayerLog(root)
+            initial = [
+                self._record(1, now, "AddClientConnection: Added client connection RemoteAddr: 192.0.2.10:4321"),
+                self._record(2, now, "Join succeeded: Earlier"),
+            ]
+            events, state = parse_journal_records(initial, {}, session_id="run:" + old_id)
+            log.commit(events, state)
+            leave = self._record(3, now, "Removed address 192.0.2.10:4321")
+            leave["_SYSTEMD_INVOCATION_ID"] = old_id
+            join = self._record(4, now, "Join succeeded: Later [INVOCATION_ID=" + old_id + "]")
+            join["_SYSTEMD_INVOCATION_ID"] = new_id
+            with mock.patch.object(player_log, "_systemd_property", side_effect=lambda unit, name: {
+                "InvocationID": new_id, "ActiveEnterTimestamp": "current-start",
+            }.get(name, "")), mock.patch.object(player_log, "_boot_id", return_value=""), \
+                    mock.patch.object(player_log, "_server_build", return_value="999"), \
+                    mock.patch.object(player_log, "_journal", return_value=([leave, join], False)), \
+                    mock.patch.object(player_log.sys, "argv", [
+                        "player_log.py", "--install-dir", directory, "--data-dir", str(root)]):
+                self.assertEqual(player_log.main(), 0)
+            stored = [json.loads(line) for line in log.events_path.read_text().splitlines()]
+            self.assertEqual(stored[-2]["player_name"], "Earlier")
+            self.assertEqual(stored[-2]["session_id"], "run:" + old_id)
+            self.assertIsNone(stored[-2]["server_build"])
+            self.assertEqual(stored[-1]["session_id"], "run:" + new_id)
+            self.assertEqual(stored[-1]["server_build"], "999")
+            self.assertIsNone(stored[-1]["remote_addr"])
+
+    def test_old_invocation_correlation_survives_backlog_pages_until_transition(self):
+        now = player_log.datetime.now(player_log.timezone.utc) - player_log.timedelta(minutes=5)
+        old_id, current_id = "a" * 32, "b" * 32
+        def record(index, message, invocation):
+            value = self._record(index, now, message)
+            value["_SYSTEMD_INVOCATION_ID"] = invocation
+            return value
+        _, state = parse_journal_records([
+            record(1, "AddClientConnection: Added client connection RemoteAddr: 192.0.2.10:4321", old_id),
+        ], {}, session_id="run:" + current_id, invocation_id=current_id, server_build="999")
+        events, state = parse_journal_records([
+            record(2, "Join succeeded: Earlier", old_id),
+        ], state, session_id="run:" + current_id, invocation_id=current_id, server_build="999")
+        self.assertEqual(events[0]["remote_addr"], "192.0.2.10")
+        self.assertEqual(state["session_id"], "run:" + old_id)
+        self.assertIsNone(events[0]["server_build"])
+        events, state = parse_journal_records([
+            record(3, "Removed address 192.0.2.10:4321", current_id),
+        ], state, session_id="run:" + current_id, invocation_id=current_id, server_build="999")
+        self.assertIsNone(events[0]["player_name"])
+        self.assertEqual(state["active_connections"], {})
+
+    def test_missing_or_untrusted_invocation_never_inherits_current_identity(self):
+        now = player_log.datetime.now(player_log.timezone.utc) - player_log.timedelta(minutes=5)
+        current_id = "b" * 32
+        for value in (None, "invalid", [current_id]):
+            with self.subTest(invocation=value):
+                record = self._record(1, now, "Join succeeded: Example [INVOCATION_ID=" + current_id + "]")
+                record["INVOCATION_ID"] = current_id
+                record["_SYSTEMD_INVOCATION_ID"] = value
+                events, state = parse_journal_records(
+                    [record], {}, session_id="run:" + current_id,
+                    invocation_id=current_id, server_build="999")
+                self.assertIsNone(events[0]["session_id"])
+                self.assertIsNone(events[0]["server_build"])
+                self.assertNotIn("session_id", state)
+
+    def test_unstarted_unit_exits_cleanly_without_query(self):
         with tempfile.TemporaryDirectory() as directory, \
                 mock.patch.object(
                     player_log, "_systemd_property",
@@ -928,7 +1020,25 @@ class PlayerLogTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 player_log.main()
 
-    def test_rolled_back_summary_is_detected(self):
+    def test_stale_parsed_generation_cannot_roll_back_cursor(self):
+        now = player_log.datetime.now(player_log.timezone.utc)
+        with tempfile.TemporaryDirectory() as directory:
+            log = PlayerLog(Path(directory))
+            log.commit([], {})
+            base = log.load_state()
+            older, older_state = parse_journal_records(
+                [self._record(1, now, "Join succeeded: Older")], base, session_id=SESSION_1)
+            newer, newer_state = parse_journal_records(
+                [self._record(2, now, "Join succeeded: Newer")], base, session_id=SESSION_1)
+            log.commit(newer, newer_state)
+            snapshot = {path: path.read_bytes() for path in
+                        (log.state_path, log.events_path, log.players_path)}
+            with self.assertRaisesRegex(RuntimeError, "stale.*generation"):
+                log.commit(older, older_state)
+            self.assertEqual({path: path.read_bytes() for path in snapshot}, snapshot)
+            self.assertEqual(log.load_state()["last_cursor"], "c2")
+
+    def test_rolled_back_summary_is_detected_after_multiple_commits(self):
         now = player_log.datetime.now(player_log.timezone.utc)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "pl"
@@ -969,6 +1079,31 @@ class PlayerLogTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     PlayerLog(root)
             chmod.assert_not_called()
+
+
+class LegacySessionMigrationTests(unittest.TestCase):
+    INVOCATION = "a" * 32
+    ACTIVE_ENTER = "Mon 2026-10-12 10:00:00 PDT"
+    BOOT = "b" * 32
+
+    def legacy_id(self):
+        return player_log._session_id(self.ACTIVE_ENTER, self.INVOCATION, self.BOOT)
+
+    def test_legacy_session_of_the_running_invocation_is_adopted(self):
+        state = {"session_id": self.legacy_id(), "last_cursor": "c1", "processed_cursors": ["c1"]}
+        migrated = player_log._adopt_legacy_session(
+            state, self.ACTIVE_ENTER, self.INVOCATION, self.BOOT, f"run:{self.INVOCATION}"
+        )
+        self.assertEqual(migrated["session_id"], f"run:{self.INVOCATION}")
+        self.assertEqual(migrated["last_cursor"], "c1")
+        self.assertEqual(migrated["processed_cursors"], ["c1"])
+
+    def test_unrelated_session_is_left_alone(self):
+        state = {"session_id": SESSION_3, "last_cursor": "c1"}
+        migrated = player_log._adopt_legacy_session(
+            state, self.ACTIVE_ENTER, self.INVOCATION, self.BOOT, f"run:{self.INVOCATION}"
+        )
+        self.assertEqual(migrated["session_id"], SESSION_3)
 
 
 if __name__ == "__main__":
