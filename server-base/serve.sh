@@ -47,6 +47,47 @@ domain="$(tailscale status --json | jq -r '.Self.DNSName | rtrimstr(".")')"
   exit 1
 }
 
+# Empty arrays use ${a[@]+...}: macOS /bin/bash 3.2 treats "${a[@]}" of an
+# empty array as unbound under set -u.
+# Retire before any fallible local setup can leave a password-bearing mount up.
+port_retired() {
+  jq -e --arg port "$1" --arg key "$domain:$1" \
+    'all(recurse(.Foreground[]?); ((.TCP // {}) | has($port) | not) and ((.Web // {}) | has($key) | not))' \
+    <<< "$serve_status" >/dev/null
+}
+path_retired() {
+  jq -e --arg key "$domain:$1" --arg path "$2" \
+    'all(recurse(.Foreground[]?); (.Web[$key].Handlers // {}) | (has($path) or has($path + "/")) | not)' \
+    <<< "$serve_status" >/dev/null
+}
+for port in ${RETIRED_PORTS[@]+"${RETIRED_PORTS[@]}"}; do
+  serve_status="$(tailscale serve status --json)"
+  if ! port_retired "$port"; then
+    tailscale serve --https="$port" --yes off >/dev/null
+  fi
+done
+for route in ${RETIRED_PATHS[@]+"${RETIRED_PATHS[@]}"}; do
+  read -r port path <<< "$route"
+  serve_status="$(tailscale serve status --json)"
+  if ! path_retired "$port" "$path"; then
+    tailscale serve --https="$port" --set-path "$path" off >/dev/null
+  fi
+done
+serve_status="$(tailscale serve status --json)"
+for port in ${RETIRED_PORTS[@]+"${RETIRED_PORTS[@]}"}; do
+  if ! port_retired "$port"; then
+    printf 'error: cannot verify retirement of HTTPS port %s\n' "$port" >&2
+    exit 1
+  fi
+done
+for route in ${RETIRED_PATHS[@]+"${RETIRED_PATHS[@]}"}; do
+  read -r port path <<< "$route"
+  if ! path_retired "$port" "$path"; then
+    printf 'error: cannot verify retirement of %s on HTTPS port %s\n' "$path" "$port" >&2
+    exit 1
+  fi
+done
+
 if [[ -d "$host_dir/homepage" ]]; then
   bash "$(dirname -- "${BASH_SOURCE[0]}")/homepage/fetch-assets.sh" "$host_dir"
 fi
@@ -75,22 +116,6 @@ fi
 if [[ -n "$WAIT_URL" ]]; then
   curl --fail --silent --show-error --retry 12 --retry-connrefused --retry-delay 2 "$WAIT_URL" >/dev/null
 fi
-
-# Empty arrays use ${a[@]+...}: macOS /bin/bash 3.2 treats "${a[@]}" of an
-# empty array as unbound under set -u.
-# Retire first, so a route that fails to register below cannot leave an old
-# mount (e.g. one carrying a password) published.
-for port in ${RETIRED_PORTS[@]+"${RETIRED_PORTS[@]}"}; do
-  tailscale serve --https="$port" off >/dev/null 2>&1 || true
-done
-for route in ${RETIRED_PATHS[@]+"${RETIRED_PATHS[@]}"}; do
-  read -r port path <<< "$route"
-  tailscale serve --https="$port" --set-path "$path" off >/dev/null 2>&1 || true
-  if tailscale serve status 2>/dev/null | grep -qE "^\|-- $path( |$)"; then
-    printf 'error: %s is still served after switching it off\n' "$path" >&2
-    exit 1
-  fi
-done
 
 # serve strips the mount path before proxying; a target that ends in a path
 # re-adds it (Cockpit keeps its UrlRoot that way).

@@ -86,12 +86,17 @@ On a fresh checkout run `bash server-base/timezone.sh` before any
 
 ```sh
 sudo timedatectl set-timezone <Zone>
-bash server-base/timezone.sh --apply   # rewrites timezone.env, recreates stale compose services
+bash server-base/timezone.sh --apply   # rewrites timezone.env, converges stale compose projects
 ```
 
-`--apply` recreates (`up -d --no-deps`) only running compose services whose
-`TZ` differs from the host's or is unset, and needs Docker access (the `docker` group, or
-`sudo`). `--dry-run` prints the compose commands instead.
+`--apply` selects each Compose project with a running service whose `TZ` differs
+from the host's or is unset, then runs `up -d` for every running service in that
+project. Compose may also start or recreate dependencies; already-current
+services are included so apps sharing a sidecar's network namespace converge
+with that sidecar. This can interrupt availability-sensitive apps: schedule a
+maintenance window and preview with `--apply --dry-run` first. Docker access is
+required (the `docker` group, or `sudo`). `--dry-run` prints the commands without
+rewriting the timezone file or changing containers.
 
 ## Homepage
 

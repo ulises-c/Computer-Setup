@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Brings up the AdGuard replica, completes its first-run install through the
-# install API (DNS and UI on the LAN address only), opens DNS and the UI to the
-# LAN in ufw, and checks that it resolves. Run as the login user; steps use sudo.
+# The unauthenticated wizard cannot rely on UFW: reinstalls may inherit LAN rules.
+# Run as the login user; individual steps use sudo.
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
@@ -80,28 +79,55 @@ done
 
 base="http://$LAN_IP:$WEB_PORT"
 run sudo docker compose -f "$COMPOSE_FILE" config --quiet
-run sudo docker compose -f "$COMPOSE_FILE" up -d
 
-# Configure before the ufw rules below: until then the wizard is unauthenticated,
-# and ufw keeps it reachable from this host only.
 if [[ "$DRY_RUN" == true ]]; then
-  printf '[dry-run] if %s/conf/AdGuardHome.yaml is missing: POST %s/control/install/configure (web %s:%s, dns %s:53, user %s)\n' \
-    "$SCRIPT_DIR" "$base" "$LAN_IP" "$WEB_PORT" "$LAN_IP" "${ADGUARD_USER:-<admin-user>}"
+  printf '[dry-run] if %s/conf/AdGuardHome.yaml is missing: start wizard on 127.0.0.1:%s with restart disabled; stop it on failure\n' "$SCRIPT_DIR" "$WEB_PORT"
+  printf '[dry-run] POST http://127.0.0.1:%s/control/install/configure (authenticated web %s:%s, dns %s:53, user %s)\n' \
+    "$WEB_PORT" "$LAN_IP" "$WEB_PORT" "$LAN_IP" "${ADGUARD_USER:-<admin-user>}"
 elif sudo test -f "$SCRIPT_DIR/conf/AdGuardHome.yaml"; then
   printf 'AdGuard already configured; leaving conf/AdGuardHome.yaml as is\n'
 else
+  bootstrap_file="$(mktemp "${TMPDIR:-/tmp}/adguard-bootstrap.XXXXXX")"
+  bootstrap_started=false
+  cleanup_bootstrap() {
+    local status=$?
+    if [[ "$bootstrap_started" == true ]]; then
+      if ! sudo docker compose -f "$COMPOSE_FILE" -f "$bootstrap_file" stop adguardhome; then
+        printf 'error: could not stop the loopback wizard; stop adguardhome manually\n' >&2
+        status=1
+      fi
+    fi
+    rm -f "$bootstrap_file"
+    exit "$status"
+  }
+  trap cleanup_bootstrap EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  printf 'services:\n  adguardhome:\n    restart: "no"\n    command: ["--no-check-update", "-c", "/opt/adguardhome/conf/AdGuardHome.yaml", "-w", "/opt/adguardhome/work", "--web-addr", "127.0.0.1:%s"]\n' \
+    "$WEB_PORT" > "$bootstrap_file"
+  sudo docker compose -f "$COMPOSE_FILE" -f "$bootstrap_file" config --quiet
+  bootstrap_started=true
+  sudo docker compose -f "$COMPOSE_FILE" -f "$bootstrap_file" up -d adguardhome
+  wizard_base="http://127.0.0.1:$WEB_PORT"
+  wizard_ready=false
   for _ in {1..30}; do
-    curl -fsS -o /dev/null "$base/control/install/get_addresses" 2>/dev/null && break
+    if curl -fsS -o /dev/null "$wizard_base/control/install/get_addresses" 2>/dev/null; then
+      wizard_ready=true
+      break
+    fi
     sleep 1
   done
+  [[ "$wizard_ready" == true ]] || die_or_warn 'loopback AdGuard wizard did not become ready'
   # Credentials come from the exported environment, not argv, so ps never shows them.
   jq -n --arg ip "$LAN_IP" --argjson web_port "$WEB_PORT" \
       '{web: {ip: $ip, port: $web_port}, dns: {ip: $ip, port: 53},
         username: $ENV.ADGUARD_USER, password: $ENV.ADGUARD_PASSWORD}' |
-    curl -sS --fail-with-body -X POST -H 'Content-Type: application/json' \
-      --data-binary @- "$base/control/install/configure"
+    curl -fsS -o /dev/null -X POST -H 'Content-Type: application/json' \
+      --data-binary @- "$wizard_base/control/install/configure"
+  bootstrap_started=false
   printf '\nAdGuard configured: UI %s, DNS %s:53\n' "$base" "$LAN_IP"
 fi
+run sudo docker compose -f "$COMPOSE_FILE" up -d adguardhome
 
 run sudo ufw allow proto udp from "$LAN_CIDR" to "$LAN_IP" port 53 comment 'adguard dns (LAN)'
 run sudo ufw allow proto tcp from "$LAN_CIDR" to "$LAN_IP" port 53 comment 'adguard dns (LAN)'

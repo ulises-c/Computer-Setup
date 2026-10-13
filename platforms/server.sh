@@ -220,6 +220,7 @@ server_extras() {
   printf '\n'
   printf '==> Fetching Homepage artwork...\n'
   run bash "$SETUP_ROOT/server-base/homepage/fetch-assets.sh" "$CONFIG_SRC_DIR"
+  run bash "$SETUP_ROOT/server-base/timezone.sh"
   printf '\n'
   printf '==> Starting Docker services...\n'
   local svc_dir
