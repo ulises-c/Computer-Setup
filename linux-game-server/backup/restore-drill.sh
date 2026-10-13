@@ -14,12 +14,20 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 HOST_DIR="$(dirname -- "$SCRIPT_DIR")"
 readonly GAME_UNIT=dragonwilds.service
 readonly UPDATE_TIMER=dragonwilds-auto-update.timer
+readonly UPDATE_SERVICE=dragonwilds-auto-update.service
 readonly BACKUP_UNIT=game-backup.service
 readonly LOAD_TIMEOUT_SECONDS=600
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 trap 'printf "error: restore-drill stopped at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
 log() { printf '[drill] %s\n' "$*"; }
+stop_unit() {
+  local unit="$1" state
+  systemctl stop "$unit" || return 1
+  state="$(systemctl show "$unit" -p ActiveState --value)" || return 1
+  [[ "$state" == inactive ]]
+}
+stop_game() { stop_unit "$GAME_UNIT"; }
 # grep -c reads the whole stream: grep -q would exit on the first match, SIGPIPE
 # journalctl, and under pipefail the match would read as a failure.
 world_loaded_since() {
@@ -51,8 +59,10 @@ live="$saved/SaveGames"
 
 status_json="$HOST_DIR/dragonwilds/status/dragonwilds-status.json"
 if [[ "$allow_players" == false ]]; then
-  players="$(jq -r '.players // empty' "$status_json" 2>/dev/null || true)"
-  [[ "$players" == 0 ]] || die "players online (${players:-unknown}); retry when empty or pass --allow-players"
+  jq -e '(.updated | fromdateiso8601) as $updated |
+    .players == 0 and .status == "running" and
+    (now - $updated >= 0 and now - $updated <= 120)' "$status_json" >/dev/null 2>&1 \
+    || die "fresh online zero-player status (at most 120s old) required; refresh status or pass --allow-players"
 fi
 
 [[ -f "$SCRIPT_DIR/.env" ]] || die "missing $SCRIPT_DIR/.env"
@@ -72,8 +82,15 @@ finished=false
 recover() {
   [[ "$finished" == true ]] && return
   printf '[drill] FAILED; restoring the original world and restarting the game\n' >&2
+  if ! systemctl stop "$UPDATE_TIMER" || ! stop_unit "$UPDATE_SERVICE"; then
+    printf '[drill] manual recovery required: updater could not be stopped; leaving both worlds untouched and not restarting the timer\n' >&2
+    return 1
+  fi
   if [[ "$swapped" == true ]]; then
-    systemctl stop "$GAME_UNIT" || true
+    if ! stop_game; then
+      printf '[drill] manual recovery required: stop could not be verified; leaving %s and %s untouched; update timer remains stopped\n' "$live" "$aside" >&2
+      return 1
+    fi
     rm -rf "$live"
     mv "$aside" "$live"
   fi
@@ -85,7 +102,8 @@ trap recover EXIT
 
 log "stopping $UPDATE_TIMER and $GAME_UNIT"
 systemctl stop "$UPDATE_TIMER"
-systemctl stop "$GAME_UNIT"
+stop_unit "$UPDATE_SERVICE" || die "could not verify $UPDATE_SERVICE stopped"
+stop_game || die "could not verify $GAME_UNIT stopped"
 
 log "taking a fresh snapshot of the stopped world ($BACKUP_UNIT)"
 systemctl restart --wait "$BACKUP_UNIT"
