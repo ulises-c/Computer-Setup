@@ -108,8 +108,10 @@ EOF
 cat >"$stub/docker" <<'EOF'
 #!/usr/bin/env bash
 case "$1" in
+  info|volume) exit 0 ;;
   ps) printf 'fb0000000001\nag0000000001\n' ;;
   inspect)
+    [[ "${*: -1}" != portainer ]] || exit 1
     for id in "$@"; do
       case "$id" in
         fb0000000001) printf '/filebrowser\t%s\n/filebrowser\t/\n' "$FB_DB_DIR" ;;
@@ -385,19 +387,36 @@ mkdir -p "$invalid_server/dragonwilds/games/dragonwilds/RSDragonwilds/Saved/Save
 printf 'DRAGONWILDS_INSTALL_DIR=%s\n' "$invalid_server/dragonwilds/games/dragonwilds" \
   >"$invalid_server/dragonwilds/.env"
 touch "$invalid_server/dragonwilds/games/dragonwilds/RSDragonwilds/Saved/SaveGames/Main.sav"
-if bash -c '
-  set -euo pipefail
-  HOST_DIR="$1"
-  BACKUP_DRAGONWILDS_INSTALL_DIR="$1/dragonwilds/games/dragonwilds"
-  CANDIDATES=()
-  log() { :; }
-  die() { printf "%s\\n" "$*" >&2; return 1; }
-  env_value() { sed -n "s/^$2=//p" "$1" | tail -1; }
-  source "$2/linux-server/backup/sources.sh"
-  resolve_sources
-' bash "$invalid_server" "$REPO" >/dev/null 2>&1; then
+main_world_resolve() {
+  bash -c '
+    set -euo pipefail
+    HOST_DIR="$1"
+    BACKUP_DRAGONWILDS_INSTALL_DIR="$1/dragonwilds/games/dragonwilds"
+    BACKUP_FORGEJO_DATA_PATH="$1/forgejo/data"
+    CANDIDATES=()
+    log() { :; }
+    die() { printf "%s\n" "$*" >&2; exit 1; }
+    systemctl() { printf "not-found\n"; }
+    env_value() { sed -n "s/^$2=//p" "$1" | tail -1; }
+    source "$2/linux-server/backup/sources.sh"
+    resolve_sources
+    printf "%s\n" "${CANDIDATES[@]}"
+  ' bash "$invalid_server" "$REPO"
+}
+if main_out="$(main_world_resolve 2>&1)"; then
   fail "main Dragonwilds backup accepted a save without DedicatedServer.ini"
 fi
+grep -q 'Dragonwilds save exists but DedicatedServer.ini is missing' <<<"$main_out" \
+  || fail "main-world guard failed for the wrong reason: $main_out"
+mkdir -p "$invalid_server/dragonwilds/games/dragonwilds/RSDragonwilds/Saved/Config/LinuxServer"
+printf '[/Script/Dominion.DedicatedServerSettings]\nDefaultWorldName=Main\n' \
+  >"$invalid_server/dragonwilds/games/dragonwilds/RSDragonwilds/Saved/Config/LinuxServer/DedicatedServer.ini"
+main_out="$(main_world_resolve 2>&1)" || fail "valid main world rejected: $main_out"
+grep -q '/Saved/SaveGames' <<<"$main_out" || fail "valid main world omitted from sources: $main_out"
+printf '[/Script/Dominion.DedicatedServerSettings]\nDefaultWorldName=Missing\n' \
+  >"$invalid_server/dragonwilds/games/dragonwilds/RSDragonwilds/Saved/Config/LinuxServer/DedicatedServer.ini"
+if main_out="$(main_world_resolve 2>&1)"; then fail "main world accepted a missing configured save"; fi
+grep -q 'invalid Dragonwilds config/world' <<<"$main_out" || fail "missing configured save failed for the wrong reason: $main_out"
 
 # An unreachable SFTP primary fails the run instead of trying `restic init`.
 cat >"$server/backup/.env" <<EOF2

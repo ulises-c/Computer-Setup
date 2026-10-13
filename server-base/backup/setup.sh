@@ -85,7 +85,7 @@ if [[ "$DRY_RUN" == false ]]; then
     printf 'error: cannot install game backup without %s\n' "$BUNDLE_SAVE_SOURCE" >&2
     exit 1
   fi
-  if [[ ("$unit" == "game-backup.service" || "$unit" == "backup.service") && -z "$BACKUP_DRAGONWILDS_INSTALL_DIR" ]]; then
+  if [[ ("$unit" == "game-backup.service" || ( "$unit" == "backup.service" && ( -f "$HOST_DIR/dragonwilds/.env" || -d "$HOST_DIR/dragonwilds/games/dragonwilds/RSDragonwilds/Saved" ) )) && -z "$BACKUP_DRAGONWILDS_INSTALL_DIR" ]]; then
     printf 'error: cannot install %s without DRAGONWILDS_INSTALL_DIR in %s/dragonwilds/.env\n' "$unit" "$HOST_DIR" >&2
     exit 1
   fi

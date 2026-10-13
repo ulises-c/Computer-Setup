@@ -201,7 +201,8 @@ finish() {
   fi
   [[ "$STAGING_READY" == true ]] && rm -rf "$STAGING_DIR"
   local container
-  for container in "${QUIESCED_CONTAINERS[@]}"; do
+  # Bash 3.2 treats empty arrays as unset under nounset.
+  for container in ${QUIESCED_CONTAINERS[@]+"${QUIESCED_CONTAINERS[@]}"}; do
     docker start "$container" >/dev/null 2>&1 || true
   done
 }
@@ -237,7 +238,7 @@ resolve_sources
 [[ -n "${BACKUP_EXTRA_PATHS:-}" ]] && CANDIDATES+=(${BACKUP_EXTRA_PATHS})
 
 SOURCES=()
-for s in "${CANDIDATES[@]}"; do
+for s in ${CANDIDATES[@]+"${CANDIDATES[@]}"}; do
   [[ -e "$s" ]] && SOURCES+=("$s")
 done
 [[ ${#SOURCES[@]} -gt 0 ]] || log "no service data on disk yet — backing up staging + .env only"
@@ -255,7 +256,7 @@ staged_db_path() {
   printf '%s/sqlite/%s.sqlitebak' "$STAGING_DIR" "${rel#/}"
 }
 RAW_COPIES=()
-for root in "${SOURCES[@]}"; do
+for root in ${SOURCES[@]+"${SOURCES[@]}"}; do
   [[ -d "$root" ]] || continue
   while IFS= read -r -d '' db; do
     command -v sqlite3 >/dev/null || die "sqlite3 not installed (apt install sqlite3); needed for $db"
@@ -285,7 +286,7 @@ owning_container() {
   printf '%s' "$best"
 }
 raw_owners=()
-for db in "${RAW_COPIES[@]}"; do
+for db in ${RAW_COPIES[@]+"${RAW_COPIES[@]}"}; do
   owner="$(owning_container "$db")"
   raw_owners+=("$owner")
   if [[ -z "$owner" ]]; then
@@ -315,7 +316,7 @@ dns_peer_ready() {
     sleep "$DNS_PEER_POLL_SECONDS"
   done
 }
-for owner in $(printf '%s\n' "${raw_owners[@]}" | sort -u); do
+for owner in $(printf '%s\n' ${raw_owners[@]+"${raw_owners[@]}"} | sort -u); do
   if [[ "$owner" == "$DNS_CONTAINER" ]] && ! dns_peer_ready; then
     for i in "${!RAW_COPIES[@]}"; do
       [[ "${raw_owners[$i]}" == "$owner" ]] || continue
@@ -339,16 +340,30 @@ for owner in $(printf '%s\n' "${raw_owners[@]}" | sort -u); do
 done
 
 # Portainer stores BoltDB in a named volume; a brief stop guarantees a clean copy.
-if command -v docker >/dev/null && docker inspect -f '{{.State.Running}}' portainer >/dev/null 2>&1; then
-  vol="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}' portainer)"
-  if [[ -n "$vol" && -d "$vol" ]]; then
-    log "snapshotting portainer volume (brief stop)"
+if command -v docker >/dev/null && portainer_running="$(docker inspect -f '{{.State.Running}}' portainer 2>/dev/null)"; then
+  [[ "$portainer_running" == true || "$portainer_running" == false ]] || die "cannot determine Portainer state"
+  log "snapshotting portainer volume through Docker"
+  if [[ "$portainer_running" == true ]]; then
+    QUIESCED_CONTAINERS=(portainer)
     docker stop portainer >/dev/null
-    copied=true
-    cp -a "$vol" "$STAGING_DIR/portainer" || copied=false
-    docker start portainer >/dev/null
-    [[ "$copied" == true ]] || die "copying the portainer volume failed (portainer restarted)"
   fi
+  copied=true
+  docker run --rm --network none --volumes-from portainer:ro --entrypoint tar alpine:3.22 \
+    -C /data -cf - . >"$STAGING_DIR/portainer.tar" || copied=false
+  [[ -s "$STAGING_DIR/portainer.tar" ]] || copied=false
+  if [[ "$portainer_running" == true ]]; then
+    docker start portainer >/dev/null || die "could not restart Portainer after snapshot"
+    QUIESCED_CONTAINERS=()
+  fi
+  [[ "$copied" == true ]] || die "Portainer snapshot missing or failed (running container restarted)"
+elif command -v docker >/dev/null; then
+  docker info >/dev/null 2>&1 || die "Docker unavailable; cannot verify or snapshot Portainer state"
+  portainer_volumes="$(docker volume ls --filter label=com.docker.compose.volume=portainer_data --format '{{.Name}}')" \
+    || die "cannot inspect Portainer volumes"
+  [[ -z "$portainer_volumes" && ! -f "$HOST_DIR/portainer/.env" ]] \
+    || die "Portainer state exists but container cannot be inspected; refusing to omit its volume"
+elif [[ -f "$HOST_DIR/portainer/.env" ]]; then
+  die "configured Portainer cannot be inspected; refusing to omit its volume"
 fi
 
 if declare -F stage_extra >/dev/null; then
@@ -366,6 +381,17 @@ if ! restic cat config >/dev/null 2>&1; then
   # A remote repository is never created here: an unreachable or misconfigured
   # SFTP target looks the same as a missing repository (sftp-client.sh inits it).
   [[ "$RESTIC_REPOSITORY" != sftp:* ]] || die "cannot open $RESTIC_REPOSITORY (not auto-initializing a remote repository; check SSH/SFTP access)"
+  [[ "$RESTIC_REPOSITORY" == /* && -n "$BACKUP_MOUNT" ]] \
+    || die "local repository initialization requires a verified backup mount"
+  mountpoint -q "$BACKUP_MOUNT" && [[ -f "$BACKUP_MOUNT/.backup-target-ok" ]] \
+    || die "backup mount is not verified for repository initialization"
+  python3 - "$RESTIC_REPOSITORY" "$BACKUP_MOUNT" <<'PY' || die "local repository is not under its verified mount"
+from pathlib import Path
+import sys
+repository, mount = (Path(value).resolve() for value in sys.argv[1:])
+if not repository.is_relative_to(mount) or repository == mount:
+    raise SystemExit(1)
+PY
   log "initializing restic repo at $RESTIC_REPOSITORY"
   restic init
 fi
@@ -373,7 +399,7 @@ fi
 log "backing up ${#SOURCES[@]} source paths + staging"
 BACKUP_SHARED_LOCK_FD=""
 shared_lock_dir_in_sources=false
-for s in "${SOURCES[@]}"; do
+for s in ${SOURCES[@]+"${SOURCES[@]}"}; do
   if [[ -n "$BACKUP_SHARED_LOCK_PATH" && "$s" == "${BACKUP_SHARED_LOCK_PATH%/*}" ]]; then
     shared_lock_dir_in_sources=true
   fi
@@ -395,7 +421,7 @@ elif [[ -n "$BACKUP_SHARED_LOCK_PATH" ]]; then
     || die "shared backup lock ownership or mode is unsafe: $lock_fd_info"
   flock -s "$BACKUP_SHARED_LOCK_FD" || die "could not acquire shared backup lock"
 fi
-restic backup "${SOURCES[@]}" "$STAGING_DIR" \
+restic backup ${SOURCES[@]+"${SOURCES[@]}"} "$STAGING_DIR" \
   --host "$HOSTTAG" \
   --tag "$BACKUP_NAME-nightly" \
   --exclude ts-state \
@@ -427,7 +453,14 @@ if [[ -n "$SECOND_RESTIC_REPOSITORY" ]]; then
     if ! restic -r "$SECOND_RESTIC_REPOSITORY" cat config >/dev/null 2>&1; then
       # Only a verified local mount may be initialized: over SFTP an unreachable
       # target and an empty mountpoint look the same as a new repository.
-      [[ -n "$SECOND_BACKUP_MOUNT" ]] || return 1
+      [[ "$SECOND_RESTIC_REPOSITORY" == /* && -n "$SECOND_BACKUP_MOUNT" ]] || return 1
+      python3 - "$SECOND_RESTIC_REPOSITORY" "$SECOND_BACKUP_MOUNT" <<'PY' || return 1
+from pathlib import Path
+import sys
+repository, mount = (Path(value).resolve() for value in sys.argv[1:])
+if not repository.is_relative_to(mount) or repository == mount:
+    raise SystemExit('second repository is not under its verified mount')
+PY
       log "initializing second repo at $SECOND_RESTIC_REPOSITORY"
       restic -r "$SECOND_RESTIC_REPOSITORY" init --copy-chunker-params --from-repo "$RESTIC_REPOSITORY" || return 1
     fi
