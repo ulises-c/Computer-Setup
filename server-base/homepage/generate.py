@@ -263,7 +263,7 @@ def loading_css(top):
   background: url("data:image/svg+xml,{quote(svg, safe='')}") 0 0 / 100% 100% no-repeat;
   animation: monitor-shell-fallback 0s 12s forwards;
 }}'''
-        css += f"@media (scripting:enabled) {{ {media + ' {' if media else ''}\n{rule}\n{'}' if media else ''} }}\n"
+        css += f"@media (scripting:enabled) {{{' ' + media + ' {' if media else ''}\n{rule}\n{'}' if media else ''} }}\n"
     css += '''@media (scripting:enabled) {
   #information-widgets:not(.host-monitor-ready) { display:block; padding:0; border:0; }
   #information-widgets:not(.host-monitor-ready) #widgets-wrap,

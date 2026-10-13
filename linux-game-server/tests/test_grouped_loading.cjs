@@ -50,6 +50,43 @@ test('normal informational notice is calm; outages and stale native data stay wa
 
 module.exports={runtime};
 
+test('malformed extras members and policy device arrays cannot replace good samples', async () => {
+  let bad=false;
+  const policy={smart:{devices:[]}};
+  const r=runtime(async url=>({ok:true,json:async()=>String(url).endsWith('/storagepolicy') ? (bad ? {smart:{devices:{}}} : policy) : bad ? [null] : []}));
+  r.root.document.hidden=false;
+  const realNow=Date.now; let now=realNow(); Date.now=()=>now;
+  const c=api.start(r.root,{glances:'/glances',safeSSDHealth:true,net:'eth0'});
+  try {
+    await new Promise(x=>setImmediate(x));
+    for (const invalid of [true,false]) {
+      bad=invalid; now+=600001; await r.timers[0][0]();
+      for (const key of ['gpu','wifi','network','smart','storagepolicy']) {
+        assert.equal(c.samples[key].error,invalid,key);
+        assert.deepEqual(c.samples[key].data,key==='storagepolicy'?policy:[],key);
+      }
+    }
+  } finally {c.stop();Date.now=realNow;}
+});
+
+test('malformed consumed native arrays preserve the last good sample and recover', async () => {
+  let data={cpu:{total:0},mem:{percent:0},fs:[],sensors:[]};
+  const good=data;
+  const r=runtime(async()=>({ok:true,clone:()=>({json:async()=>data})}));
+  const c=api.start(r.root,{disks:['/etc/hostname']});
+  const send=async()=>{await r.root.fetch('/api/widgets/glances?index=0');await new Promise(x=>setImmediate(x));};
+  await send();
+  for (const fields of [{sensors:{}},{sensors:[null]},{sensors:[{}]},{sensors:[{label:1,type:'temperature_core'}]},{fs:[null]},{fs:[{}]}]) {
+    data={...good,...fields}; await send();
+    assert.equal(c.samples.native.data,good);
+    assert.equal(c.samples.native.error,true);
+    await r.timers[0][0]();
+    assert.match(r.body.innerHTML,/Unavailable · last value/);
+    data=good; await send(); assert.equal(c.samples.native.error,false);
+  }
+  c.stop();
+});
+
 test('native failure is not double-reported as a filesystem extras failure, and hidden tabs do not claim outage', async () => {
   const response={ok:false,clone:()=>({json:async()=>({error:'down'})})};
   const r=runtime(async()=>response); const control=api.start(r.root,{disks:['/etc/hostname']});
@@ -175,15 +212,30 @@ test('NVMe health age is matched by device name from the storage policy and poli
   const policy=(age)=>({data:{smart:{enabled:true,status:'ok',devices:[{DeviceName:'nvme0 Example',collected_at:1,collection_age_seconds:age}]}},at:1000});
   const cfg={disks:[],safeSSDHealth:true,temperatureLabels:['NVMe']};
   const tile=samples=>api.model({native:nativeWith([]),smart:{data:[device],at:1000},...samples},cfg,1000,'')[1].tiles.find(t=>t.label==='NVMe');
-  assert.equal(tile({storagepolicy:policy(120)}).state,'Cached · collected 2m ago');
-  assert.equal(tile({storagepolicy:policy(1300)}).state,'Stale · collected 21m ago');
-  assert.equal(tile({}).state,'Cached · age unknown');
-  assert.equal(tile({storagepolicy:{data:{smart:{enabled:false,status:'never',devices:[]}},at:1000}}).state,'Health disabled by host policy');
+  assert.equal(tile({storagepolicy:policy(120)}).state,'Temperature: Cached · age unknown · Health: Cached · collected 2m ago');
+  assert.equal(tile({storagepolicy:policy(1300)}).state,'Temperature: Cached · age unknown · Health: Stale · collected 21m ago');
+  assert.equal(tile({}).state,'Temperature: Cached · age unknown · Health: Cached · age unknown');
+  assert.equal(tile({storagepolicy:{data:{smart:{enabled:false,status:'never',devices:[]}},at:1000}}).state,'Temperature: Cached · age unknown · Health: Health disabled by host policy');
 });
 
 test('storage thermal rows are labelled cached even before health is opted in', () => {
   const tile=api.model({native:nativeWith([])},{disks:[],temperatureLabels:['NVMe']},1000,'')[1].tiles.find(t=>t.label==='NVMe');
   assert.equal(tile.state,'Cached · age unknown');
+});
+
+test('fresh SMART metadata cannot refresh an older or failed NVMe temperature', () => {
+  const device={DeviceName:'nvme0 Example',a:{key:'percentageUsed',value:0},b:{key:'criticalWarning',value:0},c:{key:'integrityErrors',value:0}};
+  const samples={native:nativeWith([]),smart:{data:[device],at:1000},storagepolicy:{data:{smart:{status:'ok',devices:[{DeviceName:device.DeviceName,collection_age_seconds:0}]}},at:1000}};
+  const sensor=samples.native.data.sensors[0];
+  Object.assign(sensor,{collection_source:'nvme_smart_cache',collection_age_seconds:1300,collection_interval_seconds:600,collection_status:'ok'});
+  const tile=()=>api.model(samples,{temperatureLabels:['NVMe'],safeSSDHealth:true},1000,'')[1].tiles.find(t=>t.label==='NVMe');
+  assert.match(tile().state,/Temperature: Stale · collected 21m ago/);
+  assert.match(tile().state,/Health: Cached · collected 0s ago/);
+  sensor.collection_status='error'; assert.match(tile().state,/Temperature: Collection error/);
+  samples.native.error=true; assert.match(tile().state,/Temperature: Unavailable · last value/);
+  samples.native.error=false; sensor.collection_status='ok'; sensor.collection_age_seconds=0;
+  samples.storagepolicy.error=true; assert.match(tile().state,/Health: Unavailable · last value/);
+  assert.match(tile().state,/Temperature: Cached · collected 0s ago/);
 });
 
 test('storage requests: nothing by default; opt-in asks smart and storagepolicy once per conservative interval', async () => {

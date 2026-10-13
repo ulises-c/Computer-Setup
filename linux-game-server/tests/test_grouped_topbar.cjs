@@ -14,6 +14,17 @@ test('game host has an opt-in renderer without native polling', () => {
 const api = () => require(source);
 const native = {cpu:{total:12.3}, load:{min15:0.4}, mem:{total:32e9,available:28e9,percent:12.5}, fs:[{mnt_point:'/etc/hostname',alias:'system',free:450e9,size:500e9,used:25e9,percent:5}], sensors:[{type:'temperature_core',label:'CPU',value:33,warning:84},{type:'temperature_core',label:'NVMe',value:30,warning:74}],uptime:'4 days, 13:02:20'};
 const sample = (data) => ({data,at:1000,error:false});
+test('invalid SMART attributes are unknown rather than healthy or numeric wear', () => {
+  const device=(warning,errors,wear)=>({DeviceName:'NVMe',a:{key:'percentageUsed',value:wear},b:{key:'criticalWarning',value:warning},c:{key:'integrityErrors',value:errors}});
+  const tile=d=>api().model({smart:sample([d])},{safeSSDHealth:true},1000,'')[1].tiles.find(t=>t.label==='NVMe health');
+  for (const value of ['', 'bad', '0', null, undefined, NaN, Infinity, -1, true]) {
+    assert.equal(tile(device(value,0,2)).rows[0][1],'Unknown',String(value));
+    assert.equal(tile(device(0,value,2)).rows[0][1],'Unknown',String(value));
+    assert.equal(tile(device(0,0,value)).rows[1][1],'Unknown',String(value));
+  }
+  assert.deepEqual(tile(device(0,0,0)).rows,[['Health','OK'],['Wear','0%']]);
+  assert.equal(tile(device(1,0,101)).rows[0][1],'WARN');
+});
 test('groups preserve real native and available extras, including zero GPU readings', () => {
   const groups = api().model({native:sample(native),gpu:sample([{name:'GTX 1070',proc:0,temperature:37,fan_speed:0,mem:1.4}]),network:sample([{interface_name:'eth0',bytes_sent_rate_per_sec:200,bytes_recv_rate_per_sec:300}]),wifi:sample([]),smart:sample([])}, {net:'eth0',disks:['/etc/hostname']}, 1000, '10/5/26, 10:00');
   assert.deepEqual(groups.map(g=>g.title), ['Compute','Storage','Connectivity','System']);
@@ -74,7 +85,7 @@ test('NVMe thermal and health rows form one compact tile with conservative fresh
   const nvme=groups[1].tiles.find(t=>t.label==='NVMe');
   assert.ok(nvme.rows.some(r=>r[0]==='Temp'));
   assert.ok(nvme.rows.some(r=>r[0]==='Health' && r[1]==='OK'));
-  assert.equal(nvme.state,'Unavailable · last value');
+  assert.equal(nvme.state,'Temperature: Cached · age unknown · Health: Unavailable · last value');
 });
 test('native HTTP failures and clone failures preserve SWR response and mark last data unavailable', async () => {
   let response={ok:true,clone:()=>({json:async()=>native}),json:async()=>[]};

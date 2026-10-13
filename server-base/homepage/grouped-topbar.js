@@ -7,6 +7,11 @@
     } catch { return false; }
   };
   const number = (n) => typeof n === 'number' && Number.isFinite(n);
+  const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+  const rows = (value, valid = object) => Array.isArray(value) && value.every(valid);
+  const nativeShape = data => object(data) && !data.error && number(data.cpu?.total) && number(data.mem?.percent)
+    && rows(data.fs, row => object(row) && typeof row.mnt_point === 'string')
+    && (data.sensors == null || rows(data.sensors, row => object(row) && typeof row.label === 'string' && typeof row.type === 'string'));
   const decimal = (n) => number(n) ? String(Math.round(n * 10) / 10) : '—';
   const pct = (n) => number(n) ? `${decimal(n)}%` : '—';
   const bytes = (n, binary = false) => {
@@ -60,7 +65,7 @@
       const s = sensors.find(s=>s.label === label && s.type === 'temperature_core');
       add(1,label === 'NVMe' ? label : `${label} temperature`,[['Temp',celsius(s?.value)],['Warn',celsius(s?.warning)]]);
       // Drive temperature shares the host's cached health sample; label it so.
-      if (config.temperatureLabels?.includes(label) && samples.native?.at && !groups[1].tiles.at(-1).state) groups[1].tiles.at(-1).state = 'Cached · age unknown';
+      if ((config.temperatureLabels?.includes(label) || s?.collection_source === 'nvme_smart_cache') && samples.native?.at && !groups[1].tiles.at(-1).state) groups[1].tiles.at(-1).state = storageState(rowMeta(s),samples.native.at,now,cadence(config).smart);
     }
     for (const s of sensors) {
       if (s.type === 'fan_speed' && number(s.value) && s.value > 0) add(0,s.label,[['Fan',`${decimal(s.value)} RPM`]]);
@@ -84,8 +89,8 @@
       const label = config.diskLabels?.[mount] || (mount === '/etc/hostname' ? 'System disk' : mount);
       if (hdd.has(mount)) {
         // Spinning disks are never polled by this page. Their figures come from
-        // the host's activity-gated sample (taken only while the drive was in
-        // use) and are always shown with the date they were read; a row without
+        // the host's experimental activity-gated sample, not proof of current
+        // power state, and show the date they were read; a row without
         // that marker is ignored, as is any row when the host has not opted in.
         const row = config.hddActivityStats ? (d.fs || []).find(f=>f.mnt_point === mount && f.collection_source === 'activity_gated_statvfs' && number(f.collected_at)) : null;
         add(1,label,row ? [['Used',pct(row.percent)],['Free',bytes(row.free)],['Total',bytes(row.size)]] : [['Used','—'],['Free','—'],['Total','—']],'native',row?.percent,row?.fs_type);
@@ -103,6 +108,7 @@
     const policyDevice = name => (policy?.smart?.devices || []).find(x=>x.DeviceName === name);
     const smartState = (disk) => {
       if (samples.smart?.error) return status(samples.smart,now);
+      if (samples.storagepolicy?.error) return status(samples.storagepolicy,now);
       if (policy?.smart?.enabled === false) return 'Health disabled by host policy';
       const entry = policyDevice(disk?.DeviceName);
       return storageState(entry && {status:policy.smart.status === 'error' ? 'error' : 'ok',age:entry.collection_age_seconds,interval:policy.smart.interval_seconds},samples.storagepolicy?.at ?? now,now,cadence(config).smart);
@@ -112,16 +118,18 @@
     // Health slots exist from first paint when the host opted in (dashes), and
     // are filled in place later: nothing is appended after the shell is laid out.
     if (config.safeSSDHealth === true || samples.smart) {
-      const present = (samples.smart?.data || []).filter(disk=>attr(disk,'percentageUsed') != null);
+      const present = (samples.smart?.data || []).filter(disk=>attrs(disk).some(a=>a.key === 'percentageUsed'));
       const slots = present.length > 1 ? present : [present[0]];
       slots.forEach((disk, i) => {
-        const health = !disk ? '—' : attr(disk,'criticalWarning') == null || attr(disk,'integrityErrors') == null ? 'Unknown' : (Number(attr(disk,'criticalWarning')) || Number(attr(disk,'integrityErrors'))) ? 'WARN' : 'OK';
-        const rows = [['Health',health],['Wear',disk ? `${attr(disk,'percentageUsed')}%` : '—']];
+        const warning = attr(disk,'criticalWarning'), errors = attr(disk,'integrityErrors'), wear = attr(disk,'percentageUsed');
+        const valid = value => number(value) && value >= 0;
+        const health = !disk ? '—' : !valid(warning) || !valid(errors) ? 'Unknown' : warning || errors ? 'WARN' : 'OK';
+        const rows = [['Health',health],['Wear',!disk ? '—' : valid(wear) ? pct(wear) : 'Unknown']];
         // Merge only when there is exactly one device; don't imply a thermal
         // sensor belongs to a particular drive in a multi-NVMe host.
         const thermal = slots.length === 1 && groups[1].tiles.find(t=>t.label === 'NVMe');
         const state = disk ? smartState(disk) : samples.smart?.at && !samples.smart.error ? (policy?.smart?.enabled === false ? 'Health disabled by host policy' : 'Health unavailable') : status(samples.smart,now);
-        if (thermal) { thermal.rows.push(...rows); thermal.state = state || thermal.state; }
+        if (thermal) { thermal.rows.push(...rows); thermal.state = `Temperature: ${thermal.state || 'Cached · age unknown'} · Health: ${state}`; }
         else { add(1,`NVMe health${i ? ` ${i+1}` : ''}`,rows,'smart'); groups[1].tiles.at(-1).state = state; }
       });
     }
@@ -146,7 +154,8 @@
   };
   // A healthy cache age and the standing info banner are routine, not warnings:
   // amber is reserved for stale, unknown, failed or unavailable data.
-  const calmState = text => !text || /^(Cached · collected |Last read |Not read yet)/.test(text);
+  const calmState = text => !text || /^(Cached · collected |Last read |Not read yet)/.test(text)
+    || /^Temperature: Cached · collected .+ · Health: Cached · collected /.test(text);
   const noticeLevel = text => (!text || text === 'Loading host metrics' ||
     text.startsWith('Core metrics update automatically')) ? 'calm' : 'warn';
   const markup = (groups) => groups.map((group,i)=>`<section class="monitor-group" aria-labelledby="monitor-heading-${i}"><h2 id="monitor-heading-${i}">${esc(group.title)}</h2><div class="monitor-tiles">${group.tiles.map(tile=>`<article class="monitor-tile${tile.state && !calmState(tile.state) ? ' has-warning' : ''}"><h3>${esc(tile.label)}</h3><p class="monitor-detail">${esc(tile.detail || '')}</p><dl>${tile.rows.map(([label,value])=>`<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl><div class="monitor-meter" aria-hidden="true">${number(tile.usage) ? `<span style="width:${Math.min(100,Math.max(0,tile.usage))}%"></span>` : ''}</div><p class="monitor-state${calmState(tile.state) ? ' is-calm' : ''}">${esc(tile.state || '')}</p></article>`).join('')}</div></section>`).join('');
@@ -196,7 +205,7 @@
           // Homepage alone owns native request scheduling and visibility policy.
           Promise.resolve().then(()=>response.clone().json()).then(data=>{
             if (stopped) return;
-            if (response.ok && !data.error && number(data.cpu?.total) && number(data.mem?.percent) && Array.isArray(data.fs)) record('native',data);
+            if (response.ok && nativeShape(data)) record('native',data);
             else record('native',null,true);
             render();
           }).catch(()=>{record('native',null,true);render();});
@@ -214,7 +223,10 @@
         if (!response.ok) throw new Error('endpoint unavailable');
         const data = await response.json();
         // storagepolicy is one object; every other endpoint is a list.
-        if (key === 'storagepolicy' ? !data || typeof data !== 'object' || Array.isArray(data) : !Array.isArray(data)) throw new Error('invalid endpoint shape');
+        const valid = key === 'storagepolicy' ? object(data)
+          && (data.smart == null || object(data.smart) && (data.smart.devices == null || rows(data.smart.devices, row => object(row) && typeof row.DeviceName === 'string')))
+          : rows(data);
+        if (!valid) throw new Error('invalid endpoint shape');
         if (!stopped) record(key,data);
       } catch { if (!stopped) record(key,null,true); }
     };

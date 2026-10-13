@@ -166,6 +166,11 @@ class GenerateTests(unittest.TestCase):
         for host in ('linux-pi', 'linux-game-server'):
             self.assertNotIn('hddDisks', fleet['hosts'][host]['topbar'])
 
+    def test_generated_css_has_no_trailing_whitespace(self):
+        for host in FLEET['hosts']:
+            css = generate.render_css(FLEET, host)
+            self.assertTrue(all(line == line.rstrip() for line in css.splitlines()), host)
+
     def test_activity_stats_skeleton_does_not_claim_hdds_are_unmonitored(self):
         import copy
         from urllib.parse import quote

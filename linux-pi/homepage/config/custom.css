@@ -166,7 +166,7 @@
 /* Rendering is static under reduced motion, too: no pulsing/shimmer. */
 
 #information-widgets { --monitor-h-compute: 138px; --monitor-h-storage: 134px; --monitor-h-net: 102px; --monitor-h-system: 102px; --monitor-storage-cols: 2; --monitor-storage-fr: 1.2fr; }
-@media (scripting:enabled) { 
+@media (scripting:enabled) {
 #information-widgets:not(.host-monitor-ready)::before {
   content: "Host metrics loading…"; display: block; box-sizing: border-box;
   height: 334px; padding: 60px 14px 0; color: #fde68a;
