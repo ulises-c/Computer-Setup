@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 linux-desktop/llama-telemetry/*.env
 linux-server/llama-telemetry/*.env
 .DS_Store
