@@ -11,6 +11,23 @@ spec.loader.exec_module(telemetry)
 
 
 class StorageTests(unittest.TestCase):
+    def test_temperature_sources_accept_zero_but_omit_nonfinite_and_boolean_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            chip = root / 'hwmon0'
+            chip.mkdir()
+            (chip / 'name').write_text('coretemp')
+            (chip / 'temp1_input').write_text('nan')
+            (chip / 'temp2_input').write_text('0')
+            (chip / 'temp2_max').write_text('inf')
+            health = telemetry.nvme_provider(None, root, enabled=False)
+            health.cache.data = [SimpleNamespace(name='nvme0', temperature=value)
+                                 for value in (float('nan'), float('inf'), True, 0)]
+            data = telemetry.temperature_provider(health, root)()
+            self.assertEqual([t.current for t in data['coretemp']], [0])
+            self.assertIsNone(data['coretemp'][0].high)
+            self.assertEqual([t.current for t in data['nvme']], [0])
+
     def test_filesystem_cache_only_queries_proven_solid_state_backing(self):
         self.assertTrue(hasattr(telemetry, 'filesystem_provider'), 'safe filesystem cache is missing')
         with tempfile.TemporaryDirectory() as tmp:

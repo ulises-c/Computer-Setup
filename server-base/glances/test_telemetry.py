@@ -80,7 +80,7 @@ class TelemetryTests(unittest.TestCase):
             def _GlancesGrabSensors__fetch_data(self):
                 return {}
             def update(self):
-                return []
+                return [{'label': 'Composite', 'value': 0}]
         sensors.GlancesGrabSensors = GlancesGrabSensors
         hddtemp = types.ModuleType('glances.plugins.sensors.sensor.glances_hddtemp')
         hddtemp.GlancesGrabHDDTemp = type('GlancesGrabHDDTemp', (), {})
@@ -99,6 +99,13 @@ class TelemetryTests(unittest.TestCase):
             telemetry.install(gpu=True)
             self.assertIsInstance(smart.DeviceList().devices, list)
             self.assertEqual(NvidiaGPU().get_device_stats()[0]['memory_total'], 8)
+            cache = smart._storage_policy.health.cache
+            cache.clock = lambda: 1300
+            cache.collected_mono, cache.collected_at, cache.status = 0, 1000, 'error'
+            row, = GlancesGrabSensors().update()
+            self.assertEqual(row['collection_status'], 'error')
+            self.assertEqual(row['collection_age_seconds'], 1300)
+            self.assertEqual(row['value'], 0)
 
 if __name__ == '__main__':
     unittest.main()

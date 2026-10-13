@@ -1,9 +1,10 @@
 # Game-host grouped metrics
 
-`server-base/fleet.json` enables `topbar.grouped` **only** for this host.
-The generator appends `server-base/homepage/grouped-topbar.css` and replaces
-its legacy extras poller with `grouped-topbar.js`. Other hosts' generated
-settings, CSS and JS are unchanged. Edit sources, never the generated copies:
+`server-base/fleet.json` enables `topbar.grouped` for all four hosts: main,
+Pi, game and Mac. The generator appends `server-base/homepage/grouped-topbar.css`
+and replaces each enabled host's legacy extras poller with `grouped-topbar.js`.
+These are repository flags, not evidence of live deployment. Edit sources,
+never the generated copies:
 
 ```sh
 python3 server-base/homepage/generate.py
@@ -33,19 +34,28 @@ passive `fetch` wrapper clones only the same-origin, index-0
 `/api/widgets/glances` response; it returns the original Response to SWR.
 It creates **no native polling** and reuses native sensors instead of making
 another `/sensors` request. Homepage v2.4.0 owns its 1500ms refresh and error
-retry behavior. The grouped view renders only after a compatible payload;
-without JS, CSS or that payload the native view remains available.
+retry behavior. The grouped shell renders loading dashes before data arrives;
+compatible payloads fill its reserved slots. Malformed consumed arrays or
+members preserve the last good sample and show an error until a good response
+recovers. Without the grouped JS/CSS the native view remains available.
 
 One non-overlapping 5000ms extras timer reads the public host Glances
 `/glances/api/4/{gpu,network,wifi}` paths, with a 4s request timeout.
-SMART is fetched every 60s. Extras pause in hidden tabs and refresh on return.
+Opted-in SMART and its metadata-only `storagepolicy` endpoint are fetched every
+10 minutes (600000ms minimum); filesystem data rides in the native response but
+is cached by the collector for at least 5 minutes (300s). Configuration can
+lengthen, never shorten, those floors. Extras pause in hidden tabs and refresh on return.
 URLs reject userinfo/unsafe protocols, requests omit credentials, and API text
 is HTML-escaped. There are no RGB requests from the top bar; the generator
 rejects `topbar.rgb` so that it cannot return through configuration.
 
 Failed reads preserve the last value with **Unavailable · last value** text;
 missing numeric fields use an em dash, not zero. Native/extras older than
-15s and SMART older than 130s are **Stale · last value**.
+15s are **Stale · last value**. Storage freshness uses collector age, advanced
+by browser elapsed time, not HTTP arrival time; twice the collection interval
+marks it stale. Missing collector age stays unknown. Temperature and health
+retain independent ages/errors even when merged into one NVMe tile. Invalid
+SMART health/wear values are Unknown, never healthy; numeric zero is valid.
 Optional empty GPU/Wi-Fi/sensor arrays mean unavailable hardware, not zero
 utilization. Failed optional endpoints are identified in a visible notice.
 
@@ -65,8 +75,9 @@ docker exec homepage wget -qO- http://127.0.0.1:3000/api/revalidate
 ```
 
 No container or game restart is needed. Disabling this host's `grouped` flag
-and regenerating restores its legacy native/extras appearance. Never enable
-other hosts or edit `linux-server/` as part of a game-host-only rollout.
+and regenerating restores its legacy native/extras appearance. A game-host-only
+rollout must not recreate other hosts' containers; their grouped flags are
+already enabled in the tracked fleet.
 
 ## GPU bytes and spindle-safe health
 
@@ -82,10 +93,15 @@ by actual `gpu_id` inventory; unspecified types remain explicitly unknown.
 See `server-base/glances/README.md`: upstream Glances SMART discovery is **not**
 standby-safe (pySMART scans/queries all drives before display filtering).
 The shared default now discovers only NVMe controllers via sysfs and caches
-health for sixty seconds. Only game-host Glances has been recreated. Other
-hosts are unchanged until their own opt-in deployment. Intentional HDD checks
-require a known transport and `smartctl -n standby,3,5`; skipped/unsupported
-checks remain unknown. No sleeping HDD was probed and no fleet rollout occurred.
+health for at least ten minutes; solid-state filesystem usage is cached for at
+least five minutes. The shared Glances guide records an earlier game → Pi → main
+rollout; repository flags alone do not establish the current live state, and
+these review fixes perform no deployment. Main Compose now disables experimental
+activity-gated HDD usage: completed-I/O counters cannot prove a disk is still
+awake, especially after delays/suspension or on multi-disk backing. HDD health
+and temperature stay disabled. Physical no-wake verification remains outstanding;
+do not enable HDD usage without a non-probing active-use guarantee. No physical
+HDD no-wake proof is claimed by synthetic tests or browser cache-age checks.
 
 ## OpenRGB lighting card
 

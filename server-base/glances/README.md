@@ -14,7 +14,7 @@ the image; adapter failures stop the launcher rather than start unprotected.
 | NVMe SSD SMART | 600 seconds | only explicit `/dev/nvmeN`, `interface=nvme`, sysfs controller discovery |
 | NVMe temperature | same cached SMART sample | no independent hwmon or SMART query |
 | Filesystem used/free | 300 seconds | statvfs only after sysfs proves **all** backing devices nonrotational; local ext4/xfs only |
-| HDD filesystem used/free | **disabled** unless `GLANCES_HDD_ACTIVITY_STATS=true` | only while the kernel's I/O counters show the drive in use (below) |
+| HDD filesystem used/free | **disabled** in tracked main Compose | experimental opt-in uses historical I/O counters, not proof of current power state (below) |
 | Unknown/network filesystem used/free | **disabled** | no statvfs, pathname walk or tree scan |
 | Disk I/O rates | 60 seconds | psutil's Linux `/proc/diskstats` counters, not drive queries |
 | Hardware storage inventory | 3600 seconds | sysfs names, rotational flag, transport path and block capacity only |
@@ -34,32 +34,40 @@ also blocked, and the broad psutil temperature read is bypassed, including durin
 sensor construction. NVMe hwmon inputs are not read at all. Unknown temperature
 chips are omitted; CPU/board/fan readings do not rely on a drive-health scan.
 
-### Spinning disks: read only while they are in use
+### Spinning disks: experimental activity gate disabled
 
-With `GLANCES_HDD_ACTIVITY_STATS=true` (main server only) a sampler thread reads
-each registered HDD mount's backing disks' completed read/write counters from
-sysfs (`/sys/dev/block/.../stat`: kernel memory, no drive query) every 10 seconds
-(`GLANCES_HDD_ACTIVITY_POLL`, floor 10). Counters that moved since the previous
-reading mean something else is already using the drive, so one `statvfs` then
-cannot spin it up. Idle drives are never touched: their last sample is reported
-as is, with the epoch time it was taken (`collected_at`), and it is persisted to
-`GLANCES_HDD_CACHE_FILE` so it survives restarts.
+Tracked main-server Compose explicitly sets `GLANCES_HDD_ACTIVITY_STATS=false`.
+The optional sampler remains available for controlled experiments, not as a
+no-wake guarantee. When enabled, its thread reads registered HDDs' completed
+read/write counters from sysfs (`/sys/dev/block/.../stat`: kernel memory) on a
+nominal 10-second poll (`GLANCES_HDD_ACTIVITY_POLL`, floor 10). Changed counters
+prove only historical activity. Scheduling delays, suspension and activity on
+only one RAID member can leave a backing drive asleep when `statvfs` runs.
+There is no enforced maximum active-use window or non-probing power-state proof.
+The previous claim that these reads cannot spin a drive up is withdrawn.
 
 - At most one read attempt per mount per `GLANCES_HDD_INTERVAL` (default and floor 300 s),
   however busy the drive is and whether or not the read succeeds. A damaged or
   hand-edited cache file loses its invalid samples on load (non-finite, negative,
   future-dated, percent over 100). The first reading after startup only sets the baseline.
+  Live registration changes to mount ID, root, device number, filesystem type,
+  source or backing sysfs paths invalidate usage, throttle state and I/O baseline.
+  Persisted numeric figures are **not reused after restart**: their filesystem
+  identity cannot be proved from a saved mount path without touching storage.
+  The optional cache file is not a durable freshness or identity guarantee.
 - Rows appear in `/api/4/fs` only after a first sample (`storage_class=hdd`,
   `collection_source=activity_gated_statvfs`, `collection_age_seconds` counted from
-  `collected_at` by the wall clock, so it spans restarts). Before that the mount is
+  `collected_at` by the wall clock within the current process). Before that the mount is
   absent, never zero.
 - Every disk behind a mapper/RAID node must be rotational and is watched; a mixed,
   unproven or non-ext4/xfs backing stays omitted.
 - No SMART, power-state command, hdparm or smartctl is involved, and the USB
   bridges in front of the DAS disks are never asked anything.
-- Residual risk: the read happens up to one poll (10 s) after the I/O it piggybacks
-  on, which sits far inside any drive's idle spindown timer, and `statvfs` on a
-  mounted ext4 normally reads in-memory superblock counters anyway.
+- Physical verification remains outstanding: delayed ticks, suspension/resume,
+  evicted pathname metadata and multi-disk backing must be assessed with a
+  separately authorized, non-waking observation method. Synthetic tests prove
+  code paths and cache invalidation, **not physical HDD no-wake behavior**.
+  Keep usage disabled unless a non-probing active-use guarantee is established.
 
 ### Filesystem tradeoff
 
@@ -75,7 +83,7 @@ same 300-second cadence. Btrfs and other unverified filesystem types are omitted
 
 No power-state checks, spin-up/down commands, self-tests, device scans, mounted
 tree enumeration, package installs or new exporter/service are required. This
-policy proves the Glances collector has no HDD probe path; it does not claim a
+default policy excludes HDD SMART, temperature and statvfs paths; it does not claim a
 physical sleep-state observation or control unrelated applications/daemons.
 Intentional HDD diagnostics require separate authorization and a proven
 standby-safe transport; unsupported bridges must stay unknown.
@@ -90,8 +98,8 @@ GLANCES_FS_INTERVAL=300
 GLANCES_NVME_HEALTH_INTERVAL=600
 GLANCES_NVME_HEALTH_ENABLED=true
 GLANCES_DISKIO_INTERVAL=60
-# Main server only (set in its compose file): HDD used/free while in use.
-# GLANCES_HDD_ACTIVITY_STATS=true
+# Experimental only; tracked main Compose explicitly keeps this false.
+# GLANCES_HDD_ACTIVITY_STATS=false
 # GLANCES_HDD_CACHE_FILE=/var/lib/glances-hdd/hdd-cache.json
 # GLANCES_HDD_INTERVAL=300
 # GLANCES_HDD_ACTIVITY_POLL=10
@@ -100,7 +108,7 @@ GLANCES_DISKIO_INTERVAL=60
 Intervals below their minimum are clamped; malformed intervals stop startup.
 Only literal `true` enables NVMe health. Set it to `false` to collect no hardware
 storage health/temperature at all. HDD health and temperature have deliberately **no opt-in switch**;
-HDD *capacity* has the activity-gated one above.
+HDD filesystem usage has the experimental activity-gated switch above, disabled by default.
 Preserve the host's existing environment, network mode and any Tailscale sidecar;
 do not recreate a sidecar alone or restart unrelated projects.
 
@@ -181,14 +189,24 @@ initiates FS or SMART collection:
 SMART rows keep their upstream `DeviceName` and numeric attribute keys unchanged;
 use `storagepolicy.smart.devices` for age metadata, matching `DeviceName`. Do not
 add arbitrary metadata keys to SMART rows: Glances interprets them as attributes.
-NVMe sensor rows reuse the SMART timestamp/interval/age with
+NVMe sensor rows reuse the SMART timestamp/interval/age/status with
 `collection_source=nvme_smart_cache`. Capability metadata never includes serials,
 UUIDs, network addresses or credentials. Empty/failed health is unavailable, not
 healthy. A browser may opt out of displaying/requesting health independently of
 the backend NVMe policy; it should request FS no faster than its configured slow
 cadence, honor the returned ages and keep HDD usage explicitly unavailable.
+The grouped renderer validates consumed arrays/members before accepting a
+sample, retains last-good values on malformed responses and recovers on a good
+response. Health and wear require finite, nonnegative numeric attributes (zero
+is valid); invalid values remain Unknown. Merged NVMe tiles retain separate
+temperature and health ages/errors; newer SMART metadata cannot refresh an
+older native temperature reading.
 
 ## Verified fleet rollout
+
+This is the earlier rollout record, not a deployment of the changes above.
+The tracked HDD-disable setting still requires a scoped Glances recreation on
+the main host; this review fix performs no live deployment or physical probes.
 
 The game, Pi and main hosts were audited and rolled out in that order without
 installing packages or changing their private `.env` files, source branches,

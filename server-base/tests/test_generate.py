@@ -149,8 +149,8 @@ class GenerateTests(unittest.TestCase):
         import copy
         fleet = copy.deepcopy(FLEET)
         main = fleet['hosts']['linux-server']['topbar']
-        self.assertTrue(main['hddActivityStats'])
-        self.assertIn('hddActivityStats: true', generate.render_settings(fleet, 'linux-server', ''))
+        self.assertFalse(main['hddActivityStats'])
+        self.assertIn('hddActivityStats: false', generate.render_settings(fleet, 'linux-server', ''))
         del main['hddActivityStats']
         self.assertEqual(sorted(main['hddDisks']), ['/mnt/seagate4tb', '/mnt/wd14tb', '/mnt/wd1tb'])
         self.assertTrue(set(main['hddDisks']) <= set(main['disks']))
@@ -176,6 +176,7 @@ class GenerateTests(unittest.TestCase):
         from urllib.parse import quote
         fleet = copy.deepcopy(FLEET)
         fleet['hosts']['linux-server']['topbar']['grouped'] = True
+        fleet['hosts']['linux-server']['topbar']['hddActivityStats'] = True
         css = generate.render_css(fleet, 'linux-server')
         self.assertNotIn(quote('Not monitored', safe=''), css)
         for host in ('linux-pi', 'linux-game-server'):

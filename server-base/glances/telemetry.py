@@ -147,11 +147,10 @@ def io_counters(disks):
 
 
 class HddActivityStats:
-    """Filesystem usage of spinning disks, read only while something else uses them.
+    """Experimental usage sampler gated on historical completed I/O.
 
-    A drive whose completed-I/O counters moved since the last tick is awake, so
-    a read then cannot spin it up. Idle drives are never touched; their last
-    sample keeps the date it was taken and survives restarts.
+    Counters do not prove current power state; this opt-in is not wake-safe.
+    The tracked main-server configuration keeps it disabled.
     """
     def __init__(self, usage, cache_file=None, interval=300, wall=time.time, poll=10):
         self.usage, self.wall = usage, wall
@@ -187,9 +186,22 @@ class HddActivityStats:
 
     def register(self, mounts):
         with self.lock:
-            self.mounts = {mount['row']['mnt_point']: mount for mount in mounts}
+            registered = {mount['row']['mnt_point']: mount for mount in mounts}
+            for mnt in set(self.samples) | set(self.mounts):
+                previous, current = self.mounts.get(mnt), registered.get(mnt)
+                # Mount IDs are process-observed identities, not durable proof
+                # of the filesystem behind a restored path after a restart.
+                if previous is None or current is None or previous['identity'] != current['identity']:
+                    self.samples.pop(mnt, None)
+                    self.baselines.pop(mnt, None)
+                    self.attempts.pop(mnt, None)
+            self.mounts = registered
 
     def tick(self):
+        with self.lock:
+            self._tick()
+
+    def _tick(self):
         with self.lock:
             mounts = list(self.mounts.values())
         for stale in set(self.baselines) - {mount['row']['mnt_point'] for mount in mounts}:
@@ -261,7 +273,7 @@ def mount_records(path):
         parts = line.split()
         try:
             separator = parts.index('-')
-            yield dict(devno=parts[2], mnt_point=unescape(parts[4]), options=parts[5],
+            yield dict(mount_id=parts[0], root=unescape(parts[3]), devno=parts[2], mnt_point=unescape(parts[4]), options=parts[5],
                        fs_type=parts[separator + 1], device_name=unescape(parts[separator + 2]))
         except (ValueError, IndexError):
             continue
@@ -286,7 +298,7 @@ def filesystem_provider(usage, block_root=Path('/sys/dev/block'),
             rows, spinning = [], []
             for record in mount_records(mountinfo):
                 # Solid-state mounts are read here on a slow timer. Spinning disks
-                # are only registered: `hdd` reads them while they are in use.
+                # are only registered for the experimental activity sampler.
                 # Unknown, mixed and network backing is omitted.
                 if record['fs_type'] not in ('ext4', 'xfs'):
                     continue
@@ -297,13 +309,14 @@ def filesystem_provider(usage, block_root=Path('/sys/dev/block'),
                     continue
                 if not plugin.is_display_any(record['mnt_point'], record['device_name']):
                     continue
-                row = {key: value for key, value in record.items() if key != 'devno'}
+                row = {key: value for key, value in record.items() if key not in ('devno', 'mount_id', 'root')}
                 row.update(key=plugin.get_key())
                 alias = plugin.has_alias(record['mnt_point'])
                 if alias is not None:
                     row['alias'] = alias
                 if disks:
-                    spinning.append(dict(row=row, disks=disks))
+                    identity = tuple(record[key] for key in ('mount_id', 'root', 'devno', 'fs_type', 'device_name')) + tuple(str(disk) for disk in disks)
+                    spinning.append(dict(row=row, disks=disks, identity=identity))
                     continue
                 current = usage(record['mnt_point'])
                 row.update(size=current.total, used=current.used, free=current.free,
@@ -341,7 +354,8 @@ def temperature_provider(health, hwmon=Path('/sys/class/hwmon')):
                 base = input_path.name.removesuffix('_input')
                 def value(suffix):
                     try:
-                        return float((node / (base + suffix)).read_text().strip()) / 1000
+                        reading = float((node / (base + suffix)).read_text().strip()) / 1000
+                        return reading if math.isfinite(reading) else None
                     except (OSError, ValueError):
                         return None
                 current = value('_input')
@@ -359,7 +373,7 @@ def temperature_provider(health, hwmon=Path('/sys/class/hwmon')):
             nvme = []
             for index, device in enumerate(health.cache.data):
                 temperature = getattr(device, 'temperature', None)
-                if isinstance(temperature, (int, float)):
+                if isinstance(temperature, (int, float)) and not isinstance(temperature, bool) and math.isfinite(temperature):
                     nvme.append(SimpleNamespace(label='Composite' if index == 0 else 'NVMe ' + device.name,
                                                 current=temperature, high=None, critical=None))
             if nvme:
@@ -498,6 +512,7 @@ def install(gpu=False, policy=None):
                     row.update(collected_at=metadata['collected_at'],
                                collection_age_seconds=metadata['collection_age_seconds'],
                                collection_interval_seconds=metadata['interval_seconds'],
+                               collection_status=metadata['status'],
                                collection_source='nvme_smart_cache')
             return rows
 

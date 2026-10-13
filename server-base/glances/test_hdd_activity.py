@@ -42,6 +42,10 @@ class Fixture:
 
 
 class HddActivityTests(unittest.TestCase):
+    def test_tracked_main_compose_disables_unproven_activity_gate(self):
+        compose = Path(__file__).resolve().parents[2] / 'linux-server/glances/docker-compose.yml'
+        self.assertIn('GLANCES_HDD_ACTIVITY_STATS: "false"', compose.read_text())
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -140,7 +144,7 @@ class HddActivityTests(unittest.TestCase):
         stats.tick()
         self.assertEqual(self.calls, [], 'first good reading after a gap is only a baseline')
 
-    def test_samples_survive_a_restart_with_their_original_date(self):
+    def test_restart_drops_unproven_persisted_filesystem_identity(self):
         cache = Path(self.tmp.name) / 'hdd.json'
         stats, provider = self.stats(cache_file=cache)
         provider(self.plugin)
@@ -152,10 +156,39 @@ class HddActivityTests(unittest.TestCase):
         self.advance(86400)
         restarted, provider2 = self.stats(cache_file=cache)
         provider2(self.plugin)
-        row, = provider2.rows()
-        self.assertEqual(row['collected_at'], 1030)
-        self.assertEqual(row['collection_age_seconds'], 86400)
+        self.assertEqual(provider2.rows(), [])
         self.assertEqual(self.calls, ['/mnt/hdd'])
+
+    def test_live_replacement_at_same_mount_invalidates_usage_and_baseline(self):
+        stats, provider = self.stats()
+        provider(self.plugin)
+        stats.tick()
+        self.fx.set_io('sda', 1, 1)
+        self.advance(30)
+        stats.tick()
+        self.assertEqual(len(provider.rows()), 1)
+        self.fx.disk('sdb', '8:17')
+        self.fx.mountinfo.write_text('2 0 8:17 / /mnt/hdd rw - xfs /dev/y rw\n')
+        self.advance(300)
+        self.assertEqual(provider(self.plugin), [])
+        stats.tick()
+        self.assertEqual(self.calls, ['/mnt/hdd'])
+        self.fx.set_io('sdb', 1, 1)
+        self.advance(10)
+        stats.tick()
+        self.assertEqual(len(self.calls), 2)
+        self.assertEqual(provider.rows()[0]['fs_type'], 'xfs')
+
+    def test_remount_same_device_invalidates_filesystem_sample(self):
+        stats, provider = self.stats()
+        provider(self.plugin)
+        stats.tick()
+        self.fx.set_io('sda', 1, 1)
+        self.advance(30)
+        stats.tick()
+        self.fx.mountinfo.write_text('2 0 8:1 / /mnt/hdd rw - ext4 /dev/x rw\n')
+        self.advance(300)
+        self.assertEqual(provider(self.plugin), [])
 
     def test_corrupt_or_missing_cache_file_is_ignored(self):
         cache = Path(self.tmp.name) / 'hdd.json'
