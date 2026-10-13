@@ -36,19 +36,34 @@ Mentions are disabled, so message text can never ping anyone.
 
 ## Behaviour
 
-- Starts with new messages only. After a restart it resumes from the last
-  relayed id in `state/last-id`, so nothing sent while it was down is lost, but
-  messages older than 24 hours are skipped instead of replayed.
-- Discord rate limits (HTTP 429) are honoured; network and 5xx errors are
-  retried five times, then the message is dropped and logged.
+- Starts with new messages only. After a restart it requests replay from the last
+  processed id in `state/last-id`; messages older than 24 hours are skipped.
+  The in-process cursor advances after each processed message, including explicit
+  skips and delivery failures, even if the stream then disconnects. Checkpoint
+  write failures are logged: reconnects in that process retain the cursor, but
+  a restart can replay messages from an older checkpoint or start fresh if none
+  exists. This is not an exactly-once or guaranteed-delivery channel.
+- Discord rate limits (HTTP 429) wait the full finite, nonnegative `retry_after`
+  duration in sleep intervals of at most 60 seconds (minimum total 0.5 seconds).
+  Invalid durations fall back to one second. Delivery attempts are bounded to
+  five, including rate-limit responses; network and 5xx errors also retry, then
+  the message is dropped and logged.
 - ntfy has no wildcard subscription: when a script starts using a new topic,
   add it to `RELAY_TOPICS` and `docker compose up -d`. A daily audit catches the
   ones that are forgotten: it reads ntfy's message cache (mounted read-only) and,
   when a topic that ntfy received is missing from `RELAY_TOPICS`, or a listed
   topic has no matching webhook, posts one "ntfy topics not reaching Discord"
-  warning to the server channel. It warns again only when a new topic joins
+  warning to the server channel, split into complete reports when the list is
+  too long for one embed. Topics are acknowledged only after every report chunk
+  succeeds; partial delivery retries the entire report on the next daily check,
+  so previously delivered chunks can repeat. Audit-state write failures are
+  logged and can likewise cause repeat reports. It warns again when a new topic joins
   the list (`state/unrelayed-topics`); the container log names every unrelayed
   topic on each check.
+- Replay still uses one global message-id cursor for the multi-topic subscription.
+  Whether ntfy replays every topic correctly from that cursor remains unverified;
+  the reconnect tests do not validate live ntfy replay semantics. No per-topic
+  cursor workaround is implemented without a supported reproduction.
 - If ntfy or this server is down, nothing reaches Discord either; the relay is a
   convenience path, not a second alerting channel.
 - Messages leave the tailnet for Discord. They are the same text ntfy already

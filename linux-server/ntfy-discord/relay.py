@@ -13,6 +13,7 @@ one warning (to the server channel) whenever a new unrelayed topic appears.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import sqlite3
@@ -110,9 +111,15 @@ def deliver(url: str, payload: dict[str, Any], sleep: Callable[[float], None] = 
             if error.code == 429:
                 try:
                     retry_after = float(json.loads(error.read() or b"{}").get("retry_after", 1))
-                except (ValueError, AttributeError):
+                    if not math.isfinite(retry_after) or retry_after < 0:
+                        retry_after = 1.0
+                except (ValueError, TypeError, AttributeError, OverflowError):
                     retry_after = 1.0
-                sleep(min(max(retry_after, 0.5), 60))
+                remaining = max(retry_after, 0.5)
+                while remaining > 0:
+                    delay = min(remaining, 60)
+                    sleep(delay)
+                    remaining -= delay
                 continue
             if error.code < 500:
                 log(f"error: Discord rejected the message (HTTP {error.code}); dropping it")
@@ -152,6 +159,7 @@ def relay_events(
     since: str | None,
     send: Callable[[str, dict[str, Any]], bool] = deliver,
     now: Callable[[], float] = time.time,
+    on_position: Callable[[str], None] | None = None,
 ) -> str | None:
     for raw in lines:
         try:
@@ -173,17 +181,20 @@ def relay_events(
         else:
             send(url, discord_payload(event))
         since = message_id
+        if on_position is not None:
+            on_position(since)
         write_state(config["state_file"], since)
     return since
 
 
-def run_once(config: dict[str, Any], since: str | None) -> str | None:
+def run_once(config: dict[str, Any], since: str | None,
+             on_position: Callable[[str], None] | None = None) -> str | None:
     headers = {"User-Agent": USER_AGENT}
     if config["token"]:
         headers["Authorization"] = f"Bearer {config['token']}"
     request = urllib.request.Request(stream_url(config, since), headers=headers)
     with urllib.request.urlopen(request, timeout=STREAM_TIMEOUT_SECONDS) as response:
-        return relay_events(response, config, since)
+        return relay_events(response, config, since, on_position=on_position)
 
 
 def cached_topics(db_path: str) -> dict[str, tuple[int, int]]:
@@ -206,22 +217,27 @@ def audit_findings(config: dict[str, Any], seen: dict[str, tuple[int, int]]) -> 
     return findings
 
 
-def audit_payload(findings: dict[str, str], seen: dict[str, tuple[int, int]]) -> dict[str, Any]:
+def audit_payloads(findings: dict[str, str], seen: dict[str, tuple[int, int]]) -> list[dict[str, Any]]:
+    instruction = ("Add the topic to RELAY_TOPICS (and a matching DISCORD_WEBHOOK_*) in "
+                   "linux-server/ntfy-discord/.env on the main server, then `docker compose up -d`.")
+    messages = []
     lines = []
     for topic, reason in findings.items():
         count, last = seen.get(topic, (0, 0))
         when = f", last <t:{last}:R>" if last else ""
-        lines.append(f"`{topic}`: {reason} ({count} message{'s' if count != 1 else ''} in the ntfy cache{when})")
-    lines.append("")
-    lines.append("Add the topic to RELAY_TOPICS (and a matching DISCORD_WEBHOOK_*) in "
-                 "linux-server/ntfy-discord/.env on the main server, then `docker compose up -d`.")
-    return discord_payload({
+        line = f"`{topic}`: {reason} ({count} message{'s' if count != 1 else ''} in the ntfy cache{when})"
+        if lines and len("\n".join([*lines, line, "", instruction])) > 4000:
+            messages.append("\n".join([*lines, "", instruction]))
+            lines = []
+        lines.append(line)
+    messages.append("\n".join([*lines, "", instruction]))
+    return [discord_payload({
         "topic": "ntfy-discord-audit",
         "title": "ntfy topics not reaching Discord",
-        "message": "\n".join(lines),
+        "message": message,
         "priority": 4,
         "time": int(time.time()),
-    })
+    }) for message in messages]
 
 
 def run_audit(config: dict[str, Any], send: Callable[[str, dict[str, Any]], bool] = deliver) -> dict[str, str]:
@@ -237,8 +253,10 @@ def run_audit(config: dict[str, Any], send: Callable[[str, dict[str, Any]], bool
     if findings:
         log("audit: not relayed: " + ", ".join(f"{t} ({r})" for t, r in findings.items()))
     url = config["webhooks"].get("server") or config["webhooks"].get("default") or next(iter(config["webhooks"].values()))
-    if new and not send(url, audit_payload(findings, seen)):
-        return findings
+    if new:
+        for payload in audit_payloads(findings, seen):
+            if not send(url, payload):
+                return findings
     try:
         tmp = path.with_name(path.name + ".tmp")
         tmp.write_text("".join(f"{t}\n" for t in sorted(findings)))
@@ -261,6 +279,11 @@ def audit_loop(config: dict[str, Any]) -> None:
 def main() -> int:
     config = load_config(dict(os.environ))
     since = read_state(config["state_file"])
+
+    def update_position(message_id: str) -> None:
+        nonlocal since
+        since = message_id
+
     log(f"relaying {len(config['topics'])} ntfy topics to Discord"
         + (f", resuming after {since}" if since else ""))
     if config["cache_db"]:
@@ -268,7 +291,7 @@ def main() -> int:
     backoff = 5
     while True:
         try:
-            since = run_once(config, since)
+            since = run_once(config, since, on_position=update_position)
             backoff = 5
         except (urllib.error.URLError, OSError, TimeoutError) as error:
             log(f"warning: ntfy stream dropped: {error}; reconnecting in {backoff}s")

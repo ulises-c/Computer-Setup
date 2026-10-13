@@ -4,8 +4,10 @@ import sqlite3
 import tempfile
 import threading
 import unittest
+from contextlib import nullcontext
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from unittest.mock import patch
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "relay.py"
 SPEC = importlib.util.spec_from_file_location("relay", MODULE_PATH)
@@ -104,6 +106,58 @@ class RelayTests(unittest.TestCase):
             url = relay.stream_url(self.config(directory), "a4")
         self.assertEqual(url, "https://ntfy.example/server-backup,game-dragonwilds/json?since=a4")
 
+    def test_main_reconnects_after_yield_then_error_from_latest_position(self):
+        for initial in (None, "old1"):
+            for save_fails in (False, True):
+                with self.subTest(initial=initial, save_fails=save_fails), tempfile.TemporaryDirectory() as directory:
+                    config = self.config(directory)
+                    config["cache_db"] = ""
+                    if initial:
+                        config["state_file"].write_text(initial)
+
+                    requests = []
+                    sent = []
+
+                    class Stream:
+                        def __enter__(self):
+                            return self
+
+                        def __exit__(self, *args):
+                            return False
+
+                        def __iter__(self):
+                            yield message("new2", "server-backup")
+                            raise OSError("stream interrupted")
+
+                    def open_stream(request, **kwargs):
+                        requests.append(request.full_url)
+                        if len(requests) == 2:
+                            raise KeyboardInterrupt
+                        return Stream()
+
+                    real_events = relay.relay_events
+
+                    def events(*args, **kwargs):
+                        return real_events(*args, **kwargs, send=lambda url, body: sent.append(url) or True,
+                                           now=lambda: NOW)
+
+                    with patch.object(relay, "load_config", return_value=config), \
+                            patch.object(relay.urllib.request, "urlopen", side_effect=open_stream), \
+                            patch.object(relay, "relay_events", side_effect=events), \
+                            patch.object(relay.time, "sleep"), patch.object(relay, "log") as logs, \
+                            (patch.object(relay.os, "replace", side_effect=OSError("checkpoint failed"))
+                             if save_fails else nullcontext()):
+                        with self.assertRaises(KeyboardInterrupt):
+                            relay.main()
+                    base = "https://ntfy.example/server-backup,game-dragonwilds/json"
+                    self.assertEqual(requests, [base + ("?since=old1" if initial else ""), base + "?since=new2"])
+                    self.assertEqual(sent, ["S"])
+                    if save_fails:
+                        self.assertEqual(relay.read_state(config["state_file"]), initial)
+                        self.assertTrue(any("cannot save relay position" in call.args[0] for call in logs.call_args_list))
+                    else:
+                        self.assertEqual(config["state_file"].read_text(), "new2\n")
+
     def test_delivery_honours_rate_limit_then_succeeds(self):
         discord = FakeDiscord([(429, b'{"retry_after": 0.25}'), (204, b"")])
         sleeps = []
@@ -122,6 +176,22 @@ class RelayTests(unittest.TestCase):
             discord.close()
         self.assertEqual(len(discord.bodies), 1)
 
+    def test_long_rate_limit_waits_full_deadline_before_retry(self):
+        discord = FakeDiscord([(429, b'{"retry_after": 600}'), (204, b"")])
+        sleeps = []
+
+        def sleep(delay):
+            self.assertEqual(len(discord.bodies), 1)
+            sleeps.append(delay)
+
+        try:
+            self.assertTrue(relay.deliver(discord.url, {"content": "x"}, sleep=sleep))
+        finally:
+            discord.close()
+        self.assertEqual(sum(sleeps), 600)
+        self.assertTrue(all(0 < delay <= 60 for delay in sleeps))
+        self.assertEqual(len(discord.bodies), 2)
+
     def test_server_errors_retry_then_give_up(self):
         discord = FakeDiscord([(502, b"")] * relay.DELIVERY_ATTEMPTS)
         try:
@@ -129,6 +199,22 @@ class RelayTests(unittest.TestCase):
         finally:
             discord.close()
         self.assertEqual(len(discord.bodies), relay.DELIVERY_ATTEMPTS)
+
+    def test_invalid_rate_limit_deadlines_use_safe_fallback(self):
+        for value in (None, "NaN", "Infinity", {}, -1):
+            with self.subTest(value=value):
+                discord = FakeDiscord([(429, json.dumps({"retry_after": value}).encode()), (204, b"")])
+                sleeps = []
+
+                def sleep(delay):
+                    sleeps.append(delay)
+                    self.assertEqual(sleeps, [1.0])
+
+                try:
+                    self.assertTrue(relay.deliver(discord.url, {"content": "x"}, sleep=sleep))
+                finally:
+                    discord.close()
+                self.assertEqual(sleeps, [1.0])
 
     def test_config_validates_inputs(self):
         good = {"NTFY_URL": "https://ntfy.example/", "RELAY_TOPICS": "server-backup, game-backup",
@@ -212,6 +298,50 @@ class AuditTests(unittest.TestCase):
         self.config["topics"] = ["server-backup", "mac-runner"]
         self.assertEqual(relay.run_audit(self.config, send=self.send), {})
         self.assertEqual(self.sent, [])
+
+    def add_large_audit(self):
+        with sqlite3.connect(self.db) as db:
+            db.executemany("INSERT INTO messages VALUES (?, ?, ?, '')", [
+                (f"extra{i}", NOW, f"extra-{i:03d}-" + "x" * 54) for i in range(120)
+            ])
+
+    def assert_complete_report(self, findings):
+        descriptions = [payload["embeds"][0]["description"] for _, payload in self.sent]
+        self.assertGreater(len(descriptions), 1)
+        for text in descriptions:
+            self.assertLessEqual(len(text), 4000)
+            self.assertIn("then `docker compose up -d`.", text)
+        for topic in findings:
+            self.assertEqual(sum(f"`{topic}`:" in text for text in descriptions), 1)
+            self.assertTrue(any(f"`{topic}`: {findings[topic]} (" in text for text in descriptions))
+
+    def test_large_audit_reports_every_topic_before_acknowledging(self):
+        self.add_large_audit()
+        with patch.object(relay, "log"):
+            findings = relay.run_audit(self.config, send=self.send)
+        self.assert_complete_report(findings)
+        self.assertEqual(set(self.config["audit_state_file"].read_text().split()), set(findings))
+
+    def test_partial_audit_delivery_retries_complete_report(self):
+        self.add_large_audit()
+        path = self.config["audit_state_file"]
+        path.write_text("mac-runner\n")
+
+        def fail_second(url, payload):
+            self.sent.append((url, payload))
+            return len(self.sent) < 2
+
+        with patch.object(relay, "log"):
+            relay.run_audit(self.config, send=fail_second)
+            self.assertEqual(len(self.sent), 2)
+            self.assertEqual(path.read_text(), "mac-runner\n")
+            self.sent.clear()
+            findings = relay.run_audit(self.config, send=self.send)
+            self.assert_complete_report(findings)
+            self.assertEqual(set(path.read_text().split()), set(findings))
+            self.sent.clear()
+            relay.run_audit(self.config, send=self.send)
+            self.assertEqual(self.sent, [])
 
 
 if __name__ == "__main__":
