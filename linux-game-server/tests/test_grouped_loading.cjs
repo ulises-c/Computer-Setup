@@ -273,3 +273,41 @@ test('opted-in SSD health reserves Health and Wear rows before data and fills th
   assert.deepEqual(standalone.map(t=>[t.label,t.rows.map(r=>r[0])]),[['NVMe health',['Health','Wear']]]);
   assert.deepEqual(api.model({},{disks:[],temperatureLabels:['NVMe']},1000,'')[1].tiles[0].rows.map(r=>r[0]),['Temp','Warn']);
 });
+
+test('header collapses the status body, persists the choice and pauses extras polling', async () => {
+  const calls=[];
+  const {root,host}=runtime(async url=>{calls.push(String(url));return {ok:true,json:async()=>[]};});
+  const attrs={},toggle={attrs:{},setAttribute(k,v){this.attrs[k]=v;}};
+  let onClick;
+  const panel={innerHTML:'',setAttribute(k,v){attrs[k]=v;},addEventListener(type,fn){onClick=fn;},
+    querySelector:s=>s==='.monitor-body'?{innerHTML:''}:s==='.monitor-toggle'?toggle:null};
+  root.document.createElement=()=>panel;
+  root.document.hidden=false;
+  const store={};
+  root.localStorage={getItem:k=>store[k]??null,setItem:(k,v)=>{store[k]=v;}};
+  const control=api.start(root,{label:'NAS',glances:'https://example.test/glances',net:'eth0'});
+  assert.equal(host.panel,panel);
+  assert.match(panel.innerHTML,/<button type="button" class="monitor-toggle"/);
+  assert.equal(attrs['data-collapsed'],'false');
+  assert.equal(toggle.attrs['aria-expanded'],'true');
+  const click=inside=>onClick({target:{closest:s=>inside.includes(s)?{}:null}});
+  click(['a','.monitor-header']);
+  assert.equal(attrs['data-collapsed'],'false','the Glances link does not toggle');
+  click(['.monitor-header']);
+  assert.equal(attrs['data-collapsed'],'true');
+  assert.equal(toggle.attrs['aria-expanded'],'false');
+  assert.equal(store['homepage.hostMonitor.collapsed'],'1');
+  await new Promise(r=>setImmediate(r));
+  control.stop();
+  calls.length=0;
+  const again=runtime(async url=>{calls.push(String(url));return {ok:true,json:async()=>[]};});
+  again.root.document.hidden=false;
+  again.root.localStorage=root.localStorage;
+  const attrs2={};
+  again.root.document.createElement=()=>({innerHTML:'',setAttribute(k,v){attrs2[k]=v;},querySelector:s=>s==='.monitor-body'?{innerHTML:''}:null});
+  const control2=api.start(again.root,{label:'NAS',glances:'https://example.test/glances',net:'eth0'});
+  await new Promise(r=>setImmediate(r));
+  assert.equal(attrs2['data-collapsed'],'true','collapsed state survives a reload');
+  assert.deepEqual(calls,[],'no extras requests while collapsed');
+  control2.stop();
+});

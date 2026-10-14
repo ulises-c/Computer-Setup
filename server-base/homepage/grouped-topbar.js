@@ -167,6 +167,13 @@
     const startedAt = Date.now();
     const intervals = cadence(config);
     let busy = false, stopped = false, smartAttempt = 0, lastMarkup = '';
+    const storageKey = 'homepage.hostMonitor.collapsed';
+    let collapsed = false;
+    try { collapsed = root.localStorage?.getItem(storageKey) === '1'; } catch {}
+    const applyCollapsed = panel => {
+      panel.setAttribute('data-collapsed',String(collapsed));
+      panel.querySelector('.monitor-toggle')?.setAttribute('aria-expanded',String(!collapsed));
+    };
     const record = (key,data,error = false) => {
       samples[key] = error ? {...samples[key],error:true} : {data,at:Date.now(),error:false};
     };
@@ -188,7 +195,16 @@
         panel = document.createElement('div');
         panel.className = 'host-monitor';
         panel.setAttribute('aria-label','Host metrics');
-        panel.innerHTML = `<header class="monitor-header"><span class="monitor-host">${esc(config.label || 'Host metrics')}</span><span class="monitor-cadence">Native auto · extras 5s · filesystem cache ${duration(intervals.filesystem)} · ${config.safeSSDHealth === true ? `health ${duration(intervals.smart)}` : 'health disabled'}</span>${glances ? `<a href="${esc(glances)}" target="_blank" rel="noopener noreferrer">Open Glances ↗</a>` : ''}</header><div class="monitor-body"></div>`;
+        panel.innerHTML = `<header class="monitor-header"><button type="button" class="monitor-toggle" aria-controls="host-monitor-body"><span class="monitor-host">${esc(config.label || 'Host metrics')}</span></button><span class="monitor-cadence">Native auto · extras 5s · filesystem cache ${duration(intervals.filesystem)} · ${config.safeSSDHealth === true ? `health ${duration(intervals.smart)}` : 'health disabled'}</span>${glances ? `<a href="${esc(glances)}" target="_blank" rel="noopener noreferrer">Open Glances ↗</a>` : ''}<svg class="monitor-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg></header><div class="monitor-body" id="host-monitor-body"></div>`;
+        // The whole header toggles, like Homepage's service-group headers; the link keeps its own click.
+        panel.addEventListener?.('click',event=>{
+          if (!event.target.closest('.monitor-header') || event.target.closest('a')) return;
+          collapsed = !collapsed;
+          try { root.localStorage?.setItem(storageKey,collapsed ? '1' : '0'); } catch {}
+          applyCollapsed(panel);
+          if (!collapsed) refresh();
+        });
+        applyCollapsed(panel);
         host.prepend(panel);
         lastMarkup = '';
       }
@@ -232,7 +248,7 @@
     };
     const refresh = async () => {
       render(); // Also age samples when a tab returns from background.
-      if (busy || stopped || document.hidden) return;
+      if (busy || stopped || document.hidden || collapsed) return;
       busy = true;
       try {
         const jobs = [];
