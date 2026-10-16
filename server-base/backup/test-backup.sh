@@ -443,4 +443,17 @@ for example in "$REPO"/linux-*/backup/.env.example; do
   (cd "$tmp" && set -a && source "$example") 2>/dev/null || fail "$example is not safe to source"
 done
 
+# setup.sh --dry-run prints its plan and writes nothing, not even a scratch dir.
+nowrite="$tmp/nowrite-bin"
+mkdir -p "$nowrite"
+for tool in mktemp install systemctl systemd-analyze; do
+  printf '#!/usr/bin/env bash\nprintf "dry-run ran %s\\n" >&2\nexit 75\n' "$tool" >"$nowrite/$tool"
+  chmod +x "$nowrite/$tool"
+done
+for host in linux-server linux-pi linux-game-server; do
+  out="$(PATH="$nowrite:$PATH" bash "$REPO/$host/backup/setup.sh" --dry-run 2>&1)" \
+    || fail "$host setup.sh --dry-run wrote or executed something: $out"
+  [[ "$out" == *"[dry-run] systemctl enable --now"* ]] || fail "$host setup.sh --dry-run did not print its plan"
+done
+
 printf 'backup engine tests: PASSED\n'

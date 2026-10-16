@@ -96,9 +96,6 @@ if [[ "$DRY_RUN" == false ]]; then
   chmod 600 "$SCRIPT_DIR/.env"
 fi
 
-tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
-
 render_unit() {
   local src="$1" dest="$2"
   sed \
@@ -111,11 +108,7 @@ render_unit() {
     -e "s|@BACKUP_FORGEJO_DATA_PATH@|$BACKUP_FORGEJO_DATA_PATH|g" \
     -e "s|@BACKUP_STATUS_JSON@|$STATE_DIR/backup-status.json|g" \
     "$src" > "$tmp/$dest"
-  if [[ "$DRY_RUN" == true ]]; then
-    printf '[dry-run] install %s as /etc/systemd/system/%s\n' "$src" "$dest"
-  else
-    install -o root -g root -m 644 "$tmp/$dest" "/etc/systemd/system/$dest"
-  fi
+  install -o root -g root -m 644 "$tmp/$dest" "/etc/systemd/system/$dest"
 }
 
 install_bundle() {
@@ -131,21 +124,25 @@ install_bundle() {
   fi
 }
 
-render_unit "$SCRIPT_DIR/$prefix.service.template" "$prefix.service"
-render_unit "$SCRIPT_DIR/$prefix-failure.service.template" "$prefix-failure.service"
-[[ "$DRY_RUN" == true ]] || install_bundle
-if command -v systemd-analyze >/dev/null; then
-  systemd-analyze verify "$tmp/$prefix.service" "$tmp/$prefix-failure.service" "$SCRIPT_DIR/$prefix.timer"
-fi
-
 if [[ "$DRY_RUN" == true ]]; then
+  printf '[dry-run] render and verify %s.service and %s-failure.service\n' "$prefix" "$prefix"
+  printf '[dry-run] install them into /etc/systemd/system/\n'
   printf '[dry-run] install root-owned backup executor bundle into %s\n' "$BUNDLE_DIR"
   printf '[dry-run] install %s as /etc/systemd/system/%s.timer\n' "$SCRIPT_DIR/$prefix.timer" "$prefix"
   printf '[dry-run] systemctl daemon-reload\n'
   printf '[dry-run] systemctl enable --now %s.timer\n' "$prefix"
-else
-  install -o root -g root -m 644 "$SCRIPT_DIR/$prefix.timer" "/etc/systemd/system/$prefix.timer"
-  systemctl daemon-reload
-  systemctl enable --now "$prefix.timer"
-  printf 'Installed and enabled %s.timer\n' "$prefix"
+  exit 0
 fi
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+render_unit "$SCRIPT_DIR/$prefix.service.template" "$prefix.service"
+render_unit "$SCRIPT_DIR/$prefix-failure.service.template" "$prefix-failure.service"
+install_bundle
+if command -v systemd-analyze >/dev/null; then
+  systemd-analyze verify "$tmp/$prefix.service" "$tmp/$prefix-failure.service" "$SCRIPT_DIR/$prefix.timer"
+fi
+install -o root -g root -m 644 "$SCRIPT_DIR/$prefix.timer" "/etc/systemd/system/$prefix.timer"
+systemctl daemon-reload
+systemctl enable --now "$prefix.timer"
+printf 'Installed and enabled %s.timer\n' "$prefix"
