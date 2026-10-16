@@ -342,9 +342,9 @@ class RelayTests(unittest.TestCase):
     def test_slow_rate_limit_body_cannot_exceed_the_delivery_budget(self):
         def trickle(handler):
             handler.send_response(429)
-            handler.send_header("Content-Length", "40")
+            handler.send_header("Content-Length", "400")
             handler.end_headers()
-            for _ in range(40):
+            for _ in range(400):
                 try:
                     handler.wfile.write(b" ")
                     handler.wfile.flush()
@@ -354,13 +354,14 @@ class RelayTests(unittest.TestCase):
 
         discord = RawDiscord([trickle])
         try:
-            with patch.object(relay, "DELIVERY_BUDGET_SECONDS", 0.3), patch.object(relay, "log") as logs:
+            with patch.object(relay, "DELIVERY_BUDGET_SECONDS", 2), patch.object(relay, "log") as logs:
                 started = time.monotonic()
                 self.assertFalse(relay.deliver(discord.url, {"content": "x"}, sleep=lambda _: None))
                 elapsed = time.monotonic() - started
         finally:
             discord.close()
-        self.assertLess(elapsed, 1.0)
+        self.assertEqual(discord.requests, 1, "the slow-body attempt never reached the server")
+        self.assertLess(elapsed, 2 + relay.CHILD_REAP_SECONDS)
         self.assertTrue(any("delivery budget" in call.args[0] for call in logs.call_args_list))
 
     def test_truncated_rate_limit_body_is_retried(self):
@@ -417,7 +418,9 @@ class RelayTests(unittest.TestCase):
                     return
                 time.sleep(0.05)
 
-        stalls = 8
+        # The budget covers helper interpreter start-up (≈0.4–0.7 s in the
+        # relay container), so it must leave room for the request to arrive.
+        stalls = 4
         discord = RawDiscord([stall] * stalls)
         children = []
         real_popen = relay.subprocess.Popen
@@ -429,12 +432,13 @@ class RelayTests(unittest.TestCase):
 
         fds = Path("/proc/self/fd")
         try:
-            with patch.object(relay, "DELIVERY_BUDGET_SECONDS", 0.5), \
+            with patch.object(relay, "DELIVERY_BUDGET_SECONDS", 2), \
                     patch.object(relay.subprocess, "Popen", side_effect=tracked), patch.object(relay, "log"):
                 before = len(list(fds.iterdir())) if fds.exists() else 0
                 results = [relay.deliver(discord.url, {"content": str(i)}, sleep=lambda _: None)
                            for i in range(stalls)]
                 after = len(list(fds.iterdir())) if fds.exists() else 0
+                self.assertEqual(discord.requests, stalls, "a stalled attempt never reached the server")
                 self.assertTrue(relay.deliver(discord.url, {"content": "next"}, sleep=lambda _: None))
         finally:
             discord.close()
@@ -556,10 +560,11 @@ class AuditTests(unittest.TestCase):
         discord = RawDiscord([stall])
         self.config["webhooks"] = {"server": discord.url}
         try:
-            with patch.object(relay, "DELIVERY_BUDGET_SECONDS", 0.5), patch.object(relay, "log"):
+            with patch.object(relay, "DELIVERY_BUDGET_SECONDS", 2), patch.object(relay, "log"):
                 started = time.monotonic()
                 relay.run_audit(self.config)
-                self.assertLess(time.monotonic() - started, 3)
+                self.assertLess(time.monotonic() - started, 2 + relay.CHILD_REAP_SECONDS)
+                self.assertEqual(discord.requests, 1, "the stalled audit attempt never reached the server")
                 self.assertFalse(self.config["audit_state_file"].exists(), "unsent findings were acknowledged")
                 relay.run_audit(self.config)
         finally:
