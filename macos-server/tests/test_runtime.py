@@ -224,7 +224,6 @@ else:
         env = {key: self.env[key] for key in ("HOME", "PATH", "CALLS")}
         env.update(FIXTURE=str(self.root), RESTIC_REPOSITORY="sftp:fixture:/primary",
                    RESTIC_PASSWORD="fixture", STAGING_DIR=str(self.root / "staging"),
-                   STATUS_JSON=str(self.root / "status.json"),
                    NTFY_URL="https://ntfy.example", KUMA_PUSH_URL="")
         if hang:
             env.update(HANG="1", BACKUP_RECOVERY_TIMEOUT_SECONDS="2")
@@ -254,7 +253,7 @@ else:
                                  "cleanup did not restart the quiesced container")
             if fail_rm:
                 self.assertIn("could not remove staging", stdout + stderr)
-            status = json.loads((self.root / "status.json").read_text())
+            status = json.loads((self.host / "status/www/backup-status.json").read_text())
             self.assertEqual(status["status"], "failed")
             self.assertFalse(status["notifier_pending"])
             notifications = (self.root / "calls.notifications").read_text().splitlines()
@@ -300,7 +299,7 @@ else:
     def test_hung_recovery_is_bounded_under_wrapper_term(self):
         self.check_engine_cleanup_restart(signal.SIGTERM, hang=True)
 
-    def check_served_status_on_failure(self, case):
+    def check_served_status_on_failure(self, case, inherit=None):
         shutil.copyfile(SOURCE.parent / "server-base/backup/backup.sh", self.host / "backup/backup.sh")
         if case != "missing-sources":
             shutil.copyfile(SOURCE / "backup/sources.sh", self.host / "backup/sources.sh")
@@ -313,6 +312,12 @@ else:
         self.stub("curl", 'printf "%s\\n" "$*" >> "$CALLS.notifications"')
         env = {key: self.env[key] for key in ("HOME", "PATH", "CALLS")}
         env.update(NTFY_URL="https://ntfy.example", KUMA_PUSH_URL="")
+        elsewhere = self.root / "elsewhere"
+        if inherit == "status":
+            env["STATUS_JSON"] = str(elsewhere / "backup-status.json")
+        elif inherit == "host-dir":
+            (elsewhere / "status/www").mkdir(parents=True)
+            env["BACKUP_HOST_DIR"] = str(elsewhere)
         if case == "early":
             env["BACKUP_RECOVERY_TIMEOUT_SECONDS"] = "0"
         result = subprocess.run(["/bin/bash", str(self.host / "backup/run.sh")], env=env,
@@ -322,6 +327,8 @@ else:
         self.assertEqual(status["status"], "failed", result.stderr)
         self.assertFalse(status["notifier_pending"])
         self.assertFalse((self.host / "backup/status").exists(), "status written outside the served path")
+        strays = [p for p in elsewhere.rglob("*.json")] if elsewhere.exists() else []
+        self.assertEqual(strays, [], "status split across a second file")
         notifications = (self.root / "calls.notifications").read_text().splitlines()
         self.assertEqual(len(notifications), 1, notifications)
 
@@ -333,6 +340,15 @@ else:
 
     def test_missing_sources_still_updates_the_served_status(self):
         self.check_served_status_on_failure("missing-sources")
+
+    def test_inherited_status_path_cannot_split_an_early_failure(self):
+        self.check_served_status_on_failure("early", inherit="status")
+
+    def test_inherited_status_path_cannot_split_an_ordinary_failure(self):
+        self.check_served_status_on_failure("ordinary", inherit="status")
+
+    def test_inherited_host_dir_cannot_split_the_status(self):
+        self.check_served_status_on_failure("ordinary", inherit="host-dir")
 
     def test_recovery_timeout_must_be_a_bounded_integer(self):
         shutil.copyfile(SOURCE.parent / "server-base/backup/backup.sh", self.host / "backup/backup.sh")

@@ -7,7 +7,8 @@ BACKUP_NAME=mac
 BACKUP_LABEL="Mac mini server"
 BACKUP_UNIT=net.computer-setup.mac-backup
 BACKUP_FAILURE_HINT="launchd run failed — see ~/Library/Logs/computer-setup/mac-backup.log"
-STATUS_JSON="$HOST_DIR/status/www/backup-status.json"
+# run.sh sets this for the run and the notifier; the default only serves direct runs.
+STATUS_JSON="${STATUS_JSON:-$HOST_DIR/status/www/backup-status.json}"
 STAGING_DIR="$HOME/Library/Caches/computer-setup/mac-backup-staging"
 
 HERMES_HOME="$HOME/.hermes"
