@@ -465,13 +465,33 @@ bad="$tmp/badsetup"
 mkdir -p "$bad/backup"
 cp "$REPO/linux-pi/backup/"{sources.sh,pi-backup.timer,pi-backup-failure.service.template} "$bad/backup/"
 cp "$SCRIPT_DIR/setup.sh" "$SCRIPT_DIR/backup.sh" "$bad/backup/"
-sed 's/@BACKUP_SCRIPT@/@BACKUP_SCRIPT_TYPO@/' "$REPO/linux-pi/backup/pi-backup.service.template" \
-  >"$bad/backup/pi-backup.service.template"
-if bash "$bad/backup/setup.sh" --verify >/dev/null 2>&1; then fail "--verify accepted an unrendered placeholder"; fi
+for typo in @BACKUP_SCRIPT_TYPO@ @BACKUP_SCRIPT2@ @Backup_script@; do
+  sed "s/@BACKUP_SCRIPT@/$typo/" "$REPO/linux-pi/backup/pi-backup.service.template" \
+    >"$bad/backup/pi-backup.service.template"
+  if bash "$bad/backup/setup.sh" --verify >/dev/null 2>&1; then fail "--verify accepted unrendered $typo"; fi
+done
+{
+  cat "$REPO/linux-pi/backup/pi-backup.service.template"
+  printf '# Wants=foo@.service; operator@example.test\n'
+} >"$bad/backup/pi-backup.service.template"
+bash "$bad/backup/setup.sh" --verify >/dev/null 2>&1 || fail "--verify rejected a lone @ that is not a placeholder"
 cp "$REPO/linux-pi/backup/pi-backup.service.template" "$bad/backup/"
 bash "$bad/backup/setup.sh" --verify >/dev/null 2>&1 || fail "--verify rejected the restored template"
 printf 'if then\n' >>"$bad/backup/sources.sh"
 if bash "$bad/backup/setup.sh" --verify >/dev/null 2>&1; then fail "--verify accepted a broken sources.sh"; fi
+
+# A dropped substitution for a digit-bearing placeholder is caught too.
+gbad="$tmp/badsetup-game"
+mkdir -p "$gbad/backup" "$gbad/dragonwilds"
+cp "$REPO/linux-game-server/backup/"{sources.sh,game-backup.timer,game-backup.service.template,game-backup-failure.service.template} "$gbad/backup/"
+cp "$REPO/linux-game-server/dragonwilds/backup-save.py" "$gbad/dragonwilds/"
+cp "$SCRIPT_DIR/backup.sh" "$gbad/backup/"
+cp "$SCRIPT_DIR/setup.sh" "$gbad/backup/"
+bash "$gbad/backup/setup.sh" --verify >/dev/null 2>&1 || fail "--verify rejected the game fixture"
+sed -i.orig '/@BACKUP_SAVE_SCRIPT_SHA256@|/d' "$gbad/backup/setup.sh"
+if bash "$gbad/backup/setup.sh" --verify >/dev/null 2>&1; then
+  fail "--verify accepted an unrendered @BACKUP_SAVE_SCRIPT_SHA256@"
+fi
 
 # notify-failure never executes sources.sh: a broken or missing one still
 # records the failure and alerts.

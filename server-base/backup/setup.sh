@@ -120,7 +120,8 @@ render_and_verify() {
   bash -n "$SCRIPT_DIR/sources.sh"
   render_unit "$SCRIPT_DIR/$prefix.service.template" "$prefix.service"
   render_unit "$SCRIPT_DIR/$prefix-failure.service.template" "$prefix-failure.service"
-  if grep -n '@[A-Z_]*@' "$tmp/$prefix.service" "$tmp/$prefix-failure.service"; then
+  # Placeholders are paired @NAME@ tokens; a lone @ (foo@.service) is legitimate.
+  if grep -nE '@[A-Za-z0-9_]+@' "$tmp/$prefix.service" "$tmp/$prefix-failure.service"; then
     printf 'error: unrendered template placeholder in the units above\n' >&2
     exit 1
   fi
