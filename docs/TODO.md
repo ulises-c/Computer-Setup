@@ -406,3 +406,24 @@ Shared layer for every server; see [server-base/README.md](../server-base/README
       Homepage hrefs into `services.local.yaml` and point `MAIN_GLANCES_URL` /
       the Pi card's `glances_url` at the host nodes; settle one Cockpit and
       Portainer URL convention across hosts and the Homepage image pin
+- [ ] Round-2 review (PR #106) follow-ups, non-blocking:
+  - [ ] Portainer snapshot helper (`backup/backup.sh`, `--volumes-from portainer`)
+        also inherits the Docker socket: mount only the data volume read-only,
+        pin the helper image by digest and test that the socket is absent
+  - [ ] `glances/telemetry.py`: the outer lock spans HDD sampling and persistence,
+        so a slow (opt-in) sample blocks `rows()`, `snapshot()` and registration;
+        snapshot identity under the lock and do the I/O outside it
+  - [ ] `linux-server/backup/README.md` restore steps still describe a
+        `portainer/` directory; the engine now stages `portainer.tar`
+  - [ ] `homepage/README.md` still promises HDD figures are read only while the
+        drive is in use and says three hosts; HDD stats are experimental and off
+        by default, and four hosts use the grouped bar
+  - [ ] `macos-server/lib.sh` plist rendering turns a CR in a path into LF;
+        emit `&#13;` or reject CR, with a round-trip test
+  - [ ] `glances/telemetry.py` loads the HDD cache only for first registration
+        to discard it: remove `_load`/`_save`/`cache_file` or give it a purpose
+  - [ ] `linux-server/dragonwilds/player_log.py`: upgrading legacy state after a
+        restart loses the old run's disconnect identity (legacy hash is mapped
+        only for the running invocation); add the regression or document it
+  - [ ] `homepage/grouped-topbar.js`: an object in `uptime` throws during render
+        and rejects the timer; normalise displayed scalars before recording a sample
