@@ -109,9 +109,14 @@ cat >"$stub/docker" <<'EOF'
 #!/usr/bin/env bash
 case "$1" in
   info|volume) exit 0 ;;
-  ps) printf 'fb0000000001\nag0000000001\n' ;;
+  ps) [[ "${DOCKER_FAIL:-}" != ps ]] || { printf 'Cannot connect to the Docker daemon\n' >&2; exit 1; }
+    printf 'fb0000000001\nag0000000001\n' ;;
   inspect)
     [[ "${*: -1}" != portainer ]] || exit 1
+    if [[ "${DOCKER_FAIL:-}" == inspect ]] \
+      || { [[ "${DOCKER_FAIL:-}" == inspect-once && ! -e "$DOCKER_LOG.inspected" ]] && touch "$DOCKER_LOG.inspected"; }; then
+      printf 'Error: No such object\n' >&2; exit 1
+    fi
     for id in "$@"; do
       case "$id" in
         fb0000000001) printf '/filebrowser\t%s\n/filebrowser\t/\n' "$FB_DB_DIR" ;;
@@ -207,6 +212,27 @@ grep -q 'raw copy with adguardhome running (may be inconsistent): adguard/work/d
   || fail "AdGuard files not copied live: $out"
 [[ "$(<"$DOCKER_LOG")" == $'stop filebrowser\nstart filebrowser' ]] \
   || fail "AdGuard stopped without a DNS peer: $(<"$DOCKER_LOG")"
+
+# A failed `docker ps` or `docker inspect` must fail the backup, never be read
+# as "no running owner" and copy a live BoltDB file.
+for failure in ps inspect; do
+  : >"$DOCKER_LOG"
+  : >"$tmp/restic.log"
+  if out="$(DOCKER_FAIL=$failure PATH="$stub:$PATH" RESTIC_LOG="$tmp/restic.log" bash "$server/backup/backup.sh" 2>&1)"; then
+    fail "docker $failure failure did not fail the backup: $out"
+  fi
+  grep -q 'cannot tell which container owns' <<<"$out" || fail "docker $failure failure not reported: $out"
+  if grep -q 'no running owner' <<<"$out"; then fail "docker $failure failure read as no owner: $out"; fi
+  if grep -q '^backup ' "$tmp/restic.log"; then fail "snapshot taken after docker $failure failed"; fi
+  [[ "$(jq -r '.status' "$server/backup/status/backup-status.json")" == failed ]] \
+    || fail "docker $failure failure not recorded as failed"
+done
+# A container vanishing between ps and inspect is retried, not fatal.
+: >"$DOCKER_LOG"
+rm -f "$DOCKER_LOG.inspected"
+out="$(DOCKER_FAIL=inspect-once PATH="$stub:$PATH" RESTIC_LOG="$tmp/restic.log" bash "$server/backup/backup.sh" 2>&1)" \
+  || fail "a single failed docker inspect was not retried: $out"
+grep -q 'raw copy with filebrowser stopped' <<<"$out" || fail "owner not stopped after an inspect retry: $out"
 
 # Once the player-log dir is backed up, its lock must exist and be root-owned 0600.
 mkdir -p "$player_log"

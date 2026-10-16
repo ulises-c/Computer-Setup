@@ -335,21 +335,30 @@ done
 # Non-SQLite *.db files (BoltDB: Filebrowser, AdGuard) can only be copied raw;
 # stop the running container that bind-mounts each one so the copy is clean.
 # The deepest mount wins, and a whole-filesystem mount (Filebrowser's /) never does.
+# Fails when Docker cannot be asked, so "no running owner" is never a guess.
 owning_container() {
-  local db="$1" best="" best_len=0 name src
+  local db="$1" best="" best_len=0 name src ids="" mounts="" attempt
   command -v docker >/dev/null || return 0
+  for attempt in 1 2 3; do
+    # A container can exit between ps and inspect; ask again before giving up.
+    if ids="$(docker ps -q)" && { [[ -z "$ids" ]] || mounts="$(xargs docker inspect \
+        -f '{{$n := .Name}}{{range .Mounts}}{{$n}}{{"\t"}}{{.Source}}{{"\n"}}{{end}}' <<<"$ids")"; }; then
+      break
+    fi
+    (( attempt < 3 )) || return 1
+    sleep 1
+  done
   while IFS=$'\t' read -r name src; do
     [[ -n "$src" && "$src" != / && "$db" == "$src"/* ]] || continue
     (( ${#src} > best_len )) || continue
-    best="$name" best_len="${#src}"
-  done < <(docker ps -q 2>/dev/null \
-    | xargs -r docker inspect -f '{{$n := .Name}}{{range .Mounts}}{{$n}}{{"\t"}}{{.Source}}{{"\n"}}{{end}}' 2>/dev/null \
-    | sed 's#^/##')
+    best="${name#/}" best_len="${#src}"
+  done <<<"$mounts"
   printf '%s' "$best"
 }
 raw_owners=()
 for db in ${RAW_COPIES[@]+"${RAW_COPIES[@]}"}; do
-  owner="$(owning_container "$db")"
+  owner="$(owning_container "$db")" \
+    || die "cannot tell which container owns ${db#"$HOST_DIR"/} (docker ps/inspect failed); refusing a copy that may be inconsistent"
   raw_owners+=("$owner")
   if [[ -z "$owner" ]]; then
     cp -a "$db" "$(staged_db_path "$db")"
