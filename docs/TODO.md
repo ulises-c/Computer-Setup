@@ -427,3 +427,14 @@ Shared layer for every server; see [server-base/README.md](../server-base/README
         only for the running invocation); add the regression or document it
   - [ ] `homepage/grouped-topbar.js`: an object in `uptime` throws during render
         and rejects the timer; normalise displayed scalars before recording a sample
+- [ ] Backup `setup.sh` install is not transactional (round-6 review of #106):
+      `install_bundle` and the unit installs copy files one by one with no
+      rollback. A failure partway (disk full, I/O error, interrupted run) can
+      leave an old unit with a partly new bundle; on the game host the new
+      `backup-save.py` then fails the old unit's pinned hash, so game backups
+      stop until setup succeeds. Reproduced with injected faults. The
+      one-by-one unit install was already on `main`; the bundle/hash coupling
+      is new. Fix: versioned bundle directories that new units point at (old
+      units keep the old bundle), or a preserved prior version plus rollback.
+      Renaming a staged directory over the old one (`mv -T`) is not enough.
+      Add a fault-injection regression.
