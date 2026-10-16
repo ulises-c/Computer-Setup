@@ -191,6 +191,7 @@ wait "$pid"
         docker = self.bin / "docker"
         docker.write_text(f"#!{sys.executable}\n" + '''import os
 from pathlib import Path
+import subprocess
 import sys
 import time
 root = Path(os.environ["FIXTURE"])
@@ -210,7 +211,11 @@ elif command == "start":
         sys.exit(1)
     (root / "cleanup-start.tmp").write_text(str(os.getppid()))
     (root / "cleanup-start.tmp").replace(root / "cleanup-start")
-    time.sleep(30 if os.environ.get("HANG") else 1)
+    if os.environ.get("HANG"):
+        helper = subprocess.Popen(["sleep", "60"])
+        (root / "pids").open("a").write(str(helper.pid) + "\\n")
+        time.sleep(60)
+    time.sleep(1)
     (root / "state").write_text("running")
 else:
     sys.exit("unexpected Docker invocation")
@@ -256,8 +261,18 @@ else:
             self.assertEqual(len(notifications), 1, notifications)
             self.assertIn("Fixture backup FAILED", notifications[0])
             for pid in [engine, *map(int, (self.root / "pids").read_text().splitlines())]:
-                with self.assertRaises(ProcessLookupError, msg=f"leaked process {pid}"):
-                    os.kill(pid, 0)
+                deadline = time.monotonic() + 2
+                while time.monotonic() < deadline:
+                    try:
+                        os.kill(pid, 0)
+                    except ProcessLookupError:
+                        break
+                    if Path(f"/proc/{pid}/stat").exists() and \
+                            Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0] == "Z":
+                        break
+                    time.sleep(0.05)
+                else:
+                    self.fail(f"leaked process {pid}")
         finally:
             for pgid in (engine, proc.pid):
                 if pgid is not None:
@@ -284,6 +299,18 @@ else:
 
     def test_hung_recovery_is_bounded_under_wrapper_term(self):
         self.check_engine_cleanup_restart(signal.SIGTERM, hang=True)
+
+    def test_recovery_timeout_must_be_a_bounded_integer(self):
+        shutil.copyfile(SOURCE.parent / "server-base/backup/backup.sh", self.host / "backup/backup.sh")
+        (self.host / "backup/sources.sh").write_text(
+            "BACKUP_NAME=fixture\nBACKUP_LABEL=Fixture\nBACKUP_UNIT=fixture.service\nresolve_sources() { :; }\n")
+        for value in ("0", "-1", "1.5", "10000", "9223372036854775807"):
+            with self.subTest(value=value):
+                env = dict(self.env, BACKUP_RECOVERY_TIMEOUT_SECONDS=value, STATUS_JSON=str(self.root / "s.json"))
+                result = subprocess.run(["/bin/bash", str(self.host / "backup/backup.sh")], env=env,
+                                        text=True, capture_output=True, timeout=10)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn("from 1 to 9999", result.stderr)
 
     def test_idle_backup_can_reload(self):
         self.env["AGENT_STATE"] = "- 0 net.computer-setup.mac-backup"

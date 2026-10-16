@@ -6,8 +6,8 @@ set -euo pipefail
 # sources.sh. sources.sh names the backup (BACKUP_NAME, BACKUP_LABEL,
 # BACKUP_UNIT, optionally BACKUP_FAILURE_HINT for hosts without systemd) and defines resolve_sources, which appends the host's paths to
 # CANDIDATES, plus an optional stage_extra hook that writes into $STAGING_DIR.
-# Only those simple assignments run at source time, so a broken host path can
-# never stop the failure notifier. Snapshots those paths plus
+# The failure notifier never executes sources.sh: it reads those names as plain
+# KEY=value lines, so a broken or missing sources.sh still alerts. Snapshots those paths plus
 # consistent SQLite copies, a Portainer volume copy and every service .env,
 # prunes, optionally copies to a second repository, writes the status JSON
 # for the Homepage card and reports to ntfy / Uptime Kuma.
@@ -84,8 +84,20 @@ env_value() {
 }
 
 CANDIDATES=()
-# shellcheck source=/dev/null
-source "$SCRIPT_DIR/sources.sh"
+if [[ "${1:-}" == notify-failure ]]; then
+  # The alert must survive a missing or broken sources.sh, so read its names
+  # instead of executing it.
+  for key in BACKUP_NAME BACKUP_LABEL BACKUP_UNIT BACKUP_FAILURE_HINT; do
+    [[ -r "$SCRIPT_DIR/sources.sh" ]] && printf -v "$key" '%s' "$(env_value "$SCRIPT_DIR/sources.sh" "$key")"
+  done
+  [[ -n "${BACKUP_NAME:-}" && -n "${BACKUP_LABEL:-}" && -n "${BACKUP_UNIT:-}" ]] \
+    || printf 'warning: cannot read backup names from %s/sources.sh; alerting with defaults\n' "$SCRIPT_DIR" >&2
+  : "${BACKUP_NAME:=backup}" "${BACKUP_LABEL:=Backup ($(hostname))}" "${BACKUP_UNIT:=the backup unit}"
+  [[ -n "${BACKUP_FAILURE_HINT:-}" ]] || unset BACKUP_FAILURE_HINT
+else
+  # shellcheck source=/dev/null
+  source "$SCRIPT_DIR/sources.sh"
+fi
 : "${BACKUP_NAME:?sources.sh must set BACKUP_NAME}"
 : "${BACKUP_LABEL:?sources.sh must set BACKUP_LABEL}"
 : "${BACKUP_UNIT:?sources.sh must set BACKUP_UNIT}"
@@ -194,23 +206,42 @@ if [[ "${1:-}" == "notify-failure" ]]; then
 fi
 
 STATUS=failed
-# Fits one container restart inside systemd's default 90 s stop timeout.
-RECOVERY_TIMEOUT_SECONDS="${BACKUP_RECOVERY_TIMEOUT_SECONDS:-60}"
+# Per cleanup command; a restart plus staging removal, each with its kill grace,
+# fit inside systemd's default 90 s stop timeout.
+RECOVERY_TIMEOUT_SECONDS="${BACKUP_RECOVERY_TIMEOUT_SECONDS:-40}"
+RECOVERY_KILL_GRACE_SECONDS=3
+[[ "$RECOVERY_TIMEOUT_SECONDS" =~ ^[1-9][0-9]{0,3}$ ]] \
+  || die "BACKUP_RECOVERY_TIMEOUT_SECONDS must be a whole number of seconds from 1 to 9999"
 # TERM/INT are ignored during cleanup, so an over-time command gets KILL; GNU
-# timeout is not on macOS and its TERM would be ignored anyway.
+# timeout is not on macOS and its TERM would be ignored anyway. Each command
+# runs in its own process group so the KILL also reaches anything it spawned,
+# and the shell stops waiting after a short grace: a process stuck in
+# uninterruptible I/O cannot be reaped, and must not hold up the notifier.
 run_bounded() {
-  local deadline=$((SECONDS + RECOVERY_TIMEOUT_SECONDS)) pid status=0
+  local deadline=$((SECONDS + RECOVERY_TIMEOUT_SECONDS)) pid status=0 job_control=false
+  [[ $- == *m* ]] && job_control=true
+  set -m
   "$@" &
   pid=$!
+  [[ "$job_control" == true ]] || set +m
   while kill -0 "$pid" 2>/dev/null; do
     if (( SECONDS >= deadline )); then
       printf 'error: %s did not finish within %ss; killed it\n' "$*" "$RECOVERY_TIMEOUT_SECONDS" >&2
-      kill -KILL "$pid" 2>/dev/null || true
+      kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+      deadline=$((SECONDS + RECOVERY_KILL_GRACE_SECONDS))
+      while kill -0 "$pid" 2>/dev/null; do
+        if (( SECONDS >= deadline )); then
+          printf 'error: %s survived SIGKILL (stuck in I/O?); not waiting for it\n' "$*" >&2
+          return 137
+        fi
+        sleep 0.2
+      done
       break
     fi
     sleep 0.2
   done
-  wait "$pid" || status=$?
+  # The job-control "Killed" notice would only repeat the error above.
+  wait "$pid" 2>/dev/null || status=$?
   return "$status"
 }
 finish() {
@@ -242,7 +273,6 @@ trap finish EXIT
 
 # --- guards -----------------------------------------------------------------
 command -v jq >/dev/null || die "jq not installed (apt install jq)"
-[[ "$RECOVERY_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]] || die "BACKUP_RECOVERY_TIMEOUT_SECONDS must be a positive integer"
 write_status running
 validate_url NTFY_URL "${NTFY_URL:-}"
 validate_url KUMA_PUSH_URL "$KUMA_PUSH_URL"
