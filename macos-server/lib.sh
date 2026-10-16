@@ -33,6 +33,10 @@ render_plist() {
   local template="$1" label="$2" dest tmp
   shift 2
   dest="$LAUNCH_AGENTS/$label.plist"
+  if [[ "$DRY_RUN" == true ]]; then
+    printf '[dry-run] render %s and install it as %s\n' "${template#"$REPO_ROOT"/}" "$dest"
+    return
+  fi
   command -v python3 >/dev/null || die "python3 is required to render LaunchAgents"
   tmp="$(mktemp)"
   if ! python3 - "$template" "HOME=$HOME" "REPO=$REPO_ROOT" "BREW=$BREW_PREFIX" "LOG_DIR=$LOG_DIR" "$@" >"$tmp" <<'PY'
@@ -58,11 +62,6 @@ PY
   if command -v plutil >/dev/null && ! plutil -lint -s "$tmp"; then
     rm -f "$tmp"
     die "invalid plist rendered from $template"
-  fi
-  if [[ "$DRY_RUN" == true ]]; then
-    printf '[dry-run] install %s as %s\n' "${template#"$REPO_ROOT"/}" "$dest"
-    rm -f "$tmp"
-    return
   fi
   mkdir -p "$LAUNCH_AGENTS" "$LOG_DIR"
   install -m 644 "$tmp" "$dest"

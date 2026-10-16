@@ -93,6 +93,19 @@ render_plist "{self.host}/status/net.computer-setup.host-status.plist.template" 
         self.assertFalse((Path(self.env["HOME"]) / "Library/LaunchAgents").exists())
         self.assertFalse((Path(self.env["HOME"]) / "Library/Logs/computer-setup").exists())
 
+    def test_setup_dry_run_executes_nothing(self):
+        # Read-only discovery (brew --prefix, tailscale status) is allowed; nothing may write or run.
+        for tool in ("mktemp", "python3", "plutil", "install", "launchctl", "docker"):
+            self.stub(tool, f'printf "%s\\\\n" "{tool} $*" >> "$CALLS.executed"; exit 75')
+        self.stub("tailscale", "exit 1")
+        result = subprocess.run(["/bin/bash", str(SOURCE / "setup.sh"), "--dry-run"], env=self.env,
+                                text=True, capture_output=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.root / "calls.executed").exists(),
+                         (self.root / "calls.executed").read_text() if (self.root / "calls.executed").exists() else "")
+        self.assertIn("[dry-run] render macos-server/glances/", result.stdout)
+        self.assertFalse((Path(self.env["HOME"]) / "Library").exists())
+
     def test_restart_freeze_off_is_drift(self):
         self.power_stubs('printf "Restart After Freeze: Off\\n"')
         result = self.bash(f'/bin/bash "{self.host}/power/power.sh" --check')
