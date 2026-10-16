@@ -300,6 +300,40 @@ else:
     def test_hung_recovery_is_bounded_under_wrapper_term(self):
         self.check_engine_cleanup_restart(signal.SIGTERM, hang=True)
 
+    def check_served_status_on_failure(self, case):
+        shutil.copyfile(SOURCE.parent / "server-base/backup/backup.sh", self.host / "backup/backup.sh")
+        if case != "missing-sources":
+            shutil.copyfile(SOURCE / "backup/sources.sh", self.host / "backup/sources.sh")
+        served = self.host / "status/www/backup-status.json"
+        served.parent.mkdir(parents=True)
+        served.write_text('{"status":"success","last_run":"2026-01-01T00:00:00Z"}')
+        self.stub("bash", 'exec /bin/bash "$@"')
+        self.stub("jq", f'exec "{shutil.which("jq")}" "$@"')
+        self.stub("hostname", 'printf "fixture\\n"')
+        self.stub("curl", 'printf "%s\\n" "$*" >> "$CALLS.notifications"')
+        env = {key: self.env[key] for key in ("HOME", "PATH", "CALLS")}
+        env.update(NTFY_URL="https://ntfy.example", KUMA_PUSH_URL="")
+        if case == "early":
+            env["BACKUP_RECOVERY_TIMEOUT_SECONDS"] = "0"
+        result = subprocess.run(["/bin/bash", str(self.host / "backup/run.sh")], env=env,
+                                text=True, capture_output=True, timeout=20)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        status = json.loads(served.read_text())
+        self.assertEqual(status["status"], "failed", result.stderr)
+        self.assertFalse(status["notifier_pending"])
+        self.assertFalse((self.host / "backup/status").exists(), "status written outside the served path")
+        notifications = (self.root / "calls.notifications").read_text().splitlines()
+        self.assertEqual(len(notifications), 1, notifications)
+
+    def test_early_failure_updates_the_served_status(self):
+        self.check_served_status_on_failure("early")
+
+    def test_ordinary_failure_updates_the_served_status(self):
+        self.check_served_status_on_failure("ordinary")
+
+    def test_missing_sources_still_updates_the_served_status(self):
+        self.check_served_status_on_failure("missing-sources")
+
     def test_recovery_timeout_must_be_a_bounded_integer(self):
         shutil.copyfile(SOURCE.parent / "server-base/backup/backup.sh", self.host / "backup/backup.sh")
         (self.host / "backup/sources.sh").write_text(

@@ -6,6 +6,11 @@ set -uo pipefail
 # The agent puts Homebrew's bash 5 first on PATH: the engine needs bash 4+.
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# The notifier never executes sources.sh, so the Homepage-served status path
+# must come from here for both the run and the failure notifier (launchd sets
+# no STATUS_JSON; an explicit one, as in tests, wins).
+STATUS_JSON="${STATUS_JSON:-$(dirname -- "$SCRIPT_DIR")/status/www/backup-status.json}"
+export STATUS_JSON
 printf '=== %s\n' "$(date '+%F %T %Z')"
 child_pid=""
 result=1
