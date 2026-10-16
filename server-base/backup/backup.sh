@@ -195,6 +195,8 @@ fi
 
 STATUS=failed
 finish() {
+  # Cleanup children must inherit ignored signals before the wrapper cancels the job group.
+  trap '' TERM INT
   if [[ "$STATUS" != success ]]; then
     DURATION=$((SECONDS - START))
     command -v jq >/dev/null && write_status failed true || true

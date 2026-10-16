@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 import plistlib
@@ -173,6 +174,95 @@ wait "$pid"
 
     def test_backup_int_notifies_after_child_cleanup(self):
         self.check_backup_cancellation(signal.SIGINT)
+
+    def check_engine_cleanup_restart(self, sig=None):
+        shutil.copyfile(SOURCE.parent / "server-base/backup/backup.sh",
+                        self.host / "backup/backup.sh")
+        (self.host / "backup/sources.sh").write_text(
+            "BACKUP_NAME=fixture\nBACKUP_LABEL=Fixture\nBACKUP_UNIT=fixture.service\n"
+            "resolve_sources() { :; }\n")
+        self.stub("bash", 'exec /bin/bash "$@"')
+        self.stub("jq", f'exec "{shutil.which("jq")}" "$@"')
+        self.stub("hostname", 'printf "fixture\\n"')
+        self.stub("restic", 'printf "unexpected restic\\n" >&2; exit 99')
+        self.stub("curl", 'printf "%s\\n" "$*" >> "$CALLS.notifications"')
+        docker = self.bin / "docker"
+        docker.write_text(f"#!{sys.executable}\n" + '''import os
+from pathlib import Path
+import sys
+import time
+root = Path(os.environ["FIXTURE"])
+with (root / "pids").open("a") as stream:
+    stream.write(str(os.getpid()) + "\\n")
+command = sys.argv[1]
+if command == "inspect":
+    print("true")
+elif command == "stop":
+    (root / "state").write_text("stopped")
+elif command == "run":
+    print("fixture archive")
+elif command == "start":
+    if not (root / "first-start").exists():
+        (root / "first-start").touch()
+        sys.exit(1)
+    (root / "cleanup-start.tmp").write_text(str(os.getppid()))
+    (root / "cleanup-start.tmp").replace(root / "cleanup-start")
+    time.sleep(1)
+    (root / "state").write_text("running")
+else:
+    sys.exit("unexpected Docker invocation")
+''')
+        docker.chmod(0o755)
+        env = {key: self.env[key] for key in ("HOME", "PATH", "CALLS")}
+        env.update(FIXTURE=str(self.root), RESTIC_REPOSITORY="sftp:fixture:/primary",
+                   RESTIC_PASSWORD="fixture", STAGING_DIR=str(self.root / "staging"),
+                   STATUS_JSON=str(self.root / "status.json"),
+                   NTFY_URL="https://ntfy.example", KUMA_PUSH_URL="")
+        proc = subprocess.Popen(["/bin/bash", str(self.host / "backup/run.sh")],
+                                env=env, text=True, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, start_new_session=True,
+                                preexec_fn=reset_child_signals)
+        engine = None
+        try:
+            deadline = time.monotonic() + 5
+            while not (self.root / "cleanup-start").exists():
+                if proc.poll() is not None or time.monotonic() > deadline:
+                    self.fail("actual engine did not reach cleanup restart")
+                time.sleep(0.01)
+            engine = int((self.root / "cleanup-start").read_text())
+            if sig is not None:
+                proc.send_signal(sig)
+            stdout, stderr = proc.communicate(timeout=5)
+            self.assertEqual(proc.returncode, 1 if sig is None else 128 + sig,
+                             stdout + stderr)
+            self.assertEqual((self.root / "state").read_text(), "running",
+                             "cancellation interrupted the EXIT cleanup restart")
+            status = json.loads((self.root / "status.json").read_text())
+            self.assertEqual(status["status"], "failed")
+            self.assertFalse(status["notifier_pending"])
+            notifications = (self.root / "calls.notifications").read_text().splitlines()
+            self.assertEqual(len(notifications), 1, notifications)
+            self.assertIn("Fixture backup FAILED", notifications[0])
+            for pid in [engine, *map(int, (self.root / "pids").read_text().splitlines())]:
+                with self.assertRaises(ProcessLookupError, msg=f"leaked process {pid}"):
+                    os.kill(pid, 0)
+        finally:
+            for pgid in (engine, proc.pid):
+                if pgid is not None:
+                    try:
+                        os.killpg(pgid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+            proc.communicate(timeout=5)
+
+    def test_actual_engine_cleanup_restart_survives_wrapper_term(self):
+        self.check_engine_cleanup_restart(signal.SIGTERM)
+
+    def test_actual_engine_cleanup_restart_survives_wrapper_int(self):
+        self.check_engine_cleanup_restart(signal.SIGINT)
+
+    def test_actual_engine_cleanup_restart_without_cancellation(self):
+        self.check_engine_cleanup_restart()
 
     def test_idle_backup_can_reload(self):
         self.env["AGENT_STATE"] = "- 0 net.computer-setup.mac-backup"
