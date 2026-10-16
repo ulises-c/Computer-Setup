@@ -51,9 +51,11 @@ Mentions are disabled, so message text can never ping anyone.
   When that wait would run past the budget, the message is dropped and logged
   instead. Network errors, truncated responses and 5xx also retry within the
   budget; other 4xx drop the message at once. A dropped message is not retried
-  later: the cursor moves on so the next message is delivered. An attempt
-  abandoned at the deadline can still land late, so a drop can occasionally
-  appear in Discord after all.
+  later: the cursor moves on so the next message is delivered. Each attempt
+  runs in a short-lived helper process that is killed at the deadline, so a
+  stalled Discord connection cannot pile up threads or sockets. A killed
+  attempt may still have reached Discord, so a dropped message can
+  occasionally appear there after all.
 - ntfy has no wildcard subscription: when a script starts using a new topic,
   add it to `RELAY_TOPICS` and `docker compose up -d`. A daily audit catches the
   ones that are forgotten: it reads ntfy's message cache (mounted read-only) and,

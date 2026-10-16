@@ -25,6 +25,12 @@ def message(message_id, topic, **extra):
     return json.dumps({"event": "message", "id": message_id, "topic": topic, "time": NOW, **extra}).encode()
 
 
+def in_process():
+    """Run delivery attempts in this process so urlopen patches apply."""
+    return patch.object(relay, "post_once",
+                        side_effect=lambda url, body, remaining: relay.attempt_post(url, body, min(15, remaining)))
+
+
 class FakeDiscord:
     def __init__(self, responses):
         self.responses = list(responses)
@@ -221,7 +227,7 @@ class RelayTests(unittest.TestCase):
 
                 config = self.config(directory, server=HOOK)
                 with patch.object(relay.time, "monotonic", side_effect=lambda: elapsed[0]), \
-                        patch.object(relay.urllib.request, "urlopen",
+                        in_process(), patch.object(relay.urllib.request, "urlopen",
                                      side_effect=[error, nullcontext()]) as opened, \
                         patch.object(relay, "log") as logs:
                     last = relay.relay_events(
@@ -258,7 +264,7 @@ class RelayTests(unittest.TestCase):
             elapsed[0] += delay
 
         with patch.object(relay.time, "monotonic", side_effect=lambda: elapsed[0]), \
-                patch.object(relay.urllib.request, "urlopen", side_effect=opened):
+                in_process(), patch.object(relay.urllib.request, "urlopen", side_effect=opened):
             self.assertTrue(relay.deliver(HOOK, {"content": "x"}, sleep=sleep))
         self.assertEqual(sleeps, [20, 20])
         self.assertEqual(attempts, [100, 120, 140])
@@ -276,7 +282,7 @@ class RelayTests(unittest.TestCase):
             elapsed[0] += delay
 
         with patch.object(relay.time, "monotonic", side_effect=lambda: elapsed[0]), \
-                patch.object(relay.urllib.request, "urlopen", side_effect=opened) as requests, \
+                in_process(), patch.object(relay.urllib.request, "urlopen", side_effect=opened) as requests, \
                 patch.object(relay, "log") as logs:
             self.assertFalse(relay.deliver(HOOK, {"content": "x"}, sleep=sleep))
         self.assertEqual(requests.call_count, 3)
@@ -298,7 +304,7 @@ class RelayTests(unittest.TestCase):
             elapsed[0] += delay
 
         with patch.object(relay.time, "monotonic", side_effect=lambda: elapsed[0]), \
-                patch.object(relay.urllib.request, "urlopen", side_effect=opened), \
+                in_process(), patch.object(relay.urllib.request, "urlopen", side_effect=opened), \
                 patch.object(relay, "log"):
             self.assertFalse(relay.deliver(HOOK, {"content": "x"}, sleep=sleep))
         self.assertEqual(timeouts, [15, 15, 10])
@@ -327,7 +333,7 @@ class RelayTests(unittest.TestCase):
 
                 error = relay.urllib.error.HTTPError(HOOK, 429, "limited", {}, io.BytesIO(body))
                 with patch.object(relay.time, "monotonic", side_effect=lambda: elapsed[0]), \
-                        patch.object(relay.urllib.request, "urlopen",
+                        in_process(), patch.object(relay.urllib.request, "urlopen",
                                      side_effect=[error, nullcontext()]) as requests:
                     self.assertTrue(relay.deliver(HOOK, {"content": "x"}, sleep=sleep))
                 self.assertEqual(sleeps, [1.0])
@@ -339,8 +345,11 @@ class RelayTests(unittest.TestCase):
             handler.send_header("Content-Length", "40")
             handler.end_headers()
             for _ in range(40):
-                handler.wfile.write(b" ")
-                handler.wfile.flush()
+                try:
+                    handler.wfile.write(b" ")
+                    handler.wfile.flush()
+                except OSError:
+                    return
                 time.sleep(0.05)
 
         discord = RawDiscord([trickle])
@@ -385,7 +394,7 @@ class RelayTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             config = self.config(directory, server=HOOK)
-            with patch.object(relay.urllib.request, "urlopen",
+            with in_process(), patch.object(relay.urllib.request, "urlopen",
                               side_effect=[limited(), nullcontext(), nullcontext()]) as opened, \
                     patch.object(relay.time, "sleep"), patch.object(relay, "log"):
                 last = relay.relay_events(
@@ -394,6 +403,64 @@ class RelayTests(unittest.TestCase):
             self.assertEqual(opened.call_count, 3)
             self.assertEqual(last, "next")
             self.assertEqual(relay.read_state(config["state_file"]), "next")
+
+    def test_stalled_attempts_leave_no_live_helpers_and_the_next_message_proceeds(self):
+        def stall(handler):
+            handler.send_response(429)
+            handler.send_header("Content-Length", "4096")
+            handler.end_headers()
+            for _ in range(200):
+                try:
+                    handler.wfile.write(b" ")
+                    handler.wfile.flush()
+                except OSError:
+                    return
+                time.sleep(0.05)
+
+        stalls = 8
+        discord = RawDiscord([stall] * stalls)
+        children = []
+        real_popen = relay.subprocess.Popen
+
+        def tracked(*args, **kwargs):
+            child = real_popen(*args, **kwargs)
+            children.append(child)
+            return child
+
+        fds = Path("/proc/self/fd")
+        try:
+            with patch.object(relay, "DELIVERY_BUDGET_SECONDS", 0.5), \
+                    patch.object(relay.subprocess, "Popen", side_effect=tracked), patch.object(relay, "log"):
+                before = len(list(fds.iterdir())) if fds.exists() else 0
+                results = [relay.deliver(discord.url, {"content": str(i)}, sleep=lambda _: None)
+                           for i in range(stalls)]
+                after = len(list(fds.iterdir())) if fds.exists() else 0
+                self.assertTrue(relay.deliver(discord.url, {"content": "next"}, sleep=lambda _: None))
+        finally:
+            discord.close()
+        self.assertEqual(results, [False] * stalls)
+        self.assertEqual(len(children), stalls + 1)
+        self.assertEqual([child.poll() is None for child in children], [False] * len(children),
+                         "a timed-out delivery helper is still running")
+        self.assertLessEqual(after - before, 2, "timed-out attempts leaked file descriptors")
+
+    def test_webhook_url_is_not_on_the_helper_command_line(self):
+        seen = []
+        real_popen = relay.subprocess.Popen
+
+        def tracked(args, **kwargs):
+            seen.append(args)
+            return real_popen(args, **kwargs)
+
+        discord = FakeDiscord([(204, b"")])
+        try:
+            with patch.object(relay.subprocess, "Popen", side_effect=tracked):
+                self.assertTrue(relay.deliver(discord.url, {"content": "x"}, sleep=lambda _: None))
+        finally:
+            discord.close()
+        self.assertEqual(len(seen), 1)
+        self.assertNotIn(discord.url, " ".join(seen[0]))
+        self.assertEqual(seen[0][-1], "--post")
 
     def test_config_validates_inputs(self):
         good = {"NTFY_URL": "https://ntfy.example/", "RELAY_TOPICS": "server-backup, game-backup",
@@ -472,6 +539,33 @@ class AuditTests(unittest.TestCase):
         relay.run_audit(self.config, send=lambda url, payload: False)
         relay.run_audit(self.config, send=self.send)
         self.assertEqual(len(self.sent), 1)
+
+    def test_stalled_audit_delivery_is_bounded_and_retried_later(self):
+        def stall(handler):
+            handler.send_response(429)
+            handler.send_header("Content-Length", "4096")
+            handler.end_headers()
+            for _ in range(200):
+                try:
+                    handler.wfile.write(b" ")
+                    handler.wfile.flush()
+                except OSError:
+                    return
+                time.sleep(0.05)
+
+        discord = RawDiscord([stall])
+        self.config["webhooks"] = {"server": discord.url}
+        try:
+            with patch.object(relay, "DELIVERY_BUDGET_SECONDS", 0.5), patch.object(relay, "log"):
+                started = time.monotonic()
+                relay.run_audit(self.config)
+                self.assertLess(time.monotonic() - started, 3)
+                self.assertFalse(self.config["audit_state_file"].exists(), "unsent findings were acknowledged")
+                relay.run_audit(self.config)
+        finally:
+            discord.close()
+        self.assertEqual(discord.requests, 2)
+        self.assertTrue(self.config["audit_state_file"].exists())
 
     def test_clean_cache_sends_nothing(self):
         self.config["topics"] = ["server-backup", "mac-runner"]

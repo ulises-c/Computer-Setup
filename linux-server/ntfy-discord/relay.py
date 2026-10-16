@@ -18,6 +18,7 @@ import math
 import os
 import re
 import sqlite3
+import subprocess
 import sys
 import threading
 import time
@@ -43,6 +44,7 @@ DELIVERY_ATTEMPTS = 5
 DELIVERY_BUDGET_SECONDS = 60
 # A 429 body is a small JSON object; never read an unbounded one.
 RATE_LIMIT_BODY_LIMIT = 4096
+CHILD_REAP_SECONDS = 5
 AUDIT_INTERVAL_SECONDS = 24 * 3600
 # Let the stream connect first; the audit is not urgent.
 AUDIT_FIRST_DELAY_SECONDS = 60
@@ -108,37 +110,63 @@ def retry_after_seconds(body: bytes) -> float:
     return value if math.isfinite(value) and value >= 0 else 1.0
 
 
-def post_once(request: urllib.request.Request, remaining: float) -> tuple[int, float]:
-    """One POST as (HTTP status, 429 retry_after), bounded by `remaining` wall-clock seconds.
+def attempt_post(url: str, body: bytes, timeout: float) -> tuple[int, float]:
+    """One in-process POST as (HTTP status, 429 retry_after); transport errors raise."""
+    request = urllib.request.Request(
+        url,
+        data=body,
+        method="POST",
+        headers={"Content-Type": "application/json", "User-Agent": USER_AGENT},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout):
+            return 200, 0.0
+    except urllib.error.HTTPError as error:
+        with error:
+            limited = error.read(RATE_LIMIT_BODY_LIMIT) if error.code == 429 else b""
+        return error.code, retry_after_seconds(limited)
 
-    Socket timeouts only bound each read, so a server trickling bytes could hold an
-    attempt indefinitely; the worker thread is abandoned at the deadline instead.
+
+def post_child() -> int:
+    """`relay.py --post`: one attempt for post_once; request on stdin, result on stdout."""
+    job = json.loads(sys.stdin.read())
+    try:
+        status, retry_after = attempt_post(job["url"], job["body"].encode(), job["timeout"])
+        result: dict[str, Any] = {"status": status, "retry_after": retry_after}
+    except (urllib.error.URLError, OSError, http.client.HTTPException) as error:
+        result = {"error": repr(error)}
+    sys.stdout.write(json.dumps(result))
+    return 0
+
+
+def post_once(url: str, body: bytes, remaining: float) -> tuple[int, float]:
+    """attempt_post in a child process that is killed once `remaining` seconds pass.
+
+    Socket timeouts bound each read, not the whole exchange, and a thread blocked
+    in DNS or a trickling response cannot be cancelled; a process can, and the
+    kill releases its socket. The webhook URL travels on stdin, never argv.
     """
-    outcome: dict[str, Any] = {}
-
-    def work() -> None:
+    job = json.dumps({"url": url, "body": body.decode(), "timeout": max(0.1, min(15, remaining))})
+    child = subprocess.Popen(
+        [sys.executable, "-I", str(Path(__file__).resolve()), "--post"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+    )
+    try:
+        out, _ = child.communicate(job, timeout=remaining)
+    except subprocess.TimeoutExpired:
+        child.kill()
         try:
-            with urllib.request.urlopen(request, timeout=min(15, remaining)):
-                outcome["value"] = (200, 0.0)
-        except urllib.error.HTTPError as error:
-            try:
-                body = error.read(RATE_LIMIT_BODY_LIMIT) if error.code == 429 else b""
-                outcome["value"] = (error.code, retry_after_seconds(body))
-            except BaseException as read_error:
-                outcome["error"] = read_error
-            finally:
-                error.close()
-        except BaseException as error:
-            outcome["error"] = error
-
-    worker = threading.Thread(target=work, daemon=True)
-    worker.start()
-    worker.join(remaining)
-    if worker.is_alive():
-        raise TimeoutError("no complete response within the delivery budget")
-    if "error" in outcome:
-        raise outcome["error"]
-    return outcome["value"]
+            child.communicate(timeout=CHILD_REAP_SECONDS)
+        except subprocess.TimeoutExpired:
+            log(f"warning: delivery helper {child.pid} did not exit after SIGKILL")
+        raise TimeoutError("no complete response within the delivery budget") from None
+    try:
+        result = json.loads(out)
+    except ValueError:
+        raise OSError(f"delivery helper exited {child.returncode} without a result") from None
+    if "error" in result:
+        raise OSError(result["error"])
+    return int(result["status"]), float(result["retry_after"])
 
 
 def deliver(url: str, payload: dict[str, Any], sleep: Callable[[float], None] = time.sleep) -> bool:
@@ -149,14 +177,8 @@ def deliver(url: str, payload: dict[str, Any], sleep: Callable[[float], None] = 
         if remaining <= 0:
             break
         delay = min(2 ** attempt, 30)
-        request = urllib.request.Request(
-            url,
-            data=body,
-            method="POST",
-            headers={"Content-Type": "application/json", "User-Agent": USER_AGENT},
-        )
         try:
-            status, retry_after = post_once(request, remaining)
+            status, retry_after = post_once(url, body, remaining)
         except (urllib.error.URLError, OSError, http.client.HTTPException) as error:
             log(f"warning: Discord delivery failed: {error!r}")
         else:
@@ -346,4 +368,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(post_child() if sys.argv[1:] == ["--post"] else main())
