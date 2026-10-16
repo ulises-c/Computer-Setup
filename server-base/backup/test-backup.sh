@@ -456,4 +456,42 @@ for host in linux-server linux-pi linux-game-server; do
   [[ "$out" == *"[dry-run] systemctl enable --now"* ]] || fail "$host setup.sh --dry-run did not print its plan"
 done
 
+# setup.sh --verify renders and checks every host's units without installing,
+# and rejects a broken template or sources.sh before anything is installed.
+for host in linux-server linux-pi linux-game-server; do
+  out="$(bash "$REPO/$host/backup/setup.sh" --verify 2>&1)" || fail "$host setup.sh --verify failed: $out"
+done
+bad="$tmp/badsetup"
+mkdir -p "$bad/backup"
+cp "$REPO/linux-pi/backup/"{sources.sh,pi-backup.timer,pi-backup-failure.service.template} "$bad/backup/"
+cp "$SCRIPT_DIR/setup.sh" "$SCRIPT_DIR/backup.sh" "$bad/backup/"
+sed 's/@BACKUP_SCRIPT@/@BACKUP_SCRIPT_TYPO@/' "$REPO/linux-pi/backup/pi-backup.service.template" \
+  >"$bad/backup/pi-backup.service.template"
+if bash "$bad/backup/setup.sh" --verify >/dev/null 2>&1; then fail "--verify accepted an unrendered placeholder"; fi
+cp "$REPO/linux-pi/backup/pi-backup.service.template" "$bad/backup/"
+bash "$bad/backup/setup.sh" --verify >/dev/null 2>&1 || fail "--verify rejected the restored template"
+printf 'if then\n' >>"$bad/backup/sources.sh"
+if bash "$bad/backup/setup.sh" --verify >/dev/null 2>&1; then fail "--verify accepted a broken sources.sh"; fi
+
+# notify-failure never executes sources.sh: a broken or missing one still
+# records the failure and alerts.
+for state in broken missing; do
+  nh="$tmp/notify-$state"
+  mkdir -p "$nh/backup"
+  ln -s "$SCRIPT_DIR/backup.sh" "$nh/backup/backup.sh"
+  if [[ "$state" == broken ]]; then
+    printf 'BACKUP_NAME=pi\nBACKUP_LABEL=Pi\nBACKUP_UNIT=pi-backup.service\nif then\n' >"$nh/backup/sources.sh"
+  fi
+  rm -f "$tmp/notify.status" "$tmp/notify.calls"
+  # shellcheck disable=SC2016  # the stub expands its own arguments
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >>"%s"\n' "$tmp/notify.calls" >"$stub/curl"
+  chmod +x "$stub/curl"
+  PATH="$stub:$PATH" STATUS_JSON="$tmp/notify.status" NTFY_URL=https://ntfy.example NTFY_TOPIC=t KUMA_PUSH_URL='' \
+    bash "$nh/backup/backup.sh" notify-failure >/dev/null 2>&1 || fail "notify-failure exited non-zero with a $state sources.sh"
+  [[ "$(jq -r .status "$tmp/notify.status")" == failed ]] || fail "notify-failure did not record a $state-sources failure"
+  grep -q 'backup FAILED' "$tmp/notify.calls" || fail "notify-failure did not alert with a $state sources.sh"
+  [[ "$state" == missing ]] || grep -q 'Title: Pi backup FAILED' "$tmp/notify.calls" \
+    || fail "notify-failure lost the label of a broken sources.sh"
+done
+
 printf 'backup engine tests: PASSED\n'

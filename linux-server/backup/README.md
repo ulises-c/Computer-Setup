@@ -65,9 +65,11 @@ gets a ~1s `docker stop`/`start` around a volume copy — the one brief exceptio
    ```
 6. Render, install, and enable the system timer from the current checkout path:
    ```sh
-   bash setup.sh --dry-run
+   bash setup.sh --verify
    sudo bash setup.sh
    ```
+   `--verify` renders the units and runs `systemd-analyze verify` without
+   installing anything (`--dry-run` only prints the plan).
    Setup also installs a root-owned executor bundle under
    `/usr/local/libexec/computer-setup-backup/backup`; the systemd unit does not
    execute backup code directly from this writable checkout. It also stores

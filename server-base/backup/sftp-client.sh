@@ -89,7 +89,7 @@ case "$step" in
         restic -r "$SECOND_RESTIC_REPOSITORY" init --copy-chunker-params --from-repo "$RESTIC_REPOSITORY"
       fi
     fi
-    printf 'next: bash %s/backup/setup.sh --dry-run, then sudo bash %s/backup/setup.sh\n' "$host_dir" "$host_dir"
+    printf 'next: bash %s/backup/setup.sh --verify, then sudo bash %s/backup/setup.sh\n' "$host_dir" "$host_dir"
     ;;
   *)
     printf 'usage: sudo bash %s <host-dir> key | connect <target-ip> <host-key-sha256>\n' "$0" >&2
