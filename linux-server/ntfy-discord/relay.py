@@ -12,6 +12,7 @@ one warning (to the server channel) whenever a new unrelayed topic appears.
 """
 from __future__ import annotations
 
+import http.client
 import json
 import math
 import os
@@ -40,6 +41,8 @@ STREAM_TIMEOUT_SECONDS = 90
 MAX_MESSAGE_AGE_SECONDS = 24 * 3600
 DELIVERY_ATTEMPTS = 5
 DELIVERY_BUDGET_SECONDS = 60
+# A 429 body is a small JSON object; never read an unbounded one.
+RATE_LIMIT_BODY_LIMIT = 4096
 AUDIT_INTERVAL_SECONDS = 24 * 3600
 # Let the stream connect first; the audit is not urgent.
 AUDIT_FIRST_DELAY_SECONDS = 60
@@ -96,6 +99,48 @@ def discord_payload(message: dict[str, Any]) -> dict[str, Any]:
     return {"username": "ntfy", "embeds": [embed], "allowed_mentions": {"parse": []}}
 
 
+def retry_after_seconds(body: bytes) -> float:
+    """Discord's rate-limit delay; anything unusable falls back to one second."""
+    try:
+        value = float(json.loads(body or b"{}").get("retry_after", 1))
+    except (ValueError, TypeError, AttributeError, OverflowError):
+        return 1.0
+    return value if math.isfinite(value) and value >= 0 else 1.0
+
+
+def post_once(request: urllib.request.Request, remaining: float) -> tuple[int, float]:
+    """One POST as (HTTP status, 429 retry_after), bounded by `remaining` wall-clock seconds.
+
+    Socket timeouts only bound each read, so a server trickling bytes could hold an
+    attempt indefinitely; the worker thread is abandoned at the deadline instead.
+    """
+    outcome: dict[str, Any] = {}
+
+    def work() -> None:
+        try:
+            with urllib.request.urlopen(request, timeout=min(15, remaining)):
+                outcome["value"] = (200, 0.0)
+        except urllib.error.HTTPError as error:
+            try:
+                body = error.read(RATE_LIMIT_BODY_LIMIT) if error.code == 429 else b""
+                outcome["value"] = (error.code, retry_after_seconds(body))
+            except BaseException as read_error:
+                outcome["error"] = read_error
+            finally:
+                error.close()
+        except BaseException as error:
+            outcome["error"] = error
+
+    worker = threading.Thread(target=work, daemon=True)
+    worker.start()
+    worker.join(remaining)
+    if worker.is_alive():
+        raise TimeoutError("no complete response within the delivery budget")
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["value"]
+
+
 def deliver(url: str, payload: dict[str, Any], sleep: Callable[[float], None] = time.sleep) -> bool:
     body = json.dumps(payload).encode()
     deadline = time.monotonic() + DELIVERY_BUDGET_SECONDS
@@ -111,23 +156,21 @@ def deliver(url: str, payload: dict[str, Any], sleep: Callable[[float], None] = 
             headers={"Content-Type": "application/json", "User-Agent": USER_AGENT},
         )
         try:
-            with urllib.request.urlopen(request, timeout=min(15, remaining)):
+            status, retry_after = post_once(request, remaining)
+        except (urllib.error.URLError, OSError, http.client.HTTPException) as error:
+            log(f"warning: Discord delivery failed: {error!r}")
+        else:
+            if status < 400:
                 return True
-        except urllib.error.HTTPError as error:
-            if error.code == 429:
-                try:
-                    retry_after = float(json.loads(error.read() or b"{}").get("retry_after", 1))
-                    if not math.isfinite(retry_after) or retry_after < 0:
-                        retry_after = 1.0
-                except (ValueError, TypeError, AttributeError, OverflowError):
-                    retry_after = 1.0
+            if status == 429:
                 delay = max(retry_after, 0.5)
-            elif error.code < 500:
-                log(f"error: Discord rejected the message (HTTP {error.code}); dropping it")
+            elif status < 500:
+                log(f"error: Discord rejected the message (HTTP {status}); dropping it")
                 return False
-        except (urllib.error.URLError, OSError) as error:
-            log(f"warning: Discord delivery failed: {error}")
-        if attempt == DELIVERY_ATTEMPTS - 1 or delay >= deadline - time.monotonic():
+        if attempt == DELIVERY_ATTEMPTS - 1:
+            break
+        if delay >= deadline - time.monotonic():
+            log(f"error: next retry ({delay:g}s) would exceed the {DELIVERY_BUDGET_SECONDS}s delivery budget")
             break
         sleep(delay)
     log("error: Discord delivery failed after retries or delivery budget; dropping the message")
@@ -296,8 +339,8 @@ def main() -> int:
         try:
             since = run_once(config, since, on_position=update_position)
             backoff = 5
-        except (urllib.error.URLError, OSError, TimeoutError) as error:
-            log(f"warning: ntfy stream dropped: {error}; reconnecting in {backoff}s")
+        except (urllib.error.URLError, OSError, http.client.HTTPException) as error:
+            log(f"warning: ntfy stream dropped: {error!r}; reconnecting in {backoff}s")
             time.sleep(backoff)
             backoff = min(backoff * 2, 60)
 

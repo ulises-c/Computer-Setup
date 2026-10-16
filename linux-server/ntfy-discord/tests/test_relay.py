@@ -4,6 +4,7 @@ import json
 import sqlite3
 import tempfile
 import threading
+import time
 import unittest
 from contextlib import nullcontext
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -38,6 +39,37 @@ class FakeDiscord:
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self.server.server_port}/hook"
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+class RawDiscord:
+    """Serves each POST with the next scripted handler, then 204."""
+
+    def __init__(self, scripts):
+        self.scripts = list(scripts)
+        self.requests = 0
+        fake = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.rfile.read(int(self.headers["Content-Length"]))
+                fake.requests += 1
+                if fake.scripts:
+                    fake.scripts.pop(0)(self)
+                    return
+                self.send_response(204)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
 
             def log_message(self, *args):
                 pass
@@ -300,6 +332,68 @@ class RelayTests(unittest.TestCase):
                     self.assertTrue(relay.deliver(HOOK, {"content": "x"}, sleep=sleep))
                 self.assertEqual(sleeps, [1.0])
                 self.assertEqual(requests.call_count, 2)
+
+    def test_slow_rate_limit_body_cannot_exceed_the_delivery_budget(self):
+        def trickle(handler):
+            handler.send_response(429)
+            handler.send_header("Content-Length", "40")
+            handler.end_headers()
+            for _ in range(40):
+                handler.wfile.write(b" ")
+                handler.wfile.flush()
+                time.sleep(0.05)
+
+        discord = RawDiscord([trickle])
+        try:
+            with patch.object(relay, "DELIVERY_BUDGET_SECONDS", 0.3), patch.object(relay, "log") as logs:
+                started = time.monotonic()
+                self.assertFalse(relay.deliver(discord.url, {"content": "x"}, sleep=lambda _: None))
+                elapsed = time.monotonic() - started
+        finally:
+            discord.close()
+        self.assertLess(elapsed, 1.0)
+        self.assertTrue(any("delivery budget" in call.args[0] for call in logs.call_args_list))
+
+    def test_truncated_rate_limit_body_is_retried(self):
+        def truncated(handler):
+            handler.send_response(429)
+            handler.send_header("Content-Length", "100")
+            handler.end_headers()
+            handler.wfile.write(b'{"retry')
+            handler.close_connection = True
+
+        discord = RawDiscord([truncated])
+        sleeps = []
+        try:
+            with patch.object(relay, "log"):
+                self.assertTrue(relay.deliver(discord.url, {"content": "x"}, sleep=sleeps.append))
+        finally:
+            discord.close()
+        self.assertEqual(discord.requests, 2)
+        self.assertEqual(sleeps, [1])
+
+    def test_rate_limit_body_timeout_lets_the_stream_advance(self):
+        class TimingOutBody(io.RawIOBase):
+            def readable(self):
+                return True
+
+            def readinto(self, buffer):
+                raise TimeoutError("429 body timed out")
+
+        def limited():
+            return relay.urllib.error.HTTPError(HOOK, 429, "limited", {}, io.BufferedReader(TimingOutBody()))
+
+        with tempfile.TemporaryDirectory() as directory:
+            config = self.config(directory, server=HOOK)
+            with patch.object(relay.urllib.request, "urlopen",
+                              side_effect=[limited(), nullcontext(), nullcontext()]) as opened, \
+                    patch.object(relay.time, "sleep"), patch.object(relay, "log"):
+                last = relay.relay_events(
+                    [message("first", "server-backup"), message("next", "server-backup")],
+                    config, None, now=lambda: NOW)
+            self.assertEqual(opened.call_count, 3)
+            self.assertEqual(last, "next")
+            self.assertEqual(relay.read_state(config["state_file"]), "next")
 
     def test_config_validates_inputs(self):
         good = {"NTFY_URL": "https://ntfy.example/", "RELAY_TOPICS": "server-backup, game-backup",

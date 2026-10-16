@@ -43,11 +43,17 @@ Mentions are disabled, so message text can never ping anyone.
   write failures are logged: reconnects in that process retain the cursor, but
   a restart can replay messages from an older checkpoint or start fresh if none
   exists. This is not an exactly-once or guaranteed-delivery channel.
-- Discord rate limits (HTTP 429) wait the full finite, nonnegative `retry_after`
-  duration in sleep intervals of at most 60 seconds (minimum total 0.5 seconds).
-  Invalid durations fall back to one second. Delivery attempts are bounded to
-  five, including rate-limit responses; network and 5xx errors also retry, then
-  the message is dropped and logged.
+- Each message gets a 60-second delivery budget and at most five attempts. The
+  budget is wall-clock: it covers each request and response read, not only the
+  waits between them, so a slow or stalled Discord response cannot hold the
+  stream. Rate limits (HTTP 429) wait the requested `retry_after` (at least
+  0.5 seconds; an invalid value counts as one second) and never retry early.
+  When that wait would run past the budget, the message is dropped and logged
+  instead. Network errors, truncated responses and 5xx also retry within the
+  budget; other 4xx drop the message at once. A dropped message is not retried
+  later: the cursor moves on so the next message is delivered. An attempt
+  abandoned at the deadline can still land late, so a drop can occasionally
+  appear in Discord after all.
 - ntfy has no wildcard subscription: when a script starts using a new topic,
   add it to `RELAY_TOPICS` and `docker compose up -d`. A daily audit catches the
   ones that are forgotten: it reads ntfy's message cache (mounted read-only) and,
