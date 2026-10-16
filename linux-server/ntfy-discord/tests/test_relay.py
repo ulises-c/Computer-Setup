@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import json
 import sqlite3
 import tempfile
@@ -168,6 +169,38 @@ class RelayTests(unittest.TestCase):
         self.assertEqual(sleeps, [0.5])
         self.assertEqual(len(discord.bodies), 2)
 
+    def test_excessive_rate_limit_drops_and_next_stream_message_proceeds(self):
+        for value in (61, 600, 1e30, 1e308, "1e30"):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as directory:
+                error = relay.urllib.error.HTTPError(
+                    HOOK, 429, "limited", {},
+                    io.BytesIO(json.dumps({"retry_after": value}).encode()))
+                results = []
+                elapsed = [100.0]
+
+                def sleep(delay):
+                    elapsed[0] += delay
+                    self.fail("an excessive retry_after must be dropped, not slept or retried early")
+
+                def send(url, payload):
+                    result = relay.deliver(url, payload, sleep=sleep)
+                    results.append(result)
+                    return result
+
+                config = self.config(directory, server=HOOK)
+                with patch.object(relay.time, "monotonic", side_effect=lambda: elapsed[0]), \
+                        patch.object(relay.urllib.request, "urlopen",
+                                     side_effect=[error, nullcontext()]) as opened, \
+                        patch.object(relay, "log") as logs:
+                    last = relay.relay_events(
+                        [message("first", "server-backup"), message("next", "server-backup")],
+                        config, None, send=send, now=lambda: NOW)
+                self.assertEqual(results, [False, True])
+                self.assertEqual(opened.call_count, 2)
+                self.assertEqual(last, "next")
+                self.assertEqual(relay.read_state(config["state_file"]), "next")
+                self.assertTrue(any("dropping" in call.args[0] for call in logs.call_args_list))
+
     def test_client_error_is_dropped_without_retry(self):
         discord = FakeDiscord([(400, b"{}")])
         try:
@@ -176,21 +209,68 @@ class RelayTests(unittest.TestCase):
             discord.close()
         self.assertEqual(len(discord.bodies), 1)
 
-    def test_long_rate_limit_waits_full_deadline_before_retry(self):
-        discord = FakeDiscord([(429, b'{"retry_after": 600}'), (204, b"")])
+    def test_rate_limits_wait_full_requested_delays_before_retry(self):
+        elapsed = [100.0]
+        attempts = []
         sleeps = []
 
-        def sleep(delay):
-            self.assertEqual(len(discord.bodies), 1)
-            sleeps.append(delay)
+        def opened(request, **kwargs):
+            attempts.append(elapsed[0])
+            if len(attempts) <= 2:
+                raise relay.urllib.error.HTTPError(
+                    HOOK, 429, "limited", {}, io.BytesIO(b'{"retry_after": 20}'))
+            return nullcontext()
 
-        try:
-            self.assertTrue(relay.deliver(discord.url, {"content": "x"}, sleep=sleep))
-        finally:
-            discord.close()
-        self.assertEqual(sum(sleeps), 600)
-        self.assertTrue(all(0 < delay <= 60 for delay in sleeps))
-        self.assertEqual(len(discord.bodies), 2)
+        def sleep(delay):
+            sleeps.append(delay)
+            elapsed[0] += delay
+
+        with patch.object(relay.time, "monotonic", side_effect=lambda: elapsed[0]), \
+                patch.object(relay.urllib.request, "urlopen", side_effect=opened):
+            self.assertTrue(relay.deliver(HOOK, {"content": "x"}, sleep=sleep))
+        self.assertEqual(sleeps, [20, 20])
+        self.assertEqual(attempts, [100, 120, 140])
+
+    def test_repeated_rate_limits_share_one_delivery_budget(self):
+        elapsed = [0.0]
+        sleeps = []
+
+        def opened(request, **kwargs):
+            raise relay.urllib.error.HTTPError(
+                HOOK, 429, "limited", {}, io.BytesIO(b'{"retry_after": 25}'))
+
+        def sleep(delay):
+            sleeps.append(delay)
+            elapsed[0] += delay
+
+        with patch.object(relay.time, "monotonic", side_effect=lambda: elapsed[0]), \
+                patch.object(relay.urllib.request, "urlopen", side_effect=opened) as requests, \
+                patch.object(relay, "log") as logs:
+            self.assertFalse(relay.deliver(HOOK, {"content": "x"}, sleep=sleep))
+        self.assertEqual(requests.call_count, 3)
+        self.assertEqual(sleeps, [25, 25])
+        self.assertLessEqual(elapsed[0], relay.DELIVERY_BUDGET_SECONDS)
+        self.assertIn("delivery budget", logs.call_args.args[0])
+
+    def test_request_time_counts_towards_budget_and_bounds_next_timeout(self):
+        elapsed = [0.0]
+        timeouts = []
+
+        def opened(request, timeout):
+            timeouts.append(timeout)
+            elapsed[0] += timeout
+            raise relay.urllib.error.HTTPError(
+                HOOK, 429, "limited", {}, io.BytesIO(b'{"retry_after": 10}'))
+
+        def sleep(delay):
+            elapsed[0] += delay
+
+        with patch.object(relay.time, "monotonic", side_effect=lambda: elapsed[0]), \
+                patch.object(relay.urllib.request, "urlopen", side_effect=opened), \
+                patch.object(relay, "log"):
+            self.assertFalse(relay.deliver(HOOK, {"content": "x"}, sleep=sleep))
+        self.assertEqual(timeouts, [15, 15, 10])
+        self.assertEqual(elapsed[0], relay.DELIVERY_BUDGET_SECONDS)
 
     def test_server_errors_retry_then_give_up(self):
         discord = FakeDiscord([(502, b"")] * relay.DELIVERY_ATTEMPTS)
@@ -201,20 +281,25 @@ class RelayTests(unittest.TestCase):
         self.assertEqual(len(discord.bodies), relay.DELIVERY_ATTEMPTS)
 
     def test_invalid_rate_limit_deadlines_use_safe_fallback(self):
-        for value in (None, "NaN", "Infinity", {}, -1):
-            with self.subTest(value=value):
-                discord = FakeDiscord([(429, json.dumps({"retry_after": value}).encode()), (204, b"")])
+        bodies = [json.dumps({"retry_after": value}).encode()
+                  for value in (None, "NaN", "Infinity", "-Infinity", {}, [], -1, "bad")]
+        bodies += [b"not json", b"[]", b"null", b'{"retry_after": 1e999}']
+        for body in bodies:
+            with self.subTest(body=body):
+                elapsed = [0.0]
                 sleeps = []
 
                 def sleep(delay):
                     sleeps.append(delay)
-                    self.assertEqual(sleeps, [1.0])
+                    elapsed[0] += delay
 
-                try:
-                    self.assertTrue(relay.deliver(discord.url, {"content": "x"}, sleep=sleep))
-                finally:
-                    discord.close()
+                error = relay.urllib.error.HTTPError(HOOK, 429, "limited", {}, io.BytesIO(body))
+                with patch.object(relay.time, "monotonic", side_effect=lambda: elapsed[0]), \
+                        patch.object(relay.urllib.request, "urlopen",
+                                     side_effect=[error, nullcontext()]) as requests:
+                    self.assertTrue(relay.deliver(HOOK, {"content": "x"}, sleep=sleep))
                 self.assertEqual(sleeps, [1.0])
+                self.assertEqual(requests.call_count, 2)
 
     def test_config_validates_inputs(self):
         good = {"NTFY_URL": "https://ntfy.example/", "RELAY_TOPICS": "server-backup, game-backup",

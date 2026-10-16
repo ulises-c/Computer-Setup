@@ -39,6 +39,7 @@ STREAM_TIMEOUT_SECONDS = 90
 # (30 days); anything older than this is stale and skipped rather than flooding Discord.
 MAX_MESSAGE_AGE_SECONDS = 24 * 3600
 DELIVERY_ATTEMPTS = 5
+DELIVERY_BUDGET_SECONDS = 60
 AUDIT_INTERVAL_SECONDS = 24 * 3600
 # Let the stream connect first; the audit is not urgent.
 AUDIT_FIRST_DELAY_SECONDS = 60
@@ -97,7 +98,12 @@ def discord_payload(message: dict[str, Any]) -> dict[str, Any]:
 
 def deliver(url: str, payload: dict[str, Any], sleep: Callable[[float], None] = time.sleep) -> bool:
     body = json.dumps(payload).encode()
+    deadline = time.monotonic() + DELIVERY_BUDGET_SECONDS
     for attempt in range(DELIVERY_ATTEMPTS):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        delay = min(2 ** attempt, 30)
         request = urllib.request.Request(
             url,
             data=body,
@@ -105,7 +111,7 @@ def deliver(url: str, payload: dict[str, Any], sleep: Callable[[float], None] = 
             headers={"Content-Type": "application/json", "User-Agent": USER_AGENT},
         )
         try:
-            with urllib.request.urlopen(request, timeout=15):
+            with urllib.request.urlopen(request, timeout=min(15, remaining)):
                 return True
         except urllib.error.HTTPError as error:
             if error.code == 429:
@@ -115,19 +121,16 @@ def deliver(url: str, payload: dict[str, Any], sleep: Callable[[float], None] = 
                         retry_after = 1.0
                 except (ValueError, TypeError, AttributeError, OverflowError):
                     retry_after = 1.0
-                remaining = max(retry_after, 0.5)
-                while remaining > 0:
-                    delay = min(remaining, 60)
-                    sleep(delay)
-                    remaining -= delay
-                continue
-            if error.code < 500:
+                delay = max(retry_after, 0.5)
+            elif error.code < 500:
                 log(f"error: Discord rejected the message (HTTP {error.code}); dropping it")
                 return False
         except (urllib.error.URLError, OSError) as error:
             log(f"warning: Discord delivery failed: {error}")
-        sleep(min(2 ** attempt, 30))
-    log("error: Discord delivery failed after retries; dropping the message")
+        if attempt == DELIVERY_ATTEMPTS - 1 or delay >= deadline - time.monotonic():
+            break
+        sleep(delay)
+    log("error: Discord delivery failed after retries or delivery budget; dropping the message")
     return False
 
 
