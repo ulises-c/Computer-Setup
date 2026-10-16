@@ -194,25 +194,55 @@ if [[ "${1:-}" == "notify-failure" ]]; then
 fi
 
 STATUS=failed
+# Fits one container restart inside systemd's default 90 s stop timeout.
+RECOVERY_TIMEOUT_SECONDS="${BACKUP_RECOVERY_TIMEOUT_SECONDS:-60}"
+# TERM/INT are ignored during cleanup, so an over-time command gets KILL; GNU
+# timeout is not on macOS and its TERM would be ignored anyway.
+run_bounded() {
+  local deadline=$((SECONDS + RECOVERY_TIMEOUT_SECONDS)) pid status=0
+  "$@" &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null; do
+    if (( SECONDS >= deadline )); then
+      printf 'error: %s did not finish within %ss; killed it\n' "$*" "$RECOVERY_TIMEOUT_SECONDS" >&2
+      kill -KILL "$pid" 2>/dev/null || true
+      break
+    fi
+    sleep 0.2
+  done
+  wait "$pid" || status=$?
+  return "$status"
+}
 finish() {
+  local rc=$? container recovered=true
   # Cleanup children must inherit ignored signals before the wrapper cancels the job group.
   trap '' TERM INT
+  # Restart first: nothing that can fail or stall may run ahead of it.
+  # Bash 3.2 treats empty arrays as unset under nounset.
+  for container in ${QUIESCED_CONTAINERS[@]+"${QUIESCED_CONTAINERS[@]}"}; do
+    if ! run_bounded docker start "$container" >/dev/null; then
+      printf 'error: could not restart container %s; start it by hand\n' "$container" >&2
+      recovered=false
+    fi
+  done
+  [[ "$recovered" == true ]] || STATUS=failed
   if [[ "$STATUS" != success ]]; then
     DURATION=$((SECONDS - START))
     command -v jq >/dev/null && write_status failed true || true
   fi
-  [[ "$STAGING_READY" == true ]] && rm -rf "$STAGING_DIR"
-  local container
-  # Bash 3.2 treats empty arrays as unset under nounset.
-  for container in ${QUIESCED_CONTAINERS[@]+"${QUIESCED_CONTAINERS[@]}"}; do
-    docker start "$container" >/dev/null 2>&1 || true
-  done
+  if [[ "$STAGING_READY" == true ]] && ! run_bounded rm -rf "$STAGING_DIR"; then
+    printf 'warning: could not remove staging %s; the next run clears it\n' "$STAGING_DIR" >&2
+  fi
+  if [[ "$recovered" == false && "$rc" == 0 ]]; then
+    exit 1
+  fi
 }
 QUIESCED_CONTAINERS=()
 trap finish EXIT
 
 # --- guards -----------------------------------------------------------------
 command -v jq >/dev/null || die "jq not installed (apt install jq)"
+[[ "$RECOVERY_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]] || die "BACKUP_RECOVERY_TIMEOUT_SECONDS must be a positive integer"
 write_status running
 validate_url NTFY_URL "${NTFY_URL:-}"
 validate_url KUMA_PUSH_URL "$KUMA_PUSH_URL"

@@ -175,7 +175,7 @@ wait "$pid"
     def test_backup_int_notifies_after_child_cleanup(self):
         self.check_backup_cancellation(signal.SIGINT)
 
-    def check_engine_cleanup_restart(self, sig=None):
+    def check_engine_cleanup_restart(self, sig=None, fail_rm=False, hang=False):
         shutil.copyfile(SOURCE.parent / "server-base/backup/backup.sh",
                         self.host / "backup/backup.sh")
         (self.host / "backup/sources.sh").write_text(
@@ -186,6 +186,8 @@ wait "$pid"
         self.stub("hostname", 'printf "fixture\\n"')
         self.stub("restic", 'printf "unexpected restic\\n" >&2; exit 99')
         self.stub("curl", 'printf "%s\\n" "$*" >> "$CALLS.notifications"')
+        if fail_rm:
+            self.stub("rm", '[[ -e "$FIXTURE/stopped-once" ]] && exit 1; exec /bin/rm "$@"')
         docker = self.bin / "docker"
         docker.write_text(f"#!{sys.executable}\n" + '''import os
 from pathlib import Path
@@ -199,6 +201,7 @@ if command == "inspect":
     print("true")
 elif command == "stop":
     (root / "state").write_text("stopped")
+    (root / "stopped-once").touch()
 elif command == "run":
     print("fixture archive")
 elif command == "start":
@@ -207,7 +210,7 @@ elif command == "start":
         sys.exit(1)
     (root / "cleanup-start.tmp").write_text(str(os.getppid()))
     (root / "cleanup-start.tmp").replace(root / "cleanup-start")
-    time.sleep(1)
+    time.sleep(30 if os.environ.get("HANG") else 1)
     (root / "state").write_text("running")
 else:
     sys.exit("unexpected Docker invocation")
@@ -218,6 +221,8 @@ else:
                    RESTIC_PASSWORD="fixture", STAGING_DIR=str(self.root / "staging"),
                    STATUS_JSON=str(self.root / "status.json"),
                    NTFY_URL="https://ntfy.example", KUMA_PUSH_URL="")
+        if hang:
+            env.update(HANG="1", BACKUP_RECOVERY_TIMEOUT_SECONDS="2")
         proc = subprocess.Popen(["/bin/bash", str(self.host / "backup/run.sh")],
                                 env=env, text=True, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, start_new_session=True,
@@ -232,11 +237,18 @@ else:
             engine = int((self.root / "cleanup-start").read_text())
             if sig is not None:
                 proc.send_signal(sig)
-            stdout, stderr = proc.communicate(timeout=5)
+            stdout, stderr = proc.communicate(timeout=10)
             self.assertEqual(proc.returncode, 1 if sig is None else 128 + sig,
                              stdout + stderr)
-            self.assertEqual((self.root / "state").read_text(), "running",
-                             "cancellation interrupted the EXIT cleanup restart")
+            if hang:
+                self.assertEqual((self.root / "state").read_text(), "stopped")
+                self.assertIn("did not finish within 2s", stdout + stderr)
+                self.assertIn("could not restart container portainer", stdout + stderr)
+            else:
+                self.assertEqual((self.root / "state").read_text(), "running",
+                                 "cleanup did not restart the quiesced container")
+            if fail_rm:
+                self.assertIn("could not remove staging", stdout + stderr)
             status = json.loads((self.root / "status.json").read_text())
             self.assertEqual(status["status"], "failed")
             self.assertFalse(status["notifier_pending"])
@@ -263,6 +275,15 @@ else:
 
     def test_actual_engine_cleanup_restart_without_cancellation(self):
         self.check_engine_cleanup_restart()
+
+    def test_failed_staging_removal_does_not_skip_restart(self):
+        self.check_engine_cleanup_restart(fail_rm=True)
+
+    def test_hung_recovery_is_bounded_and_still_notifies(self):
+        self.check_engine_cleanup_restart(hang=True)
+
+    def test_hung_recovery_is_bounded_under_wrapper_term(self):
+        self.check_engine_cleanup_restart(signal.SIGTERM, hang=True)
 
     def test_idle_backup_can_reload(self):
         self.env["AGENT_STATE"] = "- 0 net.computer-setup.mac-backup"
