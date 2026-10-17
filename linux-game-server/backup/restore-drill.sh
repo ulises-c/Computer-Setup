@@ -17,6 +17,7 @@ readonly UPDATE_TIMER=dragonwilds-auto-update.timer
 readonly UPDATE_SERVICE=dragonwilds-auto-update.service
 readonly BACKUP_UNIT=game-backup.service
 readonly LOAD_TIMEOUT_SECONDS=600
+readonly LOCK_FILE=/run/lock/dragonwilds-restore-drill.lock
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 trap 'printf "error: restore-drill stopped at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
@@ -45,9 +46,11 @@ for arg in "$@"; do
 done
 
 [[ "$EUID" -eq 0 ]] || die "run with sudo (restic reaches the repository with root's SSH key)"
-for tool in restic jq systemctl journalctl diff; do
+for tool in restic jq systemctl journalctl diff flock; do
   command -v "$tool" >/dev/null || die "$tool is required"
 done
+exec 9>"$LOCK_FILE"
+flock -n 9 || die "another restore drill is running"
 
 install_dir="$(systemctl show "$GAME_UNIT" -p WorkingDirectory --value)"
 game_user="$(systemctl show "$GAME_UNIT" -p User --value)"
@@ -74,8 +77,11 @@ set +a
 export HOME=/root
 
 stamp="$(date +%Y%m%d-%H%M%S)"
-scratch="$(mktemp -d /root/restore-drill.XXXXXX)"
 aside="$saved/SaveGames.drill-$stamp"
+# Recovery treats an existing aside as the original world, so it must be ours.
+[[ ! -e "$aside" && ! -L "$aside" ]] || die "$aside already exists; move it away and rerun"
+scratch="$(mktemp -d /root/restore-drill.XXXXXX)"
+swapping=false
 swapped=false
 finished=false
 
@@ -86,13 +92,20 @@ recover() {
     printf '[drill] manual recovery required: updater could not be stopped; leaving both worlds untouched and not restarting the timer\n' >&2
     return 1
   fi
-  if [[ "$swapped" == true ]]; then
-    if ! stop_game; then
-      printf '[drill] manual recovery required: stop could not be verified; leaving %s and %s untouched; update timer remains stopped\n' "$live" "$aside" >&2
+  # Trust the filesystem, not the flags: a signal can land between the move and
+  # `swapped=true`. Live is only deleted once the original is known to be in aside.
+  if [[ "$swapping" == true ]]; then
+    if [[ -d "$aside" && ! -L "$aside" ]]; then
+      if ! stop_game; then
+        printf '[drill] manual recovery required: stop could not be verified; leaving %s and %s untouched; update timer remains stopped\n' "$live" "$aside" >&2
+        return 1
+      fi
+      rm -rf "$live"
+      mv -T "$aside" "$live"
+    elif [[ "$swapped" == true || -e "$aside" || -L "$aside" || ! -d "$live" ]]; then
+      printf '[drill] manual recovery required: the original world is not at %s; leaving %s and %s untouched; update timer remains stopped\n' "$aside" "$live" "$scratch" >&2
       return 1
     fi
-    rm -rf "$live"
-    mv "$aside" "$live"
   fi
   systemctl start "$GAME_UNIT" || printf '[drill] could not start %s; check it by hand\n' "$GAME_UNIT" >&2
   systemctl start "$UPDATE_TIMER" || true
@@ -123,7 +136,8 @@ for sav in "$scratch$live"/*.sav; do
 done
 
 log "swapping the restored SaveGames in (original kept at $aside)"
-mv "$live" "$aside"
+swapping=true
+mv -T "$live" "$aside"
 swapped=true
 cp -a "$scratch$live" "$live"
 chown -R "$game_user:${game_group:-$game_user}" "$live"

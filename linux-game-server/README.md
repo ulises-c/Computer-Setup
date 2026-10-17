@@ -344,7 +344,10 @@ stops the game, takes a fresh snapshot of the stopped world, restores it to a
 scratch dir, checks it is byte-identical to the live saves and config, swaps the
 restored `SaveGames` in and waits for `World load SUCCEEDED`. The original
 `SaveGames` is kept beside the live one; any failure puts it back and restarts
-the game. `server-base/backup/restore-check.sh linux-game-server` verifies a
+the game. Only one drill runs at a time, and it refuses to start if a
+`SaveGames.drill-<time>` dir with its name already exists. If recovery cannot
+find the original, it leaves the game and the update timer stopped and says
+so, rather than delete anything. `server-base/backup/restore-check.sh linux-game-server` verifies a
 restore without stopping anything. Rerun both after any change to the backup
 engine, `backup/sources.sh`, the pre-update gate or the save layout.
 
