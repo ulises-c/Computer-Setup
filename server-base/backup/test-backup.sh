@@ -110,9 +110,15 @@ cat >"$stub/docker" <<'EOF'
 case "$1" in
   info|volume) exit 0 ;;
   ps) [[ "${DOCKER_FAIL:-}" != ps ]] || { printf 'Cannot connect to the Docker daemon\n' >&2; exit 1; }
+    [[ "${DOCKER_FAIL:-}" == partial-then-empty && -e "$DOCKER_LOG.inspected" ]] && exit 0
     printf 'fb0000000001\nag0000000001\n' ;;
   inspect)
     [[ "${*: -1}" != portainer ]] || exit 1
+    if [[ "${DOCKER_FAIL:-}" == partial-then-empty ]]; then
+      touch "$DOCKER_LOG.inspected"
+      printf '/filebrowser\t%s\n/adguardhome\t%s\n' "$FB_DB_DIR" "$AG_WORK_DIR"
+      printf 'Error: No such object: ag0000000002\n' >&2; exit 1
+    fi
     if [[ "${DOCKER_FAIL:-}" == inspect ]] \
       || { [[ "${DOCKER_FAIL:-}" == inspect-once && ! -e "$DOCKER_LOG.inspected" ]] && touch "$DOCKER_LOG.inspected"; }; then
       printf 'Error: No such object\n' >&2; exit 1
@@ -233,6 +239,14 @@ rm -f "$DOCKER_LOG.inspected"
 out="$(DOCKER_FAIL=inspect-once PATH="$stub:$PATH" RESTIC_LOG="$tmp/restic.log" bash "$server/backup/backup.sh" 2>&1)" \
   || fail "a single failed docker inspect was not retried: $out"
 grep -q 'raw copy with filebrowser stopped' <<<"$out" || fail "owner not stopped after an inspect retry: $out"
+# Mounts printed by a failed inspect must not outlive it: when the retry finds
+# no running containers, nothing is stopped or started.
+: >"$DOCKER_LOG"
+rm -f "$DOCKER_LOG.inspected"
+out="$(DOCKER_FAIL=partial-then-empty PATH="$stub:$PATH" RESTIC_LOG="$tmp/restic.log" bash "$server/backup/backup.sh" 2>&1)" \
+  || fail "an empty retry after a partial inspect failed the backup: $out"
+[[ ! -s "$DOCKER_LOG" ]] || fail "stale inspect output stopped a container: $(<"$DOCKER_LOG")"
+grep -q 'no running owner' <<<"$out" || fail "empty retry not reported as no owner: $out"
 
 # Once the player-log dir is backed up, its lock must exist and be root-owned 0600.
 mkdir -p "$player_log"

@@ -341,6 +341,8 @@ owning_container() {
   command -v docker >/dev/null || return 0
   for attempt in 1 2 3; do
     # A container can exit between ps and inspect; ask again before giving up.
+    # A failed inspect can still print mounts, so nothing survives an attempt.
+    mounts=""
     if ids="$(docker ps -q)" && { [[ -z "$ids" ]] || mounts="$(xargs docker inspect \
         -f '{{$n := .Name}}{{range .Mounts}}{{$n}}{{"\t"}}{{.Source}}{{"\n"}}{{end}}' <<<"$ids")"; }; then
       break
