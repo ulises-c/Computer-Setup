@@ -1,0 +1,68 @@
+- Management:
+    - glances:
+        icon: sh-glances.svg
+        href: https://{{HOMEPAGE_VAR_PI_NODE_DOMAIN}}/glances/
+        description: System monitor
+        server: my-docker
+        container: glances
+        widget:
+          type: glances
+          url: http://127.0.0.1:61208
+          version: 4
+          metric: cpu
+    - portainer:
+        icon: sh-portainer-light.svg
+        href: https://{{HOMEPAGE_VAR_PI_NODE_DOMAIN}}:9443/
+        description: Docker manager
+        server: my-docker
+        container: portainer
+    - watchtower:
+        icon: sh-watchtower.svg
+        description: Automatic container updates
+        server: my-docker
+        container: watchtower
+    - cockpit:
+        icon: sh-cockpit-light.svg
+        href: https://{{HOMEPAGE_VAR_PI_NODE_DOMAIN}}/cockpit/
+        description: Server admin UI
+        ping: https://127.0.0.1:9090
+
+- Pi Services:
+    - adguard (backup dns):
+        icon: sh-adguard-home.svg
+        href: https://{{HOMEPAGE_VAR_ADGUARD_PI_DOMAIN}}/
+        description: Backup DNS resolver
+        widget:
+          type: adguard
+          url: http://localhost:80
+          username: "{{HOMEPAGE_VAR_ADGUARD_USER}}"
+          password: "{{HOMEPAGE_VAR_ADGUARD_PASS}}"
+    - motioneye:
+        icon: sh-motioneye.svg
+        href: https://{{HOMEPAGE_VAR_MOTIONEYE_DOMAIN}}/
+        description: Security cameras
+        siteMonitor: https://{{HOMEPAGE_VAR_MOTIONEYE_DOMAIN}}
+    - cups:
+        icon: sh-cups.svg
+        href: https://{{HOMEPAGE_VAR_CUPS_DOMAIN}}/
+        description: Print server
+        siteMonitor: https://{{HOMEPAGE_VAR_CUPS_DOMAIN}}
+    - backups:
+        icon: sh-restic
+        description: restic → main server (wd1tb + wd14tb)
+        server: my-docker
+        container: pi-backup-status
+        widget:
+          type: customapi
+          url: http://localhost:8099/backup-status.json
+          refreshInterval: 600000
+          mappings:
+            - field: status
+              label: Status
+              format: text
+            - field: last_run
+              label: Last run
+              format: relativeDate
+            - field: repo_size_bytes
+              label: Repo size
+              format: bytes

@@ -113,7 +113,6 @@ Install with `bash setup.sh --work` from the repo root (`macOS/setup.sh` is a th
 
 ## Services
 
-- **[Forgejo Actions runner](forgejo-runner/)** — this Mac mini runs CI jobs for
-  the home Forgejo server over Tailscale. See
-  [`forgejo-runner/README.md`](forgejo-runner/README.md) for setup, the
-  `install`/`verify`/`run` scripts, and troubleshooting.
+- **Mac mini server** — the always-on Mac mini's server role (Homepage,
+  Glances, the Forgejo Actions runner, local inference, backups, power
+  settings) lives in [`../macos-server/`](../macos-server/README.md).

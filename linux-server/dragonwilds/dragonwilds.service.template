@@ -10,10 +10,15 @@ User=@USER@
 Group=@GROUP@
 WorkingDirectory=@INSTALL_DIR@
 
-# The download below runs inside the start job, so systemd's default 90 s start
-# timeout would kill any real patch mid-transfer — and a lock held by the update
-# check can eat that whole budget before steamcmd even starts.
-TimeoutStartSec=30min
+# The backup gate and download both run inside the start job. A patch has taken
+# a little over two hours in practice, and the backup service itself allows two
+# hours, so leave headroom for both before systemd gives up.
+TimeoutStartSec=5h
+
+# A restart stops the old process first; this root-only helper then waits for a
+# clean, off-host backup before SteamCMD can modify the installation. The `+`
+# prefix is required because the game service itself runs unprivileged.
+ExecStartPre=+/usr/bin/systemctl start --wait dragonwilds-pre-update-backup.service
 
 # Pull the latest build on every start. Leading "-" so a Steam outage leaves the
 # server starting on the build already on disk instead of failing to come up.
@@ -30,6 +35,9 @@ ExecStart=@INSTALL_DIR@/RSDragonwildsServer.sh -log -port=@SERVER_PORT@ -ini:Gam
 # finish before systemd escalates, otherwise a restart can lose recent progress.
 KillSignal=SIGTERM
 TimeoutStopSec=120
+# Record forced or otherwise unclean termination outside the checkout. The next
+# start refuses to update until the operator has acknowledged the failed stop.
+ExecStopPost=+/usr/bin/bash -c 'install -d -o root -g root -m 755 /run/dragonwilds; if [[ "$${SERVICE_RESULT:-unknown}" == success ]]; then rm -f /run/dragonwilds/stop-failure; else printf "%s\n" "$${SERVICE_RESULT:-unknown}" > /run/dragonwilds/stop-failure; fi'
 
 Restart=on-failure
 RestartSec=15

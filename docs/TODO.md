@@ -10,9 +10,16 @@ unified-layout design rationale is in [UNIFICATION.md](UNIFICATION.md).
       and test real joins beyond six before treating it as usable.
 - [ ] Retest the join-code route from a Tailscale client; the documented evidence
       shows EOS can advertise the WAN address while direct tailnet-IP connect works.
-- [ ] Arrange recurring off-host backups for this host's `Saved/Config`,
-      `Saved/SaveGames`, and private deployment `.env`; the rename backup is only
-      a rollback point, not recurring coverage.
+- [ ] Re-check `spud_world_rename.py` after Dragonwilds game updates: the game
+      documents no world rename. `1` → `Ashenfall` was accepted on build
+      25630937 (original GUID loaded, no `NewGame(`, a client joined). Take a
+      stopped-state backup first and read the load log after the restart.
+- [x] Nightly off-host backups cover this host's `Saved/Config`,
+      `Saved/SaveGames`, private deployment `.env`, and a verified live world
+      copy through `linux-game-server/backup/`.
+- [x] Restore drill (`linux-game-server/backup/restore-drill.sh`): a fresh snapshot
+      of the stopped world restored byte-identical and the game loaded it
+      (`World load SUCCEEDED`, 2026-10-03)
 
 ## Live-run cleanup & follow-ups (unification / dotfiles)
 
@@ -248,8 +255,17 @@ kept the primary AdGuard from recovering.
       AdGuard on `<pi-hostname>`, host-networked (independent of Tailscale) and
       config-synced from the primary, handed out as secondary DNS by the router —
       `linux-pi/adguard` + `linux-pi/adguardhome-sync`.
-- [ ] **Secondary DHCP.** DHCP is still single-homed on the server; a server
-      outage means no new leases. Add a secondary scope (Pi/router) or long leases.
+- [x] **DHCP is not single-homed on the server.** The router does DHCP (AdGuard's
+      DHCP is disabled everywhere) and hands out the resolvers, so a server outage
+      does not stop leases.
+- [ ] **Router DNS has two slots.** The router hands clients itself as DNS and
+      forwards to two upstreams (main server, Pi), so the game-server replica
+      is not in the client path; it serves as a `DNS_PEERS` backup peer and a
+      drop-in if the Pi is down. To use all replicas, list them as tailnet DNS
+      nameservers or move DHCP to a server that can hand out three.
+- [ ] **AdGuard replica on the NAS once deployed** — extend
+      `server-base/adguard-replica` and add it as the next `REPLICA<n>` in the
+      Pi's syncer.
 
 ## Server Docker network sprawl — [#75](https://github.com/ulises-c/Computer-Setup/issues/75)
 
@@ -293,15 +309,35 @@ torrents only). Before broader use, route all torrent traffic through a VPN.
 Dedicated game host (`linux-game-server/`), currently Homepage and the native
 Dragonwilds server, migrated off the NAS host.
 
-- [ ] **Backups.** Add restic to the game host, snapshotting `Saved/SaveGames`,
-      `Saved/Config` and the private `.env` files into a repository on the NAS
-      host's backup drive, and test a restore. Keep the configuration under
-      `linux-game-server/`; the NAS side should only provide the target
-- [ ] After a verified restore, set `AUTO_UPDATE_RESTART=true` and configure
-      ntfy in `linux-game-server/dragonwilds/.env`
+- [x] **Backups.** `linux-game-server/backup/` uses the shared restic engine and
+      is deployed to the NAS SFTP target; the nightly service has completed a
+      successful run. A tested restore remains open below.
+- [x] **Backup restore.** Restored world loaded in the game (restore drill)
+- [x] `AUTO_UPDATE_RESTART=true` and ntfy (`game-dragonwilds` topic) configured in
+      `linux-game-server/dragonwilds/.env`, after a live check of the pre-update
+      backup gate
 - [ ] Reserve the game host's LAN address in the router's DHCP table so the
       Direct-connect address and the Homepage card stay stable
-- [ ] Independent review of `feat/linux-game-server`, then open the PR
+- [ ] RGB hardware acceptance: confirm lighting is physically off, then on the next
+      natural reboot/resume check the `rgb-policy.json` trigger/result and that
+      lighting remains off. The service and OpenRGB card are deployed; the manual
+      Off command was accepted on 2026-10-05. Do not disrupt a running game just
+      to exercise these triggers
+- [ ] Independent review of the game-server work on PR #106 (the commits after
+      `eb73735`); not started
+- [x] Grouped top bar rolled out to the main server (`safeSSDHealth: true`) and Pi
+      (off, no NVMe); generated config deployed and revalidated, verified live
+- [x] Main server DAS HDD used/free: read only while the drive is already in use
+      (sysfs I/O counters, at most once per 5 min) and shown as "Last read <date>";
+      deployed, first samples appear on the next natural activity
+- [ ] After the next backup or NAS activity, confirm the three HDD tiles on the main
+      dashboard fill in with a date, and `hdd-cache/hdd-cache.json` appears under
+      `linux-server/glances/`
+- [ ] Physically confirm that the DAS HDDs stay asleep over a multi-day idle
+      period with the new Glances policy (the code paths are blocked and tested,
+      but drive power state was deliberately not queried)
+- [x] Main server and Pi checkouts reconciled with this branch (Glances files
+      matched the pushed ones byte for byte, restored, then fast-forwarded)
 
 ## linux-pi — Raspberry Pi 4
 
@@ -311,7 +347,94 @@ still separate from the unified Ubuntu Server profile.
 - [x] Secondary AdGuard Home with config sync
 - [x] Pi Homepage dashboard and Tailscale front doors
 - [x] MotionEye, CUPS, and backup service configuration
-- [ ] Add a Debian/arm64 Pi platform to the root provisioning engine (no snap/PPA)
-- [ ] Add the shared headless zsh/Tailscale/Docker/SSH base without duplicating
-      `platforms/server.sh`
-- [ ] Run and record the complete provisioning and service verification on Pi hardware
+- [x] Shared headless base (server-base tools, dotfiles, Tailscale, Docker,
+      Glances/Portainer/Watchtower/Cockpit) via `linux-pi/setup.sh` on the shared
+      engine, without a fifth root platform
+- [ ] Run `linux-pi/setup.sh` and `serve.sh` on the Pi and record the result
+      (untested on hardware: Debian release, arm64 installers, Cockpit on the node)
+- [x] Re-render the Pi backup units (`sudo bash linux-pi/backup/setup.sh`)
+- [ ] Confirm the first nightly Pi run on the re-rendered units (03:00); until it
+      runs, the Pi's Homepage backups card shows an API error because the status
+      file moved to `/var/lib/computer-setup-backup/pi-backup/`
+
+## macos-server — Mac mini ([#94](https://github.com/ulises-c/Computer-Setup/issues/94))
+
+See [macos-server/README.md](../macos-server/README.md) and the pre-reinstall
+[INVENTORY.md](../macos-server/INVENTORY.md).
+
+- [x] Finish OrbStack onboarding, then `bash macos-server/serve.sh` (Homepage at
+      `/`, Hermes WebUI moves to `:8787`); all four dashboards checked in a browser
+- [x] Apply `power/power.sh` (sudo)
+- [ ] Quit Caffeine and remove it from Login Items
+- [x] Backups: `sftp-target.sh mac` on the main server, `connect.sh connect`,
+      `agents.sh install`, first run (snapshot `28ba0798`)
+- [ ] Restore check from the Mac (`restore-check.sh` is root/systemd-only today)
+- [x] Set `HOMEPAGE_VAR_MAC_HOMEPAGE_DOMAIN` in the other three hosts'
+      `homepage/.env` and recreate their Homepage containers (all three list
+      the mac server card; `/glances` already published on the Mac's node)
+- [ ] Uptime Kuma: monitor the Mac's dashboard and a backup push monitor
+- [ ] Hermes WebUI crash loop (Python environment) and its `0.0.0.0` bind
+- [ ] Reinstall decision: FileVault vs automatic login (power-cut recovery)
+- [ ] Remaining #94 items: runner labels and isolation, inference ACL before any
+      tailnet exposure, Prometheus metrics
+
+## Server base (`server-base/`)
+
+Shared layer for every server; see [server-base/README.md](../server-base/README.md).
+
+- [x] Deployed on the main server: `generate.py --check` passes, assets fetched, and
+      `homepage`, `glances`, `portainer`, `watchtower` run from the base compose files
+- [x] Main server backup units re-rendered; a run on the shared engine succeeded
+- [x] Game server Homepage runs with the assets mounts
+- [x] `HOMEPAGE_VAR_MAIN_GLANCES_URL` set on the game server and Pi, and
+      `HOMEPAGE_VAR_PI_NODE_DOMAIN` on the Pi
+- [ ] Independent review of the commits after `eb73735` (player-log alert, Discord
+      relay, schedules, backup lock and main-server Dragonwilds fixes, host time zone
+      and `timezone.sh --apply`)
+- [ ] Once #86 lands on the main server and Pi: point `MAIN_GLANCES_URL` /
+      `PI_HOMEPAGE_DOMAIN` at the host nodes and give the Pi's Servers card a
+      `glances_url` in `fleet.json`
+- [x] Homepage UI ([#95](https://github.com/ulises-c/Computer-Setup/issues/95)):
+      checked all three dashboards at phone width (390px): single column, no
+      horizontal overflow. The light theme is unreachable (`theme: dark` is
+      fixed in settings, so Homepage hides the toggle).
+- [ ] Integrate with #86 / PR #102 (whichever merges second does this): one
+      serve mechanism (keep `scripts/ts-serve-apply.sh` + per-host `serve.json`,
+      move it under `server-base/`, convert the game server, add the Pi's
+      Glances/Cockpit/Portainer routes, drop `server-base/serve.sh`); re-apply
+      the base `extends` to the sidecar-free server compose files; move #102's
+      Homepage hrefs into `services.local.yaml` and point `MAIN_GLANCES_URL` /
+      the Pi card's `glances_url` at the host nodes; settle one Cockpit and
+      Portainer URL convention across hosts and the Homepage image pin
+- [ ] Round-2 review (PR #106) follow-ups, non-blocking:
+  - [ ] Portainer snapshot helper (`backup/backup.sh`, `--volumes-from portainer`)
+        also inherits the Docker socket: mount only the data volume read-only,
+        pin the helper image by digest and test that the socket is absent
+  - [ ] `glances/telemetry.py`: the outer lock spans HDD sampling and persistence,
+        so a slow (opt-in) sample blocks `rows()`, `snapshot()` and registration;
+        snapshot identity under the lock and do the I/O outside it
+  - [ ] `linux-server/backup/README.md` restore steps still describe a
+        `portainer/` directory; the engine now stages `portainer.tar`
+  - [ ] `homepage/README.md` still promises HDD figures are read only while the
+        drive is in use and says three hosts; HDD stats are experimental and off
+        by default, and four hosts use the grouped bar
+  - [ ] `macos-server/lib.sh` plist rendering turns a CR in a path into LF;
+        emit `&#13;` or reject CR, with a round-trip test
+  - [ ] `glances/telemetry.py` loads the HDD cache only for first registration
+        to discard it: remove `_load`/`_save`/`cache_file` or give it a purpose
+  - [ ] `linux-server/dragonwilds/player_log.py`: upgrading legacy state after a
+        restart loses the old run's disconnect identity (legacy hash is mapped
+        only for the running invocation); add the regression or document it
+  - [ ] `homepage/grouped-topbar.js`: an object in `uptime` throws during render
+        and rejects the timer; normalise displayed scalars before recording a sample
+- [ ] Backup `setup.sh` install is not transactional (round-6 review of #106):
+      `install_bundle` and the unit installs copy files one by one with no
+      rollback. A failure partway (disk full, I/O error, interrupted run) can
+      leave an old unit with a partly new bundle; on the game host the new
+      `backup-save.py` then fails the old unit's pinned hash, so game backups
+      stop until setup succeeds. Reproduced with injected faults. The
+      one-by-one unit install was already on `main`; the bundle/hash coupling
+      is new. Fix: versioned bundle directories that new units point at (old
+      units keep the old bundle), or a preserved prior version plus rollback.
+      Renaming a staged directory over the old one (`mv -T`) is not enough.
+      Add a fault-injection regression.

@@ -111,6 +111,11 @@ sudo systemctl restart dragonwilds          # also pulls the latest build
 curl -s localhost:8096/dragonwilds-status.json | jq
 ```
 
+Once a `.sav` exists, every restart first stops and flushes the game and waits for
+`backup.service` to complete. A missing or failed backup blocks the update. On a
+fresh install with no save yet, the backup gate is skipped; configure the backup
+service before creating a world you care about.
+
 ## Connect
 
 Easiest: share the **invite code** (`XXXX-XXXX`), shown on the homepage card or:

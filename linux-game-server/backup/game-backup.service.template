@@ -1,0 +1,19 @@
+[Unit]
+Description=Game server backup (restic → main server over SSH)
+Wants=network-online.target
+After=network-online.target docker.service
+OnFailure=game-backup-failure.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env bash @BACKUP_SCRIPT@
+Environment=HOME=/root
+Environment=BACKUP_HOST_DIR=@BACKUP_HOST_DIR@
+Environment=BACKUP_SAVE_SCRIPT=@BACKUP_SAVE_SCRIPT@
+Environment=BACKUP_SAVE_SCRIPT_SHA256=@BACKUP_SAVE_SCRIPT_SHA256@
+Environment=BACKUP_DRAGONWILDS_INSTALL_DIR=@BACKUP_DRAGONWILDS_INSTALL_DIR@
+Environment=STATUS_JSON=@BACKUP_STATUS_JSON@
+TimeoutStartSec=2h
+PrivateTmp=yes
+Nice=10
+IOSchedulingClass=idle

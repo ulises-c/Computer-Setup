@@ -1,0 +1,17 @@
+services:
+  # Nightly image updates for every server's containers. No listener unless a
+  # host enables the HTTP metrics API.
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: watchtower
+    restart: unless-stopped
+    # TZ (host time zone, see ../README.md) makes the schedule below host local time, not UTC.
+    env_file:
+      - path: ../timezone.env
+        required: true
+    environment:
+      WATCHTOWER_SCHEDULE: "0 30 2 * * *"  # 2:30am daily, before the 3am backups (6-field cron: sec min hr dom mon dow)
+      WATCHTOWER_CLEANUP: "true"           # remove old images after updating
+      DOCKER_API_VERSION: "1.44"           # Docker 29.x rejects the client default (1.25) and Ubuntu's docker.io 29.1 rejects <1.44; needs Docker 25+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

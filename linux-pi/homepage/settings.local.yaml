@@ -1,0 +1,6 @@
+  Management:
+    style: row
+    columns: 2
+  Pi Services:
+    style: row
+    columns: 2

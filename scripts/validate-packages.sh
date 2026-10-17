@@ -42,7 +42,7 @@ errors=$(jq -r '
   def TAGS: ["ai-coding","benchmarking","browser","cloud-storage","communication",
              "containers","database","desktop-utility","development","entertainment",
              "local-llm","media","networking","photos","productivity","science",
-             "security","system-monitoring","terminal"];
+             "security","server-base","system-monitoring","terminal"];
   def prfor($p): (.priority | if type == "object" then .[$p] else . end);
   def optfor($p): (.optional | if type == "object" then .[$p] else . end);
   def icfor($p): (.install_command | if type == "object" then .[$p] else . end);

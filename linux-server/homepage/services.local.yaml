@@ -1,0 +1,299 @@
+- Core:
+    - Management:
+        - homepage:
+            icon: sh-homepage.svg
+            href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}/
+            description: Server dashboard
+            server: my-docker
+            container: homepage
+        - portainer:
+            icon: sh-portainer-light.svg
+            href: https://{{HOMEPAGE_VAR_PORTAINER_DOMAIN}}/
+            description: Docker manager
+            server: my-docker
+            container: portainer
+        - watchtower:
+            icon: sh-watchtower.svg
+            description: Automatic container updates
+            server: my-docker
+            container: watchtower
+        - cockpit:
+            icon: sh-cockpit-light.svg
+            href: https://{{HOMEPAGE_VAR_COCKPIT_DOMAIN}}/
+            description: Server admin UI
+            # cockpit stays a host service on :9090, so the local ping still works
+            ping: https://localhost:9090
+        - uptime kuma:
+            icon: sh-uptime-kuma.svg
+            href: https://{{HOMEPAGE_VAR_UPTIMEKUMA_DOMAIN}}/
+            description: Uptime monitor
+            server: my-docker
+            container: uptime-kuma
+            widget:
+              type: uptimekuma
+              url: https://{{HOMEPAGE_VAR_UPTIMEKUMA_DOMAIN}}
+              slug: default
+        - backups:
+            icon: sh-restic
+            description: restic → wd1tb (+wd14tb copy)
+            server: my-docker
+            container: backup-status
+            widget:
+              type: customapi
+              # backup.sh writes this JSON; the loopback nginx in linux-server/backup
+              # serves it. homepage is host-networked, so localhost reaches it.
+              url: http://localhost:8099/backup-status.json
+              refreshInterval: 600000
+              mappings:
+                - field: status
+                  label: Status
+                  format: text
+                - field: last_run
+                  label: Last run
+                  format: relativeDate
+                - field: repo_size_bytes
+                  label: Repo size
+                  format: bytes
+        - glances:
+            icon: sh-glances.svg
+            href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+            description: System monitor
+            server: my-docker
+            container: glances
+            widget:
+              type: glances
+              # glances keeps network_mode: host, so :61208 stays on the host and the
+              # widget reaches it via localhost (no need to route through the tailnet).
+              url: http://localhost:61208
+              version: 4
+              metric: cpu
+
+    - Network:
+        - nginx proxy manager:
+            icon: sh-nginx-proxy-manager.svg
+            href: https://{{HOMEPAGE_VAR_NPM_DOMAIN}}/
+            description: Reverse proxy + SSL
+            server: my-docker
+            container: nginx-proxy-manager
+        - adguard home:
+            icon: sh-adguard-home.svg
+            href: https://{{HOMEPAGE_VAR_ADGUARD_DOMAIN}}/
+            description: DNS ad blocker
+            server: my-docker
+            container: adguardhome
+            widget:
+              type: adguard
+              url: https://{{HOMEPAGE_VAR_ADGUARD_DOMAIN}}
+              username: "{{HOMEPAGE_VAR_ADGUARD_USER}}"
+              password: "{{HOMEPAGE_VAR_ADGUARD_PASS}}"
+        - tailscale:
+            icon: sh-tailscale-light.svg
+            href: https://{{HOMEPAGE_VAR_TAILSCALE_WEB_DOMAIN}}/
+            description: Zero-config VPN
+            widget:
+              type: customapi
+              url: http://localhost:8089
+              mappings:
+                - field: addresses.0
+                  label: Address
+                  format: text
+                - field: lastSeen
+                  label: Last Seen
+                  format: relativeDate
+                - field: expires
+                  label: Key Expires
+                  format: relativeDate
+        - speedtest tracker:
+            icon: sh-speedtest-tracker.svg
+            href: https://{{HOMEPAGE_VAR_SPEEDTEST_DOMAIN}}/
+            description: ISP speed monitor
+            server: my-docker
+            container: speedtest-tracker
+            widget:
+              type: speedtest
+              url: https://{{HOMEPAGE_VAR_SPEEDTEST_DOMAIN}}
+        - lan speedtest:
+            icon: sh-openspeedtest.svg
+            href: https://{{HOMEPAGE_VAR_OPENSPEEDTEST_DOMAIN}}/
+            # Tailnet HTTPS to match the other cards. Run actual LAN tests against the
+            # LAN IP (http://<server-ip>:3030) so you measure the local network, not
+            # the tailnet path.
+            description: LAN speed test
+            server: my-docker
+            container: openspeedtest
+        - ntfy:
+            icon: sh-ntfy.svg
+            href: https://{{HOMEPAGE_VAR_NTFY_DOMAIN}}/
+            description: Push notifications
+            server: my-docker
+            container: ntfy
+        - ups:
+            icon: sh-peanut.svg
+            href: https://{{HOMEPAGE_VAR_PEANUT_DOMAIN}}/
+            description: NUT · CyberPower 1500VA
+            server: my-docker
+            container: peanut
+            widget:
+              type: peanut
+              # peanut is host-networked (upsd is loopback-only); homepage is too,
+              # so localhost reaches it.
+              url: http://localhost:8097
+              key: cyberpower
+
+    - Storage:
+        - forgejo:
+            icon: sh-forgejo.svg
+            href: https://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}/
+            description: Self-hosted git
+            server: my-docker
+            container: forgejo
+            widget:
+              type: gitea
+              url: https://{{HOMEPAGE_VAR_FORGEJO_DOMAIN}}
+              key: "{{HOMEPAGE_VAR_FORGEJO_TOKEN}}"
+        - forgejo-runner:
+            icon: mdi-robot-#f97316
+            description: Mac mini CI runner
+            server: my-docker
+            container: forgejo-runner-status
+            widget:
+              type: customapi
+              # runner-status.sh writes this JSON; the loopback nginx in
+              # linux-server/forgejo serves it. homepage is host-networked.
+              url: http://localhost:8098/runner-status.json
+              refreshInterval: 60000
+              mappings:
+                - field: state
+                  label: Runner
+                  format: text
+                - field: status
+                  label: Status
+                  format: text
+                - field: checked
+                  label: Checked
+                  format: relativeDate
+        - syncthing:
+            icon: sh-syncthing.svg
+            href: https://{{HOMEPAGE_VAR_SYNCTHING_DOMAIN}}/
+            description: File sync
+            server: my-docker
+            container: syncthing
+            widget:
+              type: customapi
+              url: https://{{HOMEPAGE_VAR_SYNCTHING_DOMAIN}}/rest/system/status
+              headers:
+                X-API-Key: "{{HOMEPAGE_VAR_SYNCTHING_KEY}}"
+              mappings:
+                - field: uptime
+                  label: Uptime
+                  format: duration
+                - field: cpuPercent
+                  label: CPU
+                  format: percent
+                - field: alloc
+                  label: Memory
+                  format: bytes
+        - immich:
+            icon: sh-immich.svg
+            href: https://{{HOMEPAGE_VAR_IMMICH_DOMAIN}}/
+            description: Photo + video backup
+            server: my-docker
+            container: immich-server
+            widget:
+              type: immich
+              url: https://{{HOMEPAGE_VAR_IMMICH_DOMAIN}}
+              key: "{{HOMEPAGE_VAR_IMMICH_KEY}}"
+              version: 2
+        - filebrowser:
+            icon: sh-file-browser.svg
+            href: https://{{HOMEPAGE_VAR_FILEBROWSER_DOMAIN}}/
+            description: Web file manager
+            server: my-docker
+            container: filebrowser
+        - atvloadly:
+            icon: sh-apple-tv-light.svg
+            href: https://{{HOMEPAGE_VAR_ATVLOADLY_DOMAIN}}/
+            description: Apple TV IPA sideloader
+            server: my-docker
+            container: atvloadly
+        - qbittorrent:
+            icon: sh-qbittorrent.svg
+            href: https://{{HOMEPAGE_VAR_QBITTORRENT_DOMAIN}}/
+            description: BitTorrent client
+            server: my-docker
+            container: qbittorrent
+            widget:
+              type: qbittorrent
+              url: https://{{HOMEPAGE_VAR_QBITTORRENT_DOMAIN}}
+              username: "{{HOMEPAGE_VAR_QBITTORRENT_USERNAME}}"
+              password: "{{HOMEPAGE_VAR_QBITTORRENT_PASSWORD}}"
+
+- NAS:
+    - wd 14tb r/w:
+        icon: mdi-harddisk-#fb923c
+        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+        description: I/O — /mnt/wd14tb
+        server: my-docker
+        container: glances
+        widget:
+          type: glances
+          url: http://localhost:61208
+          version: 4
+          # Persistent by-label disk names from the Glances rename patch
+          # (server-base/glances); raw sd[abc] reorder across reboots.
+          metric: disk:WD14TB
+    - wd 14tb usage:
+        icon: mdi-harddisk-#fb923c
+        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+        description: Capacity — /mnt/wd14tb
+        server: my-docker
+        container: glances
+        widget:
+          type: glances
+          url: http://localhost:61208
+          version: 4
+          metric: fs:/mnt/wd14tb
+    - seagate 4tb r/w:
+        icon: mdi-harddisk-#fb923c
+        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+        description: I/O — /mnt/seagate4tb
+        server: my-docker
+        container: glances
+        widget:
+          type: glances
+          url: http://localhost:61208
+          version: 4
+          metric: disk:Seagate_4TB
+    - seagate 4tb usage:
+        icon: mdi-harddisk-#fb923c
+        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+        description: Capacity — /mnt/seagate4tb
+        server: my-docker
+        container: glances
+        widget:
+          type: glances
+          url: http://localhost:61208
+          version: 4
+          metric: fs:/mnt/seagate4tb
+    - wd 1tb r/w:
+        icon: mdi-harddisk-#fb923c
+        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+        description: I/O — /mnt/wd1tb
+        server: my-docker
+        container: glances
+        widget:
+          type: glances
+          url: http://localhost:61208
+          version: 4
+          metric: disk:WD_1TB
+    - wd 1tb usage:
+        icon: mdi-harddisk-#fb923c
+        href: https://{{HOMEPAGE_VAR_GLANCES_DOMAIN}}/
+        description: Capacity — /mnt/wd1tb
+        server: my-docker
+        container: glances
+        widget:
+          type: glances
+          url: http://localhost:61208
+          version: 4
+          metric: fs:/mnt/wd1tb

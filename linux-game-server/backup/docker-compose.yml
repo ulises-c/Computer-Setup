@@ -1,0 +1,13 @@
+services:
+  # Loopback nginx exposing the backup status JSON to the Homepage card.
+  backup-status:
+    image: nginx:alpine
+    container_name: backup-status
+    restart: unless-stopped
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
+    ports:
+      - "127.0.0.1:8099:80"
+    volumes:
+      - /var/lib/computer-setup-backup/game-backup:/usr/share/nginx/html:ro

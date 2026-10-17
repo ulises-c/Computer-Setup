@@ -1,14 +1,10 @@
 services:
-  # Secondary AdGuard Home on <pi-hostname> — a backup resolver mirroring the primary
-  # (linux-server/adguard) via adguardhome-sync. DELIBERATELY host-networked and
-  # independent of Tailscale: :53 must keep serving LAN clients even when the
-  # tailnet or internet is down. The primary rides its sidecar's netns; that
-  # coupling caused a bootstrap deadlock (see the primary's compose) — NOT here.
+  # Secondary AdGuard Home on <pi-hostname>, the shared replica (rationale in
+  # server-base/adguard-replica/compose.yml).
   adguardhome:
-    image: adguard/adguardhome:latest
-    container_name: adguardhome
-    network_mode: host
-    restart: unless-stopped
+    extends:
+      file: ../../server-base/adguard-replica/compose.yml
+      service: adguardhome
     volumes:
       - ./work:/opt/adguardhome/work
       - ./conf:/opt/adguardhome/conf
@@ -22,6 +18,9 @@ services:
     image: tailscale/tailscale:latest
     container_name: adguard-pi-ts
     hostname: adguard-pi
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
       - TS_STATE_DIR=/var/lib/tailscale

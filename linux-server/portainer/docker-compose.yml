@@ -5,6 +5,9 @@ services:
     image: tailscale/tailscale:latest
     container_name: portainer-ts
     hostname: portainer
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
       - TS_STATE_DIR=/var/lib/tailscale
@@ -22,18 +25,13 @@ services:
     restart: unless-stopped
 
   portainer:
-    image: portainer/portainer-ce:latest
-    container_name: portainer
-    # Share the sidecar's network namespace: tailscale serve proxies :443 to the
-    # plaintext HTTP UI on 127.0.0.1:9000 (9443 is Portainer's own self-signed
-    # TLS, not needed behind Tailscale).
+    extends:
+      file: ../../server-base/portainer/compose.yml
+      service: portainer
+    # Sidecar netns: serve proxies :443 to the plaintext UI on 127.0.0.1:9000.
     network_mode: service:portainer-ts
     depends_on:
       - portainer-ts
-    restart: unless-stopped
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
 
 volumes:
   portainer_data:

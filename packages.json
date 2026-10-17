@@ -1,7 +1,7 @@
 [
   {
     "name": "zsh",
-    "tags": ["terminal"],
+    "tags": ["terminal", "server-base"],
     "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "high",
     "optional": false,
@@ -9,7 +9,7 @@
   },
   {
     "name": "zsh-antidote",
-    "tags": ["terminal"],
+    "tags": ["terminal", "server-base"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "macos_name": "antidote",
     "priority": "high",
@@ -18,8 +18,8 @@
   },
   {
     "name": "zoxide",
-    "tags": ["terminal"],
-    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay" },
+    "tags": ["terminal", "server-base"],
+    "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "high",
     "optional": false,
     "description": "Smarter cd — learns your frequent directories, use z to jump instantly"
@@ -80,7 +80,7 @@
   },
   {
     "name": "git",
-    "tags": ["development"],
+    "tags": ["development", "server-base"],
     "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": { "ubuntu": "high", "arch": "high", "server": "medium" },
     "optional": false,
@@ -117,7 +117,7 @@
   },
   {
     "name": "fastfetch",
-    "tags": ["terminal", "system-monitoring"],
+    "tags": ["terminal", "system-monitoring", "server-base"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -125,7 +125,7 @@
   },
   {
     "name": "gh",
-    "tags": ["development"],
+    "tags": ["development", "server-base"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "arch_name": "github-cli",
     "priority": "medium",
@@ -220,7 +220,7 @@
   },
   {
     "name": "gnupg",
-    "tags": ["security"],
+    "tags": ["security", "server-base"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -238,7 +238,7 @@
   },
   {
     "name": "htop",
-    "tags": ["system-monitoring"],
+    "tags": ["system-monitoring", "server-base"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -271,7 +271,7 @@
   },
   {
     "name": "micro",
-    "tags": ["terminal"],
+    "tags": ["terminal", "server-base"],
     "package_manager": { "macos": "brew", "ubuntu": "snap", "arch": "yay", "server": "snap" },
     "priority": "medium",
     "optional": false,
@@ -304,7 +304,7 @@
   },
   {
     "name": "tmux",
-    "tags": ["terminal"],
+    "tags": ["terminal", "server-base"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -312,7 +312,7 @@
   },
   {
     "name": "eza",
-    "tags": ["terminal"],
+    "tags": ["terminal", "server-base"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -328,7 +328,7 @@
   },
   {
     "name": "fzf",
-    "tags": ["terminal"],
+    "tags": ["terminal", "server-base"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -336,7 +336,7 @@
   },
   {
     "name": "ripgrep",
-    "tags": ["terminal"],
+    "tags": ["terminal", "server-base"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -344,7 +344,7 @@
   },
   {
     "name": "bat",
-    "tags": ["terminal"],
+    "tags": ["terminal", "server-base"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -352,7 +352,7 @@
   },
   {
     "name": "fd",
-    "tags": ["terminal"],
+    "tags": ["terminal", "server-base"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "ubuntu_name": "fd-find",
     "server_name": "fd-find",
@@ -362,7 +362,7 @@
   },
   {
     "name": "jq",
-    "tags": ["development"],
+    "tags": ["development", "server-base"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": { "macos": "low", "ubuntu": "medium", "arch": "medium", "server": "medium" },
     "optional": { "macos": true, "ubuntu": false, "arch": false, "server": false },
@@ -370,7 +370,7 @@
   },
   {
     "name": "curl",
-    "tags": ["networking"],
+    "tags": ["networking", "server-base"],
     "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -378,7 +378,7 @@
   },
   {
     "name": "wget",
-    "tags": ["networking"],
+    "tags": ["networking", "server-base"],
     "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -395,7 +395,7 @@
   },
   {
     "name": "ncdu",
-    "tags": ["system-monitoring"],
+    "tags": ["system-monitoring", "server-base"],
     "package_manager": { "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -403,7 +403,7 @@
   },
   {
     "name": "cockpit",
-    "tags": ["system-monitoring", "networking"],
+    "tags": ["system-monitoring", "networking", "server-base"],
     "package_manager": { "server": "apt" },
     "priority": "medium",
     "optional": false,
@@ -419,7 +419,7 @@
   },
   {
     "name": "tailscale",
-    "tags": ["networking"],
+    "tags": ["networking", "server-base"],
     "package_manager": { "macos": "app-store", "ubuntu": "custom", "arch": "yay", "server": "custom" },
     "macos_name": "Tailscale",
     "priority": "medium",
@@ -430,7 +430,7 @@
   },
   {
     "name": "docker",
-    "tags": ["development", "containers"],
+    "tags": ["development", "containers", "server-base"],
     "package_manager": { "macos": "brew-cask", "ubuntu": "custom", "arch": "yay", "server": "custom" },
     "macos_name": "docker-desktop",
     "priority": "low",
@@ -441,7 +441,7 @@
   },
   {
     "name": "claude-code",
-    "tags": ["ai-coding"],
+    "tags": ["ai-coding", "server-base"],
     "package_manager": { "macos": "custom", "ubuntu": "custom", "arch": "custom", "server": "custom" },
     "priority": "medium",
     "optional": false,
@@ -451,13 +451,17 @@
   },
   {
     "name": "opencode",
-    "tags": ["ai-coding"],
-    "package_manager": { "macos": "brew", "ubuntu": "custom", "arch": "yay" },
+    "tags": ["ai-coding", "server-base"],
+    "package_manager": { "macos": "brew", "ubuntu": "custom", "arch": "yay", "server": "custom" },
     "macos_name": "anomalyco/tap/opencode",
     "arch_name": "opencode-bin",
     "priority": "medium",
     "optional": false,
-    "install_command": { "ubuntu": "curl -fsSL https://opencode.ai/install | bash" },
+    "handled_by_setup": true,
+    "install_command": {
+      "ubuntu": "curl -fsSL https://opencode.ai/install | bash",
+      "server": "curl -fsSL https://opencode.ai/install | bash"
+    },
     "description": "Terminal-based AI coding agent — brew installs from the anomalyco tap"
   },
   {
@@ -758,7 +762,7 @@
   },
   {
     "name": "smartmontools",
-    "tags": ["system-monitoring"],
+    "tags": ["system-monitoring", "server-base"],
     "package_manager": { "macos": "brew", "ubuntu": "apt", "arch": "yay", "server": "apt" },
     "priority": "low",
     "optional": true,
