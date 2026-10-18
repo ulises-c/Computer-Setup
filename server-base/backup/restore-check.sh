@@ -77,8 +77,10 @@ scan_into_list() {
   find "$scratch" "$@" -print0 >"$scan_list" || die "cannot scan the restored tree; nothing was verified"
 }
 
+# Found by the .sqlitebak suffix every staged copy gets, not by the staging
+# directory's name: STAGING_DIR is configurable.
 checked=0 raw=0
-scan_into_list -path '*-staging/sqlite/*' -type f
+scan_into_list -name '*.sqlitebak' -type f
 while IFS= read -r -d '' db; do
   # backup.sh falls back to a raw copy for non-SQLite *.db files (e.g. BoltDB),
   # still with the .sqlitebak suffix; only real SQLite files can be checked.

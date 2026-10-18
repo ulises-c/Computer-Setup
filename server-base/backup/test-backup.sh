@@ -778,13 +778,14 @@ case "$1" in
   stats) printf '{"total_size":10}' ;;
   ls) printf '{"type":"file"}\n{"type":"file"}\n' ;;
   restore)
-    t="$4"; mkdir -p "$t/x-staging/sqlite"
-    printf 'SQLite format 3\0' >"$t/x-staging/sqlite/db.sqlitebak"
-    (cd "$t/x-staging/sqlite" && sha256sum db.sqlitebak >db.sqlitebak.sha256) ;;
+    t="$4/${RC_STAGING:-x-staging}"; mkdir -p "$t/sqlite"
+    printf 'SQLite format 3\0' >"$t/sqlite/db.sqlitebak"
+    (cd "$t/sqlite" && sha256sum db.sqlitebak >db.sqlitebak.sha256) ;;
 esac
 EOF
 cat >"$rc/bin/sqlite3" <<'EOF'
 #!/usr/bin/env bash
+[[ -z "${SQLITE_CORRUPT:-}" ]] || { printf 'database disk image is malformed\n'; exit 0; }
 printf 'ok\n'
 exit "${SQLITE_EXIT:-0}"
 EOF
@@ -798,7 +799,7 @@ chmod +x "$rc/bin/"*
 out="$(PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)" || fail "restore-check control failed: $out"
 grep -q 'integrity_check: 1' <<<"$out" && grep -q 'verified: 1' <<<"$out" && grep -q PASSED <<<"$out" \
   || fail "restore-check control did not verify both checks: $out"
-for scan in '*-staging/sqlite/*' '*.sha256'; do
+for scan in '*.sqlitebak' '*.sha256'; do
   if out="$(RC_FIND_FAIL="$scan" PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)"; then
     fail "restore-check passed after its $scan scan failed: $out"
   fi
@@ -809,6 +810,17 @@ if out="$(SQLITE_EXIT=1 PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/ho
   fail "restore-check accepted ok from a failing sqlite3: $out"
 fi
 grep -q 'integrity_check failed' <<<"$out" || fail "failing sqlite3 not reported: $out"
+# STAGING_DIR is configurable, so a staging dir not named *-staging is still
+# checked: a corrupt database there fails, a sound one passes.
+for staging in x-staging staging var/tmp/mybackup; do
+  if out="$(RC_STAGING="$staging" SQLITE_CORRUPT=1 PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)"; then
+    fail "restore-check passed a corrupt database staged under $staging: $out"
+  fi
+  grep -q 'integrity_check failed' <<<"$out" || fail "corrupt database under $staging not reported: $out"
+  out="$(RC_STAGING="$staging" PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)" \
+    || fail "restore-check rejected a sound database staged under $staging: $out"
+  grep -q 'integrity_check: 1' <<<"$out" || fail "database under $staging was not checked: $out"
+done
 # A header that cannot be read is not "not SQLite", and a SQLite file with no
 # sqlite3 to check it is not verified: neither may end in PASSED.
 real_cmp="$(command -v cmp)"
