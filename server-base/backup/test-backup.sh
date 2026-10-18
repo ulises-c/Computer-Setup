@@ -19,6 +19,8 @@ make_host() {
   mkdir -p "$dir/backup"
   ln -s "$SCRIPT_DIR/backup.sh" "$dir/backup/backup.sh"
   cp "$REPO/$2/backup/sources.sh" "$dir/backup/sources.sh"
+  # Never read or write the real world marker from a test.
+  sed -i.bak "s|^BACKUP_WORLD_MARKER=.*|BACKUP_WORLD_MARKER=$dir/world-seen|" "$dir/backup/sources.sh"
   printf '%s\n' "$dir"
 }
 
@@ -323,6 +325,8 @@ for host in linux-server linux-pi linux-game-server macos-server; do
     env_value() { :; }
     # shellcheck source=/dev/null
     source "$REPO/$host/backup/sources.sh"
+    # shellcheck disable=SC2034  # consumed by resolve_sources
+    BACKUP_WORLD_MARKER="$HOST_DIR/world-seen"
     # The Mac's backup is a launchd agent, not a systemd service.
     [[ -n "$BACKUP_NAME" && -n "$BACKUP_LABEL" && ( "$BACKUP_UNIT" == *.service || "$host" == macos-server ) ]]
     resolve_sources
@@ -371,6 +375,7 @@ if bash -c '
   die() { return 1; }
   systemctl() { printf "%s/world-b\\n" "$1"; }
   source "$2/linux-game-server/backup/sources.sh"
+  BACKUP_WORLD_MARKER="$1/world-seen"
   resolve_sources
 ' bash "$tmp/path-drift" "$REPO" >/dev/null 2>&1; then
   fail "game backup accepted a path drift from dragonwilds.service"
@@ -391,6 +396,7 @@ game_world() {
     BACKUP_WORLD_MARKER="$1/world-seen"
     resolve_sources
     printf "world_exists=%s\n" "$world_exists"
+    printf "candidates=%s\n" "${CANDIDATES[*]}"
   ' bash "$tmp/world-marker" "$REPO" 2>&1
 }
 wm="$tmp/world-marker"
@@ -400,6 +406,7 @@ out="$(game_world)" || fail "fresh install without a world failed: $out"
 touch "$wm/game/RSDragonwilds/Saved/SaveGames/Main.sav"
 out="$(game_world)" || fail "first world backup failed: $out"
 [[ "$out" == *world_exists=true* && -s "$wm/world-seen" ]] || fail "world marker not written: $out"
+grep -q "candidates=.*$wm/world-seen" <<<"$out" || fail "game world marker not backed up: $out"
 rm "$wm/game/RSDragonwilds/Saved/SaveGames/Main.sav"
 if out="$(game_world)"; then fail "lost world backed up as a success: $out"; fi
 grep -q 'one was backed up before' <<<"$out" || fail "lost world failed for the wrong reason: $out"
@@ -422,6 +429,7 @@ main_server_resolve() {
       if [[ "$*" == *LoadState* ]]; then printf "%s\n" "$load_state"; else printf "%s/world-b\n" "$HOST_DIR"; fi
     }
     source "$2/linux-server/backup/sources.sh"
+    BACKUP_WORLD_MARKER="$1/world-seen"
     resolve_sources
     printf "%s\n" "${CANDIDATES[@]}"
   ' bash "$tmp/main-drift" "$REPO" "$1"
@@ -433,6 +441,58 @@ fi
 main_out="$(main_server_resolve not-found 2>&1)" || fail "main-server backup failed without dragonwilds.service: $main_out"
 grep -q "world-a/RSDragonwilds/Saved/SaveGames" <<<"$main_out" \
   || fail "main-server backup dropped the old Dragonwilds saves: $main_out"
+
+# The main server keeps the same world marker: once it has backed up a world,
+# an empty SaveGames or an unconfigured install fails, whether or not it still
+# runs the game. A server that never had a world is unaffected. The marker is
+# backed up so a full restore carries it.
+main_world() {
+  bash -c '
+    set -euo pipefail
+    HOST_DIR="$1"
+    load_state="$3"
+    BACKUP_DRAGONWILDS_INSTALL_DIR="$4"
+    BACKUP_FORGEJO_DATA_PATH="$1/forgejo/data"
+    CANDIDATES=()
+    log() { printf "%s\n" "$*" >&2; }
+    die() { printf "%s\n" "$*" >&2; exit 1; }
+    systemctl() {
+      if [[ "$*" == *LoadState* ]]; then printf "%s\n" "$load_state"; else printf "%s\n" "$BACKUP_DRAGONWILDS_INSTALL_DIR"; fi
+    }
+    source "$2/linux-server/backup/sources.sh"
+    BACKUP_WORLD_MARKER="$1/marker/world-seen"
+    resolve_sources
+    printf "%s\n" "${CANDIDATES[@]}"
+  ' bash "$tmp/main-world" "$REPO" "$1" "${2-$tmp/main-world/game}" 2>&1
+}
+mw="$tmp/main-world"
+mkdir -p "$mw/game/RSDragonwilds/Saved/SaveGames" "$mw/game/RSDragonwilds/Saved/Config/LinuxServer"
+printf '[/Script/Dominion.DedicatedServerSettings]\nDefaultWorldName=Main\n' \
+  >"$mw/game/RSDragonwilds/Saved/Config/LinuxServer/DedicatedServer.ini"
+out="$(main_world not-found '')" || fail "main server without Dragonwilds failed: $out"
+out="$(main_world loaded)" || fail "main server with an empty fresh install failed: $out"
+[[ ! -e "$mw/marker/world-seen" ]] || fail "main server wrote the world marker without a world"
+touch "$mw/game/RSDragonwilds/Saved/SaveGames/Main.sav"
+out="$(main_world loaded)" || fail "main server first world failed: $out"
+[[ "$(<"$mw/marker/world-seen")" == "$mw/game/RSDragonwilds/Saved/SaveGames" ]] || fail "main world marker not written"
+grep -qx "$mw/marker/world-seen" <<<"$out" || fail "main world marker not backed up: $out"
+rm "$mw/game/RSDragonwilds/Saved/SaveGames/Main.sav"
+for state in loaded not-found; do
+  if out="$(main_world "$state")"; then fail "main server ($state) backed up a lost world: $out"; fi
+  grep -q 'one was backed up before' <<<"$out" || fail "main lost world ($state) failed for the wrong reason: $out"
+done
+rm -r "$mw/game/RSDragonwilds/Saved/SaveGames"
+if out="$(main_world not-found)"; then fail "main server backed up a missing SaveGames: $out"; fi
+if out="$(main_world not-found '')"; then fail "main server ignored the marker with no install path: $out"; fi
+grep -q 'BACKUP_DRAGONWILDS_INSTALL_DIR is empty' <<<"$out" || fail "unconfigured install failed for the wrong reason: $out"
+# A world at another path is backed up, with a warning that the source moved.
+mkdir -p "$mw/moved/RSDragonwilds/Saved/SaveGames" "$mw/moved/RSDragonwilds/Saved/Config/LinuxServer"
+cp "$mw/game/RSDragonwilds/Saved/Config/LinuxServer/DedicatedServer.ini" "$mw/moved/RSDragonwilds/Saved/Config/LinuxServer/"
+touch "$mw/moved/RSDragonwilds/Saved/SaveGames/Main.sav"
+out="$(main_world not-found "$mw/moved")" || fail "main world at a new path failed: $out"
+grep -q 'first backed up from' <<<"$out" || fail "moved world source not warned about: $out"
+rm "$mw/marker/world-seen"
+out="$(main_world not-found '')" || fail "deleting the marker did not retire the main-server world: $out"
 
 # A changed root-owned helper must fail its pinned-hash check before Python runs.
 bundle="$tmp/root-bundle"
@@ -476,6 +536,7 @@ main_world_resolve() {
     systemctl() { printf "not-found\n"; }
     env_value() { sed -n "s/^$2=//p" "$1" | tail -1; }
     source "$2/linux-server/backup/sources.sh"
+    BACKUP_WORLD_MARKER="$1/world-seen"
     resolve_sources
     printf "%s\n" "${CANDIDATES[@]}"
   ' bash "$invalid_server" "$REPO"

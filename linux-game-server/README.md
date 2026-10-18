@@ -160,7 +160,12 @@ starting the destination.
    its filename. `dragonwilds/read-save-info.sh` inspects the header. A
    mismatch silently creates a fresh world and risks overwriting the import.
 5. Keep an additional stopped-world archive outside both Git checkouts. Restrict
-   copied config and archive permissions to the login user.
+   copied config and archive permissions to the login user. Also copy
+   `/var/lib/dragonwilds/world-seen` from the source (root-owned, 644) if it
+   exists, so the destination's first backup treats a missing world as lost
+   rather than as a fresh install. A full restic restore brings it back too.
+   Once the old host no longer holds the world, delete its saves and its
+   marker together, or its backup will fail as a lost world.
 6. Set the source hostname and paths in no tracked file. The destination's
    `dragonwilds/.env` is generated with local paths and is ignored. Automatic
    restarts default off until migration and a backup/restore path are verified.

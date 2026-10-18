@@ -112,4 +112,10 @@ Then put state back per service:
   every service is deployed; coverage grows automatically as data dirs appear.
   Dragonwilds is deliberately stricter: once a `.sav` exists, a missing
   `dragonwilds.service`, mismatched captured install path, or invalid world
-  configuration fails the backup instead of silently omitting the world.
+  configuration fails the backup instead of silently omitting the world. The
+  first backup that sees a world writes `/var/lib/dragonwilds/world-seen` (and
+  backs it up); after that an empty or missing `SaveGames`, or an empty
+  `BACKUP_DRAGONWILDS_INSTALL_DIR`, fails the backup too, even once the game has
+  moved to its own host. To retire the old saves on purpose, delete them and
+  that marker together. A world found at a different path than the marker
+  records is still backed up, with a warning to check nothing was left behind.

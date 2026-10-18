@@ -6,10 +6,29 @@ BACKUP_NAME=game
 BACKUP_LABEL="Game server"
 BACKUP_UNIT=game-backup.service
 BACKUP_SHARED_LOCK_PATH=/var/lib/dragonwilds/player-log/.backup.lock
-# Written the first time a backup sees a world. From then on an empty SaveGames
-# is a lost world, not a fresh install: the backup fails instead of succeeding
-# (and pruning) without it, and the pre-update gate still runs.
+# Written the first time a backup sees a world, and backed up with it so a full
+# restore brings it back. From then on an empty SaveGames is a lost world, not a
+# fresh install: the backup fails instead of succeeding (and pruning) without it,
+# and the pre-update gate still runs. The main server's sources.sh keeps the same
+# marker for the saves it holds.
 BACKUP_WORLD_MARKER=/var/lib/dragonwilds/world-seen
+
+# $1: the SaveGames dir this backup covers; $2: whether it holds a world.
+check_world_marker() {
+  local savegames="$1" present="$2" seen=""
+  if [[ "$present" == true ]]; then
+    if [[ -e "$BACKUP_WORLD_MARKER" ]]; then
+      seen="$(head -n1 -- "$BACKUP_WORLD_MARKER")"
+      [[ "$seen" == "$savegames" ]] \
+        || log "warning: the world was first backed up from $seen, now from $savegames; check nothing was left behind"
+    else
+      install -d -m 755 "$(dirname -- "$BACKUP_WORLD_MARKER")"
+      printf '%s\n' "$savegames" >"$BACKUP_WORLD_MARKER"
+    fi
+  elif [[ -e "$BACKUP_WORLD_MARKER" ]]; then
+    die "no Dragonwilds world in $savegames, but one was backed up before; restore it, or delete $BACKUP_WORLD_MARKER if it was removed on purpose"
+  fi
+}
 
 saved=""
 install_dir=""
@@ -27,18 +46,13 @@ resolve_sources() {
   [[ -d "$saved" ]] || { log "warning: Dragonwilds saves not found at $saved — not backed up"; saved=""; }
   if [[ -n "$saved" ]] && compgen -G "$saved/SaveGames/*.sav" >/dev/null; then
     world_exists=true
-    [[ -e "$BACKUP_WORLD_MARKER" ]] || {
-      install -d -m 755 "$(dirname -- "$BACKUP_WORLD_MARKER")"
-      printf '%s\n' "$saved/SaveGames" >"$BACKUP_WORLD_MARKER"
-    }
-  elif [[ -e "$BACKUP_WORLD_MARKER" ]]; then
-    die "no Dragonwilds world in ${saved:-$install_dir/RSDragonwilds/Saved}/SaveGames, but one was backed up before; restore it, or delete $BACKUP_WORLD_MARKER if it was removed on purpose"
   fi
+  check_world_marker "${saved:-$install_dir/RSDragonwilds/Saved}/SaveGames" "$world_exists"
 
   # Worlds and server config only (OwnerId, identity, world password); the game
   # install comes back from steamcmd. The repository is encrypted.
   CANDIDATES+=("$HOST_DIR/homepage/config")
-  CANDIDATES+=("/var/lib/dragonwilds/player-log")
+  CANDIDATES+=("/var/lib/dragonwilds/player-log" "$BACKUP_WORLD_MARKER")
   if [[ -n "$saved" ]]; then
     CANDIDATES+=("$saved/SaveGames" "$saved/Config")
   fi

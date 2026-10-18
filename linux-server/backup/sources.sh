@@ -10,6 +10,27 @@ BACKUP_SHARED_LOCK_PATH=/var/lib/dragonwilds/player-log/.backup.lock
 : "${BACKUP_MOUNT:=/mnt/wd1tb}"
 : "${SECOND_BACKUP_MOUNT:=/mnt/wd14tb}"
 
+# Same marker as linux-game-server/backup/sources.sh (the shared pre-update gate
+# keys on it): written the first time a backup sees a world and backed up with it.
+# From then on no world, or no configured install path, fails the backup instead
+# of succeeding and pruning without the saves.
+BACKUP_WORLD_MARKER=/var/lib/dragonwilds/world-seen
+check_world_marker() {
+  local savegames="$1" present="$2" seen=""
+  if [[ "$present" == true ]]; then
+    if [[ -e "$BACKUP_WORLD_MARKER" ]]; then
+      seen="$(head -n1 -- "$BACKUP_WORLD_MARKER")"
+      [[ "$seen" == "$savegames" ]] \
+        || log "warning: the world was first backed up from $seen, now from $savegames; check nothing was left behind"
+    else
+      install -d -m 755 "$(dirname -- "$BACKUP_WORLD_MARKER")"
+      printf '%s\n' "$savegames" >"$BACKUP_WORLD_MARKER"
+    fi
+  elif [[ -e "$BACKUP_WORLD_MARKER" ]]; then
+    die "no Dragonwilds world in ${savegames:-a configured install (BACKUP_DRAGONWILDS_INSTALL_DIR is empty)}, but one was backed up before; restore it, or delete $BACKUP_WORLD_MARKER if it was removed on purpose"
+  fi
+}
+
 resolve_sources() {
   # Forgejo's data dir is captured into the root-owned unit during setup;
   # never reread the checkout-owned Forgejo .env as root at backup time.
@@ -64,6 +85,9 @@ except (OSError, KeyError, ValueError, configparser.Error):
 PY
     fi
   fi
+  dragonwilds_world=false
+  [[ -n "$dwd" ]] && compgen -G "$dwd/RSDragonwilds/Saved/SaveGames/*.sav" >/dev/null && dragonwilds_world=true
+  check_world_marker "${dwd:+$dwd/RSDragonwilds/Saved/SaveGames}" "$dragonwilds_world"
 
   CANDIDATES+=(
     "$forgejo_data"
@@ -80,6 +104,7 @@ PY
     "$HOST_DIR/qbittorrent/config"
     "$HOST_DIR/homepage/config"
     /var/lib/dragonwilds/player-log
+    "$BACKUP_WORLD_MARKER"
     /etc/atvloadly
   )
   # Worlds and server config only — the ~5.5 GB game install comes back from steamcmd,
