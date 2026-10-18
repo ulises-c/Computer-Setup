@@ -441,7 +441,9 @@ Shared layer for every server; see [server-base/README.md](../server-base/README
 - [ ] Restore-drill rollback is two steps, `rm -rf` live then `mv -T` the
       original back (round-9 review of #106). If the move fails (I/O error) or
       the drill is SIGKILLed between them, there is no live `SaveGames`; the
-      original is still in `SaveGames.drill-<time>` and recovery says so. Moving
-      live to a quarantine name first would keep a way back, but three renames
-      still are not an atomic swap; consider `renameat2(RENAME_EXCHANGE)`
-      (e.g. `mv --exchange`, coreutils 9.5+) when the host has it.
+      original is still in `Saved/.restore-drill.XXXXXX/SaveGames` and recovery
+      says so. Moving live to a quarantine name first would keep a way back, but
+      three renames still are not an atomic swap; consider
+      `renameat2(RENAME_EXCHANGE)` (`mv --exchange`, coreutils 9.5+; Ubuntu
+      24.04 ships 9.4) when the host has it. Root can still swap the aside
+      between recovery's checks; the root-only dir only excludes other users.

@@ -6,7 +6,8 @@ set -Eeuo pipefail
 # takes a fresh snapshot of the stopped world, restores it to a scratch dir,
 # compares it with the live files, swaps the restored SaveGames in and waits for
 # the game to report a successful world load. The original SaveGames dir is kept
-# beside the live one; on any failure it is put back and the game restarted.
+# in a new root-only dir beside it; on any failure it is put back and the game
+# restarted.
 #
 # Usage: sudo bash linux-game-server/backup/restore-drill.sh [--allow-players]
 
@@ -19,7 +20,10 @@ readonly BACKUP_UNIT=game-backup.service
 readonly LOAD_TIMEOUT_SECONDS=600
 readonly LOCK_FILE=/run/lock/dragonwilds-restore-drill.lock
 # Recovery ignores TERM/INT/HUP, so each systemctl call it makes is killed after
-# this long (the game's stop timeout is 120s). Its start covers the pre-update gate.
+# this long (the game's stop timeout is 120s). The game's own start may take far
+# longer (TimeoutStartSec=5h: pre-update backup gate plus a Steam update); waiting
+# that long while ignoring signals is worse, so a start still running after 15
+# minutes is handed to the operator and the update timer is left off.
 readonly RECOVERY_CALL_SECONDS=180
 readonly RECOVERY_START_SECONDS=900
 
@@ -80,12 +84,25 @@ set +a
 [[ -n "${RESTIC_REPOSITORY:-}" ]] || die "RESTIC_REPOSITORY is not set in backup/.env"
 export HOME=/root
 
-stamp="$(date +%Y%m%d-%H%M%S)"
-aside="$saved/SaveGames.drill-$stamp"
-# Recovery treats an existing aside as the original world, so it must be ours.
-[[ ! -e "$aside" && ! -L "$aside" ]] || die "$aside already exists; move it away and rerun"
+# Device and inode alone are not enough: a freed inode is reused at once, so a
+# dir made after the original was deleted can share it. Birth time tells them
+# apart, so a filesystem that does not report it is refused before anything stops.
+dir_identity() {
+  local id
+  id="$(stat -c '%d:%i %w' -- "$1")" || return 1
+  [[ "$id" == *' '* && "${id#* }" != - ]] || return 1
+  printf '%s\n' "$id"
+}
+is_original() {
+  local id
+  [[ -d "$1" && ! -L "$1" ]] && id="$(dir_identity "$1" 2>/dev/null)" && [[ "$id" == "$original_id" ]]
+}
+original_id="$(dir_identity "$live")" \
+  || die "cannot record the identity of $live; its filesystem must report birth time (stat %w)"
+
 scratch="$(mktemp -d /root/restore-drill.XXXXXX)"
-original_id=""
+hold=""
+aside=""
 swapping=false
 finished=false
 
@@ -98,13 +115,11 @@ recovery_stop() {
   state="$(bounded "$RECOVERY_CALL_SECONDS" systemctl show "$unit" -p ActiveState --value)" || return 1
   [[ "$state" == inactive ]]
 }
-# Device and inode alone are not enough: a freed inode is reused at once, so a
-# dir made after the original was deleted can share it. Birth time tells them apart.
-dir_identity() { stat -c %d:%i:%w -- "$1"; }
-is_original() { [[ -d "$1" && ! -L "$1" && "$(dir_identity "$1" 2>/dev/null)" == "$original_id" ]]; }
+# Says only what is known: a failed or timed-out systemctl may have left a unit
+# running or a job queued.
 manual() {
-  printf '[drill] manual recovery required: %s; leaving %s and %s as they are; %s and %s stay stopped\n' \
-    "$1" "$live" "$aside" "$GAME_UNIT" "$UPDATE_TIMER" >&2
+  printf '[drill] manual recovery required: %s. No further automatic recovery is attempted. Check %s, %s and %s and any pending systemd jobs before changing anything under %s. The snapshot restore, if any, is in %s%s\n' \
+    "$1" "$GAME_UNIT" "$UPDATE_SERVICE" "$UPDATE_TIMER" "$saved" "$scratch" "${hold:+; the aside dir of this drill is $hold}" >&2
 }
 
 recover() {
@@ -126,14 +141,17 @@ recover() {
     is_original "$aside" || { manual "the original world is not at $aside"; return 1; }
     rm -rf "$live" || { manual "could not remove the restored copy at $live"; return 1; }
     mv -T "$aside" "$live" || { manual "could not move $aside back to $live"; return 1; }
+    # The aside path can still change between that check and the move.
+    is_original "$live" || { manual "what was moved back to $live is not the original world, so the game was not started"; return 1; }
   fi
   if bounded "$RECOVERY_START_SECONDS" systemctl start "$GAME_UNIT"; then
     bounded "$RECOVERY_CALL_SECONDS" systemctl start "$UPDATE_TIMER" \
       || printf '[drill] could not start %s; start it by hand\n' "$UPDATE_TIMER" >&2
   else
-    printf '[drill] %s did not start within %ss (its job may still be running); the original world is in place; %s stays stopped; check both by hand\n' \
-      "$GAME_UNIT" "$RECOVERY_START_SECONDS" "$UPDATE_TIMER" >&2
+    printf '[drill] %s did not start within %ss; its start job may still be running and succeed later. The original world is in place; %s was not restarted: once %s is up, start it by hand\n' \
+      "$GAME_UNIT" "$RECOVERY_START_SECONDS" "$UPDATE_TIMER" "$GAME_UNIT" >&2
   fi
+  [[ -z "$hold" ]] || rmdir -- "$hold" 2>/dev/null || true
   rm -rf "$scratch"
 }
 trap recover EXIT
@@ -160,9 +178,12 @@ for sav in "$scratch$live"/*.sav; do
   log "verified $(basename "$sav") sha256 $(sha256sum "$sav" | cut -c1-16)"
 done
 
-log "swapping the restored SaveGames in (original kept at $aside)"
-original_id="$(dir_identity "$live")"
+is_original "$live" || die "$live changed during the drill"
 swapping=true
+# A fresh root-only dir: its name cannot collide and only root can write inside it.
+hold="$(mktemp -d "$saved/.restore-drill.XXXXXX")"
+aside="$hold/SaveGames"
+log "swapping the restored SaveGames in (original kept at $aside)"
 mv -T "$live" "$aside"
 cp -a "$scratch$live" "$live"
 chown -R "$game_user:${game_group:-$game_user}" "$live"
@@ -183,4 +204,4 @@ systemctl start "$UPDATE_TIMER"
 rm -rf "$scratch"
 finished=true
 log "PASSED: snapshot $snapshot restored identically and the game loaded it"
-log "the pre-drill SaveGames is at $aside; remove it once you are satisfied"
+log "the pre-drill SaveGames is at $aside; remove $hold once you are satisfied"

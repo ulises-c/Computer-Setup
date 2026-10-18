@@ -343,14 +343,17 @@ Restore drill: with nobody online, `sudo bash linux-game-server/backup/restore-d
 stops the game, takes a fresh snapshot of the stopped world, restores it to a
 scratch dir, checks it is byte-identical to the live saves and config, swaps the
 restored `SaveGames` in and waits for `World load SUCCEEDED`. The original
-`SaveGames` is kept beside the live one; any failure puts it back and restarts
-the game. Only one drill runs at a time, and it refuses to start if a
-`SaveGames.drill-<time>` dir with its name already exists. Recovery moves a dir
-back over the live saves only if it is the original (same device, inode and
-birth time), ignores TERM/INT/HUP while it runs, and gives each `systemctl` call
-a time limit. If it cannot stop the game or updater, or cannot find the
-original, it changes nothing, leaves the game and the update timer stopped and
-says so. The timer is only restarted once the game is.
+`SaveGames` is kept in a new root-only `Saved/.restore-drill.XXXXXX/` dir; any
+failure puts it back and restarts the game. Only one drill runs at a time, and
+the saves' filesystem must report birth time (`stat -c %w`), or the drill
+refuses before stopping anything. Recovery moves a dir back over the live saves
+only if it is the original (same device, inode and birth time), checks what it
+moved, ignores TERM/INT/HUP while it runs, and gives each `systemctl` call a
+time limit. If any step fails it stops there, says what it could not do, and
+leaves the rest to you: check the game, updater and timer and any pending
+systemd jobs before touching the saves. The update timer is only restarted once
+the game is; a game start still running after 15 minutes (a long Steam update)
+is left to finish on its own, and the timer must then be started by hand.
 `server-base/backup/restore-check.sh linux-game-server` verifies a
 restore without stopping anything. Rerun both after any change to the backup
 engine, `backup/sources.sh`, the pre-update gate or the save layout.
