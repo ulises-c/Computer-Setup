@@ -334,7 +334,8 @@ done
 
 # Non-SQLite *.db files (BoltDB: Filebrowser, AdGuard) can only be copied raw;
 # stop the running container that bind-mounts each one so the copy is clean.
-# The deepest mount wins, and a whole-filesystem mount (Filebrowser's /) never does.
+# The deepest mount wins (a bind of the file itself is deepest), and a
+# whole-filesystem mount (Filebrowser's /) never does.
 # Fails when Docker cannot be asked, so "no running owner" is never a guess.
 owning_container() {
   local db="$1" best="" best_len=0 name src ids="" mounts="" attempt
@@ -351,7 +352,7 @@ owning_container() {
     sleep 1
   done
   while IFS=$'\t' read -r name src; do
-    [[ -n "$src" && "$src" != / && "$db" == "$src"/* ]] || continue
+    [[ -n "$src" && "$src" != / && ( "$db" == "$src" || "$db" == "$src"/* ) ]] || continue
     (( ${#src} > best_len )) || continue
     best="${name#/}" best_len="${#src}"
   done <<<"$mounts"
