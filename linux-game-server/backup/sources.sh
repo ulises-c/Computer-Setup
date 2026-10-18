@@ -39,7 +39,8 @@ resolve_sources() {
   [[ -n "$install_dir" ]] || die "BACKUP_DRAGONWILDS_INSTALL_DIR is not rendered into game-backup.service"
   [[ "$install_dir" =~ ^/[[:alnum:]_./-]+$ && "$install_dir" != *//* && "$install_dir" != */./* && "$install_dir" != */. && "$install_dir" != */../* && "$install_dir" != */.. && "$install_dir" != */ ]] \
     || die "invalid fixed Dragonwilds install path"
-  configured_install_dir="$(systemctl show dragonwilds.service --property=WorkingDirectory --value 2>/dev/null || true)"
+  configured_install_dir="$(systemctl show dragonwilds.service --property=WorkingDirectory --value)" \
+    || die "cannot read dragonwilds.service's install path from systemd"
   [[ "$configured_install_dir" == "$install_dir" ]] \
     || die "game and backup Dragonwilds install paths differ; rerun both setup scripts"
   saved="$install_dir/RSDragonwilds/Saved"

@@ -82,15 +82,16 @@ scan_into_list -path '*-staging/sqlite/*' -type f
 while IFS= read -r -d '' db; do
   # backup.sh falls back to a raw copy for non-SQLite *.db files (e.g. BoltDB),
   # still with the .sqlitebak suffix; only real SQLite files can be checked.
-  if ! head -c 16 "$db" | cmp -s - <(printf 'SQLite format 3\0'); then
-    log "raw copy, not SQLite (not checked): ${db#"$scratch"}"
-    raw=$((raw + 1))
-    continue
-  fi
-  if ! command -v sqlite3 >/dev/null; then
-    log "sqlite3 not installed; skipping $(basename "$db")"
-    continue
-  fi
+  # cmp exits 1 for a different header (or a file shorter than one) and 2 when
+  # it cannot read; only the first means "not SQLite".
+  rc=0
+  cmp -s -n 16 "$db" <(printf 'SQLite format 3\0') || rc=$?
+  case "$rc" in
+    0) ;;
+    1) log "raw copy, not SQLite (not checked): ${db#"$scratch"}"; raw=$((raw + 1)); continue ;;
+    *) die "cannot read the header of ${db#"$scratch"}" ;;
+  esac
+  command -v sqlite3 >/dev/null || die "sqlite3 is required to verify ${db#"$scratch"} (apt install sqlite3)"
   if ! result="$(sqlite3 "file:$db?mode=ro" 'PRAGMA integrity_check;' 2>&1)" || [[ "$result" != ok ]]; then
     die "integrity_check failed for ${db#"$scratch"}: $(head -n1 <<<"$result")"
   fi

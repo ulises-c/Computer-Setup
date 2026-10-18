@@ -367,6 +367,16 @@ class RestoreDrillRunTests(unittest.TestCase):
         self.assertIn('dragonwilds-auto-update.timer was not restarted', result.stderr)
         self.assertNotIn('start dragonwilds-auto-update.timer', self.mutations())
 
+    def test_a_failed_journal_read_is_not_a_load(self):
+        (self.root / 'bin/journalctl').write_text("#!/usr/bin/env bash\nprintf 'World load SUCCEEDED\\n'\nexit 9\n")
+        text = self.drill.read_text()
+        self.assertEqual(text.count('LOAD_TIMEOUT_SECONDS=600'), 1)
+        self.drill.write_text(text.replace('LOAD_TIMEOUT_SECONDS=600', 'LOAD_TIMEOUT_SECONDS=0'))
+        result = self.run_drill()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('PASSED', result.stdout)
+        self.assertIn("no 'World load SUCCEEDED'", result.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()

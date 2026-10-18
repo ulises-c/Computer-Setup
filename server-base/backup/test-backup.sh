@@ -321,6 +321,20 @@ grep -q 'not stopping adguardhome' <<<"$out" || fail "a failed dig counted as a 
 [[ "$(<"$DOCKER_LOG")" == $'stop filebrowser\nstart filebrowser' ]] \
   || fail "AdGuard stopped on a failed dig: $(<"$DOCKER_LOG")"
 
+# A Portainer stack needs no .env, so without docker its compose file alone
+# must stop the run instead of letting it omit the volume.
+pt="$(make_host portainer-nodocker linux-pi)"
+mkdir -p "$pt/portainer"
+cp "$REPO/linux-pi/portainer/docker-compose.yml" "$pt/portainer/"
+sed -i.bak -e 's|/etc/motioneye|"$HOST_DIR/motioneye"|' -e 's|/etc/cups|"$HOST_DIR/cups"|' "$pt/backup/sources.sh"
+printf 'RESTIC_REPOSITORY=%s/repo\nRESTIC_PASSWORD=x\nSTAGING_DIR=%s/pt-staging\n' "$tmp" "$tmp" >"$pt/backup/.env"
+: >"$tmp/restic.log"
+if out="$("${nodocker_env[@]}" PATH="$stub:$PATH" RESTIC_LOG="$tmp/restic.log" bash "$pt/backup/backup.sh" 2>&1)"; then
+  fail "Portainer volume omitted when docker was missing: $out"
+fi
+grep -q "cannot verify or snapshot this host's Portainer volume" <<<"$out" || fail "missing docker with Portainer not reported: $out"
+if grep -qE '^(backup|forget)' "$tmp/restic.log"; then fail "snapshot or prune without Portainer's volume"; fi
+
 # Once the player-log dir is backed up, its lock must exist and be root-owned 0600.
 mkdir -p "$player_log"
 if out="$(PATH="$stub:$PATH" RESTIC_LOG="$tmp/restic.log" bash "$server/backup/backup.sh" 2>&1)"; then
@@ -455,7 +469,7 @@ game_world() {
     CANDIDATES=()
     log() { :; }
     die() { printf "%s\n" "$*" >&2; exit 1; }
-    systemctl() { printf "%s\n" "$BACKUP_DRAGONWILDS_INSTALL_DIR"; }
+    systemctl() { printf "%s\n" "$BACKUP_DRAGONWILDS_INSTALL_DIR"; return "${SYSTEMCTL_EXIT:-0}"; }
     source "$2/linux-game-server/backup/sources.sh"
     BACKUP_WORLD_MARKER="$1/world-seen"
     resolve_sources
@@ -467,6 +481,9 @@ wm="$tmp/world-marker"
 mkdir -p "$wm/game/RSDragonwilds/Saved/SaveGames"
 out="$(game_world)" || fail "fresh install without a world failed: $out"
 [[ "$out" == *world_exists=false* && ! -e "$wm/world-seen" ]] || fail "fresh install wrote the world marker: $out"
+# systemd failing after printing the expected path is not a confirmed path.
+if out="$(SYSTEMCTL_EXIT=1 game_world)"; then fail "a failed systemctl show confirmed the install path: $out"; fi
+grep -q "cannot read dragonwilds.service's install path" <<<"$out" || fail "failed systemctl show not reported: $out"
 touch "$wm/game/RSDragonwilds/Saved/SaveGames/Main.sav"
 out="$(game_world)" || fail "first world backup failed: $out"
 [[ "$out" == *world_exists=true* && -s "$wm/world-seen" ]] || fail "world marker not written: $out"
@@ -682,6 +699,36 @@ bash "$bad/backup/setup.sh" --verify >/dev/null 2>&1 || fail "--verify rejected 
 printf 'if then\n' >>"$bad/backup/sources.sh"
 if bash "$bad/backup/setup.sh" --verify >/dev/null 2>&1; then fail "--verify accepted a broken sources.sh"; fi
 
+# A configured value that cannot be read must stop setup, never render the
+# default path in its place; a key that is simply absent still uses the default.
+fs="$tmp/forgejo-setup"
+mkdir -p "$fs/backup" "$fs/forgejo" "$tmp/badgrep"
+cp "$REPO/linux-server/backup/"{sources.sh,backup.timer,backup.service.template,backup-failure.service.template} "$fs/backup/"
+cp "$SCRIPT_DIR/setup.sh" "$SCRIPT_DIR/backup.sh" "$fs/backup/"
+printf 'FORGEJO_DATA_PATH=/srv/forgejo-data\n' >"$fs/forgejo/.env"
+real_grep="$(command -v grep)"
+cat >"$tmp/badgrep/grep" <<EOF
+#!/usr/bin/env bash
+[[ "\${*: -1}" != */forgejo/.env ]] || exit 2
+exec "$real_grep" "\$@"
+EOF
+chmod +x "$tmp/badgrep/grep"
+if out="$(PATH="$tmp/badgrep:$PATH" bash "$fs/backup/setup.sh" --verify 2>&1)"; then
+  fail "setup rendered a default Forgejo path after a failed read: $out"
+fi
+grep -q 'cannot read FORGEJO_DATA_PATH' <<<"$out" || fail "failed Forgejo read not reported: $out"
+printf 'OTHER=1\n' >"$fs/forgejo/.env"
+bash "$fs/backup/setup.sh" --verify >/dev/null 2>&1 || fail "setup rejected a forgejo .env without FORGEJO_DATA_PATH"
+cat >"$tmp/badgrep/grep" <<EOF
+#!/usr/bin/env bash
+[[ "\$*" != *'@[A-Za-z0-9_]+@'* ]] || exit 2
+exec "$real_grep" "\$@"
+EOF
+if out="$(PATH="$tmp/badgrep:$PATH" bash "$fs/backup/setup.sh" --verify 2>&1)"; then
+  fail "setup passed when the placeholder scan could not run: $out"
+fi
+grep -q 'cannot scan the rendered units for placeholders' <<<"$out" || fail "failed placeholder scan not reported: $out"
+
 # A dropped substitution for a digit-bearing placeholder is caught too.
 gbad="$tmp/badsetup-game"
 mkdir -p "$gbad/backup" "$gbad/dragonwilds"
@@ -762,6 +809,20 @@ if out="$(SQLITE_EXIT=1 PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/ho
   fail "restore-check accepted ok from a failing sqlite3: $out"
 fi
 grep -q 'integrity_check failed' <<<"$out" || fail "failing sqlite3 not reported: $out"
+# A header that cannot be read is not "not SQLite", and a SQLite file with no
+# sqlite3 to check it is not verified: neither may end in PASSED.
+real_cmp="$(command -v cmp)"
+printf '#!/usr/bin/env bash\nexit 2\n' >"$rc/bin/cmp"
+chmod +x "$rc/bin/cmp"
+if out="$(PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)"; then
+  fail "restore-check passed when a header could not be read: $out"
+fi
+grep -q 'cannot read the header' <<<"$out" || fail "unreadable header not reported: $out"
+ln -sf "$real_cmp" "$rc/bin/cmp"
+if out="$("${nodocker_env[@]/docker/sqlite3}" PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)"; then
+  fail "restore-check passed without sqlite3 to verify a database: $out"
+fi
+grep -q 'sqlite3 is required' <<<"$out" || fail "missing sqlite3 not reported: $out"
 [[ -z "$(ls -A "$rc/root")" ]] || fail "restore-check left scratch behind: $(ls -A "$rc/root")"
 
 printf 'backup engine tests: PASSED\n'

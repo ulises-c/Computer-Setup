@@ -62,8 +62,10 @@ case "$step" in
       chmod 600 /root/.ssh/config
     fi
     if [[ ! -f "$env_file" ]]; then
+      password="$(openssl rand -hex 32)"
+      [[ "$password" =~ ^[0-9a-f]{64}$ ]] || { printf 'error: could not generate a RESTIC_PASSWORD\n' >&2; exit 1; }
       install -o "$owner" -g "$(id -gn "$owner")" -m 600 "$host_dir/backup/.env.example" "$env_file"
-      sed -i "s|^RESTIC_PASSWORD=.*|RESTIC_PASSWORD=$(openssl rand -hex 32)|" "$env_file"
+      sed -i "s|^RESTIC_PASSWORD=.*|RESTIC_PASSWORD=$password|" "$env_file"
       printf 'created %s with a new RESTIC_PASSWORD. Save it in the password manager now:\n' "$env_file"
       printf '  sudo grep ^RESTIC_PASSWORD= %s\n' "$env_file"
     fi

@@ -449,8 +449,10 @@ elif command -v docker >/dev/null; then
     || die "cannot inspect Portainer volumes"
   [[ -z "$portainer_volumes" && ! -f "$HOST_DIR/portainer/.env" ]] \
     || die "Portainer state exists but container cannot be inspected; refusing to omit its volume"
-elif [[ -f "$HOST_DIR/portainer/.env" ]]; then
-  die "configured Portainer cannot be inspected; refusing to omit its volume"
+# Without docker its volume cannot be seen at all, so the host's Portainer stack
+# (a compose file; it needs no .env) is reason enough to refuse.
+elif [[ -f "$HOST_DIR/portainer/docker-compose.yml" || -f "$HOST_DIR/portainer/.env" ]]; then
+  die "docker missing; cannot verify or snapshot this host's Portainer volume"
 fi
 
 if declare -F stage_extra >/dev/null; then

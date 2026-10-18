@@ -33,9 +33,13 @@ if [[ -f "$BUNDLE_SAVE_SOURCE" ]]; then
 fi
 BACKUP_DRAGONWILDS_INSTALL_DIR=""
 BACKUP_FORGEJO_DATA_PATH="$HOST_DIR/forgejo/data"
+# A missing key is fine (grep exit 1), but a failed read must not fall back to
+# the default path and render a unit that backs up the wrong directory.
 read_env_value() {
-  local file="$1" key="$2" value
-  value="$(grep -E "^(export[[:space:]]+)?${key}=" "$file" | tail -1 | cut -d= -f2- || true)"
+  local file="$1" key="$2" value="" lines="" rc=0
+  lines="$(grep -E "^(export[[:space:]]+)?${key}=" "$file")" || rc=$?
+  (( rc <= 1 )) || { printf 'error: cannot read %s from %s\n' "$key" "$file" >&2; return 1; }
+  [[ -z "$lines" ]] || { value="${lines##*$'\n'}"; value="${value#*=}"; }
   value="${value%$'\r'}"
   value="${value%%[[:space:]]#*}"
   if [[ "$value" =~ ^\"(.*)\"$ || "$value" =~ ^\'(.*)\'$ ]]; then
@@ -44,10 +48,10 @@ read_env_value() {
   printf '%s' "$value"
 }
 if [[ -f "$HOST_DIR/dragonwilds/.env" ]]; then
-  BACKUP_DRAGONWILDS_INSTALL_DIR="$(read_env_value "$HOST_DIR/dragonwilds/.env" DRAGONWILDS_INSTALL_DIR)"
+  BACKUP_DRAGONWILDS_INSTALL_DIR="$(read_env_value "$HOST_DIR/dragonwilds/.env" DRAGONWILDS_INSTALL_DIR)" || exit 1
 fi
 if [[ -f "$HOST_DIR/forgejo/.env" ]]; then
-  fdp="$(read_env_value "$HOST_DIR/forgejo/.env" FORGEJO_DATA_PATH)"
+  fdp="$(read_env_value "$HOST_DIR/forgejo/.env" FORGEJO_DATA_PATH)" || exit 1
   if [[ -n "$fdp" ]]; then
     if [[ "$fdp" == /* ]]; then
       BACKUP_FORGEJO_DATA_PATH="$fdp"
@@ -121,10 +125,13 @@ render_and_verify() {
   render_unit "$SCRIPT_DIR/$prefix.service.template" "$prefix.service"
   render_unit "$SCRIPT_DIR/$prefix-failure.service.template" "$prefix-failure.service"
   # Placeholders are paired @NAME@ tokens; a lone @ (foo@.service) is legitimate.
-  if grep -nE '@[A-Za-z0-9_]+@' "$tmp/$prefix.service" "$tmp/$prefix-failure.service"; then
-    printf 'error: unrendered template placeholder in the units above\n' >&2
-    exit 1
-  fi
+  local rc=0
+  grep -nE '@[A-Za-z0-9_]+@' "$tmp/$prefix.service" "$tmp/$prefix-failure.service" || rc=$?
+  case "$rc" in
+    0) printf 'error: unrendered template placeholder in the units above\n' >&2; exit 1 ;;
+    1) ;;
+    *) printf 'error: cannot scan the rendered units for placeholders\n' >&2; exit 1 ;;
+  esac
   if command -v systemd-analyze >/dev/null; then
     systemd-analyze verify "$tmp/$prefix.service" "$tmp/$prefix-failure.service" "$SCRIPT_DIR/$prefix.timer"
   else

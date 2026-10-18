@@ -37,12 +37,12 @@ stop_unit() {
   [[ "$state" == inactive ]]
 }
 stop_game() { stop_unit "$GAME_UNIT"; }
-# grep -c reads the whole stream: grep -q would exit on the first match, SIGPIPE
-# journalctl, and under pipefail the match would read as a failure.
+# The journal is read whole and its status checked before matching: a failed
+# read that printed an older line must not count as this load.
 world_loaded_since() {
-  local count
-  count="$(journalctl -u "$GAME_UNIT" --since "$1" --no-pager -o cat | grep -c 'World load SUCCEEDED' || true)"
-  (( count > 0 ))
+  local journal
+  journal="$(journalctl -u "$GAME_UNIT" --since "$1" --no-pager -o cat)" || return 1
+  [[ "$journal" == *'World load SUCCEEDED'* ]]
 }
 
 allow_players=false
