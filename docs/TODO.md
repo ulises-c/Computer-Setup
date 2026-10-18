@@ -438,3 +438,10 @@ Shared layer for every server; see [server-base/README.md](../server-base/README
       units keep the old bundle), or a preserved prior version plus rollback.
       Renaming a staged directory over the old one (`mv -T`) is not enough.
       Add a fault-injection regression.
+- [ ] Restore-drill rollback is two steps, `rm -rf` live then `mv -T` the
+      original back (round-9 review of #106). If the move fails (I/O error) or
+      the drill is SIGKILLed between them, there is no live `SaveGames`; the
+      original is still in `SaveGames.drill-<time>` and recovery says so. Moving
+      live to a quarantine name first would keep a way back, but three renames
+      still are not an atomic swap; consider `renameat2(RENAME_EXCHANGE)`
+      (e.g. `mv --exchange`, coreutils 9.5+) when the host has it.
