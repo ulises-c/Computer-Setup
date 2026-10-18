@@ -780,12 +780,17 @@ grep -q "scratch_parent=$rc/root" "$rc/restore-check.sh" || fail "restore-check 
 cat >"$rc/bin/restic" <<'EOF'
 #!/usr/bin/env bash
 case "$1" in
-  snapshots) printf '[{"short_id":"abcdef","time":"2026-10-18T00:00:00"}]' ;;
+  snapshots)
+    extra=""
+    [[ -z "${RC_SECOND_ROOT:-}" ]] || extra=',"/srv/other-staging"'
+    printf '[{"short_id":"abcdef","time":"2026-10-18T00:00:00","paths":["/srv/service","/%s"%s]}]' \
+      "${RC_STAGING:-x-staging}" "$extra" ;;
   stats) printf '{"total_size":10}' ;;
   ls)
     n=3
     [[ -z "${RC_NO_MARKER:-}" ]] || n=$((n - 1))
-    [[ -z "${RC_FOREIGN:-}" ]] || n=$((n + 2))
+    [[ -z "${RC_FOREIGN:-}" ]] || n=$((n + 4))
+    [[ -z "${RC_SECOND_ROOT:-}" ]] || n=$((n + 1))
     for ((i = 0; i < n; i++)); do printf '{"type":"file"}\n'; done ;;
   restore)
     t="$4/${RC_STAGING:-x-staging}"; mkdir -p "$t/sqlite"
@@ -796,6 +801,12 @@ case "$1" in
       mkdir -p "$4/srv/service/archive"
       printf 'SQLite format 3\0' >"$4/srv/service/archive/old.sqlitebak"
       printf 'not a checksum line\n' >"$4/srv/service/archive/old.sha256"
+      printf 'computer-setup backup staging\n' >"$4/srv/service/archive/.backup-staging"
+      printf 'something else\n' >"$4/srv/service/.backup-staging"
+    fi
+    if [[ -n "${RC_SECOND_ROOT:-}" ]]; then
+      mkdir -p "$4/srv/other-staging"
+      printf 'computer-setup backup staging\n' >"$4/srv/other-staging/.backup-staging"
     fi ;;
 esac
 EOF
@@ -815,7 +826,7 @@ chmod +x "$rc/bin/"*
 out="$(PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)" || fail "restore-check control failed: $out"
 grep -q 'integrity_check: 1' <<<"$out" && grep -q 'verified: 1' <<<"$out" && grep -q PASSED <<<"$out" \
   || fail "restore-check control did not verify both checks: $out"
-for scan in .backup-staging '*.sqlitebak' '*.sha256'; do
+for scan in '*.sqlitebak' '*.sha256'; do
   if out="$(RC_FIND_FAIL="$scan" PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)"; then
     fail "restore-check passed after its $scan scan failed: $out"
   fi
@@ -849,11 +860,21 @@ out="$(RC_FOREIGN=1 PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 
   || fail "restore-check judged a corrupt file outside staging: $out"
 grep -q 'integrity_check: 1 ' <<<"$out" && grep -q 'verified: 1$' <<<"$out" \
   || fail "files outside staging were counted: $out"
-# A snapshot from before the staging marker cannot say what is staged.
+# A snapshot from before the staging marker cannot say what is staged, and a
+# service's own .backup-staging does not stand in for it.
 if out="$(RC_NO_MARKER=1 PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)"; then
   fail "restore-check passed a snapshot with no staging marker: $out"
 fi
 grep -q 'has no staging marker' <<<"$out" || fail "missing staging marker not reported: $out"
+if out="$(RC_NO_MARKER=1 RC_FOREIGN=1 PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)"; then
+  fail "a service's .backup-staging stood in for the engine's: $out"
+fi
+grep -q 'has no staging marker' <<<"$out" || fail "foreign-only marker not reported as missing: $out"
+# Two snapshot paths both marked as staging are ambiguous, not both trusted.
+if out="$(RC_SECOND_ROOT=1 PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)"; then
+  fail "restore-check accepted two staging markers: $out"
+fi
+grep -q 'more than one staging marker' <<<"$out" || fail "ambiguous staging markers not reported: $out"
 # A header that cannot be read is not "not SQLite", and a SQLite file with no
 # sqlite3 to check it is not verified: neither may end in PASSED.
 real_cmp="$(command -v cmp)"
