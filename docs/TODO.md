@@ -447,3 +447,9 @@ Shared layer for every server; see [server-base/README.md](../server-base/README
       `renameat2(RENAME_EXCHANGE)` (`mv --exchange`, coreutils 9.5+; Ubuntu
       24.04 ships 9.4) when the host has it. Root can still swap the aside
       between recovery's checks; the root-only dir only excludes other users.
+- [ ] Root `setup.sh --dry-run --platform macos` downloads the Homebrew installer
+      when `brew` is missing: `platforms/macos.sh:99` runs `curl` in a command
+      substitution before `run` sees `DRY_RUN` (found reviewing #106; same on
+      `main`). `scripts/dryrun-smoke.sh` supplies a fake `brew`, so it never
+      takes that branch. Guard the download itself and add a no-Homebrew
+      dry-run case that asserts `curl` is never called.
