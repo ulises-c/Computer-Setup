@@ -12,22 +12,6 @@ DRILL = REPO / 'linux-game-server/backup/restore-drill.sh'
 
 
 class RestoreSafetyTests(unittest.TestCase):
-    def test_recovery_does_not_reenable_timer_when_updater_cannot_stop(self):
-        text = DRILL.read_text()
-        helpers = text[text.index('die()'):text.index('allow_players=false')]
-        recover = text[text.index('recover()'):text.index('trap recover EXIT')]
-        script = helpers + recover + '''
-finished=false; swapping=false; swapped=false
-GAME_UNIT=dragonwilds.service; UPDATE_TIMER=dragonwilds-auto-update.timer
-UPDATE_SERVICE=dragonwilds-auto-update.service
-live="$1/live"; aside="$1/aside"; scratch="$1/scratch"
-systemctl() { printf '%s\\n' "$*"; [[ "$*" != *dragonwilds-auto-update.service* ]]; }
-recover
-'''
-        with tempfile.TemporaryDirectory() as root:
-            result = subprocess.run(['bash', '-c', script, 'bash', root], capture_output=True, text=True)
-            self.assertNotIn('start dragonwilds-auto-update.timer', result.stdout)
-
     def test_failed_unit_state_is_not_verified_stopped(self):
         text = DRILL.read_text()
         helpers = text[text.index('die()'):text.index('allow_players=false')]
@@ -58,40 +42,6 @@ stop_game
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('fresh', result.stderr)
 
-    def test_failed_stop_preserves_both_worlds_and_timer_stays_stopped(self):
-        text = DRILL.read_text()
-        helpers = text[text.index('die()'):text.index('allow_players=false')]
-        recover = text[text.index('recover()'):text.index('trap recover EXIT')]
-        with tempfile.TemporaryDirectory() as root:
-            base = Path(root)
-            for name in ('live', 'aside'):
-                (base / name).mkdir()
-                (base / name / 'Main.sav').write_text(name)
-            script = helpers + recover + '''
-finished=false; swapping=true; swapped=true
-GAME_UNIT=dragonwilds.service; UPDATE_TIMER=dragonwilds-auto-update.timer
-UPDATE_SERVICE=dragonwilds-auto-update.service
-live="$1/live"; aside="$1/aside"; scratch="$1/scratch"
-mkdir "$scratch"
-systemctl() {
-  printf '%s\n' "$*" >>"$calls"
-  case "$*" in
-    *auto-update.timer*) return 0 ;;
-    *auto-update.service*ActiveState*) printf 'inactive\n'; return 0 ;;
-    *auto-update.service*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-calls="$1/calls"
-recover
-'''
-            result = subprocess.run(['bash', '-c', script, 'bash', root], capture_output=True, text=True)
-            self.assertEqual((base / 'live/Main.sav').read_text(), 'live')
-            self.assertEqual((base / 'aside/Main.sav').read_text(), 'aside')
-            self.assertIn('stop dragonwilds.service', (base / 'calls').read_text())
-            self.assertNotIn('start dragonwilds-auto-update.timer', (base / 'calls').read_text())
-            self.assertIn('manual recovery', result.stderr)
-
     def test_updater_stopped_and_verified_before_game_or_snapshot(self):
         text = DRILL.read_text()
         helpers = text[text.index('die()'):text.index('allow_players=false')]
@@ -106,8 +56,14 @@ systemctl() { printf '%s\\n' "$*" >&2; [[ "$*" != *ActiveState* ]] || printf 'in
 
 
 STAMP = '20260101-120000'
+# Each call is numbered by how often that exact command has run, so a test can
+# fail, hang or tamper on one specific call: FAIL_CALL='stop dragonwilds.service#2'.
 SYSTEMCTL = r'''#!/usr/bin/env bash
 printf '%s\n' "$*" >>"$CALLS"
+call="$*#$(grep -cxF -- "$*" "$CALLS")"
+[[ "$call" == "${HANG_CALL:-}" ]] && exec /bin/sleep 3600
+[[ "$call" == "${SWAP_ASIDE_CALL:-}" ]] && { rm -rf "$ASIDE"; mkdir "$ASIDE"; printf 'foreign\n' >"$ASIDE/Foreign.sav"; }
+[[ "$call" == "${FAIL_CALL:-}" ]] && exit 1
 case "$*" in
   "show dragonwilds.service -p WorkingDirectory --value") printf '%s\n' "$INSTALL" ;;
   "show dragonwilds.service -p User --value") id -un ;;
@@ -115,9 +71,9 @@ case "$*" in
   "show game-backup.service -p Result --value") printf 'success\n' ;;
   show*ActiveState*) printf 'inactive\n' ;;
   "start dragonwilds.service")
-    [[ -e "$CALLS.started" ]] && exit 0
-    touch "$CALLS.started"
+    [[ "$call" == *'#1' ]] || exit 0
     case "${FAIL_START:-}" in
+      '') exit 0 ;;
       touch-live) printf 'played\n' >"$LIVE/Played.sav" ;;
       drop-aside) rm -rf "$ASIDE" ;;
     esac
@@ -136,10 +92,18 @@ case "$1" in
     done ;;
 esac
 '''
-# The forward move is the only `mv -T <live> <aside>`; TERM lands right after it.
-MV_TERM = r'''#!/usr/bin/env bash
+# The forward move is `mv -T <live> <aside>`, the rollback `mv -T <aside> <live>`.
+MV = r'''#!/usr/bin/env bash
+src="${*: -2:1}" dst="${*: -1}"
+if [[ "${FOREIGN_BEFORE_MOVE:-}" == 1 && "$dst" == "$ASIDE" ]]; then
+  mkdir -p "$ASIDE"; printf 'foreign\n' >"$ASIDE/Foreign.sav"
+fi
+if [[ "${TERM_DURING_ROLLBACK:-}" == 1 && "$src" == "$ASIDE" ]]; then
+  # Live is already deleted here; if the drill dies, the rollback never finishes.
+  kill -TERM "$PPID"; /bin/sleep 0.5; kill -0 "$PPID" 2>/dev/null || exit 143
+fi
 /bin/mv "$@" || exit
-[[ "${TERM_AFTER_MOVE:-}" == 1 && "${*: -1}" == "$ASIDE" ]] && kill -TERM "$PPID"
+[[ "${TERM_AFTER_MOVE:-}" == 1 && "$dst" == "$ASIDE" ]] && kill -TERM "$PPID"
 exit 0
 '''
 
@@ -147,8 +111,8 @@ exit 0
 class RestoreDrillRunTests(unittest.TestCase):
     """Runs the whole drill with systemd, restic and the clock stubbed.
 
-    Only the root guard and the two root-owned paths are rewritten, so every
-    other line is the real script.
+    Only the root guard, the two root-owned paths and the recovery time limits
+    are rewritten, so every other line is the real script.
     """
 
     def setUp(self):
@@ -171,6 +135,8 @@ class RestoreDrillRunTests(unittest.TestCase):
             ('[[ "$EUID" -eq 0 ]] ||', '[[ -n "$EUID" ]] ||'),
             ('LOCK_FILE=/run/lock/dragonwilds-restore-drill.lock', f'LOCK_FILE={self.lock}'),
             ('mktemp -d /root/restore-drill.XXXXXX', f'mktemp -d {self.root}/restore-drill.XXXXXX'),
+            ('RECOVERY_CALL_SECONDS=180', 'RECOVERY_CALL_SECONDS=2'),
+            ('RECOVERY_START_SECONDS=900', 'RECOVERY_START_SECONDS=2'),
         ):
             self.assertEqual(text.count(old), 1, old)
             text = text.replace(old, new)
@@ -181,7 +147,7 @@ class RestoreDrillRunTests(unittest.TestCase):
         stubs = {
             'systemctl': SYSTEMCTL,
             'restic': RESTIC,
-            'mv': MV_TERM,
+            'mv': MV,
             'journalctl': "#!/usr/bin/env bash\nprintf 'World load SUCCEEDED\\n'\n",
             'chown': '#!/usr/bin/env bash\nexit 0\n',
             'sleep': '#!/usr/bin/env bash\nexit 0\n',
@@ -199,7 +165,21 @@ class RestoreDrillRunTests(unittest.TestCase):
 
     def run_drill(self, **env):
         return subprocess.run(['bash', str(self.drill), '--allow-players'], env={**self.env, **env},
-                              capture_output=True, text=True, timeout=60)
+                              capture_output=True, text=True, timeout=30)
+
+    def assert_original_live(self, result):
+        self.assertEqual(self.tree(self.live), ['Main.sav'], result.stderr)
+        self.assertEqual((self.live / 'Main.sav').read_text(), 'original\n')
+
+    def assert_timer_left_stopped(self, result):
+        self.assertNotIn('start dragonwilds-auto-update.timer', self.mutations(), result.stderr)
+
+    def test_successful_drill_keeps_the_original_aside(self):
+        result = self.run_drill()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('PASSED', result.stdout)
+        self.assertEqual(self.tree(self.aside), ['Main.sav'])
+        self.assertIn('start dragonwilds-auto-update.timer', self.mutations())
 
     def mutations(self):
         calls = self.calls.read_text().splitlines() if self.calls.exists() else []
@@ -250,6 +230,52 @@ class RestoreDrillRunTests(unittest.TestCase):
         self.assertEqual(self.mutations(), [])
         self.assertEqual(self.tree(self.live), ['Main.sav'])
 
+
+    def test_failed_forward_move_never_replaces_live(self):
+        result = self.run_drill(FOREIGN_BEFORE_MOVE='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assert_original_live(result)
+        self.assertEqual(self.tree(self.aside), ['Foreign.sav'])
+        # Live never moved, so this is an ordinary failure: the game and timer come back.
+        self.assertNotIn('manual recovery', result.stderr)
+        self.assertEqual(self.mutations()[-2:], ['start dragonwilds.service', 'start dragonwilds-auto-update.timer'])
+
+    def test_aside_replaced_while_recovery_stops_the_game_is_not_moved_back(self):
+        result = self.run_drill(FAIL_START='touch-live', SWAP_ASIDE_CALL='stop dragonwilds.service#2')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('manual recovery required: the original world is not at', result.stderr)
+        self.assertEqual(self.tree(self.live), ['Main.sav', 'Played.sav'])
+        self.assertEqual(self.tree(self.aside), ['Foreign.sav'])
+        self.assert_timer_left_stopped(result)
+
+    def test_term_during_rollback_does_not_stop_it(self):
+        result = self.run_drill(FAIL_START='touch-live', TERM_DURING_ROLLBACK='1')
+        self.assertNotEqual(result.returncode, -15, result.stderr)
+        self.assert_original_live(result)
+        self.assertFalse(self.aside.exists())
+
+    def test_hung_recovery_stop_is_bounded_and_touches_nothing(self):
+        result = self.run_drill(FAIL_START='touch-live', HANG_CALL='stop dragonwilds.service#2')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('manual recovery required: dragonwilds.service could not be verified stopped', result.stderr)
+        self.assertEqual(self.tree(self.live), ['Main.sav', 'Played.sav'])
+        self.assertEqual(self.tree(self.aside), ['Main.sav'])
+        self.assert_timer_left_stopped(result)
+
+    def test_updater_that_cannot_stop_leaves_everything_and_the_timer_off(self):
+        result = self.run_drill(FAIL_START='touch-live', FAIL_CALL='stop dragonwilds-auto-update.service#2')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('manual recovery required: the updater could not be stopped', result.stderr)
+        self.assertEqual(self.tree(self.live), ['Main.sav', 'Played.sav'])
+        self.assertEqual(self.tree(self.aside), ['Main.sav'])
+        self.assert_timer_left_stopped(result)
+
+    def test_game_that_will_not_restart_keeps_the_timer_off(self):
+        result = self.run_drill(FAIL_START='touch-live', FAIL_CALL='start dragonwilds.service#2')
+        self.assertNotEqual(result.returncode, 0)
+        self.assert_original_live(result)
+        self.assertIn('dragonwilds-auto-update.timer stays stopped', result.stderr)
+        self.assert_timer_left_stopped(result)
 
 if __name__ == '__main__':
     unittest.main()

@@ -18,6 +18,10 @@ readonly UPDATE_SERVICE=dragonwilds-auto-update.service
 readonly BACKUP_UNIT=game-backup.service
 readonly LOAD_TIMEOUT_SECONDS=600
 readonly LOCK_FILE=/run/lock/dragonwilds-restore-drill.lock
+# Recovery ignores TERM/INT/HUP, so each systemctl call it makes is killed after
+# this long (the game's stop timeout is 120s). Its start covers the pre-update gate.
+readonly RECOVERY_CALL_SECONDS=180
+readonly RECOVERY_START_SECONDS=900
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 trap 'printf "error: restore-drill stopped at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
@@ -46,7 +50,7 @@ for arg in "$@"; do
 done
 
 [[ "$EUID" -eq 0 ]] || die "run with sudo (restic reaches the repository with root's SSH key)"
-for tool in restic jq systemctl journalctl diff flock; do
+for tool in restic jq systemctl journalctl diff flock timeout stat; do
   command -v "$tool" >/dev/null || die "$tool is required"
 done
 exec 9>"$LOCK_FILE"
@@ -81,34 +85,55 @@ aside="$saved/SaveGames.drill-$stamp"
 # Recovery treats an existing aside as the original world, so it must be ours.
 [[ ! -e "$aside" && ! -L "$aside" ]] || die "$aside already exists; move it away and rerun"
 scratch="$(mktemp -d /root/restore-drill.XXXXXX)"
+original_id=""
 swapping=false
-swapped=false
 finished=false
+
+# KILL, not TERM: recovery's children inherit its ignored TERM. Killing the
+# client does not cancel a systemd job, so a timeout is reported, never trusted.
+bounded() { local secs="$1"; shift; timeout -s KILL "$secs" "$@"; }
+recovery_stop() {
+  local unit="$1" state
+  bounded "$RECOVERY_CALL_SECONDS" systemctl stop "$unit" || return 1
+  state="$(bounded "$RECOVERY_CALL_SECONDS" systemctl show "$unit" -p ActiveState --value)" || return 1
+  [[ "$state" == inactive ]]
+}
+# Device and inode alone are not enough: a freed inode is reused at once, so a
+# dir made after the original was deleted can share it. Birth time tells them apart.
+dir_identity() { stat -c %d:%i:%w -- "$1"; }
+is_original() { [[ -d "$1" && ! -L "$1" && "$(dir_identity "$1" 2>/dev/null)" == "$original_id" ]]; }
+manual() {
+  printf '[drill] manual recovery required: %s; leaving %s and %s as they are; %s and %s stay stopped\n' \
+    "$1" "$live" "$aside" "$GAME_UNIT" "$UPDATE_TIMER" >&2
+}
 
 recover() {
   [[ "$finished" == true ]] && return
+  # A second signal must not cut a rollback short between deleting live and
+  # moving the original back; every wait below is bounded instead.
+  trap '' TERM INT HUP
   printf '[drill] FAILED; restoring the original world and restarting the game\n' >&2
-  if ! systemctl stop "$UPDATE_TIMER" || ! stop_unit "$UPDATE_SERVICE"; then
-    printf '[drill] manual recovery required: updater could not be stopped; leaving both worlds untouched and not restarting the timer\n' >&2
+  if ! bounded "$RECOVERY_CALL_SECONDS" systemctl stop "$UPDATE_TIMER" || ! recovery_stop "$UPDATE_SERVICE"; then
+    manual "the updater could not be stopped"
     return 1
   fi
-  # Trust the filesystem, not the flags: a signal can land between the move and
-  # `swapped=true`. Live is only deleted once the original is known to be in aside.
-  if [[ "$swapping" == true ]]; then
-    if [[ -d "$aside" && ! -L "$aside" ]]; then
-      if ! stop_game; then
-        printf '[drill] manual recovery required: stop could not be verified; leaving %s and %s untouched; update timer remains stopped\n' "$live" "$aside" >&2
-        return 1
-      fi
-      rm -rf "$live"
-      mv -T "$aside" "$live"
-    elif [[ "$swapped" == true || -e "$aside" || -L "$aside" || ! -d "$live" ]]; then
-      printf '[drill] manual recovery required: the original world is not at %s; leaving %s and %s untouched; update timer remains stopped\n' "$aside" "$live" "$scratch" >&2
-      return 1
-    fi
+  # Decide from the directories, not the flags: the forward move may have failed
+  # (live is still the original) or a signal may have landed right after it.
+  # Only a dir with the original's identity is ever moved back over live.
+  if [[ "$swapping" == true ]] && ! is_original "$live"; then
+    recovery_stop "$GAME_UNIT" || { manual "$GAME_UNIT could not be verified stopped"; return 1; }
+    # Checked after the stop, which can take minutes: the aside could change meanwhile.
+    is_original "$aside" || { manual "the original world is not at $aside"; return 1; }
+    rm -rf "$live" || { manual "could not remove the restored copy at $live"; return 1; }
+    mv -T "$aside" "$live" || { manual "could not move $aside back to $live"; return 1; }
   fi
-  systemctl start "$GAME_UNIT" || printf '[drill] could not start %s; check it by hand\n' "$GAME_UNIT" >&2
-  systemctl start "$UPDATE_TIMER" || true
+  if bounded "$RECOVERY_START_SECONDS" systemctl start "$GAME_UNIT"; then
+    bounded "$RECOVERY_CALL_SECONDS" systemctl start "$UPDATE_TIMER" \
+      || printf '[drill] could not start %s; start it by hand\n' "$UPDATE_TIMER" >&2
+  else
+    printf '[drill] %s did not start within %ss (its job may still be running); the original world is in place; %s stays stopped; check both by hand\n' \
+      "$GAME_UNIT" "$RECOVERY_START_SECONDS" "$UPDATE_TIMER" >&2
+  fi
   rm -rf "$scratch"
 }
 trap recover EXIT
@@ -136,9 +161,9 @@ for sav in "$scratch$live"/*.sav; do
 done
 
 log "swapping the restored SaveGames in (original kept at $aside)"
+original_id="$(dir_identity "$live")"
 swapping=true
 mv -T "$live" "$aside"
-swapped=true
 cp -a "$scratch$live" "$live"
 chown -R "$game_user:${game_group:-$game_user}" "$live"
 
