@@ -344,10 +344,11 @@ rm -f "$FIND_LIST"
 # stop the running container that bind-mounts each one so the copy is clean.
 # The deepest mount wins (a bind of the file itself is deepest), and a
 # whole-filesystem mount (Filebrowser's /) never does.
-# Fails when Docker cannot be asked, so "no running owner" is never a guess.
+# Fails when Docker cannot be asked (including a docker CLI missing from PATH),
+# so "no running owner" is never a guess.
 owning_container() {
   local db="$1" best="" best_len=0 name src ids="" mounts="" attempt
-  command -v docker >/dev/null || return 0
+  command -v docker >/dev/null || return 1
   for attempt in 1 2 3; do
     # A container can exit between ps and inspect; ask again before giving up.
     # A failed inspect can still print mounts, so nothing survives an attempt.
@@ -369,7 +370,7 @@ owning_container() {
 raw_owners=()
 for db in ${RAW_COPIES[@]+"${RAW_COPIES[@]}"}; do
   owner="$(owning_container "$db")" \
-    || die "cannot tell which container owns ${db#"$HOST_DIR"/} (docker ps/inspect failed); refusing a copy that may be inconsistent"
+    || die "cannot tell which container owns ${db#"$HOST_DIR"/} (docker missing, or ps/inspect failed); refusing a copy that may be inconsistent"
   raw_owners+=("$owner")
   if [[ -z "$owner" ]]; then
     cp -a "$db" "$(staged_db_path "$db")"
@@ -377,9 +378,9 @@ for db in ${RAW_COPIES[@]+"${RAW_COPIES[@]}"}; do
   fi
 done
 dns_peer_answering() {
-  local peer
+  local peer answer
   for peer in $DNS_PEERS; do
-    [[ -n "$(dig +short +time=2 +tries=1 @"$peer" example.com A 2>/dev/null)" ]] && return 0
+    answer="$(dig +short +time=2 +tries=1 @"$peer" example.com A 2>/dev/null)" && [[ -n "$answer" ]] && return 0
   done
   return 1
 }
@@ -398,7 +399,11 @@ dns_peer_ready() {
     sleep "$DNS_PEER_POLL_SECONDS"
   done
 }
-for owner in $(printf '%s\n' ${raw_owners[@]+"${raw_owners[@]}"} | sort -u); do
+# Listed in a checked assignment: a failure inside for's own substitution would
+# silently skip every owner and their consistent copies.
+owners="$(printf '%s\n' ${raw_owners[@]+"${raw_owners[@]}"} | sort -u)" \
+  || die "cannot list the containers that own raw database copies"
+for owner in $owners; do
   if [[ "$owner" == "$DNS_CONTAINER" ]] && ! dns_peer_ready; then
     for i in "${!RAW_COPIES[@]}"; do
       [[ "${raw_owners[$i]}" == "$owner" ]] || continue

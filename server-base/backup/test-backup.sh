@@ -283,6 +283,44 @@ for scan in '*.sqlite3' .env; do
 done
 [[ ! -e "$tmp/staging" ]] || fail "staging dir left behind after a failed scan"
 
+# The same for every other check whose failure used to be read as an answer:
+# a docker CLI missing from PATH is not "no running owner", a failed owner
+# listing is not "no owners", and a failed dig is not a DNS peer answering.
+# Bash's PATH lookup cannot be made to skip a directory that also holds bash,
+# so the engine's `command -v docker` is answered by a function exported in
+# the environment instead.
+nodocker_env=(env "BASH_FUNC_command%%=() { if [[ \$1 == -v && \$2 == docker ]]; then return 1; fi; builtin command \"\$@\"; }")
+: >"$tmp/restic.log"
+if out="$("${nodocker_env[@]}" PATH="$stub:$PATH" RESTIC_LOG="$tmp/restic.log" bash "$server/backup/backup.sh" 2>&1)"; then
+  fail "a missing docker CLI was read as no database owner: $out"
+fi
+grep -q 'docker missing' <<<"$out" || fail "missing docker not reported: $out"
+if grep -qE '^(backup|forget)' "$tmp/restic.log"; then fail "snapshot or prune without a docker CLI"; fi
+
+badsort="$tmp/badsort"
+mkdir -p "$badsort"
+printf '#!/usr/bin/env bash\nexit 1\n' >"$badsort/sort"
+chmod +x "$badsort/sort"
+: >"$DOCKER_LOG"
+: >"$tmp/restic.log"
+if out="$(PATH="$badsort:$stub:$PATH" RESTIC_LOG="$tmp/restic.log" bash "$server/backup/backup.sh" 2>&1)"; then
+  fail "a failed owner listing skipped the consistent copies: $out"
+fi
+grep -q 'cannot list the containers that own raw database copies' <<<"$out" || fail "failed owner listing not reported: $out"
+[[ ! -s "$DOCKER_LOG" ]] || fail "containers stopped after a failed owner listing: $(<"$DOCKER_LOG")"
+if grep -qE '^(backup|forget)' "$tmp/restic.log"; then fail "snapshot or prune after a failed owner listing"; fi
+
+baddig="$tmp/baddig"
+mkdir -p "$baddig"
+printf '#!/usr/bin/env bash\nprintf "93.184.215.14\\n"\nexit 9\n' >"$baddig/dig"
+chmod +x "$baddig/dig"
+: >"$DOCKER_LOG"
+out="$(PATH="$baddig:$stub:$PATH" RESTIC_LOG="$tmp/restic.log" bash "$server/backup/backup.sh" 2>&1)" \
+  || fail "run with a failing dig failed: $out"
+grep -q 'not stopping adguardhome' <<<"$out" || fail "a failed dig counted as a DNS peer answering: $out"
+[[ "$(<"$DOCKER_LOG")" == $'stop filebrowser\nstart filebrowser' ]] \
+  || fail "AdGuard stopped on a failed dig: $(<"$DOCKER_LOG")"
+
 # Once the player-log dir is backed up, its lock must exist and be root-owned 0600.
 mkdir -p "$player_log"
 if out="$(PATH="$stub:$PATH" RESTIC_LOG="$tmp/restic.log" bash "$server/backup/backup.sh" 2>&1)"; then
@@ -677,5 +715,53 @@ for state in broken missing; do
   [[ "$state" == missing ]] || grep -q 'Title: Pi backup FAILED' "$tmp/notify.calls" \
     || fail "notify-failure lost the label of a broken sources.sh"
 done
+
+# restore-check never reports PASSED when a verification step could not run:
+# a failed scan of the restored tree, or sqlite3 printing "ok" then failing.
+rc="$tmp/restore-check"
+mkdir -p "$rc/bin" "$rc/root" "$rc/host/backup"
+printf 'RESTIC_REPOSITORY=/nonexistent\n' >"$rc/host/backup/.env"
+sed -e 's|\[\[ "\$EUID" -eq 0 \]\]|true|' -e "s|^scratch_parent=/root|scratch_parent=$rc/root|" \
+  "$SCRIPT_DIR/restore-check.sh" >"$rc/restore-check.sh"
+grep -q "scratch_parent=$rc/root" "$rc/restore-check.sh" || fail "restore-check fixture did not redirect scratch"
+cat >"$rc/bin/restic" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+  snapshots) printf '[{"short_id":"abcdef","time":"2026-10-18T00:00:00"}]' ;;
+  stats) printf '{"total_size":10}' ;;
+  ls) printf '{"type":"file"}\n{"type":"file"}\n' ;;
+  restore)
+    t="$4"; mkdir -p "$t/x-staging/sqlite"
+    printf 'SQLite format 3\0' >"$t/x-staging/sqlite/db.sqlitebak"
+    (cd "$t/x-staging/sqlite" && sha256sum db.sqlitebak >db.sqlitebak.sha256) ;;
+esac
+EOF
+cat >"$rc/bin/sqlite3" <<'EOF'
+#!/usr/bin/env bash
+printf 'ok\n'
+exit "${SQLITE_EXIT:-0}"
+EOF
+real_find="$(command -v find)"
+cat >"$rc/bin/find" <<EOF
+#!/usr/bin/env bash
+for arg in "\$@"; do [[ "\$arg" != "\${RC_FIND_FAIL:-none}" ]] || { "$real_find" "\$@"; exit 1; }; done
+exec "$real_find" "\$@"
+EOF
+chmod +x "$rc/bin/"*
+out="$(PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)" || fail "restore-check control failed: $out"
+grep -q 'integrity_check: 1' <<<"$out" && grep -q 'verified: 1' <<<"$out" && grep -q PASSED <<<"$out" \
+  || fail "restore-check control did not verify both checks: $out"
+for scan in '*-staging/sqlite/*' '*.sha256'; do
+  if out="$(RC_FIND_FAIL="$scan" PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)"; then
+    fail "restore-check passed after its $scan scan failed: $out"
+  fi
+  if grep -q PASSED <<<"$out"; then fail "restore-check printed PASSED after its $scan scan failed"; fi
+  grep -q 'cannot scan the restored tree' <<<"$out" || fail "failed $scan scan not reported: $out"
+done
+if out="$(SQLITE_EXIT=1 PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)"; then
+  fail "restore-check accepted ok from a failing sqlite3: $out"
+fi
+grep -q 'integrity_check failed' <<<"$out" || fail "failing sqlite3 not reported: $out"
+[[ -z "$(ls -A "$rc/root")" ]] || fail "restore-check left scratch behind: $(ls -A "$rc/root")"
 
 printf 'backup engine tests: PASSED\n'

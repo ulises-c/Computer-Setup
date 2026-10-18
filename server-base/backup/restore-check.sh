@@ -61,7 +61,8 @@ scratch_parent=/root
 free_kb="$(df -Pk "$scratch_parent" | awk 'NR==2 {print $4}')"
 (( free_kb * 1024 > want_bytes * 11 / 10 )) || die "not enough space under $scratch_parent for $want_bytes bytes"
 scratch="$(mktemp -d "$scratch_parent/restore-check.XXXXXX")"
-cleanup() { [[ "$keep" == true ]] || rm -rf "$scratch"; }
+scan_list=""
+cleanup() { [[ -z "$scan_list" ]] || rm -f "$scan_list"; [[ "$keep" == true ]] || rm -rf "$scratch"; }
 trap cleanup EXIT
 
 restic restore "$snapshot" --target "$scratch" >/dev/null
@@ -69,7 +70,15 @@ got_files="$(find "$scratch" -type f | wc -l | tr -d ' ')"
 (( got_files == want_files )) || die "restored $got_files files, snapshot has $want_files"
 log "restored $got_files files ($want_bytes bytes)"
 
+# Each scan goes to a checked list first: a failed find feeding the loop
+# directly would leave the counts at zero and still print PASSED.
+scan_list="$(mktemp "$scratch_parent/restore-check-scan.XXXXXX")"
+scan_into_list() {
+  find "$scratch" "$@" -print0 >"$scan_list" || die "cannot scan the restored tree; nothing was verified"
+}
+
 checked=0 raw=0
+scan_into_list -path '*-staging/sqlite/*' -type f
 while IFS= read -r -d '' db; do
   # backup.sh falls back to a raw copy for non-SQLite *.db files (e.g. BoltDB),
   # still with the .sqlitebak suffix; only real SQLite files can be checked.
@@ -82,18 +91,20 @@ while IFS= read -r -d '' db; do
     log "sqlite3 not installed; skipping $(basename "$db")"
     continue
   fi
-  result="$(sqlite3 "file:$db?mode=ro" 'PRAGMA integrity_check;' 2>&1 | head -1)" || true
-  [[ "$result" == ok ]] || die "integrity_check failed for ${db#"$scratch"}: $result"
+  if ! result="$(sqlite3 "file:$db?mode=ro" 'PRAGMA integrity_check;' 2>&1)" || [[ "$result" != ok ]]; then
+    die "integrity_check failed for ${db#"$scratch"}: $(head -n1 <<<"$result")"
+  fi
   checked=$((checked + 1))
-done < <(find "$scratch" -path '*-staging/sqlite/*' -type f -print0)
+done <"$scan_list"
 log "sqlite snapshots passing integrity_check: $checked (raw non-SQLite copies: $raw)"
 
 sums=0
+scan_into_list -name '*.sha256' -type f
 while IFS= read -r -d '' sidecar; do
   (cd "$(dirname "$sidecar")" && sha256sum --quiet -c "$(basename "$sidecar")") \
     || die "checksum mismatch: ${sidecar#"$scratch"}"
   sums=$((sums + 1))
-done < <(find "$scratch" -name '*.sha256' -type f -print0)
+done <"$scan_list"
 log "checksummed staged copies verified: $sums"
 
 log "PASSED: snapshot $snapshot restores completely"
