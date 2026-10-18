@@ -33,12 +33,20 @@ if ! [[ "$DRAGONWILDS_INSTALL_DIR" =~ ^/[[:alnum:]_./-]+$ && "$DRAGONWILDS_INSTA
   printf 'error: invalid Dragonwilds install path: %s\n' "$DRAGONWILDS_INSTALL_DIR" >&2
   exit 1
 fi
-if compgen -G "$DRAGONWILDS_INSTALL_DIR/RSDragonwilds/Saved/SaveGames/*.sav" >/dev/null; then
+# Checked here rather than left to the gate: a host mid-upgrade can still run
+# a gate unit without the world-marker condition.
+world_marker=/var/lib/dragonwilds/world-seen
+savegames="$DRAGONWILDS_INSTALL_DIR/RSDragonwilds/Saved/SaveGames"
+if compgen -G "$savegames/*.sav" >/dev/null; then
   [[ -n "$configured_install_dir" ]] || {
     printf 'error: an existing world requires the installed dragonwilds.service backup gate\n' >&2
     exit 1
   }
   systemctl start --wait dragonwilds-pre-update-backup.service
+elif [[ -e "$world_marker" ]]; then
+  printf 'error: no Dragonwilds world in %s, but one was backed up before; restore it, or delete %s if it was removed on purpose\n' \
+    "$savegames" "$world_marker" >&2
+  exit 1
 fi
 if [[ ! -x "$STEAMCMD" ]]; then
   cache="$HOME/.cache/computer-setup"

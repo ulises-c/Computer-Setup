@@ -124,6 +124,7 @@ class SafetyTests(unittest.TestCase):
         self.game.mkdir(parents=True)
         for path in ROOT.glob('dragonwilds/*.sh'):
             text = path.read_text().replace('/var/lib/dragonwilds-maintenance', str(self.root / 'maintenance'))
+            text = text.replace('/var/lib/dragonwilds/world-seen', str(self.root / 'world-seen'))
             text = text.replace('/etc/systemd/system', str(self.root / 'units'))
             (self.game / path.name).write_text(text)
         bin_dir = self.root / 'bin'
@@ -322,6 +323,34 @@ class SafetyTests(unittest.TestCase):
         result = self.run_script('install.sh')
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn('validate', self.events())
+
+    def test_lost_world_refuses_steamcmd_before_validation(self):
+        self.enter()
+        for sav in (self.root / 'game/RSDragonwilds/Saved/SaveGames').glob('*.sav'):
+            sav.unlink()
+        (self.root / 'world-seen').write_text(str(self.root / 'game/RSDragonwilds/Saved/SaveGames') + '\n')
+        result = self.run_script('install.sh')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('one was backed up before', result.stderr)
+        self.assertNotIn('validate', self.events())
+        self.assertFalse(any('backup gate' in x for x in self.events()))
+
+    def test_fresh_install_without_marker_still_downloads(self):
+        self.enter()
+        for sav in (self.root / 'game/RSDragonwilds/Saved/SaveGames').glob('*.sav'):
+            sav.unlink()
+        result = self.run_script('install.sh')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('validate', self.events())
+        self.assertFalse(any('backup gate' in x for x in self.events()))
+
+    def test_existing_world_runs_backup_gate_before_validation(self):
+        self.enter()
+        (self.root / 'world-seen').write_text('x\n')
+        result = self.run_script('install.sh')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        events = self.events()
+        self.assertLess(events.index('backup gate dragonwilds-pre-update-backup.service'), events.index('validate'))
 
     def test_validation_failure_keeps_persistent_guard(self):
         self.enter()

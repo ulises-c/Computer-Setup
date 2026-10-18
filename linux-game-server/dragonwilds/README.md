@@ -583,8 +583,10 @@ deliberately starts the game. See [the game-server guide](../README.md).
 
 On an existing world, `install.sh` resolves the install path from the rendered
 `dragonwilds.service` and runs the root-owned pre-update backup gate before
-SteamCMD. Do not replace it with a direct `steamcmd +app_update`; configure and
-install the backup unit first.
+SteamCMD. If `/var/lib/dragonwilds/world-seen` exists but `SaveGames` has no
+`.sav`, it refuses before SteamCMD: restore the world, or delete the marker if
+it was removed on purpose. Do not replace it with a direct
+`steamcmd +app_update`; configure and install the backup unit first.
 
 To apply a template change later, enter maintenance, re-run
 `sudo bash linux-game-server/dragonwilds/setup.sh`, check, then leave and start
