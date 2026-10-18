@@ -41,6 +41,12 @@ if [[ "$second" == true ]]; then
   export RESTIC_REPOSITORY="$SECOND_RESTIC_REPOSITORY"
 fi
 [[ -n "${RESTIC_REPOSITORY:-}" ]] || die "RESTIC_REPOSITORY is not set"
+# The staging dir the engine uses, worked out the same way backup.sh does.
+backup_name="$(sed -n 's/^BACKUP_NAME=//p' "$host_dir/backup/sources.sh")" \
+  || die "cannot read BACKUP_NAME from $host_dir/backup/sources.sh"
+backup_name="${backup_name##*$'\n'}"
+[[ "$backup_name" =~ ^[a-z][a-z-]*$ ]] || die "bad BACKUP_NAME in $host_dir/backup/sources.sh"
+staging_dir="${STAGING_DIR:-/var/tmp/$backup_name-backup-staging}"
 export HOME=/root
 host="$(hostname)"
 
@@ -77,20 +83,16 @@ scan_into_list() {
   find "$@" -print0 >"$scan_list" || die "cannot scan the restored tree; nothing was verified"
 }
 
-# Staged copies are verified only inside the one staging tree backup.sh marked:
-# a top-level path of this snapshot whose .backup-staging marker holds the
-# engine's text. STAGING_DIR is configurable, and a backed-up service may hold
-# its own *.sqlitebak, *.sha256 or even a .backup-staging that are not ours.
-snapshot_paths="$(jq -r '.[-1].paths[]' <<<"$snapshot_json")" || die "cannot read the paths of snapshot $snapshot"
-staging_root=""
-while IFS= read -r path; do
-  [[ -n "$path" && -f "$scratch$path/.backup-staging" ]] || continue
-  [[ "$(<"$scratch$path/.backup-staging")" == 'computer-setup backup staging' ]] || continue
-  [[ -z "$staging_root" ]] || die "snapshot $snapshot has more than one staging marker; cannot tell which is the engine's"
-  staging_root="$scratch$path"
-done <<<"$snapshot_paths"
-[[ -n "$staging_root" ]] \
-  || die "snapshot $snapshot has no staging marker (made by an older backup.sh); run a backup, then check again"
+# Staged copies are verified only inside this host's staging dir, which must be
+# one of the snapshot's own paths and carry the engine's marker. A backed-up
+# service may hold its own *.sqlitebak, *.sha256 or .backup-staging; those are
+# never judged and never stand in for the engine's.
+in_snapshot="$(jq -r --arg p "$staging_dir" '.[-1].paths | index($p) != null' <<<"$snapshot_json")" \
+  || die "cannot read the paths of snapshot $snapshot"
+staging_root="$scratch$staging_dir"
+[[ "$in_snapshot" == true && -f "$staging_root/.backup-staging" \
+   && "$(<"$staging_root/.backup-staging")" == 'computer-setup backup staging' ]] \
+  || die "snapshot $snapshot has no staging marker at $staging_dir (made by an older backup.sh, or STAGING_DIR changed since); run a backup, then check again"
 
 checked=0 raw=0
 scan_into_list "$staging_root" -name '*.sqlitebak' -type f

@@ -774,6 +774,7 @@ done
 rc="$tmp/restore-check"
 mkdir -p "$rc/bin" "$rc/root" "$rc/host/backup"
 printf 'RESTIC_REPOSITORY=/nonexistent\n' >"$rc/host/backup/.env"
+printf 'BACKUP_NAME=test\n' >"$rc/host/backup/sources.sh"
 sed -e 's|\[\[ "\$EUID" -eq 0 \]\]|true|' -e "s|^scratch_parent=/root|scratch_parent=$rc/root|" \
   "$SCRIPT_DIR/restore-check.sh" >"$rc/restore-check.sh"
 grep -q "scratch_parent=$rc/root" "$rc/restore-check.sh" || fail "restore-check fixture did not redirect scratch"
@@ -781,20 +782,18 @@ cat >"$rc/bin/restic" <<'EOF'
 #!/usr/bin/env bash
 case "$1" in
   snapshots)
-    extra=""
-    [[ -z "${RC_SECOND_ROOT:-}" ]] || extra=',"/srv/other-staging"'
-    printf '[{"short_id":"abcdef","time":"2026-10-18T00:00:00","paths":["/srv/service","/%s"%s]}]' \
-      "${RC_STAGING:-x-staging}" "$extra" ;;
+    staged_path="${RC_SNAP_STAGING:-${STAGING_DIR:-/var/tmp/test-backup-staging}}"
+    [[ -z "${RC_STAGING_NOT_IN_PATHS:-}" ]] || staged_path=/srv/elsewhere
+    printf '[{"short_id":"abcdef","time":"2026-10-18T00:00:00","paths":["/srv/service","%s"]}]' "$staged_path" ;;
   stats) printf '{"total_size":10}' ;;
   ls)
     n=3
     [[ -z "${RC_NO_MARKER:-}" ]] || n=$((n - 1))
     [[ -z "${RC_FOREIGN:-}" ]] || n=$((n + 4))
-    [[ -z "${RC_SECOND_ROOT:-}" ]] || n=$((n + 1))
     for ((i = 0; i < n; i++)); do printf '{"type":"file"}\n'; done ;;
   restore)
-    t="$4/${RC_STAGING:-x-staging}"; mkdir -p "$t/sqlite"
-    [[ -n "${RC_NO_MARKER:-}" ]] || printf 'computer-setup backup staging\n' >"$t/.backup-staging"
+    t="$4${RC_SNAP_STAGING:-${STAGING_DIR:-/var/tmp/test-backup-staging}}"; mkdir -p "$t/sqlite"
+    [[ -n "${RC_NO_MARKER:-}" ]] || printf '%s\n' "${RC_MARKER_TEXT:-computer-setup backup staging}" >"$t/.backup-staging"
     printf 'SQLite format 3\0' >"$t/sqlite/db.sqlitebak"
     (cd "$t/sqlite" && sha256sum db.sqlitebak >db.sqlitebak.sha256)
     if [[ -n "${RC_FOREIGN:-}" ]]; then
@@ -802,11 +801,7 @@ case "$1" in
       printf 'SQLite format 3\0' >"$4/srv/service/archive/old.sqlitebak"
       printf 'not a checksum line\n' >"$4/srv/service/archive/old.sha256"
       printf 'computer-setup backup staging\n' >"$4/srv/service/archive/.backup-staging"
-      printf 'something else\n' >"$4/srv/service/.backup-staging"
-    fi
-    if [[ -n "${RC_SECOND_ROOT:-}" ]]; then
-      mkdir -p "$4/srv/other-staging"
-      printf 'computer-setup backup staging\n' >"$4/srv/other-staging/.backup-staging"
+      printf 'computer-setup backup staging\n' >"$4/srv/service/.backup-staging"
     fi ;;
 esac
 EOF
@@ -839,12 +834,12 @@ fi
 grep -q 'integrity_check failed' <<<"$out" || fail "failing sqlite3 not reported: $out"
 # STAGING_DIR is configurable, so a staging dir not named *-staging is still
 # checked: a corrupt database there fails, a sound one passes.
-for staging in x-staging staging var/tmp/mybackup; do
-  if out="$(RC_STAGING="$staging" SQLITE_CORRUPT=1 PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)"; then
+for staging in /x-staging /staging /var/tmp/mybackup; do
+  if out="$(STAGING_DIR="$staging" SQLITE_CORRUPT=1 PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)"; then
     fail "restore-check passed a corrupt database staged under $staging: $out"
   fi
   grep -q 'integrity_check failed' <<<"$out" || fail "corrupt database under $staging not reported: $out"
-  out="$(RC_STAGING="$staging" PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)" \
+  out="$(STAGING_DIR="$staging" PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)" \
     || fail "restore-check rejected a sound database staged under $staging: $out"
   grep -q 'integrity_check: 1' <<<"$out" || fail "database under $staging was not checked: $out"
 done
@@ -870,11 +865,22 @@ if out="$(RC_NO_MARKER=1 RC_FOREIGN=1 PATH="$rc/bin:$PATH" bash "$rc/restore-che
   fail "a service's .backup-staging stood in for the engine's: $out"
 fi
 grep -q 'has no staging marker' <<<"$out" || fail "foreign-only marker not reported as missing: $out"
-# Two snapshot paths both marked as staging are ambiguous, not both trusted.
-if out="$(RC_SECOND_ROOT=1 PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)"; then
-  fail "restore-check accepted two staging markers: $out"
+# A snapshot staged somewhere other than this host's STAGING_DIR is not
+# guessed at, even with a marker.
+if out="$(RC_SNAP_STAGING=/old-staging PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)"; then
+  fail "restore-check accepted staging at a path that is not this host's STAGING_DIR: $out"
 fi
-grep -q 'more than one staging marker' <<<"$out" || fail "ambiguous staging markers not reported: $out"
+grep -q 'has no staging marker at /var/tmp/test-backup-staging' <<<"$out" || fail "moved staging not reported: $out"
+# The marker must carry the engine's text, and the staging dir must be one of
+# the snapshot's own paths, not merely a directory that came back.
+if out="$(RC_MARKER_TEXT='something else' PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)"; then
+  fail "restore-check accepted a staging marker without the engine's text: $out"
+fi
+grep -q 'has no staging marker' <<<"$out" || fail "wrong marker text not reported: $out"
+if out="$(RC_STAGING_NOT_IN_PATHS=1 PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)"; then
+  fail "restore-check accepted a staging dir that is not a snapshot path: $out"
+fi
+grep -q 'has no staging marker' <<<"$out" || fail "staging dir outside the snapshot paths not reported: $out"
 # A header that cannot be read is not "not SQLite", and a SQLite file with no
 # sqlite3 to check it is not verified: neither may end in PASSED.
 real_cmp="$(command -v cmp)"
