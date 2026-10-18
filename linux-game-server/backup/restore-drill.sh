@@ -67,6 +67,7 @@ game_group="$(systemctl show "$GAME_UNIT" -p Group --value)"
 saved="$install_dir/RSDragonwilds/Saved"
 live="$saved/SaveGames"
 [[ -d "$live" && -d "$saved/Config" ]] || die "no world at $saved"
+compgen -G "$live/*.sav" >/dev/null || die "no save in $live; a drill needs a world to restore and load"
 
 status_json="$HOST_DIR/dragonwilds/status/dragonwilds-status.json"
 if [[ "$allow_players" == false ]]; then
@@ -90,7 +91,9 @@ export HOME=/root
 dir_identity() {
   local id
   id="$(stat -c '%d:%i %w' -- "$1")" || return 1
-  [[ "$id" == *' '* && "${id#* }" != - ]] || return 1
+  # GNU prints `-` for an unknown birth time; anything not starting with a digit
+  # (empty, `-`, garbage) would leave only device:inode, so it is refused.
+  [[ "$id" =~ ^[0-9]+:[0-9]+\ [0-9] ]] || return 1
   printf '%s\n' "$id"
 }
 is_original() {

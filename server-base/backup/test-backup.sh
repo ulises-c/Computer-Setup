@@ -125,7 +125,8 @@ case "$1" in
     fi
     for id in "$@"; do
       case "$id" in
-        fb0000000001) printf '/filebrowser\t%s\n/filebrowser\t/\n' "$FB_DB_DIR" ;;
+        fb0000000001) if [[ "${FB_FILE_MOUNT:-}" == 1 ]]; then printf '/filebrowser\t%s/filebrowser.db\n/filebrowser\t/\n' "$FB_DB_DIR"
+          else printf '/filebrowser\t%s\n/filebrowser\t/\n' "$FB_DB_DIR"; fi ;;
         ag0000000001) printf '/adguardhome\t%s\n' "$AG_WORK_DIR" ;;
       esac
     done ;;
@@ -247,6 +248,12 @@ out="$(DOCKER_FAIL=partial-then-empty PATH="$stub:$PATH" RESTIC_LOG="$tmp/restic
   || fail "an empty retry after a partial inspect failed the backup: $out"
 [[ ! -s "$DOCKER_LOG" ]] || fail "stale inspect output stopped a container: $(<"$DOCKER_LOG")"
 grep -q 'no running owner' <<<"$out" || fail "empty retry not reported as no owner: $out"
+# A container that bind-mounts the database file itself owns it too.
+: >"$DOCKER_LOG"
+out="$(FB_FILE_MOUNT=1 PATH="$stub:$PATH" RESTIC_LOG="$tmp/restic.log" bash "$server/backup/backup.sh" 2>&1)" \
+  || fail "file-mounted BoltDB run failed: $out"
+grep -q 'raw copy with filebrowser stopped: filebrowser/database/filebrowser.db' <<<"$out" \
+  || fail "owner of a file-mounted BoltDB not stopped: $out"
 
 # Once the player-log dir is backed up, its lock must exist and be root-owned 0600.
 mkdir -p "$player_log"
@@ -368,6 +375,36 @@ if bash -c '
 ' bash "$tmp/path-drift" "$REPO" >/dev/null 2>&1; then
   fail "game backup accepted a path drift from dragonwilds.service"
 fi
+
+# Once a backup has seen a world, an empty SaveGames fails the backup instead of
+# succeeding (and pruning) without it. A fresh install with no marker still passes.
+game_world() {
+  bash -c '
+    set -euo pipefail
+    HOST_DIR="$1"
+    BACKUP_DRAGONWILDS_INSTALL_DIR="$1/game"
+    CANDIDATES=()
+    log() { :; }
+    die() { printf "%s\n" "$*" >&2; exit 1; }
+    systemctl() { printf "%s\n" "$BACKUP_DRAGONWILDS_INSTALL_DIR"; }
+    source "$2/linux-game-server/backup/sources.sh"
+    BACKUP_WORLD_MARKER="$1/world-seen"
+    resolve_sources
+    printf "world_exists=%s\n" "$world_exists"
+  ' bash "$tmp/world-marker" "$REPO" 2>&1
+}
+wm="$tmp/world-marker"
+mkdir -p "$wm/game/RSDragonwilds/Saved/SaveGames"
+out="$(game_world)" || fail "fresh install without a world failed: $out"
+[[ "$out" == *world_exists=false* && ! -e "$wm/world-seen" ]] || fail "fresh install wrote the world marker: $out"
+touch "$wm/game/RSDragonwilds/Saved/SaveGames/Main.sav"
+out="$(game_world)" || fail "first world backup failed: $out"
+[[ "$out" == *world_exists=true* && -s "$wm/world-seen" ]] || fail "world marker not written: $out"
+rm "$wm/game/RSDragonwilds/Saved/SaveGames/Main.sav"
+if out="$(game_world)"; then fail "lost world backed up as a success: $out"; fi
+grep -q 'one was backed up before' <<<"$out" || fail "lost world failed for the wrong reason: $out"
+rm "$wm/world-seen"
+out="$(game_world)" || fail "deleting the marker did not accept the empty world: $out"
 
 # Main server: the path cross-check binds while it runs the game, and is skipped
 # once dragonwilds.service is gone (old saves are still backed up).

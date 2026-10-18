@@ -123,14 +123,16 @@ RM = r"""#!/usr/bin/env bash
 exec /bin/rm "$@"
 """
 # STAT_NO_BIRTH=always: the filesystem never reports birth time; =late: only once
-# the snapshot has been taken. STAT_LIE_ON_ASIDE=1: stat prints the real identity
-# of the aside but exits 1.
+# the snapshot has been taken. STAT_BIRTH=<text>: stat succeeds but prints <text>
+# as the birth time (empty or malformed output). STAT_LIE_ON_ASIDE=1: stat prints
+# the real identity of the aside but exits 1.
 STAT = r"""#!/usr/bin/env bash
 args=("$@")
 case "${STAT_NO_BIRTH:-}" in
   always) args=("${args[@]//%w/-}") ;;
   late) grep -qx 'restart --wait game-backup.service' "$CALLS" 2>/dev/null && args=("${args[@]//%w/-}") ;;
 esac
+[[ -n "${STAT_BIRTH+x}" ]] && args=("${args[@]//%w/$STAT_BIRTH}")
 /bin/stat "${args[@]}" || exit
 [[ "${STAT_LIE_ON_ASIDE:-}" == 1 && "${*: -1}" == "$SAVED"/.restore-drill.*/SaveGames ]] && exit 1
 exit 0
@@ -276,6 +278,23 @@ class RestoreDrillRunTests(unittest.TestCase):
         self.assertEqual(self.mutations(), [])
         self.assert_original_live(result)
         self.assertEqual(self.holds(), [])
+
+    def test_empty_or_malformed_birth_time_is_refused(self):
+        for birth in ('', ' ', 'unknown', '?'):
+            with self.subTest(birth=birth):
+                self.tearDown()
+                self.setUp()
+                result = self.run_drill(STAT_BIRTH=birth)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('must report birth time', result.stderr)
+                self.assertEqual(self.mutations(), [])
+
+    def test_a_drill_without_a_save_is_refused_before_anything_stops(self):
+        (self.live / 'Main.sav').unlink()
+        result = self.run_drill()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('no save in', result.stderr)
+        self.assertEqual(self.mutations(), [])
 
     def test_birth_time_lost_mid_drill_stops_before_the_swap(self):
         result = self.run_drill(STAT_NO_BIRTH='late')

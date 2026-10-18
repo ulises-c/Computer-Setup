@@ -6,6 +6,10 @@ BACKUP_NAME=game
 BACKUP_LABEL="Game server"
 BACKUP_UNIT=game-backup.service
 BACKUP_SHARED_LOCK_PATH=/var/lib/dragonwilds/player-log/.backup.lock
+# Written the first time a backup sees a world. From then on an empty SaveGames
+# is a lost world, not a fresh install: the backup fails instead of succeeding
+# (and pruning) without it, and the pre-update gate still runs.
+BACKUP_WORLD_MARKER=/var/lib/dragonwilds/world-seen
 
 saved=""
 install_dir=""
@@ -23,6 +27,12 @@ resolve_sources() {
   [[ -d "$saved" ]] || { log "warning: Dragonwilds saves not found at $saved — not backed up"; saved=""; }
   if [[ -n "$saved" ]] && compgen -G "$saved/SaveGames/*.sav" >/dev/null; then
     world_exists=true
+    [[ -e "$BACKUP_WORLD_MARKER" ]] || {
+      install -d -m 755 "$(dirname -- "$BACKUP_WORLD_MARKER")"
+      printf '%s\n' "$saved/SaveGames" >"$BACKUP_WORLD_MARKER"
+    }
+  elif [[ -e "$BACKUP_WORLD_MARKER" ]]; then
+    die "no Dragonwilds world in ${saved:-$install_dir/RSDragonwilds/Saved}/SaveGames, but one was backed up before; restore it, or delete $BACKUP_WORLD_MARKER if it was removed on purpose"
   fi
 
   # Worlds and server config only (OwnerId, identity, world password); the game

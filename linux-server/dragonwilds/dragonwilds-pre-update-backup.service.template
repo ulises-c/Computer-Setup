@@ -3,10 +3,12 @@ Description=Back up Dragonwilds before starting or updating it
 After=network-online.target
 Wants=network-online.target
 
-# Fresh installs have no world to protect yet. Once a world exists, the backup
-# command must succeed; a missing unit or failed backup therefore blocks the game
-# start rather than allowing an unprotected update.
-ConditionPathExistsGlob=@INSTALL_DIR@/RSDragonwilds/Saved/SaveGames/*.sav
+# Fresh installs have no world to protect yet. Once a world exists, or a backup
+# has seen one (the marker), the backup command must succeed; a missing unit or
+# failed backup therefore blocks the game start rather than allowing an
+# unprotected update. A world that vanished fails the backup, so it blocks too.
+ConditionPathExistsGlob=|@INSTALL_DIR@/RSDragonwilds/Saved/SaveGames/*.sav
+ConditionPathExists=|/var/lib/dragonwilds/world-seen
 
 [Service]
 Type=oneshot

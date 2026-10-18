@@ -27,10 +27,15 @@ class UpdateBackupTests(unittest.TestCase):
     def test_backup_gate_is_fail_closed_once_a_world_exists(self):
         template = GAME.joinpath("dragonwilds-pre-update-backup.service.template").read_text()
         self.assertNotIn("ConditionPathExists=@INSTALL_DIR@/RSDragonwilds/Saved/Config/LinuxServer/DedicatedServer.ini", template)
+        # Either a save on disk or a backup that has seen one triggers the gate, so a
+        # vanished world still runs (and fails) the backup instead of skipping it.
         self.assertIn(
-            "ConditionPathExistsGlob=@INSTALL_DIR@/RSDragonwilds/Saved/SaveGames/*.sav",
+            "ConditionPathExistsGlob=|@INSTALL_DIR@/RSDragonwilds/Saved/SaveGames/*.sav",
             template,
         )
+        self.assertIn("ConditionPathExists=|/var/lib/dragonwilds/world-seen", template)
+        sources = ROOT.joinpath("linux-game-server/backup/sources.sh").read_text()
+        self.assertIn("BACKUP_WORLD_MARKER=/var/lib/dragonwilds/world-seen", sources)
         self.assertNotIn("ConditionPathExists=/etc/systemd/system/", template)
         self.assertIn(
             "ExecStart=/usr/bin/systemctl restart --wait @BACKUP_UNIT@",

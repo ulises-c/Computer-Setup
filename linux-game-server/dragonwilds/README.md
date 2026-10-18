@@ -661,7 +661,11 @@ patch has a fresh off-host backup first. The Steam command's leading `-` means a
 Steam outage leaves the server starting on whatever is already on disk rather than
 failing to boot.
 
-The backup gate is skipped on a fresh install until a `.sav` exists. Once a save
+The backup gate is skipped on a fresh install until a `.sav` exists. The first
+backup that sees a world writes `/var/lib/dragonwilds/world-seen`; from then on
+the gate always runs, and a backup that finds `SaveGames` empty fails instead of
+succeeding (and pruning) without the world, so the start is blocked. Restore the
+world, or delete that marker if it was removed on purpose. Once a save
 exists, a missing or malformed config, missing backup unit, failed backup, or
 timeout fails the game start and blocks the update. The gate restarts the backup
 unit rather than merely attaching to an already-running nightly job, so the copy

@@ -353,7 +353,10 @@ time limit. If any step fails it stops there, says what it could not do, and
 leaves the rest to you: check the game, updater and timer and any pending
 systemd jobs before touching the saves. The update timer is only restarted once
 the game is; a game start still running after 15 minutes (a long Steam update)
-is left to finish on its own, and the timer must then be started by hand.
+is left to finish on its own, and the timer must then be started by hand. The
+drill refuses an empty `SaveGames`. Successful drills leave their
+`.restore-drill.*` dir for you to remove; the status page leaves it out of the
+install size.
 `server-base/backup/restore-check.sh linux-game-server` verifies a
 restore without stopping anything. Rerun both after any change to the backup
 engine, `backup/sources.sh`, the pre-update gate or the save layout.
