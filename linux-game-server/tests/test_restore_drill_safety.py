@@ -280,7 +280,7 @@ class RestoreDrillRunTests(unittest.TestCase):
         self.assertEqual(self.holds(), [])
 
     def test_empty_or_malformed_birth_time_is_refused(self):
-        for birth in ('', ' ', 'unknown', '?'):
+        for birth in ('', ' ', 'unknown', '?', '2garbage', '2026-10-18garbage', '1760000000'):
             with self.subTest(birth=birth):
                 self.tearDown()
                 self.setUp()

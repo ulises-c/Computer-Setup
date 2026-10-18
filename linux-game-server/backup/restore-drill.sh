@@ -88,12 +88,13 @@ export HOME=/root
 # Device and inode alone are not enough: a freed inode is reused at once, so a
 # dir made after the original was deleted can share it. Birth time tells them
 # apart, so a filesystem that does not report it is refused before anything stops.
+readonly IDENTITY_FORMAT='^[0-9]+:[0-9]+ [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)? [+-][0-9]{4}$'
 dir_identity() {
   local id
   id="$(stat -c '%d:%i %w' -- "$1")" || return 1
-  # GNU prints `-` for an unknown birth time; anything not starting with a digit
+  # GNU prints `-` for an unknown birth time; anything but a full timestamp
   # (empty, `-`, garbage) would leave only device:inode, so it is refused.
-  [[ "$id" =~ ^[0-9]+:[0-9]+\ [0-9] ]] || return 1
+  [[ "$id" =~ $IDENTITY_FORMAT ]] || return 1
   printf '%s\n' "$id"
 }
 is_original() {
