@@ -91,6 +91,11 @@ mkdir -p "$stub"
 cat >"$stub/restic" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$RESTIC_LOG"
+if [[ "$1" == backup ]]; then
+  for arg in "$@"; do
+    [[ -f "$arg/.backup-staging" ]] && printf 'staging-marker %s\n' "$arg" >>"$RESTIC_LOG"
+  done
+fi
 case "$*" in
   *"snapshots latest"*) printf '[{"short_id":"abc12345"}]\n' ;;
   *stats*) printf '{"total_size":2048}\n' ;;
@@ -196,6 +201,7 @@ for want in "$tmp/forgejo-data" "$server/uptime-kuma/data" "$server/homepage/con
   [[ "$backup_line" == *"$want"* ]] || fail "restic backup missing $want: $backup_line"
 done
 [[ "$backup_line" != *"$server/qbittorrent/config"* ]] || fail "absent path was backed up"
+grep -qx "staging-marker $tmp/staging" "$tmp/restic.log" || fail "staging dir backed up without its .backup-staging marker"
 grep -q 'sqlite snapshot: uptime-kuma/data/kuma.db' <<<"$out" || fail "sqlite db not staged"
 grep -q 'consistent copy: stopping filebrowser briefly' <<<"$out" || fail "BoltDB owner not stopped: $out"
 grep -q 'raw copy with filebrowser stopped: filebrowser/database/filebrowser.db' <<<"$out" \
@@ -776,11 +782,21 @@ cat >"$rc/bin/restic" <<'EOF'
 case "$1" in
   snapshots) printf '[{"short_id":"abcdef","time":"2026-10-18T00:00:00"}]' ;;
   stats) printf '{"total_size":10}' ;;
-  ls) printf '{"type":"file"}\n{"type":"file"}\n' ;;
+  ls)
+    n=3
+    [[ -z "${RC_NO_MARKER:-}" ]] || n=$((n - 1))
+    [[ -z "${RC_FOREIGN:-}" ]] || n=$((n + 2))
+    for ((i = 0; i < n; i++)); do printf '{"type":"file"}\n'; done ;;
   restore)
     t="$4/${RC_STAGING:-x-staging}"; mkdir -p "$t/sqlite"
+    [[ -n "${RC_NO_MARKER:-}" ]] || printf 'computer-setup backup staging\n' >"$t/.backup-staging"
     printf 'SQLite format 3\0' >"$t/sqlite/db.sqlitebak"
-    (cd "$t/sqlite" && sha256sum db.sqlitebak >db.sqlitebak.sha256) ;;
+    (cd "$t/sqlite" && sha256sum db.sqlitebak >db.sqlitebak.sha256)
+    if [[ -n "${RC_FOREIGN:-}" ]]; then
+      mkdir -p "$4/srv/service/archive"
+      printf 'SQLite format 3\0' >"$4/srv/service/archive/old.sqlitebak"
+      printf 'not a checksum line\n' >"$4/srv/service/archive/old.sha256"
+    fi ;;
 esac
 EOF
 cat >"$rc/bin/sqlite3" <<'EOF'
@@ -799,7 +815,7 @@ chmod +x "$rc/bin/"*
 out="$(PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)" || fail "restore-check control failed: $out"
 grep -q 'integrity_check: 1' <<<"$out" && grep -q 'verified: 1' <<<"$out" && grep -q PASSED <<<"$out" \
   || fail "restore-check control did not verify both checks: $out"
-for scan in '*.sqlitebak' '*.sha256'; do
+for scan in .backup-staging '*.sqlitebak' '*.sha256'; do
   if out="$(RC_FIND_FAIL="$scan" PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)"; then
     fail "restore-check passed after its $scan scan failed: $out"
   fi
@@ -821,6 +837,23 @@ for staging in x-staging staging var/tmp/mybackup; do
     || fail "restore-check rejected a sound database staged under $staging: $out"
   grep -q 'integrity_check: 1' <<<"$out" || fail "database under $staging was not checked: $out"
 done
+# A service's own *.sqlitebak or *.sha256 outside staging is not judged: a
+# corrupt one does not fail a sound snapshot, and none is counted.
+cat >"$rc/bin/sqlite3" <<'EOF'
+#!/usr/bin/env bash
+[[ "$*" != */srv/service/* && -z "${SQLITE_CORRUPT:-}" ]] || { printf 'database disk image is malformed\n'; exit 0; }
+printf 'ok\n'
+exit "${SQLITE_EXIT:-0}"
+EOF
+out="$(RC_FOREIGN=1 PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)" \
+  || fail "restore-check judged a corrupt file outside staging: $out"
+grep -q 'integrity_check: 1 ' <<<"$out" && grep -q 'verified: 1$' <<<"$out" \
+  || fail "files outside staging were counted: $out"
+# A snapshot from before the staging marker cannot say what is staged.
+if out="$(RC_NO_MARKER=1 PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)"; then
+  fail "restore-check passed a snapshot with no staging marker: $out"
+fi
+grep -q 'has no staging marker' <<<"$out" || fail "missing staging marker not reported: $out"
 # A header that cannot be read is not "not SQLite", and a SQLite file with no
 # sqlite3 to check it is not verified: neither may end in PASSED.
 real_cmp="$(command -v cmp)"

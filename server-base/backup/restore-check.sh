@@ -74,13 +74,22 @@ log "restored $got_files files ($want_bytes bytes)"
 # directly would leave the counts at zero and still print PASSED.
 scan_list="$(mktemp "$scratch_parent/restore-check-scan.XXXXXX")"
 scan_into_list() {
-  find "$scratch" "$@" -print0 >"$scan_list" || die "cannot scan the restored tree; nothing was verified"
+  find "$@" -print0 >"$scan_list" || die "cannot scan the restored tree; nothing was verified"
 }
 
-# Found by the .sqlitebak suffix every staged copy gets, not by the staging
-# directory's name: STAGING_DIR is configurable.
+# Staged copies are only verified inside the staging tree backup.sh marked in
+# this snapshot (STAGING_DIR is configurable, and a backed-up service may hold
+# its own *.sqlitebak or *.sha256 files that are not ours to judge).
+scan_into_list "$scratch" -name .backup-staging -type f
+staging_roots=()
+while IFS= read -r -d '' marker; do
+  staging_roots+=("${marker%/.backup-staging}")
+done <"$scan_list"
+(( ${#staging_roots[@]} > 0 )) \
+  || die "snapshot $snapshot has no staging marker (made by an older backup.sh); run a backup, then check again"
+
 checked=0 raw=0
-scan_into_list -name '*.sqlitebak' -type f
+scan_into_list "${staging_roots[@]}" -name '*.sqlitebak' -type f
 while IFS= read -r -d '' db; do
   # backup.sh falls back to a raw copy for non-SQLite *.db files (e.g. BoltDB),
   # still with the .sqlitebak suffix; only real SQLite files can be checked.
@@ -102,7 +111,7 @@ done <"$scan_list"
 log "sqlite snapshots passing integrity_check: $checked (raw non-SQLite copies: $raw)"
 
 sums=0
-scan_into_list -name '*.sha256' -type f
+scan_into_list "${staging_roots[@]}" -name '*.sha256' -type f
 while IFS= read -r -d '' sidecar; do
   (cd "$(dirname "$sidecar")" && sha256sum --quiet -c "$(basename "$sidecar")") \
     || die "checksum mismatch: ${sidecar#"$scratch"}"

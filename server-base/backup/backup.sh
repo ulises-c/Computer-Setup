@@ -309,6 +309,9 @@ done
 umask 077
 rm -rf "$STAGING_DIR"
 install -d -m 700 "$STAGING_DIR/envs" "$STAGING_DIR/sqlite"
+# Marks this tree as staging inside the snapshot, so restore-check verifies
+# staged copies wherever STAGING_DIR was, and nothing else.
+printf 'computer-setup backup staging\n' >"$STAGING_DIR/.backup-staging"
 STAGING_READY=true
 
 # Live SQLite files copied with the online .backup API (consistent, no downtime).

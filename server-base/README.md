@@ -188,7 +188,9 @@ Restore checks never touch live data:
 `sudo bash server-base/backup/restore-check.sh <host-dir> [--second] [--keep]`
 runs `restic check`, restores the host's latest snapshot into a root-only scratch
 dir, and verifies the file count, staged SQLite snapshots (`integrity_check`) and
-staged copies with a `.sha256` sidecar. The game server also has
+staged copies with a `.sha256` sidecar. It finds them through the
+`.backup-staging` marker the engine writes into its staging dir, so it refuses a
+snapshot made before that marker existed: run a backup first. The game server also has
 `linux-game-server/backup/restore-drill.sh`, which loads a restored world in the
 game (see its README). Rerun them after any change to the backup engine or a
 host's `sources.sh`.
