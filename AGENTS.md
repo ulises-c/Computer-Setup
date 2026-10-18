@@ -119,18 +119,78 @@ These apply to every agent (the repo is almost entirely Bash).
 
 ## Privacy & Security
 
-This repo is **public**. Never commit identifying or secret information.
+This repo is **public**. Never commit identifying or secret information. Treat
+everything that leaves this checkout as published: tracked files, commit
+messages, branch names, PR titles and bodies, review comments and CI logs.
 
-- Keep these out of tracked files entirely: tailnet names / MagicDNS suffixes
-  (`tailXXXXXX.ts.net`), real hostnames, server IPs, usernames, emails, tokens,
-  auth keys, and personal absolute paths.
-- Put any machine-specific or private value in a `.env` file (gitignored
-  repo-wide) and ship a committed `.env.example` with placeholders instead —
-  e.g. `linux-server/forgejo/.env.example`, `macos-server/forgejo-runner/.env.example`.
-  Scripts read these via `${VAR:-<placeholder>}` and source a local `.env` when
-  present; they never hardcode the real value.
-- In docs and configs use placeholders: `<tailnet>`, `<server-ip>`,
-  `<username>`, `<hostname>`. Default to `.env` whenever a value is
-  identifying — prefer one more env var over leaking a real value.
-- When editing, scan the diff for accidentally introduced real identifiers
-  before committing.
+### What never goes in
+
+- Tailnet names and MagicDNS suffixes (`tail<id>.ts.net`), real hostnames
+  (short or full), server, LAN and tailnet IPs, MAC addresses, SSIDs.
+- Login usernames, emails, personal absolute paths (`/home/<user>`,
+  `/Users/<user>`), GPG/SSH key IDs and fingerprints.
+- Tokens, auth keys, passwords, webhook URLs, private keys, `.env` contents.
+
+The repo owner's public handle in links to this repo (`github.com/<owner>/…`)
+is already public and fine. A value that is identifying stays out even when it
+seems harmless.
+
+### Where private values live instead
+
+- In a `.env` file (gitignored repo-wide), with a committed `.env.example`
+  holding placeholders — e.g. `linux-server/forgejo/.env.example`,
+  `macos-server/forgejo-runner/.env.example`. Scripts read these via
+  `${VAR:-<placeholder>}` and source a local `.env` when present; they never
+  hardcode the real value. Prefer one more env var over leaking a real value.
+- Systemd units and other root-owned files get real paths rendered in at setup
+  time (`@PLACEHOLDER@` templates), never committed with them.
+
+### Placeholders and fixtures
+
+- Docs and configs: `<tailnet>`, `<hostname>`, `<server-ip>`, `<username>`,
+  `<game-server>`, `<pi-hostname>`. Name hosts by role, not by hostname.
+- Example values that are reserved and can never be real: `example.com`,
+  `*.example`, `*.test`, `example.ts.net`, `192.0.2.0/24`, `198.51.100.0/24`,
+  `203.0.113.0/24`. Tests may use private-range IPs, but only made-up ones.
+
+### Agent-written records and pasted output
+
+Most leaks come from text an agent writes, not code. Review notes
+(`docs/reviews/`), verification logs, `docs/CHANGELOG.md`, `docs/TODO.md`
+entries, commit messages and PR descriptions are tracked content too.
+
+- Never paste raw command output (`hostname`, `tailscale status`, `ip addr`,
+  `systemctl status`, `journalctl`, `docker ps`, paths from `pwd`, prompts)
+  into any of them. Summarise it, or redact every identifier to a placeholder
+  first.
+- Report verification by role and result ("game server: `systemd-analyze
+  verify` passed"), not by machine name.
+- When an agent scans for leaks, it reports `file:line` and the kind of match,
+  never the matched value, so the scan itself cannot leak it into a transcript.
+
+### Checks
+
+- `scripts/check-privacy.py` runs as a pre-commit hook on staged changes and on
+  the commit message, and in CI on every added line and commit message of a
+  push or PR. Install both hooks once per clone:
+  `pre-commit install --hook-type pre-commit --hook-type commit-msg`.
+- Generic patterns cannot know your real names. Copy `.privacy-denylist.example`
+  to `.privacy-denylist` (gitignored) and list the real hostnames, tailnet,
+  usernames and emails; CI reads the same list from the `PRIVACY_DENYLIST`
+  repository secret. Without it the check says so on every run.
+- A deliberately public value on one line can be marked `privacy-check: allow`.
+  Use it rarely, and say why in the commit message.
+- Before opening or updating a PR, also run
+  `python3 scripts/check-privacy.py --file <pr-body.md>` on the description.
+- Before committing changes to `.env` handling, `custom` `install_command` shell
+  execution, or path/network code, perform a security review (see
+  Conventions).
+
+### If something leaks
+
+1. Replace it in a new commit straight away; do not wait for the PR.
+2. If it is a secret (token, key, password, webhook), rotate it first. A
+   rewrite does not un-publish it: forks, PR refs, CI logs and clones keep it.
+3. For an identifier, tell the owner and let them decide whether to rewrite
+   history. Do not force-push or rewrite on your own.
+4. Add the value to `.privacy-denylist` so it cannot come back.
