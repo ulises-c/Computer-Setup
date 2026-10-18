@@ -165,6 +165,16 @@ class ProducerTests(unittest.TestCase):
         self.assertIsNone(status['memory_bytes'])
 
 
+    def test_unreadable_restore_drill_hold_does_not_lose_the_size(self):
+        # A sudo drill leaves Saved/.restore-drill.* root-only; the producer runs as the game user.
+        hold = self.install / 'RSDragonwilds/Saved/.restore-drill.abc123'
+        (hold / 'SaveGames').mkdir(parents=True)
+        hold.chmod(0)
+        self.addCleanup(hold.chmod, 0o700)
+        status = self.run_producer()
+        self.assertGreater(status['install_bytes'], 8192)
+        self.assertEqual(status['world_count'], 2)
+
     def test_partial_installation_size_is_unknown(self):
         du = self.root / 'bin/du'
         du.write_text('#!/bin/sh\nprintf "4096\\tpartial\\n"\nexit 1\n')

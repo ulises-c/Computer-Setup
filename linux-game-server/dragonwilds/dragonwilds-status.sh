@@ -142,8 +142,10 @@ if command -v tailscale >/dev/null 2>&1; then
 fi
 
 # Allocated on-disk footprint of this game's installation, including Saved;
-# never substitute host filesystem free space for game-specific storage.
-if ! install_bytes="$(du -s -B1 -- "$DRAGONWILDS_INSTALL_DIR" 2>/dev/null | cut -f1)"; then
+# never substitute host filesystem free space for game-specific storage. Restore
+# drills keep the original world in root-only Saved/.restore-drill.* dirs this
+# unprivileged producer cannot read; they are left out rather than losing the total.
+if ! install_bytes="$(du -s -B1 --exclude='.restore-drill.*' -- "$DRAGONWILDS_INSTALL_DIR" 2>/dev/null | cut -f1)"; then
   install_bytes=null
 fi
 [[ "$install_bytes" =~ ^[0-9]+$ ]] || install_bytes=null
