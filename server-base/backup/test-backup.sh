@@ -896,6 +896,13 @@ if out="$(RC_SNAP_STAGING=/var/tmp/test-backup-staging PATH="$rc/bin:$PATH" bash
   fail "restore-check followed the checkout instead of the installed bundle: $out"
 fi
 grep -q 'no staging marker at /srv/installed-staging' <<<"$out" || fail "bundle staging path not used: $out"
+# A checkout whose BACKUP_UNIT no longer matches the installed bundle is
+# refused, not silently checked against the checkout's own config.
+mv "$rc/bundle/test-backup" "$rc/bundle/old-backup"
+if out="$(PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)"; then
+  fail "restore-check fell back to the checkout while another bundle is installed: $out"
+fi
+grep -q 'another backup is installed' <<<"$out" || fail "mismatched BACKUP_UNIT not reported: $out"
 rm -rf "$rc/bundle"
 # A header that cannot be read is not "not SQLite", and a SQLite file with no
 # sqlite3 to check it is not verified: neither may end in PASSED.

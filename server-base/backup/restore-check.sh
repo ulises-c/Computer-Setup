@@ -37,6 +37,8 @@ bundle_root=/usr/local/libexec/computer-setup-backup
 config_dir="$bundle_root/${unit%.service}"
 if [[ -d "$config_dir" ]]; then
   log "using the installed backup config in $config_dir"
+elif compgen -G "$bundle_root/*/" >/dev/null; then
+  die "the checkout's $unit has no installed bundle, but another backup is installed under $bundle_root; rerun setup.sh so they agree"
 else
   config_dir="$host_dir/backup"
   log "no installed backup bundle; using $config_dir"
