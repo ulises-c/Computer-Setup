@@ -774,10 +774,12 @@ done
 rc="$tmp/restore-check"
 mkdir -p "$rc/bin" "$rc/root" "$rc/host/backup"
 printf 'RESTIC_REPOSITORY=/nonexistent\n' >"$rc/host/backup/.env"
-printf 'BACKUP_NAME=test\n' >"$rc/host/backup/sources.sh"
+printf 'BACKUP_NAME=test\nBACKUP_UNIT=test-backup.service\n' >"$rc/host/backup/sources.sh"
 sed -e 's|\[\[ "\$EUID" -eq 0 \]\]|true|' -e "s|^scratch_parent=/root|scratch_parent=$rc/root|" \
+  -e "s|^bundle_root=/usr/local/libexec/computer-setup-backup|bundle_root=$rc/bundle|" \
   "$SCRIPT_DIR/restore-check.sh" >"$rc/restore-check.sh"
 grep -q "scratch_parent=$rc/root" "$rc/restore-check.sh" || fail "restore-check fixture did not redirect scratch"
+grep -q "bundle_root=$rc/bundle" "$rc/restore-check.sh" || fail "restore-check fixture did not redirect the bundle"
 cat >"$rc/bin/restic" <<'EOF'
 #!/usr/bin/env bash
 case "$1" in
@@ -881,6 +883,20 @@ if out="$(RC_STAGING_NOT_IN_PATHS=1 PATH="$rc/bin:$PATH" bash "$rc/restore-check
   fail "restore-check accepted a staging dir that is not a snapshot path: $out"
 fi
 grep -q 'has no staging marker' <<<"$out" || fail "staging dir outside the snapshot paths not reported: $out"
+# An installed bundle is what the backup unit runs, so its .env wins over a
+# checkout that has drifted: staging is looked for where the unit puts it.
+mkdir -p "$rc/bundle/test-backup"
+printf 'RESTIC_REPOSITORY=/nonexistent\nSTAGING_DIR=/srv/installed-staging\n' >"$rc/bundle/test-backup/.env"
+cp "$rc/host/backup/sources.sh" "$rc/bundle/test-backup/sources.sh"
+out="$(STAGING_DIR=/srv/installed-staging PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)" \
+  || fail "restore-check did not use the installed bundle's STAGING_DIR: $out"
+grep -q 'using the installed backup config' <<<"$out" && grep -q 'integrity_check: 1' <<<"$out" \
+  || fail "installed bundle config not used: $out"
+if out="$(RC_SNAP_STAGING=/var/tmp/test-backup-staging PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" 2>&1)"; then
+  fail "restore-check followed the checkout instead of the installed bundle: $out"
+fi
+grep -q 'no staging marker at /srv/installed-staging' <<<"$out" || fail "bundle staging path not used: $out"
+rm -rf "$rc/bundle"
 # A header that cannot be read is not "not SQLite", and a SQLite file with no
 # sqlite3 to check it is not verified: neither may end in PASSED.
 real_cmp="$(command -v cmp)"

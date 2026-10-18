@@ -26,7 +26,22 @@ for arg in "$@"; do
 done
 [[ -n "$host_dir" ]] || die "usage: $0 <host-dir> [--second] [--keep]"
 [[ "$EUID" -eq 0 ]] || die "run with sudo (repositories are reached as root)"
-env_file="$host_dir/backup/.env"
+# Check what the installed backup unit actually uses: setup.sh copies .env and
+# sources.sh into a root-owned bundle, and the checkout can drift from it until
+# setup is rerun. Only an uninstalled host falls back to the checkout.
+unit="$(sed -n 's/^BACKUP_UNIT=//p' "$host_dir/backup/sources.sh")" \
+  || die "cannot read BACKUP_UNIT from $host_dir/backup/sources.sh"
+unit="${unit##*$'\n'}"
+[[ "$unit" =~ ^[a-z][a-z-]*\.service$ ]] || die "bad BACKUP_UNIT in $host_dir/backup/sources.sh"
+bundle_root=/usr/local/libexec/computer-setup-backup
+config_dir="$bundle_root/${unit%.service}"
+if [[ -d "$config_dir" ]]; then
+  log "using the installed backup config in $config_dir"
+else
+  config_dir="$host_dir/backup"
+  log "no installed backup bundle; using $config_dir"
+fi
+env_file="$config_dir/.env"
 [[ -f "$env_file" ]] || die "missing $env_file"
 for tool in restic jq; do
   command -v "$tool" >/dev/null || die "$tool is required"
@@ -42,10 +57,10 @@ if [[ "$second" == true ]]; then
 fi
 [[ -n "${RESTIC_REPOSITORY:-}" ]] || die "RESTIC_REPOSITORY is not set"
 # The staging dir the engine uses, worked out the same way backup.sh does.
-backup_name="$(sed -n 's/^BACKUP_NAME=//p' "$host_dir/backup/sources.sh")" \
-  || die "cannot read BACKUP_NAME from $host_dir/backup/sources.sh"
+backup_name="$(sed -n 's/^BACKUP_NAME=//p' "$config_dir/sources.sh")" \
+  || die "cannot read BACKUP_NAME from $config_dir/sources.sh"
 backup_name="${backup_name##*$'\n'}"
-[[ "$backup_name" =~ ^[a-z][a-z-]*$ ]] || die "bad BACKUP_NAME in $host_dir/backup/sources.sh"
+[[ "$backup_name" =~ ^[a-z][a-z-]*$ ]] || die "bad BACKUP_NAME in $config_dir/sources.sh"
 staging_dir="${STAGING_DIR:-/var/tmp/$backup_name-backup-staging}"
 export HOME=/root
 host="$(hostname)"

@@ -453,3 +453,10 @@ Shared layer for every server; see [server-base/README.md](../server-base/README
       `main`). `scripts/dryrun-smoke.sh` supplies a fake `brew`, so it never
       takes that branch. Guard the download itself and add a no-Homebrew
       dry-run case that asserts `curl` is never called.
+- [ ] Host `setup.sh --dry-run` sources the service `.env` before it checks the
+      dry-run flag (found reviewing #106): `linux-game-server/adguard/setup.sh`,
+      and on `main` already `linux-server/ups/setup.sh` and both
+      `dragonwilds/setup.sh`. Any command in that operator-written file runs
+      during a preview. Read the needed keys without executing the file (as
+      `server-base/backup/setup.sh` does), and add a dry-run test with a
+      side-effecting `.env`.
