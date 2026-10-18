@@ -92,6 +92,27 @@ jobs:
           node --check linux-game-server/homepage/config/custom.js
           node --test linux-game-server/tests/test_grouped_topbar.cjs linux-game-server/tests/test_grouped_loading.cjs
 
+  privacy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: No identifying values in added lines or commit messages
+        # PRIVACY_DENYLIST is an optional repository secret holding the real
+        # values; without it only the generic patterns run. Pull requests from
+        # forks do not get secrets.
+        env:
+          PRIVACY_DENYLIST: ${{ secrets.PRIVACY_DENYLIST }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [[ -z "$BASE" || "$BASE" =~ ^0+$ ]]; then BASE="$(git rev-list --max-parents=0 HEAD | tail -1)"; fi
+          python3 scripts/check-privacy.py --range "$BASE..HEAD"
+
+      - name: Test the privacy check
+        run: python3 -m unittest -v scripts/test_check_privacy.py
+
   dryrun-smoke:
     runs-on: ubuntu-latest
     steps:

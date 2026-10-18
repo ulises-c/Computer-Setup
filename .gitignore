@@ -1,6 +1,8 @@
 .env
 .env.*
 !.env.example
+# Real hostnames, tailnet, usernames for scripts/check-privacy.py (see .privacy-denylist.example)
+.privacy-denylist
 linux-desktop/llama-telemetry/*.env
 linux-server/llama-telemetry/*.env
 .DS_Store
