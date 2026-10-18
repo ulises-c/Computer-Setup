@@ -257,6 +257,32 @@ out="$(FB_FILE_MOUNT=1 PATH="$stub:$PATH" RESTIC_LOG="$tmp/restic.log" bash "$se
 grep -q 'raw copy with filebrowser stopped: filebrowser/database/filebrowser.db' <<<"$out" \
   || fail "owner of a file-mounted BoltDB not stopped: $out"
 
+# A failed database or .env scan must fail the run before any snapshot or
+# prune, not back up (and prune) without the files it missed.
+find_fail="$tmp/find-fail"
+mkdir -p "$find_fail"
+cat >"$find_fail/find" <<EOF
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  [[ "\$arg" == "\$FIND_FAIL_ON" ]] && { $(command -v find) "\$@"; exit 1; }
+done
+exec $(command -v find) "\$@"
+EOF
+chmod +x "$find_fail/find"
+for scan in '*.sqlite3' .env; do
+  : >"$DOCKER_LOG"
+  : >"$tmp/restic.log"
+  if out="$(FIND_FAIL_ON="$scan" PATH="$find_fail:$stub:$PATH" RESTIC_LOG="$tmp/restic.log" bash "$server/backup/backup.sh" 2>&1)"; then
+    fail "a failed $scan scan did not fail the backup: $out"
+  fi
+  grep -q "cannot list $([[ $scan == .env ]] && printf %s "$server" || printf %s "$tmp")" <<<"$out" \
+    || fail "failed $scan scan not reported: $out"
+  if grep -qE '^(backup|forget)' "$tmp/restic.log"; then fail "snapshot or prune after a failed $scan scan"; fi
+  [[ "$(jq -r '.status' "$server/backup/status/backup-status.json")" == failed ]] \
+    || fail "failed $scan scan not recorded as failed"
+done
+[[ ! -e "$tmp/staging" ]] || fail "staging dir left behind after a failed scan"
+
 # Once the player-log dir is backed up, its lock must exist and be root-owned 0600.
 mkdir -p "$player_log"
 if out="$(PATH="$stub:$PATH" RESTIC_LOG="$tmp/restic.log" bash "$server/backup/backup.sh" 2>&1)"; then

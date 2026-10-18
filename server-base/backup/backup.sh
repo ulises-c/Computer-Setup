@@ -317,9 +317,16 @@ staged_db_path() {
   local rel="${1#"$HOST_DIR"/}"
   printf '%s/sqlite/%s.sqlitebak' "$STAGING_DIR" "${rel#/}"
 }
+# find runs to a file, not a process substitution, so a failed scan fails the
+# backup instead of silently leaving files out of a run that then prunes.
+FIND_LIST="$STAGING_DIR/.find-list"
+find_into_list() {
+  find "$@" -print0 >"$FIND_LIST" || die "cannot list $1; refusing a backup that may omit files"
+}
 RAW_COPIES=()
 for root in ${SOURCES[@]+"${SOURCES[@]}"}; do
   [[ -d "$root" ]] || continue
+  find_into_list "$root" -type f \( -name '*.db' -o -name '*.sqlite' -o -name '*.sqlite3' \)
   while IFS= read -r -d '' db; do
     command -v sqlite3 >/dev/null || die "sqlite3 not installed (apt install sqlite3); needed for $db"
     dest="$(staged_db_path "$db")"
@@ -329,8 +336,9 @@ for root in ${SOURCES[@]+"${SOURCES[@]}"}; do
     else
       RAW_COPIES+=("$db")
     fi
-  done < <(find "$root" -type f \( -name '*.db' -o -name '*.sqlite' -o -name '*.sqlite3' \) -print0)
+  done <"$FIND_LIST"
 done
+rm -f "$FIND_LIST"
 
 # Non-SQLite *.db files (BoltDB: Filebrowser, AdGuard) can only be copied raw;
 # stop the running container that bind-mounts each one so the copy is clean.
@@ -445,10 +453,12 @@ if declare -F stage_extra >/dev/null; then
 fi
 
 # Capture each service's .env (secrets needed to restore); the repo is encrypted.
+find_into_list "$HOST_DIR" -mindepth 2 -maxdepth 2 -name .env
 while IFS= read -r -d '' envf; do
   svc="$(basename "$(dirname "$envf")")"
   install -m 600 "$envf" "$STAGING_DIR/envs/$svc.env"
-done < <(find "$HOST_DIR" -mindepth 2 -maxdepth 2 -name .env -print0)
+done <"$FIND_LIST"
+rm -f "$FIND_LIST"
 
 # --- backup -----------------------------------------------------------------
 if ! restic cat config >/dev/null 2>&1; then
