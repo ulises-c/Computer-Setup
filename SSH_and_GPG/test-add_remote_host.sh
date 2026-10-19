@@ -2,7 +2,9 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SCRIPT="$REPO_ROOT/SSH_and_GPG/add_remote_host.sh"
+# SCRIPT_UNDER_TEST lets test-add_remote_windows_host.sh run these config and
+# trust cases against add_remote_windows_host.sh, which shares that code.
+SCRIPT="${SCRIPT_UNDER_TEST:-$REPO_ROOT/SSH_and_GPG/add_remote_host.sh}"
 TMP_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TMP_ROOT"' EXIT
 SSH_BIN="$(command -v ssh)"

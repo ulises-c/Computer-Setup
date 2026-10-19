@@ -99,6 +99,28 @@ Re-running for an existing alias keeps the addresses it already has, after the o
 
 ---
 
+### `add_remote_windows_host.sh`
+
+Same as `add_remote_host.sh` (prompts, several addresses, host-key pinning, the managed `~/.ssh/config` block, `--add-address`) for a Windows machine running OpenSSH Server. Both scripts write the same managed block, so either can update an alias.
+
+`add_remote_host.sh` cannot copy a key to Windows: OpenSSH for Windows runs remote commands through `cmd.exe`, so its `mkdir`/`chmod`/`cat >>` command always fails. This script sends one `powershell -EncodedCommand` instead, which works whether the server's default shell is `cmd.exe` or PowerShell, and checks the result the same way.
+
+- **Non-admin account:** the key goes in `%USERPROFILE%\.ssh\authorized_keys`.
+- **Administrators:** the default `sshd_config` (`Match Group administrators`) reads `%ProgramData%\ssh\administrators_authorized_keys` instead, and ignores it unless only Administrators and SYSTEM can access it. The script writes the key there and sets that ACL with `icacls`.
+- The key is added once (re-runs do not duplicate it), as UTF-8 without BOM. An existing UTF-16 key file (what `echo … >` writes in Windows PowerShell 5) is refused, because sshd cannot read it.
+- It refuses, before writing anything, when the server banner shows a non-Windows SSH server (set `SKIP_OS_CHECK=1` to skip that check). A missing banner is not an error.
+- When the copy fails, it prints the PowerShell commands to run on the Windows machine.
+- Needs `iconv` on this machine. The `Match exec "nc …"` address probes run here, so several addresses work as with `add_remote_host.sh`.
+
+**Usage:**
+```bash
+bash add_remote_windows_host.sh
+HOST_ALIAS="winpc" REMOTE_HOSTS="winpc.local <server-ip>" REMOTE_USER="<username>" bash add_remote_windows_host.sh
+bash add_remote_windows_host.sh --add-address winpc <wifi-ip>
+```
+
+---
+
 ### `git-add-ssh-signer.sh`
 
 Registers an SSH public key as a trusted Git commit signer and optionally configures a specific repo to sign with it.
