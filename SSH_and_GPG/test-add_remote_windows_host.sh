@@ -5,24 +5,43 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT="$REPO_ROOT/SSH_and_GPG/add_remote_windows_host.sh"
 PWSH_IMAGE="mcr.microsoft.com/powershell:latest"
 
-# The config rewrite and host-key pinning are shared with add_remote_host.sh.
-SCRIPT_UNDER_TEST="$SCRIPT" bash "$REPO_ROOT/SSH_and_GPG/test-add_remote_host.sh" > /dev/null
-
 TMP_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TMP_ROOT"' EXIT
+
+# The config rewrite and host-key pinning are shared with add_remote_host.sh.
+# Its ssh stub exits 0 without output, so for a key copy this adds the success
+# line the installer prints, which the script waits for.
+mkdir -p "$TMP_ROOT/shared/bin"
+cat > "$TMP_ROOT/shared/bin/ssh" <<'EOF'
+#!/usr/bin/env bash
+PATH="${PATH#*:}"
+ssh "$@" || exit
+[[ "$*" != *powershell* ]] || printf 'Key added to authorized_keys\r\n'
+EOF
+# shellcheck disable=SC2016 # $PATH and $@ belong to the wrapper.
+printf '#!/usr/bin/env bash\nPATH="%s:$PATH" exec bash "%s" "$@"\n' "$TMP_ROOT/shared/bin" "$SCRIPT" > "$TMP_ROOT/shared/script"
+chmod +x "$TMP_ROOT/shared/bin/ssh"
+SCRIPT_UNDER_TEST="$TMP_ROOT/shared/script" bash "$REPO_ROOT/SSH_and_GPG/test-add_remote_host.sh" > /dev/null
 SSH_BIN="$(command -v ssh)"
 STUB_BIN="$TMP_ROOT/bin"
 mkdir -p "$STUB_BIN"
 
-# Config evaluation (-G) goes to the real client; connections are only logged.
+# Config evaluation (-G) goes to the real client; connections are only logged,
+# and the stdin of connection N (line N of the log) is kept in $SSH_LOG.in.N.
+# A copy prints what the PowerShell prints on success.
 #   SSH_FAIL_FIRST=<file>  the first connection fails once (reaches the next copy method)
 #   SSH_FAIL=copy|keylogin|alias  that kind of connection fails
+#   SSH_COPY_OUT=none|echo|fail  a copy exits 0 but prints nothing (input cut
+#                           short) or only its input back, or prints the
+#                           success line and exits 255
 cat > "$STUB_BIN/ssh" <<EOF
 #!/usr/bin/env bash
 if [[ "\$1" == -G ]]; then
   exec "$SSH_BIN" "\$@"
 fi
 printf '%s\\n' "\$*" >> "\$SSH_LOG"
+in="\$SSH_LOG.in.\$(wc -l < "\$SSH_LOG" | tr -d ' ')"
+cat > "\$in"
 if [[ -n "\${SSH_FAIL_FIRST:-}" && ! -e "\$SSH_FAIL_FIRST" ]]; then
   : > "\$SSH_FAIL_FIRST"
   exit 1
@@ -30,6 +49,14 @@ fi
 case "\${SSH_FAIL:-}:\$*" in
   copy:*powershell* | keylogin:*IdentitiesOnly=yes*exit | alias:*' win exit') exit 255 ;;
 esac
+if [[ "\$*" == *powershell* ]]; then
+  case "\${SSH_COPY_OUT:-}" in
+    none) ;;
+    echo) cat "\$in" ;;
+    fail) printf 'Key added to authorized_keys\\r\\n'; exit 255 ;;
+    *) printf 'Key added to C:\\\\Users\\\\me\\\\.ssh\\\\authorized_keys\\r\\n' ;;
+  esac
+fi
 exit 0
 EOF
 
@@ -80,29 +107,54 @@ run_script() {
     bash "$SCRIPT" > "$CASE_HOME/out" 2>&1
 }
 
-# The PowerShell a remote command line runs: base64 -> gzip -> text.
-decode_ps() {
-  sed -E "s/.*FromBase64String\('([^']+)'\).*/\1/" | base64 -d | gzip -dc
-}
-
-# The key line the decoded PowerShell installs.
+# The key line an installer text installs: its base64 chunks, joined and decoded.
 installed_line() {
-  decode_ps | sed -nE "1s/^\\\$keyB64 = '([^']+)'\$/\1/p" | base64 -d
+  sed -n "/^\\\$keyB64 = -join @(\$/,/^)\$/p" | sed -n "s/^'\\([A-Za-z0-9+/=]*\\)'\$/\\1/p" | tr -d '\n' | base64 -d
 }
 
-COPY_RE="^-F /dev/null -o StrictHostKeyChecking=yes .*HostKeyAlias=win .*me@192\.0\.2\.10 powershell -NoProfile -NonInteractive -Command \"iex\(\(New-Object IO\.StreamReader\(\(New-Object IO\.Compression\.GZipStream\(\(New-Object IO\.MemoryStream\(,\[Convert\]::FromBase64String\('[A-Za-z0-9+/=]+'\)\)\), \[IO\.Compression\.CompressionMode\]::Decompress\)\)\)\)\.ReadToEnd\(\)\)\"$"
+# The stdin of the last copy attempt.
+copy_input() {
+  printf '%s.in.%s' "$SSH_LOG" "$(grep -n 'powershell' "$SSH_LOG" | tail -n 1 | cut -d: -f1)"
+}
 
-# Every copy is the encoded PowerShell, isolated from ~/.ssh/config and checked
-# against the pinned host key; then one login with only the new key; then the alias.
+# check_installer <name> <file> <key line>: the file is plain ASCII PowerShell
+# that installs exactly that key line: one "& { }" block with no blank line
+# inside, then two blank lines and "exit 1", ending in a newline. Nothing in it
+# decompresses or evaluates text, and the key line is only base64 data.
+check_installer() {
+  local name="$1" file="$2" line="$3"
+  [[ -s "$file" && -z "$(tail -c 1 "$file")" ]] || fail "$name: the installer is empty or has no final newline: $(od -c "$file" | tail -n 3)"
+  [[ "$(LC_ALL=C tr -d '\n -~' < "$file" | wc -c | tr -d ' ')" == 0 ]] || fail "$name: the installer is not printable ASCII"
+  [[ "$(head -n 1 "$file")" == '& {' ]] || fail "$name: the installer does not start with '& {'"
+  [[ "$(tail -n 4 "$file" | tr '\n' '|')" == '}|||exit 1|' ]] || fail "$name: the installer does not end in '}', two blank lines and 'exit 1': $(tail -n 4 "$file")"
+  [[ "$(grep -c '^[[:space:]]*$' "$file")" == 2 ]] || fail "$name: a blank line inside the installer block"
+  ! grep -Eiw 'iex|invoke-expression|encodedcommand' "$file" >/dev/null || fail "$name: the installer evaluates text"
+  ! grep -Fi -e 'GZipStream' -e "FromBase64String('" "$file" >/dev/null || fail "$name: the installer carries an encoded payload"
+  grep -F 'administrators_authorized_keys' "$file" >/dev/null || fail "$name: no admin key file"
+  [[ "$(installed_line < "$file")" == "$line" ]] || fail "$name: the installer installs a different key line: $(installed_line < "$file")"
+  sed -n "/^\\\$keyB64 = -join @(\$/,/^)\$/p" "$file" | awk 'length > 66 { exit 1 }' || fail "$name: a key data line is over 66 characters"
+}
+
+COPY_RE="^-F /dev/null -o StrictHostKeyChecking=yes .*HostKeyAlias=win .*me@192\.0\.2\.10 powershell -NoProfile -NonInteractive -Command -$"
+
+# Every copy is the fixed PowerShell command with the installer on stdin,
+# isolated from ~/.ssh/config and checked against the pinned host key; then one
+# login with only the new key; then the alias. Only copies get any stdin.
 check_flow() {
-  local name="$1" copies="$2" line
+  local name="$1" copies="$2" line n=0 conn
   line="$(head -n 1 "$CASE_HOME/.ssh/win.pub")"
   ! grep -E 'mkdir -p|grep -qF|base64 -d|Add-Content' "$SSH_LOG" >/dev/null || fail "$name: sent a Unix command"
   [[ "$(grep -c 'powershell' "$SSH_LOG")" == "$copies" ]] || fail "$name: expected $copies copy attempt(s): $(cat "$SSH_LOG")"
-  grep 'powershell' "$SSH_LOG" | grep -vE "$COPY_RE" >/dev/null && fail "$name: a copy is not isolated, strict and encoded"
-  [[ "$(grep 'powershell' "$SSH_LOG" | tail -n 1 | installed_line)" == "$line" ]] || fail "$name: the command installs a different key line"
-  grep 'powershell' "$SSH_LOG" | tail -n 1 | decode_ps | grep -F 'administrators_authorized_keys' >/dev/null ||
-    fail "$name: no admin key file"
+  grep 'powershell' "$SSH_LOG" | grep -vE "$COPY_RE" >/dev/null && fail "$name: a copy is not isolated and strict, or its command is not the fixed one"
+  while IFS= read -r conn; do
+    n=$((n + 1))
+    if [[ "$conn" == *powershell* ]]; then
+      check_installer "$name" "$SSH_LOG.in.$n" "$line"
+      cmp -s "$SSH_LOG.in.$n" "$(copy_input)" || fail "$name: copy attempts got different installers"
+    else
+      [[ ! -s "$SSH_LOG.in.$n" ]] || fail "$name: connection $n ($conn) got input"
+    fi
+  done < "$SSH_LOG"
   grep -E "^-F /dev/null -o StrictHostKeyChecking=yes .*HostKeyAlias=win .*-o BatchMode=yes -o IdentitiesOnly=yes -o IdentityFile=$CASE_HOME/.ssh/win -o PasswordAuthentication=no -o PubkeyAcceptedAlgorithms=-\*-cert-v01@openssh\.com .*PreferredAuthentications=publickey me@192\.0\.2\.10 exit$" \
     "$SSH_LOG" >/dev/null || fail "$name: no login check with only the new key: $(cat "$SSH_LOG")"
   [[ "$(tail -n 1 "$SSH_LOG")" == *' win exit' ]] || fail "$name: the alias test is not last"
@@ -111,7 +163,10 @@ check_flow() {
 }
 
 new_home banner
+SECONDS=0
 run_script SCAN_BANNER='SSH-2.0-OpenSSH_for_Windows_9.5' < /dev/null || fail "banner: failed: $(cat "$CASE_HOME/out")"
+# The copy's output is captured, and its 60 s watchdog must not hold that open.
+((SECONDS < 30)) || fail "banner: took $SECONDS s; the copy waited for its timeout"
 check_flow banner 1
 grep -F 'Key copied (BatchMode' "$CASE_HOME/out" >/dev/null || fail "banner: no BatchMode copy"
 
@@ -143,44 +198,58 @@ fi
 grep -F 'Connection test failed' "$CASE_HOME/out" >/dev/null || fail "alias-fails: wrong error: $(cat "$CASE_HOME/out")"
 ! grep -F 'Done.' "$CASE_HOME/out" >/dev/null || fail "alias-fails: printed Done"
 
-# Every copy method failing exits non-zero and prints the same encoded command to run by hand.
+# Every copy method failing exits non-zero and prints the installer it sent,
+# as plain PowerShell, with the fixed command to feed it to by hand.
 new_home manual
 if run_script SSH_FAIL=copy < /dev/null; then
   fail "manual: exited 0"
 fi
 grep -F 'Automatic key copy failed.' "$CASE_HOME/out" >/dev/null || fail "manual: no failure message"
-manual_cmd="$(grep -E '^powershell -NoProfile -NonInteractive -Command "iex' "$CASE_HOME/out" || true)"
-[[ -n "$manual_cmd" ]] || fail "manual: no command printed: $(cat "$CASE_HOME/out")"
-[[ "$(installed_line <<< "$manual_cmd")" == "$(head -n 1 "$CASE_HOME/.ssh/win.pub")" ]] || fail "manual: command installs a different key"
+[[ "$(grep -c 'powershell' "$SSH_LOG")" == 3 ]] || fail "manual: expected 3 copy attempts: $(cat "$SSH_LOG")"
+sed -n '/^----- BEGIN add-key\.ps1 -----$/,/^----- END add-key\.ps1 -----$/p' "$CASE_HOME/out" | sed '1d;$d' > "$CASE_HOME/manual.ps1"
+check_installer manual "$CASE_HOME/manual.ps1" "$(head -n 1 "$CASE_HOME/.ssh/win.pub")"
+cmp -s "$CASE_HOME/manual.ps1" "$(copy_input)" || fail "manual: printed a different installer than it sent"
+grep -F 'Get-Content -Raw add-key.ps1 | powershell -NoProfile -NonInteractive -Command -' "$CASE_HOME/out" >/dev/null ||
+  fail "manual: no command to run it: $(cat "$CASE_HOME/out")"
 ! grep -F 'Add-Content' "$CASE_HOME/out" >/dev/null || fail "manual: printed hand-written commands"
 ! grep -F 'Done.' "$CASE_HOME/out" >/dev/null || fail "manual: printed Done"
+
+# A copy that exits 0 without the installer's own success line (input cut
+# short, so PowerShell ran nothing; or a remote that only echoes its input),
+# or that exits non-zero after it, is a failed copy, never "Key copied".
+for mode in none echo fail; do
+  new_home "copy-out-$mode"
+  if run_script SSH_COPY_OUT="$mode" < /dev/null; then
+    fail "copy-out-$mode: exited 0"
+  fi
+  [[ "$(grep -c 'powershell' "$SSH_LOG")" == 3 ]] || fail "copy-out-$mode: expected 3 copy attempts: $(cat "$SSH_LOG")"
+  grep -F 'Automatic key copy failed.' "$CASE_HOME/out" >/dev/null || fail "copy-out-$mode: no failure message: $(cat "$CASE_HOME/out")"
+  ! grep -E 'Key copied|Done\.' "$CASE_HOME/out" >/dev/null || fail "copy-out-$mode: reported success"
+  ! grep -F 'IdentitiesOnly=yes' "$SSH_LOG" >/dev/null || fail "copy-out-$mode: went on to the key login"
+done
 
 # A reused key whose comment would be PowerShell syntax travels only as data.
 new_home inject
 ssh-keygen -q -t ed25519 -N '' -C "o’brien'; Write-Output INJECTED; ‘\$(x)\`" -f "$CASE_HOME/.ssh/win"
 printf 'n\n' | run_script SCAN_BANNER='SSH-2.0-OpenSSH_for_Windows_9.5' || fail "inject: failed: $(cat "$CASE_HOME/out")"
 check_flow inject 1
-grep 'powershell' "$SSH_LOG" | decode_ps | grep -F 'INJECTED' >/dev/null && fail "inject: comment appears as PowerShell source"
+! grep -F 'INJECTED' "$SSH_LOG" "$(copy_input)" >/dev/null || fail "inject: the comment appears in the command or the installer text"
 
-# A reused RSA-4096 key fits under cmd.exe's limit.
+# The installer goes on stdin, so the command line stays the same fixed text
+# for an RSA-4096 key and for a 6000-character comment; nothing is length-bound.
 new_home rsa4096
 ssh-keygen -q -t rsa -b 4096 -N '' -C 'user@laptop' -f "$CASE_HOME/.ssh/win"
 printf 'n\n' | run_script || fail "rsa4096: failed: $(cat "$CASE_HOME/out")"
 check_flow rsa4096 1
-(($(grep -m 1 'powershell' "$SSH_LOG" | sed 's/^.* powershell /powershell /' | wc -c) <= 8000)) || fail "rsa4096: command too long"
 
-# A command that would be too long is refused before anything is written or sent.
-new_home too-long
+new_home long-comment
 # ssh-keygen caps -C at 1023 characters, so the long comment is written directly.
 ssh-keygen -q -t rsa -b 4096 -N '' -C 'x' -f "$CASE_HOME/.ssh/win"
 printf '%s %s\n' "$(cut -d' ' -f1,2 "$CASE_HOME/.ssh/win.pub")" \
   "$(head -c 9000 /dev/urandom | base64 | tr -d '\n=+/' | head -c 6000)" > "$CASE_HOME/.ssh/win.pub.long"
 mv "$CASE_HOME/.ssh/win.pub.long" "$CASE_HOME/.ssh/win.pub"
-if printf 'n\n' | run_script; then
-  fail "too-long: accepted"
-fi
-grep -F "over cmd.exe's limit" "$CASE_HOME/out" >/dev/null || fail "too-long: wrong error: $(cat "$CASE_HOME/out")"
-[[ ! -s "$CONFIG" && ! -s "$SSH_LOG" ]] || fail "too-long: wrote config or connected"
+printf 'n\n' | run_script || fail "long-comment: failed: $(cat "$CASE_HOME/out")"
+check_flow long-comment 1
 
 # A public key file that is not "<type> <key> [comment]" is refused the same way.
 new_home bad-pub
@@ -210,7 +279,7 @@ canonical="$(head -n 1 "$CASE_HOME/.ssh/win.pub")"
 awk '{ printf "%s  %s \t%s  b\r\n", $1, $2, $3 }' "$CASE_HOME/.ssh/win.pub" > "$CASE_HOME/.ssh/win.pub.sp"
 mv "$CASE_HOME/.ssh/win.pub.sp" "$CASE_HOME/.ssh/win.pub"
 printf 'n\n' | run_script || fail "spacing: failed: $(cat "$CASE_HOME/out")"
-[[ "$(grep 'powershell' "$SSH_LOG" | installed_line)" == "$canonical" ]] || fail "spacing: installed $(grep 'powershell' "$SSH_LOG" | installed_line)"
+[[ "$(installed_line < "$(copy_input)")" == "$canonical" ]] || fail "spacing: installed $(installed_line < "$(copy_input)")"
 
 # A non-Windows server is refused before anything is written or sent.
 new_home unix
@@ -236,6 +305,8 @@ mkdir -p "$PS_ROOT/keys"
 # shellcheck source=/dev/null # sourced for its functions only.
 source "$SCRIPT"
 set -euo pipefail
+[[ "${WINDOWS_KEY_COMMAND:-}" == 'powershell -NoProfile -NonInteractive -Command -' ]] ||
+  fail "pwsh: unexpected remote command: ${WINDOWS_KEY_COMMAND:-}"
 
 FAKES="$(cat <<'PS'
 function Test-Admin { $env:FAKE_ADMIN -eq '1' }
@@ -244,31 +315,31 @@ function Set-AdminFileAcl($f) { Add-Content -LiteralPath (Join-Path $env:CASE 'a
 PS
 )"
 
-# ps_case <name> <pub file> [ENV=value ...]: stores the command line the
-# script sends, with only its payload swapped for one that has the fakes added
-# before the final "try { Main }" line, and the case's environment.
+# ps_case <name> <pub file> [ENV=value ...]: stores the installer the script
+# sends for that key, with only the fakes added before its "try { Main }" line,
+# and the case's environment. MODE=defaultshell feeds it to the command as a
+# PowerShell DefaultShell would run it, MODE=manual runs the printed manual
+# steps, and MODE=truncated sends it without its last four lines.
 ps_case() {
-  local name="$1" pub="$2" cmd script last payload
+  local name="$1" pub="$2" dir="$PS_ROOT/$1" n
   shift 2
-  mkdir -p "$PS_ROOT/$name/home" "$PS_ROOT/$name/pd/ssh"
-  cmd="$(windows_key_command "$pub")"
-  script="$(decode_ps <<< "$cmd")"
-  last="$(tail -n 1 <<< "$script")"
+  mkdir -p "$dir/home" "$dir/pd/ssh"
+  windows_key_installer "$pub" > "$dir/sent"
+  check_installer "pwsh $name" "$dir/sent" "$(public_key_line "$pub")"
   # shellcheck disable=SC2016 # PowerShell text.
-  [[ "$last" == 'try { Main } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }' ]] ||
-    fail "pwsh: unexpected last line of the PowerShell: $last"
-  payload="$(printf '%s\n%s\n%s' "$(sed '$d' <<< "$script")" "$FAKES" "$last" | gzip -c | base64 | tr -d '\n')"
-  [[ "$cmd" == *"FromBase64String('"*"')"* ]] || fail "pwsh: unexpected command shape"
-  printf '%s' "${cmd%%FromBase64String\(\'*}FromBase64String('$payload')${cmd#*FromBase64String\(\'*\')}" > "$PS_ROOT/$name/cmd"
-  [[ "$(sed -E "s/FromBase64String\('[^']+'\)/X/" "$PS_ROOT/$name/cmd")" == "$(sed -E "s/FromBase64String\('[^']+'\)/X/" <<< "$cmd")" ]] ||
-    fail "pwsh: the stored command differs from the script's apart from the payload"
-  printf '%s\n' "$@" > "$PS_ROOT/$name/env"
+  n="$(grep -nxF 'try { Main } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }' "$dir/sent" | cut -d: -f1)"
+  [[ "$n" =~ ^[0-9]+$ ]] || fail "pwsh $name: no single try { Main } line in the installer"
+  { head -n $((n - 1)) "$dir/sent"; printf '%s\n' "$FAKES"; tail -n +"$n" "$dir/sent"; } > "$dir/stdin"
+  printf '%s\n' "$WINDOWS_KEY_COMMAND" > "$dir/cmd"
+  printf '%s\n' "$@" > "$dir/env"
 }
 
 ssh-keygen -q -t ed25519 -N '' -C 'new@host' -f "$PS_ROOT/keys/ed"
 ssh-keygen -q -t ed25519 -N '' -C 'old@host' -f "$PS_ROOT/keys/old"
 ssh-keygen -q -t rsa -b 4096 -N '' -C 'user@laptop' -f "$PS_ROOT/keys/rsa"
 ssh-keygen -q -t ed25519 -N '' -C "o’brien'; Write-Output INJECTED; ‘\$(Write-Output INJECTED2)\`" -f "$PS_ROOT/keys/inject"
+printf '%s %s\n' "$(cut -d' ' -f1,2 "$PS_ROOT/keys/rsa.pub")" \
+  "$(head -c 9000 /dev/urandom | base64 | tr -d '\n=+/' | head -c 6000)" > "$PS_ROOT/keys/long.pub"
 NEW="$(cat "$PS_ROOT/keys/ed.pub")"
 NEW_ID="$(cut -d' ' -f1,2 "$PS_ROOT/keys/ed.pub")"
 OLD="$(cat "$PS_ROOT/keys/old.pub")"
@@ -311,7 +382,7 @@ ps_case opt-spaces "$PS_ROOT/keys/ed.pub"
 seed opt-spaces 'command="a b",from="x y" %s kept\n' "$NEW_ID"
 ps_case opt-unclosed "$PS_ROOT/keys/ed.pub"
 seed opt-unclosed 'command="a %s\n' "$NEW_ID"
-ps_case defaultshell "$PS_ROOT/keys/ed.pub"
+ps_case defaultshell "$PS_ROOT/keys/ed.pub" MODE=defaultshell
 ps_case inject "$PS_ROOT/keys/inject.pub"
 ps_case rsa4096 "$PS_ROOT/keys/rsa.pub"
 ps_case ctrl "$PS_ROOT/keys/ctrl.pub"
@@ -320,10 +391,22 @@ printf 'AuthorizedKeysFile .ssh/authorized_keys\nMatch Group administrators\n  A
 ps_case admin-no-match "$PS_ROOT/keys/ed.pub" FAKE_ADMIN=1
 printf 'AuthorizedKeysFile .ssh/authorized_keys\n' > "$PS_ROOT/admin-no-match/pd/ssh/sshd_config"
 ps_case admin-no-config "$PS_ROOT/keys/ed.pub" FAKE_ADMIN=1
+ps_case defaultshell-utf16 "$PS_ROOT/keys/ed.pub" MODE=defaultshell
+seed defaultshell-utf16 '\xff\xfeX\x00'
+ps_case manual "$PS_ROOT/keys/ed.pub" MODE=manual
+ps_case manual-bad-acl "$PS_ROOT/keys/ed.pub" MODE=manual FAKE_BAD_ACL=1
+ps_case truncated "$PS_ROOT/keys/ed.pub" MODE=truncated
+ps_case long-comment "$PS_ROOT/keys/long.pub"
+# A statement PowerShell cannot parse: the block never runs, and the final
+# "exit 1" makes that a failure instead of an empty success.
+ps_case parse-error "$PS_ROOT/keys/ed.pub"
+awk '{ print } /^\$keyB64 = -join @\($/ { n++ } n == 1 && /^\)$/ { print "$x = 1 +* 2"; n++ }' "$PS_ROOT/parse-error/stdin" > "$PS_ROOT/parse-error/stdin.bad"
+mv "$PS_ROOT/parse-error/stdin.bad" "$PS_ROOT/parse-error/stdin"
+grep -xF "\$x = 1 +* 2" "$PS_ROOT/parse-error/stdin" >/dev/null || fail "pwsh parse-error: no syntax error inserted"
 
-# Runs each case's command line with "powershell" mapped to pwsh. bash parses
-# the line the way cmd.exe hands it on (no $ or backtick in it to expand); the
-# defaultshell case is parsed by PowerShell instead, as with DefaultShell set.
+# Feeds each case's installer on stdin to the fixed command, with "powershell"
+# mapped to pwsh. bash runs the command the way cmd.exe hands it on; with
+# MODE=defaultshell PowerShell runs it, as with DefaultShell set.
 mkdir -p "$PS_ROOT/bin"
 printf '#!/bin/sh\nexec pwsh "$@"\n' > "$PS_ROOT/bin/powershell"
 chmod +x "$PS_ROOT/bin/powershell"
@@ -335,11 +418,15 @@ for d in /t/*/; do
     cd "$d" || exit 1
     while IFS= read -r kv; do [[ -n "$kv" ]] && export "${kv?}"; done < env
     export USERPROFILE="${d}home" ProgramData="${d}pd" CASE="$d" HOME=/tmp PATH="/t/bin:$PATH"
-    if [[ "$d" == */defaultshell/ ]]; then
-      pwsh -NoProfile -NonInteractive -Command "$(cat cmd)" > out 2> err
-    else
-      bash -c "$(cat cmd)" > out 2> err
-    fi
+    case "${MODE:-}" in
+      defaultshell) pwsh -NoProfile -NonInteractive -Command "$(cat cmd)" < stdin ;;
+      manual)
+        cp stdin add-key.ps1
+        pwsh -NoProfile -NonInteractive -Command 'Get-Content -Raw add-key.ps1 | powershell -NoProfile -NonInteractive -Command -' < /dev/null
+        ;;
+      truncated) head -n -4 stdin | bash -c "$(cat cmd)" ;;
+      *) bash -c "$(cat cmd)" < stdin ;;
+    esac > out 2> err
     echo $? > rc
   )
 done
@@ -402,6 +489,21 @@ expect_file "$(user_file inject)" inject '%s\r\n' "$(cat "$PS_ROOT/keys/inject.p
 expect_ok rsa4096 'Key added to'
 expect_file "$(user_file rsa4096)" rsa4096 '%s\r\n' "$(cat "$PS_ROOT/keys/rsa.pub")"
 [[ "$(ps_rc ctrl)" == 1 && ! -e "$(user_file ctrl)" ]] || fail "pwsh ctrl: accepted a key line with a control character: $(ps_out ctrl)"
+expect_ok long-comment 'Key added to'
+expect_file "$(user_file long-comment)" long-comment '%s\r\n' "$(cat "$PS_ROOT/keys/long.pub")"
+[[ "$(ps_rc defaultshell-utf16)" != 0 ]] || fail "pwsh defaultshell-utf16: a failure exited 0: $(ps_out defaultshell-utf16)"
+grep -F 'UTF-16' "$PS_ROOT/defaultshell-utf16/err" >/dev/null || fail "pwsh defaultshell-utf16: wrong error: $(ps_out defaultshell-utf16)"
+expect_ok manual 'Key added to'
+expect_file "$(user_file manual)" manual '%s\r\n' "$NEW"
+[[ "$(ps_rc manual-bad-acl)" != 0 && ! -e "$(user_file manual-bad-acl)" ]] ||
+  fail "pwsh manual-bad-acl: exited $(ps_rc manual-bad-acl) or wrote the file: $(ps_out manual-bad-acl)"
+[[ "$(ps_rc parse-error)" == 1 && ! -e "$(user_file parse-error)" ]] ||
+  fail "pwsh parse-error: exited $(ps_rc parse-error) or wrote the file: $(ps_out parse-error)"
+! grep -E '^Key (added to|already in) ' "$PS_ROOT/parse-error/out" >/dev/null || fail "pwsh parse-error: printed a success line"
+# Cut-short input runs nothing, and PowerShell may still exit 0: the missing
+# success line is what the script treats as a failed copy.
+[[ ! -e "$(user_file truncated)" ]] || fail "pwsh truncated: ran part of the installer"
+! grep -E '^Key (added to|already in) ' "$PS_ROOT/truncated/out" >/dev/null || fail "pwsh truncated: printed a success line"
 for c in admin admin-no-config; do
   expect_ok "$c" 'administrators_authorized_keys'
   expect_file "$PS_ROOT/$c/pd/ssh/administrators_authorized_keys" "$c" '%s\r\n' "$NEW"

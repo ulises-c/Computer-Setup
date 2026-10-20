@@ -347,13 +347,16 @@ apply_host_key_pins() {
   printf 'Pinned the host key to %s in %s.\n' "$1" "$KNOWN_HOSTS"
 }
 
-# Run a command with a hard wall-clock timeout; ConnectTimeout alone doesn't cover auth hangs
+# Run a command with a hard wall-clock timeout; ConnectTimeout alone doesn't cover auth hangs.
+# <&0: a background job's stdin is otherwise /dev/null, and the key copy sends
+# its PowerShell on stdin. The watcher gets no stdout or stderr, so a caller
+# capturing the output does not wait for its sleep.
 ssh_with_timeout() {
   local secs="$1"; shift
-  "$@" &
+  "$@" <&0 &
   local pid=$!
   local rc=0
-  { sleep "$secs" && kill "$pid" 2>/dev/null; } &
+  { sleep "$secs" && kill "$pid" 2>/dev/null; } < /dev/null > /dev/null 2>&1 &
   local watcher=$!
   wait "$pid" 2>/dev/null || rc=$?
   { kill "$watcher" && wait "$watcher"; } 2>/dev/null || true
@@ -409,10 +412,11 @@ validate_public_key() {
   ((ok)) || die "ssh-keygen cannot read the first line of $1."
 }
 
-# The PowerShell that installs the key, run on the remote after a
-# "$keyB64 = '<base64 of the public key line>'" line. It runs in Windows
-# PowerShell 5.1 (powershell.exe). A separate function because bash 3.2
-# misparses a heredoc with backticks (PowerShell's escape character) inside $( ).
+# The PowerShell that installs the key, run on the remote after $keyB64 is set
+# to the base64 of the public key line. It runs in Windows PowerShell 5.1
+# (powershell.exe). It must have no blank line (see windows_key_installer). A
+# separate function because bash 3.2 misparses a heredoc with backticks
+# (PowerShell's escape character) inside $( ).
 #
 # Members of Administrators are not read from ~/.ssh/authorized_keys: the
 # default sshd_config has "Match Group administrators" pointing them at
@@ -537,30 +541,49 @@ try { Main } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }
 PS
 }
 
-# Prints the remote command that installs the public key in file $1. The key
-# line travels as base64 inside a gzipped, base64 payload, so no part of it is
-# PowerShell or cmd.exe syntax; the command itself is only base64 and fixed
-# text, which cmd.exe and a PowerShell DefaultShell both pass through unchanged.
-# gzip keeps it under cmd.exe's 8191-character limit for RSA-4096 keys.
-windows_key_command() {
-  local key_b64 payload
+# The remote command for the key copy: fixed text, the same through cmd.exe and
+# a PowerShell DefaultShell. The installer arrives on its stdin, so neither the
+# key nor its comment is part of any command line.
+WINDOWS_KEY_COMMAND='powershell -NoProfile -NonInteractive -Command -'
+
+# Prints the plain PowerShell that installs the first line of public key file
+# $1, to be fed to $WINDOWS_KEY_COMMAND. The key line is base64 data in short
+# string literals, joined and decoded by the installer itself.
+#
+# "-Command -" runs its input like typed lines: a statement that spans lines
+# ends only at a blank line, and a statement that fails to parse is skipped.
+# So everything is one "& { }" block with no blank line inside, ended by two
+# blank lines; the block always exits itself, and the "exit 1" after it runs
+# only when the block did not. Input cut short runs nothing and exits 0, which
+# is why copy_attempt also needs the installer's own success line.
+windows_key_installer() {
+  local key_b64
   key_b64="$(public_key_line "$1" | base64 | tr -d '\n')"
-  payload="$({ printf "\$keyB64 = '%s'\n" "$key_b64"; windows_key_script | sed 's/^[[:space:]]*//'; } |
-    gzip -c -9 | base64 | tr -d '\n')"
-  printf '%s' "powershell -NoProfile -NonInteractive -Command \"iex((New-Object IO.StreamReader((New-Object IO.Compression.GZipStream((New-Object IO.MemoryStream(,[Convert]::FromBase64String('$payload'))), [IO.Compression.CompressionMode]::Decompress)))).ReadToEnd())\""
+  # shellcheck disable=SC2016 # PowerShell text.
+  printf '& {\n$keyB64 = -join @(\n'
+  fold -w 64 <<< "$key_b64" | sed "s/.*/'&'/"
+  printf ')\n'
+  windows_key_script
+  printf '}\n\n\nexit 1\n'
 }
 
 # Prints what to run on the Windows machine when the automatic copy fails: the
-# same command the script sends, which picks the file and sets its ACL itself.
+# same installer the script sends, which picks the file and sets its ACL itself.
 print_manual_install() {
   cat <<EOF
 
-On the Windows machine, sign in as $REMOTE_USER, open PowerShell (as
-administrator if $REMOTE_USER is one), and run this single line:
+On the Windows machine, sign in as $REMOTE_USER and open PowerShell (as
+administrator if $REMOTE_USER is one). Save the lines between the BEGIN and END
+markers below as add-key.ps1 in the current folder, then run:
 
-$(windows_key_command "$PUB_PATH")
+  Get-Content -Raw add-key.ps1 | powershell -NoProfile -NonInteractive -Command -
 
-Then run this script again; it skips the key it finds and checks the login.
+It prints "Key added to <file>" or "Key already in <file>". Then run this
+script again; it skips the key it finds and checks the login.
+
+----- BEGIN add-key.ps1 -----
+$(windows_key_installer "$PUB_PATH")
+----- END add-key.ps1 -----
 EOF
 }
 
@@ -736,11 +759,8 @@ fi
 chmod 600 "$KEY_PATH"
 chmod 644 "$PUB_PATH"
 
-# Checked before anything is written to ~/.ssh/config or the remote. cmd.exe
-# rejects command lines longer than 8191 characters.
+# Checked before anything is written to ~/.ssh/config or the remote.
 validate_public_key "$PUB_PATH"
-CMD_LEN="$(windows_key_command "$PUB_PATH" | wc -c | tr -d ' ')"
-((CMD_LEN <= 8000)) || die "the install command for $PUB_PATH is $CMD_LEN characters, over cmd.exe's limit; shorten the key's comment or use an ed25519 key."
 
 # ---- Start or reuse ssh-agent ----
 if [[ -z "${SSH_AUTH_SOCK:-}" ]]; then
@@ -766,26 +786,35 @@ echo "Copying public key to $REMOTE_USER@$REMOTE_HOST:$PORT ..."
 # about that address; the host key was pinned to the alias above.
 SSH_BASE_OPTS=(-F /dev/null -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" \
   -o HostKeyAlias="$HOST_ALIAS" -o ConnectTimeout=10 -p "$PORT")
-APPEND_CMD="$(windows_key_command "$PUB_PATH")"
+INSTALLER="$(windows_key_installer "$PUB_PATH")"
+
+# Runs "$@ <user@host> $WINDOWS_KEY_COMMAND" with the installer on stdin (the
+# herestring restores its final newline) and prints what it printed. Succeeds
+# only on exit 0 with the installer's own success line: PowerShell also exits
+# 0 when it got cut-short input and ran nothing.
+copy_attempt() {
+  local out rc=0
+  out="$("$@" "$REMOTE_USER@$REMOTE_HOST" "$WINDOWS_KEY_COMMAND" <<< "$INSTALLER")" || rc=$?
+  [[ -z "$out" ]] || printf '%s\n' "$out" | tr -d '\r'
+  ((rc == 0)) && grep -Eq '^Key (added to|already in) ' <<< "$out"
+}
 
 copy_key() {
   # 1. BatchMode first (existing agent keys).
-  if ssh_with_timeout 60 ssh "${SSH_BASE_OPTS[@]}" -o BatchMode=yes \
-      "$REMOTE_USER@$REMOTE_HOST" "$APPEND_CMD" < /dev/null 2>/dev/null; then
+  if copy_attempt ssh_with_timeout 60 ssh "${SSH_BASE_OPTS[@]}" -o BatchMode=yes 2>/dev/null; then
     echo "Key copied (BatchMode/agent auth)."
     return 0
   fi
   # 2. sshpass with password.
   if [[ "$USE_SSHPASS" == true && -n "$REMOTE_PASSWORD" ]]; then
-    if ssh_with_timeout 60 sshpass -p "$REMOTE_PASSWORD" ssh "${SSH_BASE_OPTS[@]}" \
-        -o PubkeyAuthentication=no "$REMOTE_USER@$REMOTE_HOST" "$APPEND_CMD" < /dev/null; then
+    if copy_attempt ssh_with_timeout 60 sshpass -p "$REMOTE_PASSWORD" ssh "${SSH_BASE_OPTS[@]}" \
+        -o PubkeyAuthentication=no; then
       echo "Key copied (password auth)."
       return 0
     fi
   fi
   # 3. Interactive fallback: the user types the password at the prompt.
-  if ssh "${SSH_BASE_OPTS[@]}" -o PubkeyAuthentication=no \
-      "$REMOTE_USER@$REMOTE_HOST" "$APPEND_CMD" < /dev/null; then
+  if copy_attempt ssh "${SSH_BASE_OPTS[@]}" -o PubkeyAuthentication=no; then
     echo "Key copied (interactive auth)."
     return 0
   fi
