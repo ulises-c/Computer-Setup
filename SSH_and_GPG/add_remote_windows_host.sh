@@ -362,10 +362,11 @@ ssh_with_timeout() {
 
 test_alias() {
   printf '\nTesting SSH connection: ssh %s ...\n' "$1"
-  if ssh_with_timeout 20 ssh -o BatchMode=yes -o ConnectTimeout=10 "$1" exit 2>/dev/null; then
+  if ssh_with_timeout 60 ssh -o BatchMode=yes -o ConnectTimeout=10 "$1" exit < /dev/null 2>/dev/null; then
     printf 'Success: key-based auth is working.\n'
   else
     printf 'Connection test failed. Run "ssh %s" to see why.\n' "$1" >&2
+    return 1
   fi
 }
 
@@ -380,74 +381,193 @@ require_windows_remote() {
   fi
 }
 
-# Win32-OpenSSH runs commands through cmd.exe (or PowerShell, if DefaultShell is
-# set), so the Unix mkdir/chmod/cat pipeline cannot work there. Prints a
-# powershell -EncodedCommand line, which both shells run the same way. With
-# $3 = verify it only checks that the key is present.
+# Key types accepted from the public key file, in bash and in the PowerShell body.
+KEY_TYPE_RE='^(ssh-ed25519|ssh-rsa|ssh-dss|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com)$'
+
+# Prints the first line of public key file $1 as "<type> <key>[ <comment>]",
+# with single spaces after the type and the key. Only this line is installed.
+public_key_line() {
+  local type blob comment
+  read -r type blob comment < <(head -n 1 "$1" | tr -d '\r')
+  printf '%s %s%s' "$type" "$blob" "${comment:+ $comment}"
+}
+
+# Dies unless the first line of $1 is a public key ssh-keygen can read. Only
+# that line is checked, because only that line is installed. The comment may
+# hold any printable text: it reaches the remote as base64 data, never as
+# PowerShell source.
+validate_public_key() {
+  local line type blob tmp ok=0
+  line="$(public_key_line "$1")"
+  [[ "$line" != *[[:cntrl:]]* ]] || die "$1 has control characters in its first line."
+  read -r type blob _ <<< "$line"
+  [[ "$type" =~ $KEY_TYPE_RE && "$blob" =~ ^[A-Za-z0-9+/]+=*$ ]] || die "$1 does not start with a supported key type and key."
+  tmp="$(mktemp)"
+  printf '%s\n' "$line" > "$tmp"
+  ssh-keygen -l -f "$tmp" >/dev/null 2>&1 && ok=1
+  rm -f "$tmp"
+  ((ok)) || die "ssh-keygen cannot read the first line of $1."
+}
+
+# The PowerShell that installs the key, run on the remote after a
+# "$keyB64 = '<base64 of the public key line>'" line. It runs in Windows
+# PowerShell 5.1 (powershell.exe). A separate function because bash 3.2
+# misparses a heredoc with backticks (PowerShell's escape character) inside $( ).
 #
 # Members of Administrators are not read from ~/.ssh/authorized_keys: the
 # default sshd_config has "Match Group administrators" pointing them at
 # %ProgramData%\ssh\administrators_authorized_keys, which sshd ignores unless
-# only Administrators and SYSTEM can access it.
-# The PowerShell body of windows_key_command, after its three variable lines.
-# A separate function because bash 3.2 misparses a heredoc with backticks
-# (PowerShell's escape character) inside $( ).
+# only Administrators and SYSTEM can access it. A per-user file that another
+# account can write to is ignored too. Whether sshd accepts the key is proved
+# afterwards by logging in with only that key.
 windows_key_script() {
   cat <<'PS'
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-try {
-$me = [Security.Principal.WindowsIdentity]::GetCurrent()
-$admin = (New-Object Security.Principal.WindowsPrincipal $me).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) -or [bool]($me.Groups | Where-Object { $_.Value -eq 'S-1-5-32-544' })
-$adminFile = $false
-if ($admin) {
-$adminFile = $true
-$cfg = Join-Path $env:ProgramData 'ssh\sshd_config'
-try { if (Test-Path -LiteralPath $cfg) { $adminFile = [bool](Select-String -LiteralPath $cfg -Pattern '^\s*Match\s+Group\s+administrators(\s|$)' -Quiet) } } catch { $adminFile = $true }
+$types = @('ssh-ed25519', 'ssh-rsa', 'ssh-dss', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521', 'sk-ssh-ed25519@openssh.com', 'sk-ecdsa-sha2-nistp256@openssh.com')
+# FILE_WRITE_DATA, FILE_APPEND_DATA, WRITE_DAC, WRITE_OWNER, GENERIC_WRITE, GENERIC_ALL.
+$writeRights = 0x500C0006
+function Test-Admin {
+  $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+  (New-Object Security.Principal.WindowsPrincipal $id).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) -or [bool]($id.Groups | Where-Object { $_.Value -eq 'S-1-5-32-544' })
 }
-if ($adminFile) { $dir = Join-Path $env:ProgramData 'ssh'; $file = Join-Path $dir 'administrators_authorized_keys' }
-else { $dir = Join-Path $env:USERPROFILE '.ssh'; $file = Join-Path $dir 'authorized_keys' }
-$text = ''
-if (Test-Path -LiteralPath $file) {
-$bytes = [IO.File]::ReadAllBytes($file)
-if ($bytes.Length -ge 2 -and (($bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE) -or ($bytes[0] -eq 0xFE -and $bytes[1] -eq 0xFF))) {
-[Console]::Error.WriteLine("$file is UTF-16, which sshd cannot read; re-save it as UTF-8 and run again.")
-exit 2
+function Test-AdminFileUsed {
+  $cfg = Join-Path (Join-Path $env:ProgramData 'ssh') 'sshd_config'
+  try { if (Test-Path -LiteralPath $cfg) { return [bool](Select-String -LiteralPath $cfg -Pattern '^\s*Match\s+Group\s+administrators(\s|$)' -Quiet) } } catch { }
+  $true
 }
-$text = [Text.Encoding]::UTF8.GetString($bytes)
+function Get-SidName($sid) {
+  try { (New-Object Security.Principal.SecurityIdentifier $sid).Translate([Security.Principal.NTAccount]).Value } catch { $sid }
 }
-if ($verifyOnly) { if ($text.Contains($blob)) { exit 0 } else { exit 1 } }
-if (-not $text.Contains($blob)) {
-New-Item -ItemType Directory -Force -Path $dir | Out-Null
-$prefix = ''
-if ($text.Length -gt 0 -and -not $text.EndsWith("`n")) { $prefix = "`r`n" }
-[IO.File]::AppendAllText($file, $prefix + $line + "`r`n", (New-Object Text.UTF8Encoding $false))
+function Assert-UserFileAcl($f) {
+  $me = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+  $ok = @($me, 'S-1-5-32-544', 'S-1-5-18')
+  $acl = Get-Acl -LiteralPath $f
+  $owner = $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
+  if ($ok -notcontains $owner) { throw "$f is owned by $(Get-SidName $owner), so sshd ignores it; make the account its owner and run again." }
+  foreach ($r in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
+    if ($r.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) { continue }
+    if ($r.AccessControlType -eq 'Allow' -and ([int64]$r.FileSystemRights -band $writeRights) -and $ok -notcontains $r.IdentityReference.Value) {
+      throw "$(Get-SidName $r.IdentityReference.Value) can write to $f, so sshd ignores it; remove that permission and run again."
+    }
+  }
 }
-if ($adminFile) {
-& icacls.exe $file /inheritance:r /grant '*S-1-5-32-544:F' /grant '*S-1-5-18:F' | Out-Null
-if ($LASTEXITCODE -ne 0) { throw "icacls could not restrict $file" }
+# The owner is set to Administrators too: an owner can always rewrite the ACL,
+# so a file owned by one admin account is not protected by the two entries.
+function Set-AdminFileAcl($f) {
+  $acl = New-Object Security.AccessControl.FileSecurity
+  $acl.SetOwner((New-Object Security.Principal.SecurityIdentifier 'S-1-5-32-544'))
+  $acl.SetAccessRuleProtection($true, $false)
+  foreach ($s in 'S-1-5-32-544', 'S-1-5-18') {
+    $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier $s), 'FullControl', 'Allow')))
+  }
+  Set-Acl -LiteralPath $f -AclObject $acl
+  $now = Get-Acl -LiteralPath $f
+  $rules = @($now.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]) | ForEach-Object { '{0}:{1}:{2}' -f $_.IdentityReference.Value, $_.AccessControlType, [int]$_.FileSystemRights } | Sort-Object)
+  if (-not $now.AreAccessRulesProtected -or ($rules -join ',') -ne 'S-1-5-18:Allow:2032127,S-1-5-32-544:Allow:2032127') {
+    throw "could not restrict $f to Administrators and SYSTEM (it now allows: $($rules -join ', '))"
+  }
+  $owner = $now.GetOwner([Security.Principal.SecurityIdentifier]).Value
+  if ($owner -ne 'S-1-5-32-544' -and $owner -ne 'S-1-5-18') { throw "could not make Administrators the owner of $f (owner: $(Get-SidName $owner)); run as an elevated administrator." }
 }
-Write-Output "Key installed in $file"
-exit 0
-} catch {
-[Console]::Error.WriteLine($_.Exception.Message)
-exit 1
+# "<type> <base64>" of an active key line, or $null. As sshd does, an options
+# field may come first; it ends at the first space or tab outside double quotes
+# (\" does not end a quote). Comparisons are ordinal: PowerShell's -contains
+# and .NET's StartsWith are culture-aware and ignore characters such as a BOM,
+# which sshd does not.
+function Get-KeyId($line) {
+  $t = $line.Trim()
+  if ($t -eq '' -or $t.StartsWith('#', [StringComparison]::Ordinal)) { return $null }
+  $tok = @($t -split '\s+', 3)
+  if ($tok.Count -ge 2 -and [Array]::IndexOf($types, $tok[0]) -ge 0) { return $tok[0] + ' ' + $tok[1] }
+  $quoted = $false
+  for ($i = 0; $i -lt $t.Length; $i++) {
+    $c = $t[$i]
+    if ($c -eq '\' -and $quoted -and $i + 1 -lt $t.Length -and $t[$i + 1] -eq '"') { $i++; continue }
+    if ($c -eq '"') { $quoted = -not $quoted; continue }
+    if (-not $quoted -and ($c -eq ' ' -or $c -eq "`t")) { break }
+  }
+  if ($quoted -or $i -ge $t.Length) { return $null }
+  $tok = @($t.Substring($i).Trim() -split '\s+', 3)
+  if ($tok.Count -ge 2 -and [Array]::IndexOf($types, $tok[0]) -ge 0) { return $tok[0] + ' ' + $tok[1] }
+  $null
 }
+function Main {
+  $line = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($keyB64))
+  if ($line -match '[\x00-\x1f\x7f]') { throw 'the public key line has control characters' }
+  $want = Get-KeyId $line
+  if (-not $want -or -not $line.StartsWith($want, [StringComparison]::Ordinal)) { throw 'the public key line is not "<type> <key> [comment]"' }
+  $adminFile = (Test-Admin) -and (Test-AdminFileUsed)
+  if ($adminFile) { $dir = Join-Path $env:ProgramData 'ssh'; $file = Join-Path $dir 'administrators_authorized_keys' }
+  else { $dir = Join-Path $env:USERPROFILE '.ssh'; $file = Join-Path $dir 'authorized_keys' }
+  $text = ''
+  if (Test-Path -LiteralPath $file) {
+    $bytes = [IO.File]::ReadAllBytes($file)
+    if ($bytes.Length -ge 2 -and (($bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE) -or ($bytes[0] -eq 0xFE -and $bytes[1] -eq 0xFF))) {
+      [Console]::Error.WriteLine("$file is UTF-16, which sshd cannot read; re-save it as UTF-8 and run again.")
+      exit 2
+    }
+    # A BOM stays part of the first line, so a key there does not count as
+    # present (sshd may not read it) and a clean copy is added.
+    $text = [Text.Encoding]::UTF8.GetString($bytes)
+  }
+  # A new per-user file is created empty and checked before the key goes in, so
+  # an unsafe inherited ACL stops the run without leaving a key behind.
+  if (-not $adminFile) {
+    $created = $false
+    if (-not (Test-Path -LiteralPath $file)) {
+      New-Item -ItemType Directory -Force -Path $dir | Out-Null
+      New-Item -ItemType File -Path $file | Out-Null
+      $created = $true
+    }
+    try { Assert-UserFileAcl $file } catch { if ($created) { Remove-Item -LiteralPath $file -Force }; throw }
+  }
+  $present = [Array]::IndexOf([string[]]@($text -split "`n" | ForEach-Object { Get-KeyId $_ }), $want) -ge 0
+  if (-not $present) {
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $prefix = ''
+    if ($text.Length -gt 0 -and -not $text.EndsWith("`n", [StringComparison]::Ordinal)) { $prefix = "`r`n" }
+    [IO.File]::AppendAllText($file, $prefix + $line + "`r`n", (New-Object Text.UTF8Encoding $false))
+  }
+  if ($adminFile) { Set-AdminFileAcl $file }
+  if ($present) { Write-Output "Key already in $file" } else { Write-Output "Key added to $file" }
+  exit 0
+}
+try { Main } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }
 PS
 }
 
-# shellcheck disable=SC2016 # $false/$true are PowerShell literals.
+# Prints the remote command that installs the public key in file $1. The key
+# line travels as base64 inside a gzipped, base64 payload, so no part of it is
+# PowerShell or cmd.exe syntax; the command itself is only base64 and fixed
+# text, which cmd.exe and a PowerShell DefaultShell both pass through unchanged.
+# gzip keeps it under cmd.exe's 8191-character limit for RSA-4096 keys.
 windows_key_command() {
-  local key_line="$1" blob="$2" mode="${3:-install}" ps verify='$false'
-  [[ "$mode" == verify ]] && verify='$true'
-  # PowerShell single-quoted strings escape ' as ''.
-  key_line="$(printf '%s' "$key_line" | sed "s/'/''/g")"
-  ps="$(printf "\$line = '%s'\n\$blob = '%s'\n\$verifyOnly = %s\n" "$key_line" "$blob" "$verify"
-    windows_key_script)"
-  # -EncodedCommand takes base64 of UTF-16LE, which avoids every cmd.exe quoting rule.
-  printf 'powershell -NoProfile -NonInteractive -EncodedCommand %s' \
-    "$(printf '%s' "$ps" | iconv -f UTF-8 -t UTF-16LE | base64 | tr -d '\n')"
+  local key_b64 payload
+  key_b64="$(public_key_line "$1" | base64 | tr -d '\n')"
+  payload="$({ printf "\$keyB64 = '%s'\n" "$key_b64"; windows_key_script | sed 's/^[[:space:]]*//'; } |
+    gzip -c -9 | base64 | tr -d '\n')"
+  printf '%s' "powershell -NoProfile -NonInteractive -Command \"iex((New-Object IO.StreamReader((New-Object IO.Compression.GZipStream((New-Object IO.MemoryStream(,[Convert]::FromBase64String('$payload'))), [IO.Compression.CompressionMode]::Decompress)))).ReadToEnd())\""
 }
+
+# Prints what to run on the Windows machine when the automatic copy fails: the
+# same command the script sends, which picks the file and sets its ACL itself.
+print_manual_install() {
+  cat <<EOF
+
+On the Windows machine, sign in as $REMOTE_USER, open PowerShell (as
+administrator if $REMOTE_USER is one), and run this single line:
+
+$(windows_key_command "$PUB_PATH")
+
+Then run this script again; it skips the key it finds and checks the login.
+EOF
+}
+
+# Sourced (by the tests), only define the functions above.
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+  return 0
+fi
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   usage
@@ -474,7 +594,7 @@ if [[ "${1:-}" == "--add-address" ]]; then
   write_config "$HOST_ALIAS" "$EXISTING_USER" "$PORT" "$EXISTING_KEY" "${ADDRESSES[@]}"
   printf 'Addresses for %s, in order: %s\n' "$HOST_ALIAS" "${ADDRESSES[*]}"
   apply_host_key_pins "$HOST_ALIAS"
-  test_alias "$HOST_ALIAS"
+  test_alias "$HOST_ALIAS" || exit 1
   exit 0
 fi
 
@@ -549,7 +669,6 @@ if command -v nc &>/dev/null; then
   done
 fi
 
-command -v iconv &>/dev/null || die "iconv is needed to encode the PowerShell command."
 [[ "${SKIP_OS_CHECK:-}" == 1 ]] || require_windows_remote "$REMOTE_HOST" "$PORT"
 confirm_host_key "$HOST_ALIAS" "$REMOTE_HOST" "$PORT"
 
@@ -617,6 +736,12 @@ fi
 chmod 600 "$KEY_PATH"
 chmod 644 "$PUB_PATH"
 
+# Checked before anything is written to ~/.ssh/config or the remote. cmd.exe
+# rejects command lines longer than 8191 characters.
+validate_public_key "$PUB_PATH"
+CMD_LEN="$(windows_key_command "$PUB_PATH" | wc -c | tr -d ' ')"
+((CMD_LEN <= 8000)) || die "the install command for $PUB_PATH is $CMD_LEN characters, over cmd.exe's limit; shorten the key's comment or use an ed25519 key."
+
 # ---- Start or reuse ssh-agent ----
 if [[ -z "${SSH_AUTH_SOCK:-}" ]]; then
   eval "$(ssh-agent -s)" >/dev/null
@@ -641,25 +766,19 @@ echo "Copying public key to $REMOTE_USER@$REMOTE_HOST:$PORT ..."
 # about that address; the host key was pinned to the alias above.
 SSH_BASE_OPTS=(-F /dev/null -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" \
   -o HostKeyAlias="$HOST_ALIAS" -o ConnectTimeout=10 -p "$PORT")
-# Win32-OpenSSH runs the command through cmd.exe, so it is one encoded
-# PowerShell command that carries the key itself; nothing goes through stdin.
-KEY_LINE="$(head -n 1 "$PUB_PATH")"
-KEY_SEGMENT="$(awk '{print $2}' <<< "$KEY_LINE")"
-[[ "$KEY_SEGMENT" =~ ^[A-Za-z0-9+/=]+$ ]] || die "unexpected public key format in $PUB_PATH"
-APPEND_CMD="$(windows_key_command "$KEY_LINE" "$KEY_SEGMENT")"
-VERIFY_CMD="$(windows_key_command "$KEY_LINE" "$KEY_SEGMENT" verify)"
+APPEND_CMD="$(windows_key_command "$PUB_PATH")"
 
 copy_key() {
   # 1. BatchMode first (existing agent keys).
-  if ssh_with_timeout 30 ssh "${SSH_BASE_OPTS[@]}" -o BatchMode=yes \
+  if ssh_with_timeout 60 ssh "${SSH_BASE_OPTS[@]}" -o BatchMode=yes \
       "$REMOTE_USER@$REMOTE_HOST" "$APPEND_CMD" < /dev/null 2>/dev/null; then
     echo "Key copied (BatchMode/agent auth)."
     return 0
   fi
   # 2. sshpass with password.
   if [[ "$USE_SSHPASS" == true && -n "$REMOTE_PASSWORD" ]]; then
-    if ssh_with_timeout 30 sshpass -p "$REMOTE_PASSWORD" ssh "${SSH_BASE_OPTS[@]}" \
-        -o PubkeyAuthentication=no "$REMOTE_USER@$REMOTE_HOST" "$APPEND_CMD"; then
+    if ssh_with_timeout 60 sshpass -p "$REMOTE_PASSWORD" ssh "${SSH_BASE_OPTS[@]}" \
+        -o PubkeyAuthentication=no "$REMOTE_USER@$REMOTE_HOST" "$APPEND_CMD" < /dev/null; then
       echo "Key copied (password auth)."
       return 0
     fi
@@ -673,35 +792,41 @@ copy_key() {
   return 1
 }
 
-KEY_COPIED=false
-if copy_key; then
-  # Verify the key actually landed (guards against false-positive exits).
-  if ssh_with_timeout 30 ssh "${SSH_BASE_OPTS[@]}" -o BatchMode=yes \
-      "$REMOTE_USER@$REMOTE_HOST" "$VERIFY_CMD" < /dev/null 2>/dev/null; then
-    KEY_COPIED=true
-  else
-    echo "Warning: copy appeared to succeed but key not found in remote authorized_keys." >&2
-    KEY_COPIED=false
-  fi
+# Proves sshd accepts the new key: IdentitiesOnly limits ssh to that key (the
+# agent may sign with it, which covers a passphrase), with no password and no
+# certificate (a trusted <key>-cert.pub would log in without the raw key), to
+# the same address and pinned host key.
+key_login_works() {
+  ssh_with_timeout 60 ssh "${SSH_BASE_OPTS[@]}" -o BatchMode=yes \
+    -o IdentitiesOnly=yes -o IdentityFile="$KEY_PATH" -o PasswordAuthentication=no \
+    -o 'PubkeyAcceptedAlgorithms=-*-cert-v01@openssh.com' -o HostbasedAuthentication=no \
+    -o KbdInteractiveAuthentication=no -o PreferredAuthentications=publickey \
+    "$REMOTE_USER@$REMOTE_HOST" 'exit' < /dev/null 2>/dev/null
+}
+
+if ! copy_key; then
+  echo "" >&2
+  echo "Automatic key copy failed." >&2
+  print_manual_install >&2
+  exit 1
 fi
 
-if [[ "$KEY_COPIED" == false ]]; then
-  echo ""
+if ! key_login_works; then
   cat >&2 <<EOF
-Automatic key copy failed. On the Windows machine, open PowerShell and run:
 
-  Add-Content -Encoding ascii "\$env:USERPROFILE\\.ssh\\authorized_keys" '$KEY_LINE'
-
-If $REMOTE_USER is an administrator, sshd reads a different file instead. In an
-elevated PowerShell run:
-
-  Add-Content -Encoding ascii "\$env:ProgramData\\ssh\\administrators_authorized_keys" '$KEY_LINE'
-  icacls.exe "\$env:ProgramData\\ssh\\administrators_authorized_keys" /inheritance:r /grant '*S-1-5-32-544:F' /grant '*S-1-5-18:F'
+The key was written, but $REMOTE_USER@$REMOTE_HOST does not accept it. sshd may
+read a different file than the one above (check AuthorizedKeysFile and any
+Match blocks in %ProgramData%\\ssh\\sshd_config), or reject that file's owner or
+permissions; %ProgramData%\\ssh\\logs or the OpenSSH event log says which.
 EOF
+  exit 1
 fi
+echo "Login with only the new key works."
 
 # Goes through the alias, so it exercises address selection and the pinned host key.
-test_alias "$HOST_ALIAS"
+if ! test_alias "$HOST_ALIAS"; then
+  exit 1
+fi
 
 echo ""
 echo "Done. Connect any time with: ssh $HOST_ALIAS"

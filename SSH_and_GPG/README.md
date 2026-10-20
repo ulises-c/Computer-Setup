@@ -103,14 +103,17 @@ Re-running for an existing alias keeps the addresses it already has, after the o
 
 Same as `add_remote_host.sh` (prompts, several addresses, host-key pinning, the managed `~/.ssh/config` block, `--add-address`) for a Windows machine running OpenSSH Server. Both scripts write the same managed block, so either can update an alias.
 
-`add_remote_host.sh` cannot copy a key to Windows: OpenSSH for Windows runs remote commands through `cmd.exe`, so its `mkdir`/`chmod`/`cat >>` command always fails. This script sends one `powershell -EncodedCommand` instead, which works whether the server's default shell is `cmd.exe` or PowerShell, and checks the result the same way.
+`add_remote_host.sh` cannot copy a key to Windows: OpenSSH for Windows runs remote commands through `cmd.exe`, so its `mkdir`/`chmod`/`cat >>` command always fails. This script sends one `powershell -Command` instead, made of fixed text and a gzipped base64 payload, so it works whether the server's default shell is `cmd.exe` or PowerShell. The public key line is base64 data inside that payload, so nothing in a reused key's comment is ever run as code.
 
-- **Non-admin account:** the key goes in `%USERPROFILE%\.ssh\authorized_keys`.
-- **Administrators:** the default `sshd_config` (`Match Group administrators`) reads `%ProgramData%\ssh\administrators_authorized_keys` instead, and ignores it unless only Administrators and SYSTEM can access it. The script writes the key there and sets that ACL with `icacls`.
-- The key is added once (re-runs do not duplicate it), as UTF-8 without BOM. An existing UTF-16 key file (what `echo … >` writes in Windows PowerShell 5) is refused, because sshd cannot read it.
-- It refuses, before writing anything, when the server banner shows a non-Windows SSH server (set `SKIP_OS_CHECK=1` to skip that check). A missing banner is not an error.
-- When the copy fails, it prints the PowerShell commands to run on the Windows machine.
-- Needs `iconv` on this machine. The `Match exec "nc …"` address probes run here, so several addresses work as with `add_remote_host.sh`.
+- **Non-admin account:** the key goes in `%USERPROFILE%\.ssh\authorized_keys`. If another account can write to that file, or owns it, sshd ignores it, so the script stops and says so.
+- **Administrators:** the default `sshd_config` (`Match Group administrators`) reads `%ProgramData%\ssh\administrators_authorized_keys` instead, and ignores it unless only Administrators and SYSTEM can access it. The script writes the key there, then replaces the file's ACL with exactly those two entries and reads it back to confirm.
+- The key is added once: a re-run finds it on an active line (same type and key, with or without options) and changes nothing. A commented-out copy does not count. It is written as UTF-8 without BOM, after a line break if the file did not end with one. An existing UTF-16 key file (what `echo … >` writes in Windows PowerShell 5) is refused, because sshd cannot read it.
+- **The result is checked by logging in with only the new key** (`IdentitiesOnly`, no password), to the same address and pinned host key, and then through the alias. If either fails, the script exits non-zero. If sshd reads a different file than the one written (a custom `AuthorizedKeysFile` or `Match` block), this is where it shows.
+- It refuses, before writing anything, a public key file that is not `<type> <key> [comment]`, a key whose command would exceed `cmd.exe`'s 8191-character limit (RSA-4096 keys fit), and a server whose banner shows a non-Windows SSH server (set `SKIP_OS_CHECK=1` to skip that check; a missing banner is not an error).
+- When every copy method fails, it prints the same command to paste into PowerShell on the Windows machine, then exits non-zero.
+- The `Match exec "nc …"` address probes run here, so several addresses work as with `add_remote_host.sh`.
+
+`test-add_remote_windows_host.sh` runs the generated PowerShell in the `mcr.microsoft.com/powershell` container (Docker needed; `SKIP_PWSH=1` skips that part). Only the Administrators check and the two ACL functions are replaced there, because they need Windows.
 
 **Usage:**
 ```bash

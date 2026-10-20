@@ -88,7 +88,7 @@ jobs:
       - name: Test remote host scripts on macOS's bash 3.2
         run: |
           docker run --rm -v "$PWD":/w:ro bash:3.2 bash -c \
-            'apk add -q --no-progress openssh-client openssh-keygen netcat-openbsd >/dev/null && cp -r /w /tmp/repo && cd /tmp/repo && bash SSH_and_GPG/test-add_remote_host.sh && bash SSH_and_GPG/test-add_remote_windows_host.sh'
+            'apk add -q --no-progress openssh-client openssh-keygen netcat-openbsd >/dev/null && cp -r /w /tmp/repo && cd /tmp/repo && bash SSH_and_GPG/test-add_remote_host.sh && SKIP_PWSH=1 bash SSH_and_GPG/test-add_remote_windows_host.sh'
 
       - name: Test setup preflight helpers
         run: bash scripts/test-core-preflight.sh
