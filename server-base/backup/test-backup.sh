@@ -529,7 +529,29 @@ mkdir -p "$sc/game/RSDragonwilds/Saved/SaveGames" "$sc/lc/engine/data/players/ma
   "$sc/lc/engine/node_modules" "$sc/rs/players"
 printf '{"rev":"254"}\n' >"$sc/lc/server.json"
 printf 'SQLite format 3\0x' >"$sc/lc/engine/db.sqlite"
+# Saves: valid (0x2004 magic + big-endian CRC32 trailer), torn (bad CRC), and a symlink.
+make_save() {
+  python3 -c 'import sys, zlib; body = b"\x20\x04\x00\x05" + sys.argv[2].encode(); crc = zlib.crc32(body)
+if sys.argv[3] == "torn": crc ^= 1
+open(sys.argv[1], "wb").write(body + crc.to_bytes(4, "big"))' "$1" "$2" "$3"
+}
+mkdir -p "$sc/rs/players/main"
+make_save "$sc/lc/engine/data/players/main/alice.sav" alice good
+make_save "$sc/lc/engine/data/players/main/torn.sav" torn torn
+ln -s alice.sav "$sc/lc/engine/data/players/main/link.sav"
+make_save "$sc/rs/players/main/bob.sav" bob good
 out="$(PATH="$stub:$PATH" SQLITE_LOG="$sc/sqlite.log" game_2004 "$sc/lc" "$sc/rs")" || fail "2004Scape sources failed: $out"
+grep -q 'staged CRC-checked 2004Scape saves: 2 (failed the check: 1)' <<<"$out" || fail "save staging not reported: $out"
+grep -q 'lostcity save main/torn.sav failed its check' <<<"$out" || fail "torn save not reported: $out"
+for staged in lostcity/main/alice.sav rs-sdk/main/bob.sav; do
+  cmp -s "$sc/staging/saves/$staged" "$sc/${staged/lostcity/lc/engine/data/players}" 2>/dev/null \
+    || cmp -s "$sc/staging/saves/$staged" "$sc/rs/players/main/bob.sav" || fail "save $staged not staged intact"
+  (cd "$(dirname "$sc/staging/saves/$staged")" && sha256sum --quiet -c "$(basename "$staged").sha256") \
+    || fail "save $staged has no valid .sha256 sidecar"
+done
+[[ ! -e "$sc/staging/saves/lostcity/main/torn.sav" && ! -e "$sc/staging/saves/lostcity/main/link.sav" ]] \
+  || fail "a torn or symlinked save was staged: $(ls "$sc/staging/saves/lostcity/main")"
+rm "$sc/lc/engine/data/players/main/torn.sav" "$sc/lc/engine/data/players/main/link.sav"
 for want in "$sc/lc/server.json" "$sc/lc/engine/.env" "$sc/lc/engine/data/players" "$sc/lc/engine/data/config" "$sc/rs" \
             "$sc/markers/lostcity-seen" "$sc/markers/rs-sdk-seen"; do
   grep -q "candidates=.*$want" <<<"$out" || fail "2004Scape backup missing $want: $out"

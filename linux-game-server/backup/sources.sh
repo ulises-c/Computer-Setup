@@ -114,10 +114,83 @@ stage_lostcity_db() {
   log "sqlite snapshot: Lost City db.sqlite"
 }
 
+# Player saves are rewritten in place, not atomically, so a live copy can catch
+# one mid-write. Stage a copy of each that was stable while read and passes the
+# save's own check (0x2004 magic, big-endian CRC32 of the rest in the last four
+# bytes), with a .sha256 sidecar that restore-check verifies. A save that never
+# validates keeps only its raw copy in the backup, and is reported.
+stage_2004scape_saves() {
+  local -a roots=()
+  [[ -z "${BACKUP_LOSTCITY_RUNTIME_DIR:-}" ]] || roots+=("lostcity=$BACKUP_LOSTCITY_RUNTIME_DIR/engine/data/players")
+  [[ -z "${BACKUP_RS_SDK_DATA_DIR:-}" ]] || roots+=("rs-sdk=$BACKUP_RS_SDK_DATA_DIR/players")
+  (( ${#roots[@]} )) || return 0
+  local out
+  out="$(python3 - "$STAGING_DIR/saves" "${roots[@]}" <<'PY'
+import hashlib, os, stat, sys, time, zlib
+
+dest_root, roots = sys.argv[1], sys.argv[2:]
+staged = bad = 0
+
+def valid(data):
+    return (len(data) >= 8 and data[:2] == b"\x20\x04"
+            and zlib.crc32(data[:-4]) == int.from_bytes(data[-4:], "big"))
+
+def stable_read(path):
+    for _ in range(5):
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        except OSError:
+            return None
+        try:
+            before = os.fstat(fd)
+            if not stat.S_ISREG(before.st_mode):
+                return None
+            with os.fdopen(fd, "rb", closefd=False) as f:
+                data = f.read()
+            after = os.fstat(fd)
+        finally:
+            os.close(fd)
+        if (before.st_mtime_ns, before.st_size) == (after.st_mtime_ns, after.st_size) \
+                and len(data) == after.st_size and valid(data):
+            return data
+        time.sleep(0.2)
+    return False
+
+for spec in roots:
+    stack, root = spec.split("=", 1)
+    if os.path.islink(root) or not os.path.isdir(root):
+        continue
+    for dirpath, dirnames, filenames in os.walk(root):
+        for name in sorted(filenames):
+            if not name.endswith(".sav"):
+                continue
+            src = os.path.join(dirpath, name)
+            data = stable_read(src)
+            if data is None:
+                continue
+            rel = os.path.relpath(src, root)
+            if data is False:
+                bad += 1
+                print(f"warning: {stack} save {rel} failed its check; only the raw copy is backed up", file=sys.stderr)
+                continue
+            dest = os.path.join(dest_root, stack, rel)
+            os.makedirs(os.path.dirname(dest), mode=0o700, exist_ok=True)
+            with open(dest, "xb") as f:
+                f.write(data)
+            with open(dest + ".sha256", "x") as f:
+                f.write(f"{hashlib.sha256(data).hexdigest()}  {name}\n")
+            staged += 1
+print(f"{staged} {bad}")
+PY
+)" || die "staging 2004Scape player saves failed"
+  log "staged CRC-checked 2004Scape saves: ${out% *} (failed the check: ${out#* })"
+}
+
 # The game writes its world while running, so a raw file copy can be torn. Also
 # stage a header-checked, hash-verified copy taken while the file was stable.
 stage_extra() {
   stage_lostcity_db
+  stage_2004scape_saves
   [[ "$world_exists" == true ]] || return 0
   [[ "${BACKUP_SAVE_SCRIPT:-}" == "$SCRIPT_DIR/backup-save.py" ]] \
     || die "Dragonwilds backup helper is not the installed root-owned bundle copy"
