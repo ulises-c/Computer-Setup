@@ -540,6 +540,10 @@ make_save "$sc/lc/engine/data/players/main/alice.sav" alice good
 make_save "$sc/lc/engine/data/players/main/torn.sav" torn torn
 ln -s alice.sav "$sc/lc/engine/data/players/main/link.sav"
 make_save "$sc/rs/players/main/bob.sav" bob good
+mkfifo "$sc/lc/engine/data/players/main/blocked.sav"
+mkdir -p "$sc/outside"
+make_save "$sc/outside/outside.sav" outside good
+ln -s "$sc/outside" "$sc/lc/engine/data/players/redirected"
 out="$(PATH="$stub:$PATH" SQLITE_LOG="$sc/sqlite.log" game_2004 "$sc/lc" "$sc/rs")" || fail "2004Scape sources failed: $out"
 grep -q 'staged CRC-checked 2004Scape saves: 2 (failed the check: 1)' <<<"$out" || fail "save staging not reported: $out"
 grep -q 'lostcity save main/torn.sav failed its check' <<<"$out" || fail "torn save not reported: $out"
@@ -552,6 +556,9 @@ done
 [[ ! -e "$sc/staging/saves/lostcity/main/torn.sav" && ! -e "$sc/staging/saves/lostcity/main/link.sav" ]] \
   || fail "a torn or symlinked save was staged: $(ls "$sc/staging/saves/lostcity/main")"
 rm "$sc/lc/engine/data/players/main/torn.sav" "$sc/lc/engine/data/players/main/link.sav"
+[[ ! -e "$sc/staging/saves/lostcity/main/blocked.sav" && ! -e "$sc/staging/saves/lostcity/redirected/outside.sav" ]] \
+  || fail "nonregular or directory-symlinked save was staged"
+rm "$sc/lc/engine/data/players/main/blocked.sav" "$sc/lc/engine/data/players/redirected"
 for want in "$sc/lc/server.json" "$sc/lc/engine/.env" "$sc/lc/engine/data/players" "$sc/lc/engine/data/config" "$sc/rs" \
             "$sc/markers/lostcity-seen" "$sc/markers/rs-sdk-seen"; do
   grep -q "candidates=.*$want" <<<"$out" || fail "2004Scape backup missing $want: $out"
@@ -843,12 +850,18 @@ cp "$REPO/linux-game-server/backup/game-backup-restore-check.service.template" "
 printf 'RS_SDK_DATA_DIR=%s/rs\n' "$tmp" >"$gs/rs-sdk/.env"
 out="$(bash "$gs/backup/setup.sh" --verify 2>&1)" || fail "setup rejected the game restore-check unit: $out"
 out="$(bash "$gs/backup/setup.sh" --dry-run 2>&1)"
-grep -qF "game-backup-restore-check.service (compare-live: --compare-live $tmp/lc --compare-live $tmp/rs)" <<<"$out" \
+grep -qF -- "--compare-live $tmp/rs" <<<"$out" \
   || fail "restore-check unit not planned with both live trees: $out"
 rm "$gs/rs-sdk/.env"
 out="$(bash "$gs/backup/setup.sh" --dry-run 2>&1)"
-grep -qF "game-backup-restore-check.service (compare-live: --compare-live $tmp/lc)" <<<"$out" \
+grep -qF -- "--compare-sqlite $tmp/lc/engine/db.sqlite lostcity/db.sqlite.sqlitebak)" <<<"$out" \
   || fail "restore-check unit not planned with only the configured tree: $out"
+for state in server.json engine/data/players; do
+  grep -qF -- "--compare-live $tmp/lc/$state " <<<"$out" \
+    || fail "restore-check omitted an expected Lost City state path"
+done
+grep -qF -- "--compare-lostcity-config $tmp/lc " <<<"$out" \
+  || fail "restore-check omitted the alternative Lost City configuration check"
 sed -i.orig '/@RESTORE_COMPARE_ARGS@|/d' "$gs/backup/setup.sh"
 if out="$(bash "$gs/backup/setup.sh" --verify 2>&1)"; then fail "--verify accepted an unrendered @RESTORE_COMPARE_ARGS@: $out"; fi
 grep -q 'unrendered template placeholder' <<<"$out" || fail "unrendered restore-check placeholder failed for the wrong reason: $out"
@@ -916,6 +929,7 @@ case "$1" in
     [[ -z "${RC_STAGING_NOT_IN_PATHS:-}" ]] || staged_path=/srv/elsewhere
     live_path=""
     [[ -z "${RC_LIVE:-}" ]] || live_path=",\"$RC_LIVE/data\""
+    [[ -z "${RC_CONFIG:-}" ]] || live_path="$live_path,\"$RC_CONFIG/engine/data/config\""
     printf '[{"short_id":"abcdef","time":"2026-10-18T00:00:00","paths":["/srv/service","%s"%s]}]' "$staged_path" "$live_path" ;;
   stats) printf '{"total_size":10}' ;;
   ls)
@@ -923,12 +937,22 @@ case "$1" in
     [[ -z "${RC_NO_MARKER:-}" ]] || n=$((n - 1))
     [[ -z "${RC_FOREIGN:-}" ]] || n=$((n + 4))
     [[ -z "${RC_LIVE:-}" ]] || n=$((n + 1))
+    [[ -z "${RC_SQLITE:-}" ]] || n=$((n + 1))
+    [[ -z "${RC_CONFIG:-}" ]] || n=$((n + 1))
     for ((i = 0; i < n; i++)); do printf '{"type":"file"}\n'; done ;;
   restore)
     t="$4${RC_SNAP_STAGING:-${STAGING_DIR:-/var/tmp/test-backup-staging}}"; mkdir -p "$t/sqlite"
     [[ -n "${RC_NO_MARKER:-}" ]] || printf '%s\n' "${RC_MARKER_TEXT:-computer-setup backup staging}" >"$t/.backup-staging"
     printf 'SQLite format 3\0' >"$t/sqlite/db.sqlitebak"
     (cd "$t/sqlite" && sha256sum db.sqlitebak >db.sqlitebak.sha256)
+    if [[ -n "${RC_SQLITE:-}" ]]; then
+      mkdir -p "$t/lostcity"
+      cp "$RC_SQLITE" "$t/lostcity/db.sqlite.sqlitebak"
+    fi
+    if [[ -n "${RC_CONFIG:-}" ]]; then
+      mkdir -p "$4$RC_CONFIG/engine/data/config"
+      printf '{"nodeId":10}' >"$4$RC_CONFIG/engine/data/config/world.json"
+    fi
     if [[ -n "${RC_LIVE:-}" ]]; then
       mkdir -p "$4$RC_LIVE/data"
       printf '%s' "${RC_LIVE_RESTORED:-same}" >"$4$RC_LIVE/data/save.txt"
@@ -1058,25 +1082,25 @@ grep -q 'sqlite3 is required' <<<"$out" || fail "missing sqlite3 not reported: $
 live="$rc/live"
 mkdir -p "$live/data"
 printf 'same' >"$live/data/save.txt"
-out="$(RC_LIVE="$live" PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" --compare-live "$live" 2>&1)" \
+out="$(RC_LIVE="$live" PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" --compare-live "$live/data" 2>&1)" \
   || fail "restore-check rejected a restore identical to the live copy: $out"
-grep -q "identical to the live copy: 1 snapshot path(s) under $live" <<<"$out" && grep -q PASSED <<<"$out" \
+grep -q "identical to the live copy: 1 snapshot path(s) under $live/data" <<<"$out" && grep -q PASSED <<<"$out" \
   || fail "live comparison not reported: $out"
-if out="$(RC_LIVE="$live" RC_LIVE_RESTORED=changed PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" --compare-live "$live" 2>&1)"; then
+if out="$(RC_LIVE="$live" RC_LIVE_RESTORED=changed PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" --compare-live "$live/data" 2>&1)"; then
   fail "restore-check passed a restore that differs from the live copy: $out"
 fi
 grep -q "restored $live/data differs from the live copy" <<<"$out" || fail "differing restore not reported: $out"
 if grep -q PASSED <<<"$out"; then fail "PASSED printed for a differing restore"; fi
 printf 'new save' >"$live/data/extra.txt"
-if out="$(RC_LIVE="$live" PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" --compare-live "$live" 2>&1)"; then
+if out="$(RC_LIVE="$live" PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" --compare-live "$live/data" 2>&1)"; then
   fail "restore-check passed a restore missing a live file: $out"
 fi
 rm "$live/data/extra.txt"
-for missing in "$rc/liv" "$rc/elsewhere"; do
+for missing in "$rc/liv" "$rc/elsewhere" "$live"; do
   if out="$(RC_LIVE="$live" PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" --compare-live "$missing" 2>&1)"; then
     fail "restore-check passed --compare-live $missing with nothing of it in the snapshot: $out"
   fi
-  grep -q "has nothing under $missing" <<<"$out" || fail "uncovered $missing not reported: $out"
+  grep -q "has no exact source for $missing" <<<"$out" || fail "uncovered $missing not reported: $out"
 done
 for bad in relative/dir "$live/../x" "$live/"; do
   if out="$(PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" --compare-live "$bad" 2>&1)"; then
@@ -1084,6 +1108,80 @@ for bad in relative/dir "$live/../x" "$live/"; do
   fi
   grep -q 'needs a plain absolute path' <<<"$out" || fail "bad --compare-live $bad failed for the wrong reason: $out"
 done
+python3 - "$rc/live.sqlite" "$rc/snapshot.sqlite" <<'PY'
+import sqlite3, sys
+with sqlite3.connect(sys.argv[1]) as db:
+    db.execute('CREATE TABLE accounts (name TEXT)')
+    db.execute("INSERT INTO accounts VALUES ('alice')")
+    with sqlite3.connect(sys.argv[2]) as copy:
+        db.commit()
+        db.backup(copy)
+PY
+out="$(RC_SQLITE="$rc/snapshot.sqlite" PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" \
+  --compare-sqlite "$rc/live.sqlite" lostcity/db.sqlite.sqlitebak 2>&1)" \
+  || fail "restore-check rejected an identical staged SQLite database: $out"
+grep -q 'SQLite database identical' <<<"$out" || fail "SQLite comparison not reported"
+python3 - "$rc/live.sqlite" <<'PY'
+import sqlite3, sys
+with sqlite3.connect(sys.argv[1]) as db:
+    db.execute("INSERT INTO accounts VALUES ('bob')")
+PY
+if out="$(RC_SQLITE="$rc/snapshot.sqlite" PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" \
+  --compare-sqlite "$rc/live.sqlite" lostcity/db.sqlite.sqlitebak 2>&1)"; then
+  fail "restore-check accepted stale Lost City account data"
+fi
+grep -q 'database differs from stopped live data' <<<"$out" || fail "stale database not reported: $out"
+if out="$(PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" \
+  --compare-sqlite "$rc/live.sqlite" lostcity/missing.sqlitebak 2>&1)"; then
+  fail "restore-check accepted a missing staged database"
+fi
+grep -q 'SQLite live comparison failed' <<<"$out" || fail "missing staged database not reported"
+runtime="$rc/runtime"
+mkdir -p "$runtime/engine/data/config"
+printf '{"nodeId":10}' >"$runtime/engine/data/config/world.json"
+out="$(RC_CONFIG="$runtime" PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" \
+  --compare-lostcity-config "$runtime" 2>&1)" \
+  || fail "restore-check rejected world.json-only Lost City configuration: $out"
+printf 'NODE_ID=10' >"$runtime/engine/.env"
+if out="$(RC_CONFIG="$runtime" PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" \
+  --compare-lostcity-config "$runtime" 2>&1)"; then
+  fail "restore-check accepted an unbacked live .env"
+fi
+rm "$runtime/engine/.env" "$runtime/engine/data/config/world.json"
+if out="$(RC_CONFIG="$runtime" PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" \
+  --compare-lostcity-config "$runtime" 2>&1)"; then
+  fail "restore-check accepted missing Lost City configuration"
+fi
+grep -q 'neither .env nor world.json' <<<"$out" || fail "missing Lost City config not reported"
+python3 - "$SCRIPT_DIR/restore-check.sh" "$rc/wal-test" <<'PY'
+import pathlib, shutil, sqlite3, subprocess, sys
+
+script = pathlib.Path(sys.argv[1]).read_text()
+comparator = script.split('python3 - "$staging_root" "${compare_sqlite[@]}" <<\'PY\'\n', 1)[1].split('\nPY\n', 1)[0]
+root = pathlib.Path(sys.argv[2])
+root.mkdir()
+staging = root / 'staging'
+staging.mkdir()
+live = root / 'live.sqlite'
+with sqlite3.connect(root / 'writer.sqlite') as writer:
+    writer.execute('PRAGMA journal_mode=WAL')
+    writer.execute('PRAGMA wal_autocheckpoint=0')
+    writer.execute('CREATE TABLE accounts(name TEXT)')
+    writer.execute("INSERT INTO accounts VALUES ('alice')")
+    writer.commit()
+    shutil.copyfile(root / 'writer.sqlite', live)
+    shutil.copyfile(root / 'writer.sqlite-wal', root / 'live.sqlite-wal')
+    with sqlite3.connect(staging / 'snapshot.sqlitebak') as snapshot:
+        writer.backup(snapshot)
+before = {p.name: p.read_bytes() for p in root.glob('live.sqlite*')}
+result = subprocess.run([sys.executable, '-c', comparator, str(staging), str(live), 'snapshot.sqlitebak'], capture_output=True, text=True)
+assert result.returncode == 0, result.stdout + result.stderr
+assert {p.name: p.read_bytes() for p in root.glob('live.sqlite*')} == before, 'SQLite comparison touched live WAL files'
+with sqlite3.connect(staging / 'snapshot.sqlitebak') as snapshot:
+    snapshot.execute('DELETE FROM accounts')
+result = subprocess.run([sys.executable, '-c', comparator, str(staging), str(live), 'snapshot.sqlitebak'], capture_output=True, text=True)
+assert result.returncode != 0 and 'database differs' in result.stderr, 'SQLite comparison ignored committed WAL rows'
+PY
 [[ -z "$(ls -A "$rc/root")" ]] || fail "restore-check left scratch behind: $(ls -A "$rc/root")"
 
 printf 'backup engine tests: PASSED\n'

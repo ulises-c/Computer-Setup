@@ -108,7 +108,13 @@ valid_game_path "$BACKUP_RS_SDK_DATA_DIR" \
 # while the weekly maintenance has the games stopped).
 RESTORE_CHECK_TEMPLATE="$SCRIPT_DIR/$prefix-restore-check.service.template"
 RESTORE_COMPARE_ARGS=""
-[[ -z "$BACKUP_LOSTCITY_RUNTIME_DIR" ]] || RESTORE_COMPARE_ARGS+=" --compare-live $BACKUP_LOSTCITY_RUNTIME_DIR"
+if [[ -n "$BACKUP_LOSTCITY_RUNTIME_DIR" ]]; then
+  for state in server.json engine/data/players; do
+    RESTORE_COMPARE_ARGS+=" --compare-live $BACKUP_LOSTCITY_RUNTIME_DIR/$state"
+  done
+  RESTORE_COMPARE_ARGS+=" --compare-lostcity-config $BACKUP_LOSTCITY_RUNTIME_DIR"
+  RESTORE_COMPARE_ARGS+=" --compare-sqlite $BACKUP_LOSTCITY_RUNTIME_DIR/engine/db.sqlite lostcity/db.sqlite.sqlitebak"
+fi
 [[ -z "$BACKUP_RS_SDK_DATA_DIR" ]] || RESTORE_COMPARE_ARGS+=" --compare-live $BACKUP_RS_SDK_DATA_DIR"
 if [[ "$MODE" == install ]]; then
   [[ $EUID -eq 0 ]] || { printf 'error: run with sudo: sudo bash %s\n' "$0" >&2; exit 1; }

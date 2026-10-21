@@ -126,7 +126,7 @@ stage_2004scape_saves() {
   (( ${#roots[@]} )) || return 0
   local out
   out="$(python3 - "$STAGING_DIR/saves" "${roots[@]}" <<'PY'
-import hashlib, os, stat, sys, time, zlib
+import errno, hashlib, os, stat, sys, time, zlib
 
 dest_root, roots = sys.argv[1], sys.argv[2:]
 staged = bad = 0
@@ -135,12 +135,14 @@ def valid(data):
     return (len(data) >= 8 and data[:2] == b"\x20\x04"
             and zlib.crc32(data[:-4]) == int.from_bytes(data[-4:], "big"))
 
-def stable_read(path):
+def stable_read(name, directory):
     for _ in range(5):
         try:
-            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-        except OSError:
-            return None
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+        except OSError as error:
+            if error.errno in (errno.ELOOP, errno.ENOENT):
+                return None
+            raise
         try:
             before = os.fstat(fd)
             if not stat.S_ISREG(before.st_mode):
@@ -156,30 +158,49 @@ def stable_read(path):
         time.sleep(0.2)
     return False
 
+def open_directory(path):
+    fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in path.split("/")[1:]:
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = child
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+def walk_error(error):
+    raise error
+
 for spec in roots:
     stack, root = spec.split("=", 1)
-    if os.path.islink(root) or not os.path.isdir(root):
+    try:
+        directory = open_directory(root)
+    except FileNotFoundError:
         continue
-    for dirpath, dirnames, filenames in os.walk(root):
-        for name in sorted(filenames):
-            if not name.endswith(".sav"):
-                continue
-            src = os.path.join(dirpath, name)
-            data = stable_read(src)
-            if data is None:
-                continue
-            rel = os.path.relpath(src, root)
-            if data is False:
-                bad += 1
-                print(f"warning: {stack} save {rel} failed its check; only the raw copy is backed up", file=sys.stderr)
-                continue
-            dest = os.path.join(dest_root, stack, rel)
-            os.makedirs(os.path.dirname(dest), mode=0o700, exist_ok=True)
-            with open(dest, "xb") as f:
-                f.write(data)
-            with open(dest + ".sha256", "x") as f:
-                f.write(f"{hashlib.sha256(data).hexdigest()}  {name}\n")
-            staged += 1
+    try:
+        for dirpath, _, filenames, dirfd in os.fwalk(".", dir_fd=directory, follow_symlinks=False, onerror=walk_error):
+            for name in sorted(filenames):
+                if not name.endswith(".sav"):
+                    continue
+                data = stable_read(name, dirfd)
+                if data is None:
+                    continue
+                rel = os.path.normpath(os.path.join(dirpath, name))
+                if data is False:
+                    bad += 1
+                    print(f"warning: {stack} save {rel} failed its check; only the raw copy is backed up", file=sys.stderr)
+                    continue
+                dest = os.path.join(dest_root, stack, rel)
+                os.makedirs(os.path.dirname(dest), mode=0o700, exist_ok=True)
+                with open(dest, "xb") as f:
+                    f.write(data)
+                with open(dest + ".sha256", "x") as f:
+                    f.write(f"{hashlib.sha256(data).hexdigest()}  {name}\n")
+                staged += 1
+    finally:
+        os.close(directory)
 print(f"{staged} {bad}")
 PY
 )" || die "staging 2004Scape player saves failed"
