@@ -64,12 +64,22 @@ grep -q "\"$target\":{\"cpu\"" <<<"$stats" || fail "stats through the proxy: $st
 lan="$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: lan-name.test:33000' http://127.0.0.1:33000/)"
 [[ "$lan" == 200 ]] || fail "direct LAN Host header with port: got $lan"
 
-# Hosts that expose Homepage on the LAN must allow their LAN names with the port.
+# Hosts that expose Homepage on the LAN must allow each LAN name with the port.
+# Tailnet names (serve forwards them on :443) and localhost stay portless.
 for host_dir in linux-server linux-pi; do
-  allowed="$(grep -o 'HOMEPAGE_ALLOWED_HOSTS: .*' "$repo/$host_dir/homepage/docker-compose.yml")"
-  port="$(grep -o 'PORT: "[0-9]*"' "$repo/$host_dir/homepage/docker-compose.yml" | grep -o '[0-9]*' || printf 3000)"
-  grep -q 'HOSTNAME: "0.0.0.0"' "$repo/$host_dir/homepage/docker-compose.yml" || continue
-  [[ "$allowed" =~ \}:$port, ]] || fail "$host_dir: LAN entries in HOMEPAGE_ALLOWED_HOSTS lack :$port"
+  file="$repo/$host_dir/homepage/docker-compose.yml"
+  grep -q 'HOSTNAME: "0.0.0.0"' "$file" || continue
+  port="$(grep -o 'PORT: "[0-9]*"' "$file" | grep -o '[0-9]*' || printf 3000)"
+  allowed="$(sed -n 's/.*HOMEPAGE_ALLOWED_HOSTS: "\(.*\)"/\1/p' "$file")"
+  [[ -n "$allowed" ]] || fail "$host_dir: no HOMEPAGE_ALLOWED_HOSTS"
+  IFS=, read -ra entries <<<"$allowed"
+  lan=0
+  for entry in "${entries[@]}"; do
+    [[ "$entry" == *TAILSCALE_HOSTNAME* || "$entry" == *HOMEPAGE_DOMAIN* || "$entry" != *'${'* ]] && continue
+    [[ "$entry" == *":$port" ]] || fail "$host_dir: LAN entry $entry in HOMEPAGE_ALLOWED_HOSTS lacks :$port"
+    lan=$((lan + 1))
+  done
+  ((lan >= 3)) || fail "$host_dir: expected at least 3 LAN entries, found $lan"
 done
 
 # One curl container runs every probe and prints "<code> <method> <path>".
@@ -111,8 +121,8 @@ nonroot="$(docker run --rm --user 1000 -v "$volume:/s:ro" "$curl_image" -s -o /d
 
 docker stop -t 5 "$project-proxy" >/dev/null
 down="$(curl -s 'http://127.0.0.1:33000/api/docker/statuses?server=my-docker')"
-if grep -q "\"$target\"" <<<"$down"; then
-  fail "homepage still reads Docker with the proxy stopped: $down"
-fi
+grep -q 'ENOENT\|ECONNREFUSED' <<<"$down" || fail "homepage reads Docker with the proxy stopped: $down"
+up="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:33000/)"
+[[ "$up" == 200 ]] || fail "homepage itself failed with the proxy stopped: $up"
 
 printf 'homepage docker proxy tests passed.\n'

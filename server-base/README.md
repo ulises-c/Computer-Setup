@@ -63,8 +63,9 @@ every host's Homepage compose file extends:
 
 - It serves a filtered API on a Unix socket in the `homepage-docker` volume,
   mode `0600` and owned by root, and has no network (`network_mode: none`). Only
-  Homepage, which runs as root and mounts that volume read-only, can open it.
-  No TCP port exists for another local process to reach.
+  Homepage is granted that volume (read-only), and it runs as root, so it can
+  open the socket; non-root clients and host processes without the volume
+  cannot. No TCP port exists for another local process to reach.
 - It allows only `GET /containers/json` and `GET /containers/<id>/stats`,
   which are all the calls Homepage makes.
 - It runs read-only with every capability dropped.

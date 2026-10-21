@@ -39,9 +39,10 @@ Complete these remaining steps.
 
 ## 4. Homepage .env
 
-Edit `linux-server/homepage/.env`, then restart:
+Edit `linux-server/homepage/.env`, then recreate the container (`restart` keeps
+the old environment and mounts):
 ```sh
-cd linux-server/homepage && docker compose restart
+cd linux-server/homepage && docker compose up -d
 ```
 
 | Variable | How to get the value |
