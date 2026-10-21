@@ -60,6 +60,9 @@ jobs:
       - name: Test server-base Homepage generator (outputs current, cross-links)
         run: python3 server-base/tests/test_generate.py -v
 
+      - name: Test Homepage sprite colour keying
+        run: python3 server-base/tests/test_png_colorkey.py -v
+
       - name: Test provisioning safety (AdGuard, Serve, clean server bootstrap)
         run: python3 server-base/tests/test_provisioning_safety.py -v
 

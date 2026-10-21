@@ -183,28 +183,131 @@
               format: bytes
     - "Lost City: 2004Scape":
         id: lostcity-server
-        icon: sh-steam.svg
+        icon: /icons/lostcity.jpg
         href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}:9444/rs2.cgi
-        description: Vanilla 2004Scape · LAN :8888 · tailnet
+        description: Vanilla 2004 world for human players · own accounts
         siteMonitor: http://127.0.0.1:8888/rs2.cgi
         server: my-docker
         container: lostcity
-    - RS-SDK:
+        widget:
+          type: customapi
+          url: http://127.0.0.1:8097/lostcity-status.json
+          refreshInterval: 15000
+          display: list
+          mappings:
+            - field: status
+              label: Server
+              format: text
+            - field: software_summary
+              label: Software
+              format: text
+            - field: rules_summary
+              label: Rules
+              format: text
+            - field: uptime_display
+              label: Uptime
+              format: text
+            - field: cpu_summary
+              label: CPU · 1 core / 24h
+              format: text
+            - field: memory_summary
+              label: Memory · 24h
+              format: text
+            - field: sample_window
+              label: Coverage
+              format: text
+            - field: process_summary
+              label: Process
+              format: text
+            - field: players_summary
+              label: Players
+              format: text
+            - field: connect_lan
+              label: LAN
+              format: text
+            - field: last_seen
+              label: Last activity
+              format: relativeDate
+            - field: storage_summary
+              label: Saves · data
+              format: text
+            - field: maintenance_summary
+              label: Maintenance
+              format: text
+            - field: next_maintenance
+              label: Next restart
+              format: relativeDate
+            - field: backup_status
+              label: Backup
+              format: text
+            - field: last_backup
+              label: Last backup
+              format: relativeDate
+    - "RS-SDK: bot server":
         id: rs-sdk-server
-        icon: sh-steam.svg
+        icon: mdi-robot-outline-#22d3ee
         href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}:9445/
-        description: RS-SDK engine and web client · LAN :8080 · tailnet
+        description: Agent/bot fork with an SDK gateway · own accounts
         siteMonitor: http://127.0.0.1:8080/engine-status
         server: my-docker
         container: rs-sdk-server
         widget:
           type: customapi
-          url: http://127.0.0.1:8080/engine-status
-          refreshInterval: 30000
+          url: http://127.0.0.1:8097/rs-sdk-status.json
+          refreshInterval: 15000
+          display: list
           mappings:
             - field: status
               label: Engine
               format: text
-            - field: uptime
-              label: Uptime (seconds)
+            - field: software_summary
+              label: Software
               format: text
+            - field: rules_summary
+              label: Rules
+              format: text
+            - field: uptime_display
+              label: Uptime
+              format: text
+            - field: cpu_summary
+              label: CPU · 1 core / 24h
+              format: text
+            - field: memory_summary
+              label: Memory · 24h
+              format: text
+            - field: sample_window
+              label: Coverage
+              format: text
+            - field: process_summary
+              label: Process
+              format: text
+            - field: players_summary
+              label: Players
+              format: text
+            - field: bots_summary
+              label: Bots
+              format: text
+            - field: gateway_summary
+              label: Gateway
+              format: text
+            - field: connect_lan
+              label: LAN
+              format: text
+            - field: last_seen
+              label: Last activity
+              format: relativeDate
+            - field: storage_summary
+              label: Saves · data
+              format: text
+            - field: maintenance_summary
+              label: Maintenance
+              format: text
+            - field: next_maintenance
+              label: Next restart
+              format: relativeDate
+            - field: backup_status
+              label: Backup
+              format: text
+            - field: last_backup
+              label: Last backup
+              format: relativeDate

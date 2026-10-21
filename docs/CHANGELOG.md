@@ -17,6 +17,15 @@ in [UNIFICATION.md](UNIFICATION.md).
   03:00 backup, verifies the restored state, applies pending updates and restarts.
   Failed or interrupted updates retain rollback state; other nights remain live.
   Requires rerunning the backup installer and installing the maintenance timer.
+- Lost City and RS-SDK Homepage cards match the Dragonwilds card: a 15-second
+  status producer (`2004scape/game_status.py`, loopback nginx on 8097) reports
+  container health, software and gameplay rules, 24h CPU/memory, players and
+  accounts (read-only SQLite), saves, LAN address, maintenance window and backup.
+  RS-SDK adds bot, SDK-client and gateway rows. The cards are styled apart: Lost
+  City shows the mirrored 2004 login art and logo, RS-SDK the Lava Maze art,
+  scanlines, a robot icon and a BOT SERVER tag. Requires
+  `fetch-assets.sh linux-game-server` and `sudo bash
+  linux-game-server/2004scape/install-status-timer.sh`.
 
 ## Unreleased — Shared server base and cross-linked dashboards
 
