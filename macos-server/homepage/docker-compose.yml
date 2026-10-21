@@ -11,3 +11,9 @@ services:
       HOMEPAGE_ALLOWED_HOSTS: "${HOMEPAGE_ALLOWED_HOSTS:?Run macos-server/setup.sh to create .env}"
     volumes:
       - ./config:/app/config
+
+  # Homepage's only route to Docker (config/docker.yaml); see the base file.
+  docker-socket-proxy:
+    extends:
+      file: ../../server-base/homepage/compose.yml
+      service: docker-socket-proxy

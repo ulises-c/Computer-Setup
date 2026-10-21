@@ -6,6 +6,16 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com). Remaining
 work lives in [TODO.md](TODO.md); the design rationale for the unified layout is
 in [UNIFICATION.md](UNIFICATION.md).
 
+## Unreleased — Homepage Docker proxy ([#126](https://github.com/ulises-c/Computer-Setup/issues/126))
+
+### Security
+- Homepage no longer mounts the Docker socket on any host. It reads container
+  status and stats through `docker-socket-proxy` (`wollomatic/socket-proxy`,
+  digest-pinned) on `127.0.0.1:2375`, which allows only those two read-only
+  calls and runs read-only with all capabilities dropped. The main server and
+  the Pi keep Homepage on the LAN as a Tailscale-down fallback, now without
+  root-equivalent Docker access. CI tests the allowlist against a real daemon.
+
 ## Unreleased — One tailnet node per host ([#86](https://github.com/ulises-c/Computer-Setup/issues/86))
 
 ### Changed

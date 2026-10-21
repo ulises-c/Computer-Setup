@@ -1,2 +1,5 @@
+# Filtered Docker API (server-base/homepage/compose.yml docker-socket-proxy);
+# Homepage has no Docker socket of its own.
 my-docker:
-  socket: /var/run/docker.sock
+  host: 127.0.0.1
+  port: 2375

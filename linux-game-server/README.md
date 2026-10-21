@@ -115,9 +115,9 @@ The Homepage **Shared services** group links to single-instance services on the
 NAS host (its Uptime Kuma, ntfy, Forgejo, AdGuard, Immich, Syncthing).
 For a local fallback, use `ssh -L 3000:127.0.0.1:3000 <game-server>` and visit
 `http://localhost:3000`. Host checks remain enabled.
-Homepage mounts the Docker socket read-only for container status badges; a
-read-only mount still grants full Docker API access, so keep Homepage
-tailnet-only. The native game's real state comes from the status JSON, not from
+Homepage reads container status badges through the shared Docker proxy
+(`server-base/homepage/compose.yml`), which allows only container list and stats;
+Homepage has no Docker socket of its own. The native game's real state comes from the status JSON, not from
 whether the small nginx status container is running.
 
 ## Migrate a running Dragonwilds world

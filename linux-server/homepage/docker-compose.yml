@@ -20,5 +20,12 @@ services:
       # HOMEPAGE_VAR_HOMEPAGE_DOMAIN both hold the host node's MagicDNS name,
       # the one serve forwards.
       HOMEPAGE_ALLOWED_HOSTS: "${HOSTNAME},${HOSTNAME}.local,localhost,${SERVER_IP},${TAILSCALE_HOSTNAME},${HOMEPAGE_VAR_HOMEPAGE_DOMAIN}"
-      # LAN clients reach :3000 directly as well as through serve.
+      # LAN clients reach :3000 directly as well as through serve; safe
+      # because Homepage has no Docker socket, only the filtered proxy.
       HOSTNAME: "0.0.0.0"
+
+  # Homepage's only route to Docker (config/docker.yaml); see the base file.
+  docker-socket-proxy:
+    extends:
+      file: ../../server-base/homepage/compose.yml
+      service: docker-socket-proxy

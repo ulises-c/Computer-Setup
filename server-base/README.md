@@ -15,7 +15,7 @@ consume it and add only what is genuinely theirs.
 | Agents | claude-code, opencode | `packages.json` (`server-base`), installed by `claude_code_step` / `opencode_step` |
 | Dotfiles | `~/.zshrc`, `~/.tmux.conf`, antidote plugins, p10k | `dotfiles/`, deployed by `deploy_dotfiles` |
 | Network | Tailscale, one tailnet node per host ([#86](https://github.com/ulises-c/Computer-Setup/issues/86)) | `serve.sh` + each host's `serve.conf` |
-| Containers | Docker, Glances, Portainer, Watchtower, Homepage | `glances/`, `portainer/`, `watchtower/`, `homepage/compose.yml` |
+| Containers | Docker, Glances, Portainer, Watchtower, Homepage (+ its read-only Docker proxy) | `glances/`, `portainer/`, `watchtower/`, `homepage/compose.yml` |
 | Admin | Cockpit (host package, served under `/cockpit`) | `serve.sh` writes its `UrlRoot`/origin config |
 | Backups | restic nightly + status card + ntfy / Uptime Kuma alerts | `backup/` |
 | Dashboard | cross-linked Homepage (Servers group, Shared services, design system) | `fleet.json`, `homepage/` |
@@ -53,6 +53,23 @@ report that host down.
 | Pi | `linux-pi/setup.sh` | one node: base routes from `serve.conf`, the rest from `tailscale-serve/serve.json` |
 | game server | `linux-game-server/setup.sh` | one node, `/<service>` paths |
 | Mac mini | `macos-server/setup.sh` | one node, `/<service>` paths |
+
+## Homepage's Docker access
+
+Homepage never mounts the Docker socket: a read-only mount still grants the full
+Docker API, root on the host. `homepage/compose.yml` adds a second service,
+`docker-socket-proxy` (`wollomatic/socket-proxy`, digest-pinned), which every
+host's Homepage compose file extends. It listens on `127.0.0.1:2375`, allows only
+`GET /containers/json` and `GET /containers/<id>/stats` (all Homepage calls),
+and runs read-only with every capability dropped. Each host's
+`homepage/config/docker.yaml` points at it. That is why the main server and the
+Pi can keep Homepage on the LAN (`HOSTNAME: 0.0.0.0`) as a fallback when
+Tailscale is down: a LAN client sees the container list and stats, nothing more.
+
+If a Homepage upgrade calls another endpoint, its cards show a Docker error and
+the proxy logs `blocked request`; widen `-allowGET` only to that read-only path.
+`server-base/tests/test-homepage-docker-proxy.sh` checks the allowlist against a
+real daemon in CI.
 
 ## AdGuard replicas
 
