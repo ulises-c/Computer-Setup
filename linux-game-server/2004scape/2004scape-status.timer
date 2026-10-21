@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh the Lost City and RS-SDK status JSON every fifteen seconds
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=15s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

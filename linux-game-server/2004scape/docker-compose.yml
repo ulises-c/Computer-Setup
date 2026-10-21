@@ -1,0 +1,15 @@
+services:
+  # Loopback nginx exposing the Lost City and RS-SDK status JSON (written by
+  # game_status.py) to the Homepage cards, like dragonwilds-status. scaffold.py
+  # creates ./status as the login user first, so Docker does not create it as root.
+  2004scape-status:
+    image: nginx:alpine
+    container_name: 2004scape-status
+    restart: unless-stopped
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
+    ports:
+      - "127.0.0.1:8097:80"
+    volumes:
+      - ./status:/usr/share/nginx/html:ro
