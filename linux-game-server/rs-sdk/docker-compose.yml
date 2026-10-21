@@ -18,13 +18,17 @@ services:
       FRIEND_SERVER: "true"
       LOGIN_SERVER: "true"
       LOGIN_HOST: 127.0.0.1
-      LOGIN_PORT: "43500"
+      LOGIN_PORT: "43510"
+      FRIEND_HOST: 127.0.0.1
+      FRIEND_PORT: "45109"
+      LOGGER_HOST: 127.0.0.1
+      LOGGER_PORT: "43511"
       NODE_MEMBERS: "true"
       NODE_PORT: "43595"
       NODE_RANDOM_EVENTS: "false"
       WEBSITE_REGISTRATION: "true"
       WEB_PORT: "8080"
-      WEB_MANAGEMENT_PORT: "8898"
+      WEB_MANAGEMENT_PORT: "8899"
       GATEWAY_URL: http://127.0.0.1:7780
       AGENT_PORT: "7780"
       GATEWAY_PUBLIC_PORT: "7781"

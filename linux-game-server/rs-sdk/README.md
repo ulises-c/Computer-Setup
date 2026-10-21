@@ -10,7 +10,7 @@ This is the independent RS-SDK fork, which includes its own game engine, web cli
 - LAN SDK gateway: `ws://<server-ip>:7781`
 - Tailscale SDK gateway: `wss://<game-host>.<tailnet>.ts.net:9446`
 
-The web UI uses root-relative routes, so it gets a dedicated Tailscale HTTPS port rather than a subpath. The browser game's `/gateway` WebSocket is proxied through the web server. The direct gateway and game TCP listeners are allowed only from the LAN and Tailscale interfaces. Internal gateway port 7780 and management port 8898 are not opened. Tailscale Serve is tailnet-only; no Funnel or router port forwarding is configured.
+The web UI uses root-relative routes, so it gets a dedicated Tailscale HTTPS port rather than a subpath. The browser game's `/gateway` WebSocket is proxied through the web server. The direct gateway and game TCP listeners are allowed only from the LAN and Tailscale interfaces. Internal ports are not opened: gateway 7780, management 8899, telemetry 43512, hiscores 8889, and the login, logger and friend servers on 43510, 43511 and 45109 (moved off the Lost City defaults, which that stack uses on the same host network). Tailscale Serve is tailnet-only; no Funnel or router port forwarding is configured.
 
 The Compose service intentionally does not publish Docker ports: it uses host networking so the host UFW policy can restrict inbound sources. Do not add a Docker `ports:` mapping; Docker-published ports can bypass UFW.
 

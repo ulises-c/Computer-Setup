@@ -56,6 +56,28 @@ class ComposeSafetyTests(unittest.TestCase):
         self.assertEqual(service["environment"]["NODE_PORT"], "43595")
         self.assertEqual(service["environment"]["GATEWAY_PUBLIC_PORT"], "7781")
 
+    def test_rs_sdk_internal_servers_avoid_lost_city_ports(self):
+        # Both stacks share the host network. Lost City's setup wizard uses the
+        # engine defaults, so RS-SDK must move every internal server off them, or
+        # it would join Lost City's login/friend server instead of its own.
+        lost_city_defaults = {"WEB_PORT": "8888", "WEB_MANAGEMENT_PORT": "8898", "NODE_PORT": "43594",
+                              "LOGIN_PORT": "43500", "FRIEND_PORT": "45099", "LOGGER_PORT": "43501"}
+        env = load_compose("rs-sdk")["services"]["rs-sdk"]["environment"]
+        for key, taken in lost_city_defaults.items():
+            with self.subTest(key=key):
+                self.assertIn(key, env)
+                self.assertNotEqual(env[key], taken)
+        for key in ("LOGIN_HOST", "FRIEND_HOST", "LOGGER_HOST"):
+            with self.subTest(key=key):
+                self.assertEqual(env[key], "127.0.0.1")
+        rs_sdk_ports = {env[k] for k in ("WEB_PORT", "WEB_MANAGEMENT_PORT", "NODE_PORT", "LOGIN_PORT",
+                                         "FRIEND_PORT", "LOGGER_PORT", "AGENT_PORT", "GATEWAY_PUBLIC_PORT")}
+        self.assertEqual(len(rs_sdk_ports), 8)
+        activate = (ROOT / "2004scape" / "activate.sh").read_text()
+        for port in rs_sdk_ports | set(lost_city_defaults.values()):
+            with self.subTest(port=port):
+                self.assertIn(f'"{port}"', activate)
+
     def test_tailnet_routes_use_separate_root_ports(self):
         serve_conf = (ROOT / "serve.conf").read_text()
         for route in (

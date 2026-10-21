@@ -78,12 +78,16 @@ else
   }
 fi
 
-# All expected web and game ports must be free before Compose starts.
+# All expected web, game and internal (login/friend/logger/management) ports must
+# be free before Compose starts: both engines use host networking, so a port taken
+# by the other stack would silently join the wrong login or friend server.
 listeners="$(ss -H -ltn)"
 python3 - "$listeners" <<'PY'
 import sys
 
-ports = {"8888", "8080", "43594", "43595", "7781"}
+ports = {"8888", "8080", "43594", "43595", "7781",
+         "43500", "43501", "45099", "8898",
+         "43510", "43511", "43512", "45109", "8899", "8889", "7780"}
 for line in sys.argv[1].splitlines():
     fields = line.split()
     if len(fields) < 4:
