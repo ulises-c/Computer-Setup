@@ -27,6 +27,19 @@ repos:
         entry: bash scripts/check-python-syntax.sh
         types: [python]
 
+      - id: privacy-check
+        name: no identifying values in staged changes
+        language: system
+        entry: python3 scripts/check-privacy.py --staged
+        pass_filenames: false
+        always_run: true
+
+      - id: privacy-check-message
+        name: no identifying values in the commit message
+        language: system
+        entry: python3 scripts/check-privacy.py --message
+        stages: [commit-msg]
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:

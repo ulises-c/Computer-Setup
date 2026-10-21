@@ -1,0 +1,15 @@
+# Copy to .privacy-denylist (gitignored) and list the real values that must
+# never appear in this public repo, one per line, at least 4 characters. The
+# pre-commit privacy-check hook reads it; CI reads the PRIVACY_DENYLIST secret.
+# Matching is case-insensitive substring. The matched text is never printed.
+#
+# Host names (short and full)
+<hostname>
+<hostname>.<lan-domain>
+# Tailnet name (the part before .ts.net)
+<tailnet>
+# Login user names, on every machine
+<username>
+# Personal or work email addresses and domains
+<email>
+# Public IPs, SSIDs, anything else that identifies the owner
