@@ -63,6 +63,9 @@ resolve_sources() {
 # 2004Scape state only: the engine/content/client checkouts come back from the
 # bootstrap's revision clone. The engine scans the RS-SDK data dir for SQLite;
 # Lost City's db.sqlite sits beside the checkout, so stage_extra snapshots it.
+# The game containers can write these trees, so a symlink in the fixed path
+# could point root's backup elsewhere; only canonical paths are accepted.
+BACKUP_2004SCAPE_MARKER_DIR=/var/lib/computer-setup-backup/game-backup
 resolve_2004scape_sources() {
   local runtime="${BACKUP_LOSTCITY_RUNTIME_DIR:-}" rs_sdk="${BACKUP_RS_SDK_DATA_DIR:-}" path
   for path in "$runtime" "$rs_sdk"; do
@@ -70,29 +73,43 @@ resolve_2004scape_sources() {
     [[ "$path" =~ ^/[[:alnum:]_./-]+$ && "$path" != *//* && "$path" != */./* && "$path" != */. && "$path" != */../* && "$path" != */.. && "$path" != */ ]] \
       || die "invalid fixed 2004Scape data path"
   done
-  if [[ -n "$runtime" ]]; then
-    if [[ -d "$runtime/engine" ]]; then
-      CANDIDATES+=("$runtime/server.json" "$runtime/engine/.env"
-        "$runtime/engine/data/players" "$runtime/engine/data/config")
-    else
-      log "warning: Lost City runtime not found at $runtime — not backed up"
-    fi
+  [[ -z "$runtime" ]] || add_2004scape_tree lostcity "$runtime/engine" "Lost City runtime" \
+    "$runtime/server.json" "$runtime/engine/.env" "$runtime/engine/data/players" "$runtime/engine/data/config"
+  [[ -z "$rs_sdk" ]] || add_2004scape_tree rs-sdk "$rs_sdk" "RS-SDK data" "$rs_sdk"
+}
+
+# $1 stack, $2 dir that must exist, $3 label, $4.. paths to back up. A stack
+# seen by an earlier backup and now missing fails the run instead of pruning it.
+add_2004scape_tree() {
+  local stack="$1" dir="$2" label="$3" marker="$BACKUP_2004SCAPE_MARKER_DIR/$1-seen" real
+  shift 3
+  if [[ ! -d "$dir" ]]; then
+    [[ ! -e "$marker" ]] \
+      || die "$label missing at $dir, but it was backed up before; restore it, or delete $marker if it was removed on purpose"
+    log "warning: $label not found at $dir — not backed up"
+    return 0
   fi
-  if [[ -n "$rs_sdk" ]]; then
-    if [[ -d "$rs_sdk" ]]; then
-      CANDIDATES+=("$rs_sdk")
-    else
-      log "warning: RS-SDK data not found at $rs_sdk — not backed up"
-    fi
+  real="$(realpath -e -- "$dir")" || die "cannot resolve $dir"
+  [[ "$real" == "$dir" ]] || die "$label path $dir resolves to $real; refusing to follow a symlink"
+  if [[ "$stack" == lostcity ]]; then
+    real="$(realpath -e -- "$dir/data")" || die "cannot resolve $dir/data"
+    [[ "$real" == "$dir/data" ]] || die "$label path $dir/data is a symlink; refusing to follow it"
   fi
+  if [[ ! -e "$marker" ]]; then
+    install -d -m 755 "$BACKUP_2004SCAPE_MARKER_DIR"
+    printf '%s\n' "$dir" >"$marker"
+  fi
+  CANDIDATES+=("$@" "$marker")
 }
 
 stage_lostcity_db() {
   local db="${BACKUP_LOSTCITY_RUNTIME_DIR:-}/engine/db.sqlite"
-  [[ -n "${BACKUP_LOSTCITY_RUNTIME_DIR:-}" && -f "$db" ]] || return 0
+  [[ -n "${BACKUP_LOSTCITY_RUNTIME_DIR:-}" ]] && [[ -e "$db" || -L "$db" ]] || return 0
+  [[ -f "$db" && ! -L "$db" ]] || die "Lost City $db is not a regular file; refusing to follow it"
   command -v sqlite3 >/dev/null || die "sqlite3 not installed (apt install sqlite3); needed for $db"
   install -d -m 700 "$STAGING_DIR/lostcity"
-  sqlite3 "$db" ".backup '$STAGING_DIR/lostcity/db.sqlite.sqlitebak'" \
+  # Lost City uses a rollback journal: wait out a write instead of failing the night.
+  sqlite3 "$db" ".timeout 30000" ".backup '$STAGING_DIR/lostcity/db.sqlite.sqlitebak'" \
     || die "sqlite snapshot of $db failed"
   log "sqlite snapshot: Lost City db.sqlite"
 }

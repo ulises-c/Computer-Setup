@@ -93,14 +93,13 @@ if ! [[ "$BACKUP_FORGEJO_DATA_PATH" =~ ^/[[:alnum:]_./-]+$ && "$BACKUP_FORGEJO_D
   printf 'error: invalid FORGEJO_DATA_PATH in %s/forgejo/.env\n' "$HOST_DIR" >&2
   exit 1
 fi
-for game_path in "lostcity LOSTCITY_RUNTIME_DIR $BACKUP_LOSTCITY_RUNTIME_DIR" "rs-sdk RS_SDK_DATA_DIR $BACKUP_RS_SDK_DATA_DIR"; do
-  read -r game_stack game_key game_value <<<"$game_path"
-  [[ -z "${game_value:-}" ]] && continue
-  if ! [[ "$game_value" =~ ^/[[:alnum:]_./-]+$ && "$game_value" != *//* && "$game_value" != */./* && "$game_value" != */. && "$game_value" != */../* && "$game_value" != */.. && "$game_value" != */ ]]; then
-    printf 'error: invalid %s in %s/%s/.env\n' "$game_key" "$HOST_DIR" "$game_stack" >&2
-    exit 1
-  fi
-done
+valid_game_path() {
+  [[ -z "$1" ]] || [[ "$1" =~ ^/[[:alnum:]_./-]+$ && "$1" != *//* && "$1" != */./* && "$1" != */. && "$1" != */../* && "$1" != */.. && "$1" != */ ]]
+}
+valid_game_path "$BACKUP_LOSTCITY_RUNTIME_DIR" \
+  || { printf 'error: invalid LOSTCITY_RUNTIME_DIR in %s/lostcity/.env\n' "$HOST_DIR" >&2; exit 1; }
+valid_game_path "$BACKUP_RS_SDK_DATA_DIR" \
+  || { printf 'error: invalid RS_SDK_DATA_DIR in %s/rs-sdk/.env\n' "$HOST_DIR" >&2; exit 1; }
 if [[ "$MODE" == install ]]; then
   [[ $EUID -eq 0 ]] || { printf 'error: run with sudo: sudo bash %s\n' "$0" >&2; exit 1; }
   [[ -f "$SCRIPT_DIR/.env" ]] || { printf 'error: create %s/.env before installing\n' "$SCRIPT_DIR" >&2; exit 1; }

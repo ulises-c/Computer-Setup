@@ -26,6 +26,15 @@ Compose uses host networking with no `ports:` mappings so UFW can enforce the so
 
 Both are stateful. The nightly game backup (`linux-game-server/backup/`) covers them: for Lost City, `server.json`, `engine/.env`, `engine/data/players`, `engine/data/config` and an online SQLite copy of `engine/db.sqlite` (staged as `lostcity/db.sqlite.sqlitebak`); for RS-SDK, the whole data directory, with its SQLite files staged the same way. The source checkouts and `node_modules` are not backed up; they come back from the bootstrap's revision clone. The paths are read from `lostcity/.env` and `rs-sdk/.env` when the backup is installed, so rerun `sudo bash linux-game-server/backup/setup.sh` after setup or after changing either file.
 
-Player saves are copied live; a save written during the backup can be torn, so prefer the previous night's snapshot if one fails to load. Before inviting players, run `sudo bash server-base/backup/restore-check.sh linux-game-server` and restore into a stopped stack once: rerun setup to get the checkouts, stop the service, put the backed-up files back (strip `.sqlitebak` from the staged databases), then start it and log in with an existing account. The Dragonwilds `restore-drill.sh` does not cover these stacks. The activation script does not claim an application-consistent backup or a successful client join. For upgrades, stop the relevant service, preserve the data, update the source intentionally, rebuild, and verify the existing world/account data before reopening access.
+Player saves are copied live; a save written during the backup can be torn, so prefer the previous night's snapshot if one fails to load. The first backup that finds each stack's data writes a `<stack>-seen` marker under `/var/lib/computer-setup-backup/game-backup/` (backed up with it); from then on a missing data directory fails the backup instead of succeeding and pruning without it. Delete the marker if a stack is removed on purpose. Paths that resolve through a symlink are refused, because the containers can write these trees.
+
+Before inviting players, run `sudo bash server-base/backup/restore-check.sh linux-game-server` and restore into a stopped stack once:
+
+1. Rerun setup to get the checkouts. The bootstrap clones the current tip of the revision branch, which can be newer than the code that wrote the backup; note `git -C <checkout> rev-parse HEAD` for `engine`, `content` and `webclient` before each planned update.
+2. Stop the service, then put the backed-up files back.
+3. For every staged `*.sqlitebak`, delete the live database's `-wal`, `-shm` and `-journal` files (the restored raw copies of them included), then copy the staged file over the database with `.sqlitebak` stripped. A stale WAL left next to a clean copy is replayed onto it and can corrupt it. RS-SDK runs SQLite in WAL mode.
+4. Start the service and log in with an existing account.
+
+The Dragonwilds `restore-drill.sh` does not cover these stacks. The activation script does not claim an application-consistent backup or a successful client join. For upgrades, stop the relevant service, preserve the data, update the source intentionally, rebuild, and verify the existing world/account data before reopening access.
 
 See `lostcity/README.md` and `rs-sdk/README.md` for per-stack details.

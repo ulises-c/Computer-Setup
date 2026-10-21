@@ -356,8 +356,9 @@ SQLite copy of `engine/db.sqlite`; the whole RS-SDK data dir). It is a live
 backup, not a stopped-server snapshot. One-time setup:
 
 1. On this host: `sudo bash server-base/backup/sftp-client.sh linux-game-server key`
-   (installs restic, creates root's key, copies the public key to
-   `/tmp/game-backup.pub`).
+   (installs restic, jq and sqlite3, creates root's key, copies the public key to
+   `/tmp/game-backup.pub`). The 2004Scape databases need `sqlite3`; on a host
+   set up before it was added, `sudo apt install sqlite3` first.
 2. Copy that public key to the main server, then there:
    `sudo bash server-base/backup/sftp-target.sh game /tmp/game-backup.pub`
    (SFTP-only `restic-game` account chrooted to `/srv/restic/game`, where
