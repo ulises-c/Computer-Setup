@@ -782,7 +782,7 @@ done
 bad="$tmp/badsetup"
 mkdir -p "$bad/backup"
 cp "$REPO/linux-pi/backup/"{sources.sh,pi-backup.timer,pi-backup-failure.service.template} "$bad/backup/"
-cp "$SCRIPT_DIR/setup.sh" "$SCRIPT_DIR/backup.sh" "$bad/backup/"
+cp "$SCRIPT_DIR/setup.sh" "$SCRIPT_DIR/backup.sh" "$SCRIPT_DIR/restore-check.sh" "$bad/backup/"
 for typo in @BACKUP_SCRIPT_TYPO@ @BACKUP_SCRIPT2@ @Backup_script@; do
   sed "s/@BACKUP_SCRIPT@/$typo/" "$REPO/linux-pi/backup/pi-backup.service.template" \
     >"$bad/backup/pi-backup.service.template"
@@ -803,7 +803,7 @@ if bash "$bad/backup/setup.sh" --verify >/dev/null 2>&1; then fail "--verify acc
 fs="$tmp/forgejo-setup"
 mkdir -p "$fs/backup" "$fs/forgejo" "$tmp/badgrep"
 cp "$REPO/linux-server/backup/"{sources.sh,backup.timer,backup.service.template,backup-failure.service.template} "$fs/backup/"
-cp "$SCRIPT_DIR/setup.sh" "$SCRIPT_DIR/backup.sh" "$fs/backup/"
+cp "$SCRIPT_DIR/setup.sh" "$SCRIPT_DIR/backup.sh" "$SCRIPT_DIR/restore-check.sh" "$fs/backup/"
 printf 'FORGEJO_DATA_PATH=/srv/forgejo-data\n' >"$fs/forgejo/.env"
 real_grep="$(command -v grep)"
 cat >"$tmp/badgrep/grep" <<EOF
@@ -823,7 +823,7 @@ bash "$fs/backup/setup.sh" --verify >/dev/null 2>&1 || fail "setup rejected a fo
 gs="$tmp/game-setup"
 mkdir -p "$gs/backup" "$gs/lostcity" "$gs/rs-sdk"
 cp "$REPO/linux-game-server/backup/"{sources.sh,game-backup.timer,game-backup.service.template,game-backup-failure.service.template} "$gs/backup/"
-cp "$SCRIPT_DIR/setup.sh" "$SCRIPT_DIR/backup.sh" "$gs/backup/"
+cp "$SCRIPT_DIR/setup.sh" "$SCRIPT_DIR/backup.sh" "$SCRIPT_DIR/restore-check.sh" "$gs/backup/"
 printf 'LOSTCITY_RUNTIME_DIR=%s/lc\n' "$tmp" >"$gs/lostcity/.env"
 printf 'RS_SDK_DATA_DIR=%s/rs\n' "$tmp" >"$gs/rs-sdk/.env"
 out="$(bash "$gs/backup/setup.sh" --verify 2>&1)" || fail "setup rejected valid 2004Scape paths: $out"
@@ -837,6 +837,22 @@ printf 'LOSTCITY_RUNTIME_DIR=%s/lc\n' "$tmp" >"$gs/lostcity/.env"
 printf 'RS_SDK_DATA_DIR=rs\n' >"$gs/rs-sdk/.env"
 if out="$(bash "$gs/backup/setup.sh" --verify 2>&1)"; then fail "setup rendered a relative RS_SDK_DATA_DIR: $out"; fi
 grep -q 'invalid RS_SDK_DATA_DIR' <<<"$out" || fail "relative RS_SDK_DATA_DIR failed for the wrong reason: $out"
+# The game's restore-check unit is rendered with --compare-live for each
+# configured 2004Scape tree, and an unrendered placeholder in it is caught.
+cp "$REPO/linux-game-server/backup/game-backup-restore-check.service.template" "$gs/backup/"
+printf 'RS_SDK_DATA_DIR=%s/rs\n' "$tmp" >"$gs/rs-sdk/.env"
+out="$(bash "$gs/backup/setup.sh" --verify 2>&1)" || fail "setup rejected the game restore-check unit: $out"
+out="$(bash "$gs/backup/setup.sh" --dry-run 2>&1)"
+grep -qF "game-backup-restore-check.service (compare-live: --compare-live $tmp/lc --compare-live $tmp/rs)" <<<"$out" \
+  || fail "restore-check unit not planned with both live trees: $out"
+rm "$gs/rs-sdk/.env"
+out="$(bash "$gs/backup/setup.sh" --dry-run 2>&1)"
+grep -qF "game-backup-restore-check.service (compare-live: --compare-live $tmp/lc)" <<<"$out" \
+  || fail "restore-check unit not planned with only the configured tree: $out"
+sed -i.orig '/@RESTORE_COMPARE_ARGS@|/d' "$gs/backup/setup.sh"
+if out="$(bash "$gs/backup/setup.sh" --verify 2>&1)"; then fail "--verify accepted an unrendered @RESTORE_COMPARE_ARGS@: $out"; fi
+grep -q 'unrendered template placeholder' <<<"$out" || fail "unrendered restore-check placeholder failed for the wrong reason: $out"
+cp "$SCRIPT_DIR/setup.sh" "$gs/backup/setup.sh"
 cat >"$tmp/badgrep/grep" <<EOF
 #!/usr/bin/env bash
 [[ "\$*" != *'@[A-Za-z0-9_]+@'* ]] || exit 2
@@ -852,7 +868,7 @@ gbad="$tmp/badsetup-game"
 mkdir -p "$gbad/backup" "$gbad/dragonwilds"
 cp "$REPO/linux-game-server/backup/"{sources.sh,game-backup.timer,game-backup.service.template,game-backup-failure.service.template} "$gbad/backup/"
 cp "$REPO/linux-game-server/dragonwilds/backup-save.py" "$gbad/dragonwilds/"
-cp "$SCRIPT_DIR/backup.sh" "$gbad/backup/"
+cp "$SCRIPT_DIR/backup.sh" "$SCRIPT_DIR/restore-check.sh" "$gbad/backup/"
 cp "$SCRIPT_DIR/setup.sh" "$gbad/backup/"
 bash "$gbad/backup/setup.sh" --verify >/dev/null 2>&1 || fail "--verify rejected the game fixture"
 sed -i.orig '/@BACKUP_SAVE_SCRIPT_SHA256@|/d' "$gbad/backup/setup.sh"

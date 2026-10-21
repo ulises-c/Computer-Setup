@@ -1,0 +1,15 @@
+[Unit]
+Description=Verify the latest game backup restores, identical to the stopped 2004Scape data
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+# Restarted by 2004scape/maintenance.sh (polkit) right after its backup, while
+# the games are stopped; run by hand while they are live, the comparison with
+# their data fails.
+Type=oneshot
+ExecStart=/usr/bin/env bash @RESTORE_CHECK_SCRIPT@ @BACKUP_HOST_DIR@@RESTORE_COMPARE_ARGS@
+Environment=HOME=/root
+TimeoutStartSec=2h
+Nice=10
+IOSchedulingClass=idle
