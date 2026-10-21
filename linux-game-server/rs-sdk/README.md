@@ -9,6 +9,7 @@ This is the independent RS-SDK fork, which includes its own game engine, web cli
 - `NODE_INFINITE_RUN=false`: ordinary energy drain and regeneration.
 - `NODE_RANDOM_EVENTS=true`: enables the content's existing random-event checks and login timer.
 - `NODE_TICKRATE=600`: original tick duration instead of the fork's 400 ms speed.
+- `restore-client.js`: restores the browser's original 20 ms logic cycle (the fork uses 14 ms) and the movement packet's Ctrl-run bit instead of forcing every click to run. The normal run toggle and explicit SDK run requests still work; no SDK functionality is removed.
 
 These settings retain SDK connectivity and do not reset earned XP or player saves. An existing character's levels can change when the original XP thresholds are restored. Other fork differences, including its content revision, Grand Exchange and bot tooling, are unchanged; this is not a claim of full vanilla parity.
 
