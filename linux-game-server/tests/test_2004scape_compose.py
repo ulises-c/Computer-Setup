@@ -31,6 +31,24 @@ class ComposeSafetyTests(unittest.TestCase):
         self.assertIn("bootstrap", config["services"])
         self.assertIn("bootstrap", config["services"]["bootstrap"]["profiles"])
 
+    def test_lost_city_git_metadata_is_read_only_in_the_game(self):
+        # The host runs git on these checkouts; a writable .git would let the game
+        # plant config (filters, ext:: remotes) that git executes on the host.
+        service = load_compose("lostcity")["services"]["lostcity"]
+        read_only = {v["target"] for v in service["volumes"] if v.get("read_only")}
+        for repo in ("engine", "content", "webclient"):
+            with self.subTest(repo=repo):
+                self.assertIn(f"/opt/server/{repo}/.git", read_only)
+        self.assertEqual(service["environment"]["HUSKY"], "0")
+
+    def test_game_containers_opt_out_of_watchtower(self):
+        # Their images are local builds under an unregistered Hub namespace, and a
+        # watchtower restart would skip the in-game countdown.
+        for name, service in (("lostcity", "lostcity"), ("rs-sdk", "rs-sdk")):
+            with self.subTest(service=service):
+                labels = load_compose(name)["services"][service]["labels"]
+                self.assertIn("com.centurylinklabs.watchtower.enable=false", labels)
+
     def test_lost_city_image_supplies_bun_required_by_engine_scripts(self):
         dockerfile = (ROOT / "lostcity" / "Dockerfile").read_text()
         bootstrap = (ROOT / "lostcity" / "bootstrap-container.sh").read_text()

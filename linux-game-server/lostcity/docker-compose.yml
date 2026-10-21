@@ -11,12 +11,38 @@ services:
     user: "1000:1000"
     working_dir: /opt/server
     command: ["npm", "--prefix", "engine", "start"]
+    labels:
+      # Locally built image: there is nothing to pull, and a restart must go
+      # through the 2004Scape update job so players get the countdown.
+      - com.centurylinklabs.watchtower.enable=false
     environment:
       NODE_ENV: production
+      # `bun install` (run on every start) would let husky rewrite .git/config.
+      HUSKY: "0"
     volumes:
       - type: bind
         source: ${LOSTCITY_RUNTIME_DIR:?Set LOSTCITY_RUNTIME_DIR in .env}
         target: /opt/server
+        bind:
+          create_host_path: false
+      # The host runs git on these checkouts; the game must not be able to plant
+      # config (filters, ext:: remotes) that git would execute there.
+      - type: bind
+        source: ${LOSTCITY_RUNTIME_DIR}/engine/.git
+        target: /opt/server/engine/.git
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${LOSTCITY_RUNTIME_DIR}/content/.git
+        target: /opt/server/content/.git
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${LOSTCITY_RUNTIME_DIR}/webclient/.git
+        target: /opt/server/webclient/.git
+        read_only: true
         bind:
           create_host_path: false
     security_opt:
