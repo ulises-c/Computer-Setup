@@ -1,0 +1,10 @@
+// Lets the 2004Scape update job take a fresh game backup before it updates:
+// restart of game-backup.service only, for this user only.
+polkit.addRule(function(action, subject) {
+  if (action.id == "org.freedesktop.systemd1.manage-units" &&
+      subject.user == "@USER@" &&
+      action.lookup("unit") == "game-backup.service" &&
+      action.lookup("verb") == "restart") {
+    return polkit.Result.YES;
+  }
+});

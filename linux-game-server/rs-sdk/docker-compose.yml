@@ -23,9 +23,12 @@ services:
       FRIEND_PORT: "45109"
       LOGGER_HOST: 127.0.0.1
       LOGGER_PORT: "43511"
+      NODE_ID: "10"
       NODE_MEMBERS: "true"
       NODE_PORT: "43595"
       NODE_RANDOM_EVENTS: "false"
+      # Upstream's default, pinned because update.sh's countdown must match it.
+      NODE_TICKRATE: "400"
       WEBSITE_REGISTRATION: "true"
       WEB_PORT: "8080"
       WEB_MANAGEMENT_PORT: "8899"

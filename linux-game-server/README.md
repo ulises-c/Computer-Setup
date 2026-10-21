@@ -151,6 +151,11 @@ game backup covers it once `backup/setup.sh` is rerun after setup (see
 [Recurring backups](#recurring-backups)). Do not invite players until a restore
 of that state is verified.
 
+`2004scape/update.sh` keeps both up to date: nightly (after
+`sudo bash linux-game-server/2004scape/install-update-timer.sh`) it gives
+players an in-game countdown, takes a fresh backup, updates, and rolls back a
+stack that does not come back healthy. Details in the linked guide.
+
 ## Migrate a running Dragonwilds world
 
 Do not copy an actively written `.sav` or run both hosts against the same world.

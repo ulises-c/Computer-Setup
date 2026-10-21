@@ -1,0 +1,15 @@
+[Unit]
+Description=Update the 2004Scape servers (in-game countdown, backup, rollback)
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+# Unprivileged: Docker access comes from the user's docker group, and the one
+# root-only action, a fresh game backup, is granted by the polkit rule.
+User=@USER@
+Group=@GROUP@
+ExecStart=/usr/bin/env bash @UPDATE_SCRIPT@
+# Countdown (up to 99 min) + backup (game-backup.service allows 2 h) + rebuilds
+# + health waits and a possible rollback.
+TimeoutStartSec=6h

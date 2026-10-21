@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly 2004Scape update check
+
+[Timer]
+# After the 03:00 game backup. Nothing happens unless upstream has moved on;
+# then players get the countdown and the servers go down when it ends.
+OnCalendar=*-*-* 04:30:00
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
