@@ -2,8 +2,8 @@
 
 A focused Ubuntu Server x86_64 deployment: the shared shell/dotfiles base
 (zsh, tmux, fastfetch on SSH login), Docker, host Tailscale, Homepage, Glances,
-Portainer, Watchtower, Cockpit, and the native RuneScape:
-Dragonwilds server.
+Portainer, Watchtower, Cockpit, and the native RuneScape: Dragonwilds server,
+with optional Lost City 2004Scape and RS-SDK self-hosted stacks.
 The initial target is Ubuntu Server 26.04 LTS.
 
 This is a separate service deployment entrypoint, not a fifth packages.json
@@ -84,6 +84,9 @@ no `homepage`, `glances` or similar name that the NAS host already owns.
 | Cockpit (host service) | `127.0.0.1:9090` | `/cockpit/` |
 | Portainer | `127.0.0.1:9000` | `:9443` (fallback) |
 | Dragonwilds status JSON | `127.0.0.1:8096` | not served (this Homepage only) |
+| Optional Lost City web client | host TCP `8888` | `:9444/rs2.cgi` |
+| Optional RS-SDK web client | host TCP `8080` | `:9445/` |
+| Optional RS-SDK gateway | host TCP `7781` | `:9446` |
 | Watchtower | no listener | updates images daily at 03:00 |
 
 The status JSON (which includes the join password) is read only by this host's
@@ -103,7 +106,9 @@ There is no Uptime Kuma here. It has no base-path support
 monitor on the host it watches cannot report that host down, so the NAS host's
 instance monitors this server.
 
-Everything binds loopback because Docker-published ports bypass ufw. Cockpit is
+The existing base containers bind loopback because Docker-published ports bypass
+UFW. The optional 2004Scape stacks use host networking without Docker port
+mappings, so UFW can enforce their scoped LAN and `tailscale0` rules. Cockpit is
 installed without recommends (its recommends pull NetworkManager onto a
 networkd host); `serve.sh` moves its socket to loopback with a drop-in and
 writes `UrlRoot` and the tailnet origin to `/etc/cockpit/cockpit.conf`. `scaffold.py`
@@ -119,6 +124,31 @@ Homepage mounts the Docker socket read-only for container status badges; a
 read-only mount still grants full Docker API access, so keep Homepage
 tailnet-only. The native game's real state comes from the status JSON, not from
 whether the small nginx status container is running.
+
+## Lost City 2004Scape and RS-SDK (optional)
+
+Two separate stacks live under `lostcity/` and `rs-sdk/`; RS-SDK is its own
+fork of the game engine, not an add-on to the vanilla Lost City instance. They
+use separate ports and separate data directories. Setup and the activation gate
+are documented in [`2004scape/README.md`](2004scape/README.md).
+
+```sh
+bash linux-game-server/2004scape/setup.sh
+bash linux-game-server/2004scape/activate.sh
+```
+
+The first command initializes the vanilla world (revision 254 by default) and
+builds the RS-SDK image but leaves both services stopped. The second command is
+an explicit activation step: it requires active UFW with default-deny inbound
+and an SSH allow rule, adds only home-LAN and `tailscale0` rules, then starts the
+Compose services and publishes Tailscale Serve endpoints. It does not enable
+UFW, change the default policy, configure Funnel, or add router port forwarding.
+The web apps need separate Tailscale HTTPS ports because they use root-relative
+paths; access URLs and raw game/gateway ports are listed in the linked guide.
+
+Both apps have persistent state under `~/games/`, outside Git. Their state is
+not yet included in the installed restic backup bundle. Do not invite players
+until the backup sources are added and a restore is verified.
 
 ## Migrate a running Dragonwilds world
 

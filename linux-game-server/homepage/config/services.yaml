@@ -412,6 +412,33 @@
             - field: save_bytes
               label: World size
               format: bytes
+    - "Lost City: 2004Scape":
+        id: lostcity-server
+        icon: sh-steam.svg
+        href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}:9444/rs2.cgi
+        description: Vanilla 2004Scape · LAN :8888 · tailnet
+        siteMonitor: http://127.0.0.1:8888/rs2.cgi
+        server: my-docker
+        container: lostcity
+    - RS-SDK:
+        id: rs-sdk-server
+        icon: sh-steam.svg
+        href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}:9445/
+        description: RS-SDK engine and web client · LAN :8080 · tailnet
+        siteMonitor: http://127.0.0.1:8080/engine-status
+        server: my-docker
+        container: rs-sdk-server
+        widget:
+          type: customapi
+          url: http://127.0.0.1:8080/engine-status
+          refreshInterval: 30000
+          mappings:
+            - field: status
+              label: Engine
+              format: text
+            - field: uptime
+              label: Uptime (seconds)
+              format: text
 
 - Shared services:
     - uptime kuma:

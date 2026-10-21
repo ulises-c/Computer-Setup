@@ -1,0 +1,57 @@
+services:
+  rs-sdk:
+    build:
+      context: ${RS_SDK_SOURCE_DIR:?Set RS_SDK_SOURCE_DIR in .env}
+      dockerfile: server/Dockerfile
+    image: computer-setup/rs-sdk:local
+    container_name: rs-sdk-server
+    init: true
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      BUG_REPORTS_FILE: /opt/server/data/bug-reports.jsonl
+      GE_DATABASE: /opt/server/data/market.sqlite
+      BUILD_STARTUP: "false"
+      BUILD_STARTUP_UPDATE: "false"
+      DB_BACKEND: sqlite
+      EASY_STARTUP: "true"
+      FRIEND_SERVER: "true"
+      LOGIN_SERVER: "true"
+      LOGIN_HOST: 127.0.0.1
+      LOGIN_PORT: "43500"
+      NODE_MEMBERS: "true"
+      NODE_PORT: "43595"
+      NODE_RANDOM_EVENTS: "false"
+      WEBSITE_REGISTRATION: "true"
+      WEB_PORT: "8080"
+      WEB_MANAGEMENT_PORT: "8898"
+      GATEWAY_URL: http://127.0.0.1:7780
+      AGENT_PORT: "7780"
+      GATEWAY_PUBLIC_PORT: "7781"
+      GATEWAY_HOSTNAME: 0.0.0.0
+    volumes:
+      - type: bind
+        source: ${RS_SDK_DATA_DIR:?Set RS_SDK_DATA_DIR in .env}
+        target: /opt/server/data
+        bind:
+          create_host_path: false
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 120s
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
+    healthcheck:
+      test:
+        - CMD
+        - bun
+        - -e
+        - "fetch('http://127.0.0.1:8080/engine-status').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 180s
