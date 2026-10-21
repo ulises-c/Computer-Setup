@@ -33,10 +33,13 @@ class HomepageCardTests(unittest.TestCase):
                     self.assertIn(f"field: {field}\n", text)
         self.assertNotIn("8080/engine-status\n          refreshInterval", self.rs_sdk)
 
+    def test_cards_have_the_same_rows_so_they_are_the_same_height(self):
+        def labels(text):
+            return [line.split("label: ", 1)[1] for line in text.splitlines() if "label: " in line]
+        self.assertEqual(len(labels(self.lostcity)), len(labels(self.rs_sdk)))
+        self.assertEqual(labels(self.lostcity)[1:], labels(self.rs_sdk)[1:])
+
     def test_bot_server_is_visibly_distinct_from_vanilla(self):
-        for field in ("bots_summary", "gateway_summary"):
-            self.assertIn(f"field: {field}\n", self.rs_sdk)
-            self.assertNotIn(f"field: {field}\n", self.lostcity)
         self.assertIn("icon: /icons/lostcity.jpg", self.lostcity)
         self.assertIn("icon: mdi-robot", self.rs_sdk)
         css = (REPO / "server-base" / "homepage" / "custom.css").read_text()

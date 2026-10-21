@@ -515,12 +515,6 @@
             - field: players_summary
               label: Players
               format: text
-            - field: bots_summary
-              label: Bots
-              format: text
-            - field: gateway_summary
-              label: Gateway
-              format: text
             - field: connect_lan
               label: LAN
               format: text

@@ -138,12 +138,11 @@ class RsSdkTests(unittest.TestCase):
             make_db(Path(tmp) / 'db.sqlite').close()
             result = game_status.rs_sdk(tmp, tmp, Path(tmp) / 'h.json', 'boot', ('weekly Mon', ''))
         self.assertEqual(result['status'], 'running · healthy')
-        self.assertEqual(result['players_summary'], '2 online · 3 accounts')
-        self.assertEqual(result['bots_summary'], '2 bots · 1 active · 1 stale · 1 SDK client')
-        self.assertEqual(result['gateway_summary'], 'ws :7781 listening · Grand Exchange on')
+        self.assertEqual(result['players_summary'],
+                         '2 online · 3 accounts · 2 bots (1 active, 1 stale) · 1 SDK client')
         self.assertEqual(result['rules_summary'],
                          'members · 1× XP · 600 ms ticks · random events · normal run energy')
-        self.assertEqual(result['connect_lan'], 'http://192.0.2.10:8080 · ws://192.0.2.10:7781')
+        self.assertEqual(result['connect_lan'], 'http://192.0.2.10:8080 · ws://192.0.2.10:7781 (listening) · GE on')
         self.assertEqual(result['backup_status'], 'unknown')
         json.dumps(result, allow_nan=False)
 
@@ -159,7 +158,6 @@ class RsSdkTests(unittest.TestCase):
             result = game_status.rs_sdk(tmp, tmp, Path(tmp) / 'h.json', 'boot', ('', ''))
         self.assertEqual(result['status'], 'exited')
         self.assertEqual(result['uptime_display'], '—')
-        self.assertEqual(result['bots_summary'], '—')
         self.assertEqual(result['players_summary'], '? online · accounts unknown')
 
 

@@ -328,26 +328,28 @@ def rs_sdk(source, data, history, boot, window):
     sdks = gateway.get('sdks') if isinstance(gateway, dict) and isinstance(gateway.get('sdks'), dict) else {}
     bot_count = None
     if bots is None:
-        bots_summary = 'gateway unavailable' if running else '—'
+        bots_summary = ' · gateway unavailable' if running else ''
     else:
         bot_count = len(bots)
         states = [bot.get('status') for bot in bots.values() if isinstance(bot, dict)]
-        bots_summary = (f"{plural(bot_count, 'bot')} · {states.count('active')} active · "
-                        f"{states.count('stale')} stale · {plural(len(sdks), 'SDK client')}")
+        bots_summary = (f" · {plural(bot_count, 'bot')} ({states.count('active')} active, "
+                        f"{states.count('stale')} stale) · {plural(len(sdks), 'SDK client')}")
+    gateway_port = env.get('GATEWAY_PUBLIC_PORT', '7781')
+    gateway_state = 'listening' if listening(gateway_port) else 'down'
+    exchange = 'on' if isinstance(market, dict) and market.get('enabled') else 'off'
     random_events = 'random events' if env.get('NODE_RANDOM_EVENTS') == 'true' else 'no random events'
     run_energy = 'infinite run' if env.get('NODE_INFINITE_RUN') == 'true' else 'normal run energy'
     result.update(
         software_summary=(f'{branch or "?"}@{sha or "?"} ({date or "?"}) · image {(built or "?")[:10]}'),
         rules_summary=f"{rules(env, env.get('NODE_TICKRATE', '?'))} · {random_events} · {run_energy}",
+        # Bots and the gateway share the Players and LAN rows so this card stays
+        # the same height as Lost City's.
         players_summary=(f"{online if online is not None else '?'} online · "
-                         f"{plural(db['accounts'], 'account') if db else 'accounts unknown'}"),
+                         f"{plural(db['accounts'], 'account') if db else 'accounts unknown'}{bots_summary}"),
         bots=bot_count,
-        bots_summary=bots_summary,
-        gateway_summary=(f"ws :{env.get('GATEWAY_PUBLIC_PORT', '7781')} "
-                         f"{'listening' if listening(env.get('GATEWAY_PUBLIC_PORT', '7781')) else 'down'} · "
-                         f"Grand Exchange {'on' if isinstance(market, dict) and market.get('enabled') else 'off'}"),
         connect_lan=(f"http://{address}:{env.get('WEB_PORT', '8080')} · "
-                     f"ws://{address}:{env.get('GATEWAY_PUBLIC_PORT', '7781')}") if (address := lan_ip()) else '—',
+                     f"ws://{address}:{gateway_port} ({gateway_state}) · GE {exchange}")
+        if (address := lan_ip()) else '—',
     )
     return result
 
