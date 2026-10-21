@@ -1,6 +1,16 @@
 # RS-SDK server
 
-This is the independent RS-SDK fork, which includes its own game engine, web client, and bot gateway. It is not layered on top of the vanilla Lost City instance. Compose builds the upstream `server/Dockerfile` from the clean checkout at `~/github/rs-sdk` (`RS_SDK_SOURCE_DIR`) and stores persistent state in `~/games/rs-sdk/data` (`RS_SDK_DATA_DIR`).
+This is the independent RS-SDK fork, which includes its own game engine, web client, and bot gateway. It is not layered on top of the vanilla Lost City instance. Compose builds the upstream `server/Dockerfile` from the clean checkout at `~/github/rs-sdk` (`RS_SDK_SOURCE_DIR`), then applies this directory's original-XP image layer. State is stored in `~/games/rs-sdk/data` (`RS_SDK_DATA_DIR`). Building requires Docker Buildx and Compose 2.17 or newer for service build contexts. `rs-sdk-upstream` is an image-build helper, not another game: if Compose starts it, its entrypoint immediately exits, with no network or persistent data mounts.
+
+## Original gameplay settings
+
+- `NODE_XPRATE=1`: original XP awards instead of the fork's 25× multiplier.
+- `restore-xp.js`: restores the original level/7 XP curve instead of the fork's level/10 curve in the engine, browser client, lite client, lite actions and SDK save generator. The image rebuilds the browser bundles. An unrecognized upstream formula fails the build before any source files are changed; the upstream checkout stays untouched.
+- `NODE_INFINITE_RUN=false`: ordinary energy drain and regeneration.
+- `NODE_RANDOM_EVENTS=true`: enables the content's existing random-event checks and login timer.
+- `NODE_TICKRATE=600`: original tick duration instead of the fork's 400 ms speed.
+
+These settings retain SDK connectivity and do not reset earned XP or player saves. An existing character's levels can change when the original XP thresholds are restored. Other fork differences, including its content revision, Grand Exchange and bot tooling, are unchanged; this is not a claim of full vanilla parity.
 
 ## Access
 

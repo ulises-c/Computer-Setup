@@ -1,8 +1,19 @@
 services:
-  rs-sdk:
+  rs-sdk-upstream:
     build:
       context: ${RS_SDK_SOURCE_DIR:?Set RS_SDK_SOURCE_DIR in .env}
       dockerfile: server/Dockerfile
+    image: computer-setup/rs-sdk:upstream
+    network_mode: none
+    entrypoint: ["/bin/true"]
+    restart: "no"
+
+  rs-sdk:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      additional_contexts:
+        rs_sdk_upstream: service:rs-sdk-upstream
     image: computer-setup/rs-sdk:local
     container_name: rs-sdk-server
     init: true
@@ -30,9 +41,10 @@ services:
       NODE_ID: "10"
       NODE_MEMBERS: "true"
       NODE_PORT: "43595"
-      NODE_RANDOM_EVENTS: "false"
-      # Upstream's default, pinned because update.sh's countdown must match it.
-      NODE_TICKRATE: "400"
+      NODE_XPRATE: "1"
+      NODE_INFINITE_RUN: "false"
+      NODE_RANDOM_EVENTS: "true"
+      NODE_TICKRATE: "600"
       # No separate registration site is deployed; create accounts on first login.
       WEBSITE_REGISTRATION: "false"
       WEB_PORT: "8080"

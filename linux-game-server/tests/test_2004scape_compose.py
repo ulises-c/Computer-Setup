@@ -78,6 +78,22 @@ class ComposeSafetyTests(unittest.TestCase):
         env = load_compose("rs-sdk")["services"]["rs-sdk"]["environment"]
         self.assertEqual(env["WEBSITE_REGISTRATION"], "false")
 
+    def test_rs_sdk_restores_original_gameplay(self):
+        service = load_compose("rs-sdk")["services"]["rs-sdk"]
+        env = service["environment"]
+        self.assertEqual(env["NODE_XPRATE"], "1")
+        self.assertEqual(env["NODE_INFINITE_RUN"], "false")
+        self.assertEqual(env["NODE_RANDOM_EVENTS"], "true")
+        self.assertEqual(env["NODE_TICKRATE"], "600")
+        self.assertEqual(service["build"]["context"], ".")
+        self.assertEqual(service["build"]["additional_contexts"]["rs_sdk_upstream"],
+                         "service:rs-sdk-upstream")
+        upstream = load_compose("rs-sdk")["services"]["rs-sdk-upstream"]
+        self.assertNotIn("profiles", upstream)
+        self.assertEqual(upstream["entrypoint"], ["/bin/true"])
+        self.assertEqual(upstream["network_mode"], "none")
+        self.assertNotIn("volumes", upstream)
+
     def test_rs_sdk_internal_servers_avoid_lost_city_ports(self):
         # Both stacks share the host network. Lost City's setup wizard uses the
         # engine defaults, so RS-SDK must move every internal server off them, or

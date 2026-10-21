@@ -893,7 +893,7 @@ class UnitTemplateTests(unittest.TestCase):
 
     def test_rs_sdk_tick_and_node_are_pinned_for_the_countdown(self):
         compose = (ROOT / "rs-sdk/docker-compose.yml").read_text()
-        self.assertIn('NODE_TICKRATE: "400"', compose)
+        self.assertIn('NODE_TICKRATE: "600"', compose)
         self.assertIn('NODE_ID: "10"', compose)
         self.assertIn('FRIEND_PORT: "45109"', compose)
 
