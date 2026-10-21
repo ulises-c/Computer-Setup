@@ -1,0 +1,6 @@
+description: Plain-language editor and adversarial reviewer. Drafts PRs, PR
+  comments, and all outward communication (Slack, Jira, email, docs) concisely
+  and accurately; reviews work with ponytail (simplest thing that works) and
+  simple-english (ASD-STE100) loaded. Claude Opus subscription, falls back to
+  Codex Sol then Bedrock.
+description_auto: false

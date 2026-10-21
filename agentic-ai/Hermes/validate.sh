@@ -5,6 +5,9 @@ set -uo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HERMES_HOME_DIR="${HERMES_HOME:-$HOME/.hermes}"
+# shellcheck source=lib/hermes-root.sh
+source "$REPO_DIR/lib/hermes-root.sh"
+PROFILES_DIR="$(hermes_root)/profiles"
 ERRORS=0
 
 pass() { printf '  [ OK ] %s\n' "$1"; }
@@ -20,6 +23,26 @@ check_link "$HOME/.local/bin/hermes-config" "$REPO_DIR/bin/hermes-config"
 for widget in "$REPO_DIR"/tui-widgets/*.mjs; do
   check_link "$HERMES_HOME_DIR/tui-widgets/$(basename "$widget")" "$widget"
 done
+
+printf '\n=== profiles ===\n'
+for profile_src in "$REPO_DIR"/profiles/*/; do
+  profile="$(basename "$profile_src")"
+  for file in config.yaml profile.yaml SOUL.md; do
+    check_link "$PROFILES_DIR/$profile/$file" "$profile_src$file"
+  done
+  for script in "${profile_src}"scripts/*; do
+    [[ -f "$script" ]] || continue
+    if cmp -s "$script" "$PROFILES_DIR/$profile/scripts/$(basename "$script")"; then pass "$profile/scripts/$(basename "$script") matches"; else fail "$profile/scripts/$(basename "$script") missing or differs; run install.sh"; fi
+  done
+done
+if assignees="$(hermes kanban assignees 2>/dev/null)"; then
+  for profile_src in "$REPO_DIR"/profiles/*/; do
+    profile="$(basename "$profile_src")"
+    if grep -qE "^$profile +yes" <<< "$assignees"; then pass "kanban assignee $profile"; else fail "kanban assignee $profile not on disk"; fi
+  done
+else
+  fail "hermes kanban assignees failed"
+fi
 
 printf '\n=== tools ===\n'
 for tool in hermes jq git; do

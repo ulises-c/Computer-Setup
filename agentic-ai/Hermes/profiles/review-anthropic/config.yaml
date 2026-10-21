@@ -1,0 +1,64 @@
+model:
+  default: claude-opus-5-5
+  provider: anthropic
+plugins:
+  enabled: []
+_config_version: 49
+bedrock:
+  region: us-east-1
+memory:
+  memory_enabled: false
+  user_profile_enabled: false
+platform_toolsets:
+  cli:
+    - file
+    - skills
+    - terminal
+    - todo
+known_plugin_toolsets:
+  cli:
+    - a2a
+    - spotify
+known_builtin_toolsets:
+  cli:
+    - browser
+    - clarify
+    - code_execution
+    - computer_use
+    - connections
+    - context_engine
+    - cronjob
+    - delegation
+    - discord
+    - discord_admin
+    - file
+    - homeassistant
+    - image_gen
+    - kanban
+    - memory
+    - session_search
+    - skills
+    - spotify
+    - stt
+    - terminal
+    - todo
+    - tts
+    - video
+    - video_gen
+    - vision
+    - web
+    - x_search
+    - yuanbao
+fallback_providers:
+  - provider: openai-codex
+    model: gpt-6.1-sol
+  - provider: bedrock
+    model: global.anthropic.claude-opus-5-5
+  - provider: bedrock
+    model: global.openai.gpt-6.1-sol
+skills:
+  external_dirs:
+    - ~/github/Computer-Setup/agentic-ai/skills
+    - ~/forgejo/hermes-config-work/skills
+  auto_load:
+    - ponytail-review

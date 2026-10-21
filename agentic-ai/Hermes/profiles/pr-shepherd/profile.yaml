@@ -1,0 +1,5 @@
+description: 'PR shepherd: takes an open PR to merged. Tracks approvals, comments
+  and pipelines, merges the destination branch in, retargets stacked PRs after the
+  parent merges, drafts review replies for editor. Never merges without an explicit
+  GO.'
+description_auto: false

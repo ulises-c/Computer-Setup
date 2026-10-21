@@ -1,0 +1,5 @@
+description: 'Read-only security and supply-chain auditor (GPT family): audits third-party
+  code, installers, npm dependency trees, network exposure, secret handling, and agent
+  permission boundaries; produces severity-ranked findings with evidence. Never installs
+  or runs untrusted code.'
+description_auto: false
