@@ -11,6 +11,35 @@ unified-layout design rationale is in [UNIFICATION.md](UNIFICATION.md).
       implementation is not committed. Keep the native system-update countdown
       and occasional chat warnings in the meantime.
 
+### RS-SDK: original play with SDK and QoL (goal: 1:1 with 2004 plus the SDK)
+
+- [ ] Confirm in game that random events fire (`NODE_RANDOM_EVENTS=true` is
+      configured but no event has been observed yet).
+- [ ] Ad-hoc announcements: a small admin tool that sends `RELAY_BROADCAST`
+      (one-off message) and `RELAY_SHUTDOWN` (native "System update in m:ss"
+      timer) through the friend server, reusing `countdown.js`'s relay-opcode
+      lookup. `::broadcast`/`::slowreboot` need `NODE_PRODUCTION=true` plus a
+      staff mod level of 3, which the fork never grants, so keep using the relay.
+- [ ] Disable the chat filter: censoring is client-side (`WordFilter.filter` in
+      `webclient/src/client/Client.ts`), so add a guarded `restore-client.js`-style
+      patch that makes it a no-op in the browser client. The lite client only
+      affects what bots read.
+- [ ] Client QoL patches (browser client): mouse-wheel zoom, middle-drag camera
+      rotation, space bar for "Click here to continue". None exist upstream.
+- [ ] Forums for trading: none on the server; decide whether to self-host one.
+- [ ] (stretch) Group/clan storage: not present.
+- [ ] (stretch) Clan chat: not in 2004 (conflicts with the 1:1 goal); friends
+      and PMs already work through the friend server.
+- Already in the fork (no work): self-hosted hiscores (`/hiscores`) and a Grand
+  Exchange (physical booth and `/market.html`).
+
+### Homepage: RS-SDK card
+
+- [ ] Richer RS-SDK card with metrics like the Dragonwilds card (players and bots
+      online, sampled 24h resources).
+- [ ] Real icons: fetch the `.ico` from the Lost City title page and the rs-sdk
+      demo site in `fetch-assets.sh`, replacing the `mdi-robot-outline` icon.
+
 ## RuneScape: Dragonwilds follow-ups
 
 - [ ] Keep `MAX_PLAYERS=6` for normal operation; if testing 10 or 20, make a
