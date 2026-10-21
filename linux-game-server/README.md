@@ -146,9 +146,10 @@ UFW, change the default policy, configure Funnel, or add router port forwarding.
 The web apps need separate Tailscale HTTPS ports because they use root-relative
 paths; access URLs and raw game/gateway ports are listed in the linked guide.
 
-Both apps have persistent state under `~/games/`, outside Git. Their state is
-not yet included in the installed restic backup bundle. Do not invite players
-until the backup sources are added and a restore is verified.
+Both apps have persistent state under `~/games/`, outside Git. The nightly
+game backup covers it once `backup/setup.sh` is rerun after setup (see
+[Recurring backups](#recurring-backups)). Do not invite players until a restore
+of that state is verified.
 
 ## Migrate a running Dragonwilds world
 
@@ -348,9 +349,11 @@ game/SteamCMD processes, and does not prevent an administrator removing the guar
 
 `backup/` runs the shared restic engine nightly at 03:00 into a repository on
 the main server over SFTP (the same pattern as the Pi): `Saved/SaveGames`,
-`Saved/Config`, the Homepage config, every service `.env`, and a header-checked
-live world copy taken by `backup-save.py`. It is a live backup, not a
-stopped-server snapshot. One-time setup:
+`Saved/Config`, the Homepage config, every service `.env`, a header-checked
+live world copy taken by `backup-save.py`, and the 2004Scape state (Lost City
+`server.json`, `engine/.env`, `engine/data/{players,config}` and an online
+SQLite copy of `engine/db.sqlite`; the whole RS-SDK data dir). It is a live
+backup, not a stopped-server snapshot. One-time setup:
 
 1. On this host: `sudo bash server-base/backup/sftp-client.sh linux-game-server key`
    (installs restic, creates root's key, copies the public key to
@@ -371,8 +374,9 @@ stopped-server snapshot. One-time setup:
    The backup setup installs a root-owned executor bundle under
    `/usr/local/libexec/computer-setup-backup/game`; the systemd unit does not run
    backup code directly from this writable checkout. Re-run the setup after
-   changing `backup/.env`, `dragonwilds/.env`, or the backup source code; the
-   Dragonwilds install path is captured into the root-owned unit.
+   changing `backup/.env`, `dragonwilds/.env`, `lostcity/.env`, `rs-sdk/.env`,
+   or the backup source code; the Dragonwilds install path and the 2004Scape
+   data paths are captured into the root-owned unit.
 
 Restore drill: with nobody online, `sudo bash linux-game-server/backup/restore-drill.sh`
 stops the game, takes a fresh snapshot of the stopped world, restores it to a

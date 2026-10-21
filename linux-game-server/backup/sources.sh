@@ -57,11 +57,50 @@ resolve_sources() {
   if [[ -n "$saved" ]]; then
     CANDIDATES+=("$saved/SaveGames" "$saved/Config")
   fi
+  resolve_2004scape_sources
+}
+
+# 2004Scape state only: the engine/content/client checkouts come back from the
+# bootstrap's revision clone. The engine scans the RS-SDK data dir for SQLite;
+# Lost City's db.sqlite sits beside the checkout, so stage_extra snapshots it.
+resolve_2004scape_sources() {
+  local runtime="${BACKUP_LOSTCITY_RUNTIME_DIR:-}" rs_sdk="${BACKUP_RS_SDK_DATA_DIR:-}" path
+  for path in "$runtime" "$rs_sdk"; do
+    [[ -z "$path" ]] && continue
+    [[ "$path" =~ ^/[[:alnum:]_./-]+$ && "$path" != *//* && "$path" != */./* && "$path" != */. && "$path" != */../* && "$path" != */.. && "$path" != */ ]] \
+      || die "invalid fixed 2004Scape data path"
+  done
+  if [[ -n "$runtime" ]]; then
+    if [[ -d "$runtime/engine" ]]; then
+      CANDIDATES+=("$runtime/server.json" "$runtime/engine/.env"
+        "$runtime/engine/data/players" "$runtime/engine/data/config")
+    else
+      log "warning: Lost City runtime not found at $runtime — not backed up"
+    fi
+  fi
+  if [[ -n "$rs_sdk" ]]; then
+    if [[ -d "$rs_sdk" ]]; then
+      CANDIDATES+=("$rs_sdk")
+    else
+      log "warning: RS-SDK data not found at $rs_sdk — not backed up"
+    fi
+  fi
+}
+
+stage_lostcity_db() {
+  local db="${BACKUP_LOSTCITY_RUNTIME_DIR:-}/engine/db.sqlite"
+  [[ -n "${BACKUP_LOSTCITY_RUNTIME_DIR:-}" && -f "$db" ]] || return 0
+  command -v sqlite3 >/dev/null || die "sqlite3 not installed (apt install sqlite3); needed for $db"
+  install -d -m 700 "$STAGING_DIR/lostcity"
+  sqlite3 "$db" ".backup '$STAGING_DIR/lostcity/db.sqlite.sqlitebak'" \
+    || die "sqlite snapshot of $db failed"
+  log "sqlite snapshot: Lost City db.sqlite"
 }
 
 # The game writes its world while running, so a raw file copy can be torn. Also
 # stage a header-checked, hash-verified copy taken while the file was stable.
 stage_extra() {
+  stage_lostcity_db
   [[ "$world_exists" == true ]] || return 0
   [[ "${BACKUP_SAVE_SCRIPT:-}" == "$SCRIPT_DIR/backup-save.py" ]] \
     || die "Dragonwilds backup helper is not the installed root-owned bundle copy"

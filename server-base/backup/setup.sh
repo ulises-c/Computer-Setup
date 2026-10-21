@@ -60,6 +60,14 @@ if [[ -f "$HOST_DIR/forgejo/.env" ]]; then
     fi
   fi
 fi
+BACKUP_LOSTCITY_RUNTIME_DIR=""
+BACKUP_RS_SDK_DATA_DIR=""
+if [[ -f "$HOST_DIR/lostcity/.env" ]]; then
+  BACKUP_LOSTCITY_RUNTIME_DIR="$(read_env_value "$HOST_DIR/lostcity/.env" LOSTCITY_RUNTIME_DIR)" || exit 1
+fi
+if [[ -f "$HOST_DIR/rs-sdk/.env" ]]; then
+  BACKUP_RS_SDK_DATA_DIR="$(read_env_value "$HOST_DIR/rs-sdk/.env" RS_SDK_DATA_DIR)" || exit 1
+fi
 [[ "$prefix" =~ ^[a-z][a-z-]*$ ]] || { printf 'error: bad BACKUP_UNIT in %s/sources.sh\n' "$SCRIPT_DIR" >&2; exit 1; }
 
 case "${1:-}" in
@@ -85,6 +93,14 @@ if ! [[ "$BACKUP_FORGEJO_DATA_PATH" =~ ^/[[:alnum:]_./-]+$ && "$BACKUP_FORGEJO_D
   printf 'error: invalid FORGEJO_DATA_PATH in %s/forgejo/.env\n' "$HOST_DIR" >&2
   exit 1
 fi
+for game_path in "lostcity LOSTCITY_RUNTIME_DIR $BACKUP_LOSTCITY_RUNTIME_DIR" "rs-sdk RS_SDK_DATA_DIR $BACKUP_RS_SDK_DATA_DIR"; do
+  read -r game_stack game_key game_value <<<"$game_path"
+  [[ -z "${game_value:-}" ]] && continue
+  if ! [[ "$game_value" =~ ^/[[:alnum:]_./-]+$ && "$game_value" != *//* && "$game_value" != */./* && "$game_value" != */. && "$game_value" != */../* && "$game_value" != */.. && "$game_value" != */ ]]; then
+    printf 'error: invalid %s in %s/%s/.env\n' "$game_key" "$HOST_DIR" "$game_stack" >&2
+    exit 1
+  fi
+done
 if [[ "$MODE" == install ]]; then
   [[ $EUID -eq 0 ]] || { printf 'error: run with sudo: sudo bash %s\n' "$0" >&2; exit 1; }
   [[ -f "$SCRIPT_DIR/.env" ]] || { printf 'error: create %s/.env before installing\n' "$SCRIPT_DIR" >&2; exit 1; }
@@ -113,6 +129,8 @@ render_unit() {
     -e "s|@BACKUP_SAVE_SCRIPT_SHA256@|$BUNDLE_SAVE_SCRIPT_SHA256|g" \
     -e "s|@BACKUP_DRAGONWILDS_INSTALL_DIR@|$BACKUP_DRAGONWILDS_INSTALL_DIR|g" \
     -e "s|@BACKUP_FORGEJO_DATA_PATH@|$BACKUP_FORGEJO_DATA_PATH|g" \
+    -e "s|@BACKUP_LOSTCITY_RUNTIME_DIR@|$BACKUP_LOSTCITY_RUNTIME_DIR|g" \
+    -e "s|@BACKUP_RS_SDK_DATA_DIR@|$BACKUP_RS_SDK_DATA_DIR|g" \
     -e "s|@BACKUP_STATUS_JSON@|$STATE_DIR/backup-status.json|g" \
     "$src" > "$tmp/$dest"
 }

@@ -500,6 +500,49 @@ grep -q 'one was backed up before' <<<"$out" || fail "lost world failed for the 
 rm "$wm/world-seen"
 out="$(game_world)" || fail "deleting the marker did not accept the empty world: $out"
 
+# 2004Scape: state paths come from the unit; the checkouts and the live
+# db.sqlite are never listed (the database is staged with .backup instead).
+game_2004() {
+  bash -c '
+    set -euo pipefail
+    HOST_DIR="$1"
+    BACKUP_DRAGONWILDS_INSTALL_DIR="$1/game"
+    BACKUP_LOSTCITY_RUNTIME_DIR="$3"
+    BACKUP_RS_SDK_DATA_DIR="$4"
+    STAGING_DIR="$1/staging"
+    CANDIDATES=()
+    log() { printf "log: %s\n" "$*"; }
+    die() { printf "%s\n" "$*" >&2; exit 1; }
+    systemctl() { printf "%s\n" "$BACKUP_DRAGONWILDS_INSTALL_DIR"; }
+    source "$2/linux-game-server/backup/sources.sh"
+    BACKUP_WORLD_MARKER="$1/world-seen"
+    resolve_sources
+    stage_extra
+    printf "candidates=%s\n" "${CANDIDATES[*]}"
+  ' bash "$tmp/scape" "$REPO" "$1" "$2" 2>&1
+}
+sc="$tmp/scape"
+mkdir -p "$sc/game/RSDragonwilds/Saved/SaveGames" "$sc/lc/engine/data/players/main" "$sc/lc/engine/data/config" \
+  "$sc/lc/engine/node_modules" "$sc/rs/players"
+printf '{"rev":"254"}\n' >"$sc/lc/server.json"
+printf 'SQLite format 3\0x' >"$sc/lc/engine/db.sqlite"
+out="$(PATH="$stub:$PATH" game_2004 "$sc/lc" "$sc/rs")" || fail "2004Scape sources failed: $out"
+for want in "$sc/lc/server.json" "$sc/lc/engine/.env" "$sc/lc/engine/data/players" "$sc/lc/engine/data/config" "$sc/rs"; do
+  grep -q "candidates=.*$want" <<<"$out" || fail "2004Scape backup missing $want: $out"
+done
+for unwanted in "$sc/lc " "$sc/lc/engine " "$sc/lc/engine/db.sqlite" "node_modules"; do
+  if grep -q "candidates=.*$unwanted" <<<"$out "; then fail "2004Scape backup listed $unwanted: $out"; fi
+done
+cmp -s "$sc/lc/engine/db.sqlite" "$sc/staging/lostcity/db.sqlite.sqlitebak" || fail "Lost City database not staged: $out"
+out="$(PATH="$stub:$PATH" game_2004 "$sc/no-lc" "$sc/no-rs")" || fail "missing 2004Scape data failed the backup: $out"
+grep -q 'Lost City runtime not found' <<<"$out" || fail "missing Lost City runtime not reported: $out"
+grep -q 'RS-SDK data not found' <<<"$out" || fail "missing RS-SDK data not reported: $out"
+out="$(PATH="$stub:$PATH" game_2004 "" "")" || fail "unconfigured 2004Scape failed the backup: $out"
+[[ "$out" != *"$sc/lc"* && "$out" != *"not found"* ]] || fail "unconfigured 2004Scape added sources: $out"
+if out="$(PATH="$stub:$PATH" game_2004 "lc/relative" "")"; then fail "relative Lost City path accepted: $out"; fi
+grep -q 'invalid fixed 2004Scape data path' <<<"$out" || fail "relative path failed for the wrong reason: $out"
+if out="$(PATH="$stub:$PATH" game_2004 "" "$sc/rs/../lc")"; then fail "RS-SDK path with .. accepted: $out"; fi
+
 # Main server: the path cross-check binds while it runs the game, and is skipped
 # once dragonwilds.service is gone (old saves are still backed up).
 main_server_resolve() {
@@ -725,6 +768,24 @@ fi
 grep -q 'cannot read FORGEJO_DATA_PATH' <<<"$out" || fail "failed Forgejo read not reported: $out"
 printf 'OTHER=1\n' >"$fs/forgejo/.env"
 bash "$fs/backup/setup.sh" --verify >/dev/null 2>&1 || fail "setup rejected a forgejo .env without FORGEJO_DATA_PATH"
+
+# A 2004Scape data path that is not a plain absolute path never reaches the unit.
+gs="$tmp/game-setup"
+mkdir -p "$gs/backup" "$gs/lostcity" "$gs/rs-sdk"
+cp "$REPO/linux-game-server/backup/"{sources.sh,game-backup.timer,game-backup.service.template,game-backup-failure.service.template} "$gs/backup/"
+cp "$SCRIPT_DIR/setup.sh" "$SCRIPT_DIR/backup.sh" "$gs/backup/"
+printf 'LOSTCITY_RUNTIME_DIR=%s/lc\n' "$tmp" >"$gs/lostcity/.env"
+printf 'RS_SDK_DATA_DIR=%s/rs\n' "$tmp" >"$gs/rs-sdk/.env"
+out="$(bash "$gs/backup/setup.sh" --verify 2>&1)" || fail "setup rejected valid 2004Scape paths: $out"
+for bad_path in "LOSTCITY_RUNTIME_DIR=games/lc" "LOSTCITY_RUNTIME_DIR=$tmp/lc/../x" "LOSTCITY_RUNTIME_DIR=$tmp/l|c"; do
+  printf '%s\n' "$bad_path" >"$gs/lostcity/.env"
+  if out="$(bash "$gs/backup/setup.sh" --verify 2>&1)"; then fail "setup rendered bad $bad_path: $out"; fi
+  grep -q 'invalid LOSTCITY_RUNTIME_DIR' <<<"$out" || fail "bad $bad_path failed for the wrong reason: $out"
+done
+printf 'LOSTCITY_RUNTIME_DIR=%s/lc\n' "$tmp" >"$gs/lostcity/.env"
+printf 'RS_SDK_DATA_DIR=rs\n' >"$gs/rs-sdk/.env"
+if out="$(bash "$gs/backup/setup.sh" --verify 2>&1)"; then fail "setup rendered a relative RS_SDK_DATA_DIR: $out"; fi
+grep -q 'invalid RS_SDK_DATA_DIR' <<<"$out" || fail "relative RS_SDK_DATA_DIR failed for the wrong reason: $out"
 cat >"$tmp/badgrep/grep" <<EOF
 #!/usr/bin/env bash
 [[ "\$*" != *'@[A-Za-z0-9_]+@'* ]] || exit 2

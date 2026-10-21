@@ -27,4 +27,4 @@ docker compose --project-directory linux-game-server/lostcity -f linux-game-serv
 docker compose --project-directory linux-game-server/lostcity -f linux-game-server/lostcity/docker-compose.yml logs --tail=100 lostcity
 ```
 
-Update Engine/Content/Client-TS only as a planned maintenance change. The runtime uses the revision branches cloned during bootstrap; do not run the upstream interactive `start.js` update menu on the live server. The runtime directory contains the world, player data, and configuration and must be included in encrypted backups before inviting players. Validate a restore before relying on it.
+Update Engine/Content/Client-TS only as a planned maintenance change. The runtime uses the revision branches cloned during bootstrap; do not run the upstream interactive `start.js` update menu on the live server. The runtime directory contains the world, player data, and configuration; the nightly game backup covers its state files (not the checkouts), as described in `2004scape/README.md`. Validate a restore before relying on it.

@@ -23,4 +23,4 @@ docker compose --project-directory linux-game-server/rs-sdk -f linux-game-server
 docker compose --project-directory linux-game-server/rs-sdk -f linux-game-server/rs-sdk/docker-compose.yml logs --tail=100 rs-sdk
 ```
 
-User registration is enabled so LAN/tailnet users can create accounts. Keep the access boundary intact. The RS-SDK data directory contains SQLite databases and player saves; add it to the encrypted game-server backup and verify an actual restore before relying on it. Update the checkout and rebuild as a maintenance operation; this deployment does not auto-pull code.
+User registration is enabled so LAN/tailnet users can create accounts. Keep the access boundary intact. The RS-SDK data directory contains SQLite databases and player saves; the nightly game backup covers it (see `2004scape/README.md`). Verify an actual restore before relying on it. Update the checkout and rebuild as a maintenance operation; this deployment does not auto-pull code.
