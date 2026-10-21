@@ -57,19 +57,40 @@ report that host down.
 ## Homepage's Docker access
 
 Homepage never mounts the Docker socket: a read-only mount still grants the full
-Docker API, root on the host. `homepage/compose.yml` adds a second service,
-`docker-socket-proxy` (`wollomatic/socket-proxy`, digest-pinned), which every
-host's Homepage compose file extends. It listens on `127.0.0.1:2375`, allows only
-`GET /containers/json` and `GET /containers/<id>/stats` (all Homepage calls),
-and runs read-only with every capability dropped. Each host's
-`homepage/config/docker.yaml` points at it. That is why the main server and the
-Pi can keep Homepage on the LAN (`HOSTNAME: 0.0.0.0`) as a fallback when
-Tailscale is down: a LAN client sees the container list and stats, nothing more.
+Docker API, which is root on the host. `homepage/compose.yml` adds a second
+service, `docker-socket-proxy` (`wollomatic/socket-proxy`, digest-pinned), which
+every host's Homepage compose file extends:
+
+- It serves a filtered API on a Unix socket in the `homepage-docker` volume,
+  mode `0600` and owned by root, and has no network (`network_mode: none`). Only
+  Homepage, which runs as root and mounts that volume read-only, can open it.
+  No TCP port exists for another local process to reach.
+- It allows only `GET /containers/json` and `GET /containers/<id>/stats`,
+  which are all the calls Homepage makes.
+- It runs read-only with every capability dropped.
+
+Each host's `homepage/config/docker.yaml` points at that socket. If the proxy is
+down, Homepage's Docker badges fail; Homepage never falls back to the real
+socket.
+
+That is why the main server and the Pi can keep Homepage on the LAN
+(`HOSTNAME: 0.0.0.0`) as a fallback when Tailscale is down: a LAN client sees
+container names, images, labels, ports, mounts, commands and stats, but no
+environment variables and no control. Their `HOMEPAGE_ALLOWED_HOSTS` list the LAN
+names with the port (`<hostname>:3000`), because Homepage compares the whole
+`Host` header.
+
+**Deploying or rolling back:** run `docker compose up -d` in the host's Homepage
+directory (never `restart`, which keeps the old mounts), then check that
+`docker inspect -f '{{range .Mounts}}{{.Source}} {{end}}' homepage` lists no
+`docker.sock`. A rollback to a commit before this change puts the socket back on
+Homepage: re-bind it to `127.0.0.1` before you roll back.
 
 If a Homepage upgrade calls another endpoint, its cards show a Docker error and
 the proxy logs `blocked request`; widen `-allowGET` only to that read-only path.
-`server-base/tests/test-homepage-docker-proxy.sh` checks the allowlist against a
-real daemon in CI.
+`server-base/tests/test-homepage-docker-proxy.sh` runs both containers against a
+real daemon in CI. It checks the allowlist, root-only access to the socket,
+Homepage's live mounts, fail-closed behavior and the LAN `Host` form.
 
 ## AdGuard replicas
 

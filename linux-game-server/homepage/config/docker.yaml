@@ -1,5 +1,4 @@
-# Filtered Docker API (server-base/homepage/compose.yml docker-socket-proxy);
-# Homepage has no Docker socket of its own.
+# Filtered Docker API from the docker-socket-proxy service
+# (server-base/homepage/compose.yml); Homepage never mounts the real socket.
 my-docker:
-  host: 127.0.0.1
-  port: 2375
+  socket: /run/homepage-docker/docker.sock

@@ -11,10 +11,18 @@ in [UNIFICATION.md](UNIFICATION.md).
 ### Security
 - Homepage no longer mounts the Docker socket on any host. It reads container
   status and stats through `docker-socket-proxy` (`wollomatic/socket-proxy`,
-  digest-pinned) on `127.0.0.1:2375`, which allows only those two read-only
-  calls and runs read-only with all capabilities dropped. The main server and
-  the Pi keep Homepage on the LAN as a Tailscale-down fallback, now without
-  root-equivalent Docker access. CI tests the allowlist against a real daemon.
+  digest-pinned). The proxy serves a root-only Unix socket in a shared volume,
+  has no network, allows only those two read-only calls, and runs read-only
+  with all capabilities dropped; a stopped proxy fails closed. The main server
+  and the Pi keep Homepage on the LAN as a Tailscale-down fallback, now without
+  root-equivalent Docker access. CI tests all of this against a real daemon.
+
+### Fixed
+- Direct LAN access to Homepage on the main server and the Pi returned HTTP
+  400: `HOMEPAGE_ALLOWED_HOSTS` listed LAN names without the port, and Homepage
+  compares the whole `Host` header.
+- The server setup footer said `docker compose restart` after editing
+  `homepage/.env`; it now says `docker compose up -d`, which picks up the change.
 
 ## Unreleased — One tailnet node per host ([#86](https://github.com/ulises-c/Computer-Setup/issues/86))
 

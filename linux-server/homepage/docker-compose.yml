@@ -18,10 +18,11 @@ services:
       # Every name clients use must be allow-listed, or homepage rejects the
       # request (its reverse-proxy host check). TAILSCALE_HOSTNAME and
       # HOMEPAGE_VAR_HOMEPAGE_DOMAIN both hold the host node's MagicDNS name,
-      # the one serve forwards.
-      HOMEPAGE_ALLOWED_HOSTS: "${HOSTNAME},${HOSTNAME}.local,localhost,${SERVER_IP},${TAILSCALE_HOSTNAME},${HOMEPAGE_VAR_HOMEPAGE_DOMAIN}"
+      # the one serve forwards. Direct LAN names need the port: Homepage
+      # compares the whole Host header.
+      HOMEPAGE_ALLOWED_HOSTS: "${HOSTNAME}:3000,${HOSTNAME}.local:3000,${SERVER_IP}:3000,localhost,${TAILSCALE_HOSTNAME},${HOMEPAGE_VAR_HOMEPAGE_DOMAIN}"
       # LAN clients reach :3000 directly as well as through serve; safe
-      # because Homepage has no Docker socket, only the filtered proxy.
+      # because Homepage has no Docker socket, only the filtered proxy's.
       HOSTNAME: "0.0.0.0"
 
   # Homepage's only route to Docker (config/docker.yaml); see the base file.
@@ -29,3 +30,6 @@ services:
     extends:
       file: ../../server-base/homepage/compose.yml
       service: docker-socket-proxy
+
+volumes:
+  homepage-docker:

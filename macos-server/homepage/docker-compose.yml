@@ -17,3 +17,6 @@ services:
     extends:
       file: ../../server-base/homepage/compose.yml
       service: docker-socket-proxy
+
+volumes:
+  homepage-docker:

@@ -14,9 +14,10 @@ services:
     env_file:
       - .env
     environment:
-      HOMEPAGE_ALLOWED_HOSTS: "localhost,127.0.0.1,${HOMEPAGE_VAR_PI_HOSTNAME},${HOMEPAGE_VAR_PI_HOSTNAME}.local,${HOMEPAGE_VAR_PI_LAN_IP},${HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}"
+      # Direct LAN names need the port: Homepage compares the whole Host header.
+      HOMEPAGE_ALLOWED_HOSTS: "localhost,127.0.0.1,${HOMEPAGE_VAR_PI_HOSTNAME}:3001,${HOMEPAGE_VAR_PI_HOSTNAME}.local:3001,${HOMEPAGE_VAR_PI_LAN_IP}:3001,${HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}"
       # LAN clients reach :3001 directly as well as through serve; safe
-      # because Homepage has no Docker socket, only the filtered proxy.
+      # because Homepage has no Docker socket, only the filtered proxy's.
       HOSTNAME: "0.0.0.0"
       PORT: "3001"
 
@@ -25,3 +26,6 @@ services:
     extends:
       file: ../../server-base/homepage/compose.yml
       service: docker-socket-proxy
+
+volumes:
+  homepage-docker:
