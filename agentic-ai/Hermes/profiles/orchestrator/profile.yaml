@@ -1,0 +1,5 @@
+description: 'Kanban orchestrator: owns every board. Breaks goals into cards, routes
+  them to the role profiles, watches for blockers, fixes what it can, and escalates
+  real human decisions to the user on Slack (#hermes-kanban). Does not implement cards
+  itself.'
+description_auto: false

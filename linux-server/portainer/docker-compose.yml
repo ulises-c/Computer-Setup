@@ -4,15 +4,12 @@ services:
   # at /; --base-url makes its links carry the prefix. 9000 is the plaintext
   # UI (9443 is Portainer's own self-signed TLS, not needed behind serve).
   portainer:
-    image: portainer/portainer-ce:latest
-    container_name: portainer
+    extends:
+      file: ../../server-base/portainer/compose.yml
+      service: portainer
     command: --base-url /portainer
     ports:
       - "127.0.0.1:9000:9000"
-    restart: unless-stopped
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
 
 volumes:
   portainer_data:

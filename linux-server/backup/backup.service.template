@@ -8,5 +8,11 @@ OnFailure=backup-failure.service
 Type=oneshot
 ExecStart=/usr/bin/env bash @BACKUP_SCRIPT@
 Environment=HOME=/root
+Environment=BACKUP_HOST_DIR=@BACKUP_HOST_DIR@
+Environment=BACKUP_SAVE_SCRIPT=@BACKUP_SAVE_SCRIPT@
+Environment=BACKUP_DRAGONWILDS_INSTALL_DIR=@BACKUP_DRAGONWILDS_INSTALL_DIR@
+Environment=BACKUP_FORGEJO_DATA_PATH=@BACKUP_FORGEJO_DATA_PATH@
+Environment=STATUS_JSON=@BACKUP_STATUS_JSON@
+TimeoutStartSec=2h
 Nice=10
 IOSchedulingClass=idle

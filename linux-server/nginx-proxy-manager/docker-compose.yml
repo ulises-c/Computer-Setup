@@ -11,6 +11,9 @@ services:
     image: jc21/nginx-proxy-manager:latest
     container_name: nginx-proxy-manager
     restart: unless-stopped
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     ports:
       - "${NPM_BIND_IP:?set NPM_BIND_IP in .env}:80:80"     # HTTP proxy (redirects <hostname>.local → HTTPS)
       - "${NPM_BIND_IP:?set NPM_BIND_IP in .env}:443:443"   # HTTPS proxy

@@ -45,7 +45,9 @@ object-of-arrays.
 ## Category selection (`--base` / `--tags`)
 
 - `--base` installs only the high-priority base set (no category packages).
-- `--tags development,terminal` installs base + those tag categories. Enabled
+- `--tags development,terminal` installs base + those tag categories. The `server-base`
+  tag marks the tool set every server shares; the game server and Pi bootstraps
+  select it (see `server-base/README.md`). Enabled
   work/personal apps install regardless of category.
 - Bare run on a TTY with no selection flag → `core_maybe_prompt_selection` prompts
   interactively; skipped on the server profile and in non-interactive/CI runs.
@@ -78,6 +80,14 @@ short-circuit runs before any `platform_main` sets it — that keeps
 `deploy_zshrc`'s platform-override lookup working on both paths.
 
 ## Validation & reminder semantics
+
+Downloaded shell installers, including the automatic OpenCode step, execute
+the publisher's current response without a repo-selected version or checksum.
+Selecting those packages therefore trusts the publisher and its distribution
+endpoint at installation time; HTTPS is not a reproducibility or integrity pin.
+Use `--dry-run` to inspect the command before a live bootstrap. Pinning and
+verifying installer releases remains a hardening follow-up, not a guarantee of
+the current installer.
 
 - `scripts/validate-packages.sh` (pre-commit + CI) enforces the schema: platform
   vocabulary, controlled tag set, `handled_by_setup` is a real boolean, custom

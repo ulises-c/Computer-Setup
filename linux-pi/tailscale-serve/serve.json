@@ -2,13 +2,16 @@
   "TCP": {
     "443": { "HTTPS": true },
     "8443": { "HTTPS": true },
-    "8449": { "HTTPS": true }
+    "8449": { "HTTPS": true },
+    "9443": { "HTTPS": true }
   },
   "Web": {
     "${TS_CERT_DOMAIN}:443": {
       "Handlers": {
         "/": { "Proxy": "http://127.0.0.1:3001" },
-        "/motioneye/": { "Proxy": "http://127.0.0.1:8765" }
+        "/motioneye/": { "Proxy": "http://127.0.0.1:8765" },
+        "/glances": { "Proxy": "http://127.0.0.1:61208" },
+        "/cockpit": { "Proxy": "https+insecure://127.0.0.1:9090/cockpit" }
       }
     },
     "${TS_CERT_DOMAIN}:8443": {
@@ -16,6 +19,9 @@
     },
     "${TS_CERT_DOMAIN}:8449": {
       "Handlers": { "/": { "Proxy": "http://127.0.0.1:8631" } }
+    },
+    "${TS_CERT_DOMAIN}:9443": {
+      "Handlers": { "/": { "Proxy": "http://127.0.0.1:9000" } }
     }
   }
 }

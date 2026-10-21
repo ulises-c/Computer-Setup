@@ -1,0 +1,5 @@
+description: 'Software QA: runs tests, linters, builds and CI reproductions on the
+  exact commit, separates real failures from flakes, writes test plans, and validates
+  on hardware or bench machines at GO gates. Reports PASS/FAIL/FLAKY with evidence.
+  Does not change production code.'
+description_auto: false

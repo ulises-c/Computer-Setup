@@ -7,7 +7,8 @@ services:
     ports:
       - "127.0.0.1:3001:3001"
     restart: unless-stopped
-    environment:
-      - TZ=America/Los_Angeles
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     volumes:
       - ./data:/app/data

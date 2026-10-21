@@ -23,6 +23,8 @@ stop and ask.
 Each host ends up as one tailnet node. Its web services are published by host
 `tailscale serve` from `<host-dir>/tailscale-serve/serve.json` via
 `scripts/ts-serve-apply.sh`, and there are no per-service `<svc>-ts` sidecars.
+On the Pi, `linux-pi/serve.sh` (from `main`'s `server-base/`) also publishes
+the base routes; the Pi template repeats them (design §2.3, last paragraph).
 
 ### Conventions
 
@@ -99,6 +101,7 @@ Each host ends up as one tailnet node. Its web services are published by host
 | Admin access | HUMAN | The user can open the admin console as Owner or Admin (Access controls, Machines, Services, DNS, Settings → Keys / OAuth clients) |
 | Escape hatch | HUMAN | The user can reach the server without the tailnet (LAN SSH or a local console). Tagging (§0.1 step 4) and the cutover can cut tailnet access |
 | Pi access | `ssh <pi-lan-ip> true` from the server, or a separate session on the Pi | Works. The Pi has its own checkout of this repo |
+| Time zone env | `test -f <repo>/server-base/timezone.env && echo ok` on the server and on the Pi | `ok`. Every compose file needs it; if missing, run `bash server-base/timezone.sh` first |
 
 If any row fails: STOP.
 
@@ -293,7 +296,7 @@ new compose files ignore it.
 | Stack (`linux-server/…`) | Set or change | Remove now | When |
 |---|---|---|---|
 | `nginx-proxy-manager` | `NPM_BIND_IP` = the LAN IP from §1 step 5 | — | §2.3 step 1 |
-| `homepage` | `HOMEPAGE_VAR_HOMEPAGE_DOMAIN` = `$NODE`, `TAILSCALE_HOSTNAME` = `$NODE`. Keep `HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN` at its old value until §3 step 7. Keep `HOMEPAGE_VAR_FORGEJO_DOMAIN`, `_NTFY_DOMAIN`, `_IMMICH_DOMAIN`, `_GAME_HOMEPAGE_DOMAIN` | `HOMEPAGE_VAR_{PORTAINER,UPTIMEKUMA,SPEEDTEST,OPENSPEEDTEST,FILEBROWSER,SYNCTHING,GLANCES,PEANUT,ADGUARD,COCKPIT,ATVLOADLY,QBITTORRENT,TAILSCALE_WEB,NPM}_DOMAIN` | §2.3 step 3 |
+| `homepage` | `HOMEPAGE_VAR_HOMEPAGE_DOMAIN` = `$NODE`, `TAILSCALE_HOSTNAME` = `$NODE`, `HOMEPAGE_VAR_MAIN_GLANCES_URL` = `https://$NODE/glances`. Keep `HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN` at its old value until §3 step 7. Keep `HOMEPAGE_VAR_FORGEJO_DOMAIN`, `_NTFY_DOMAIN`, `_IMMICH_DOMAIN`, `_GAME_HOMEPAGE_DOMAIN` | `HOMEPAGE_VAR_{PORTAINER,UPTIMEKUMA,SPEEDTEST,OPENSPEEDTEST,FILEBROWSER,SYNCTHING,GLANCES,PEANUT,ADGUARD,COCKPIT,ATVLOADLY,QBITTORRENT,TAILSCALE_WEB,NPM}_DOMAIN` | §2.3 step 3 |
 | `glances` | `GLANCES_ALLOWED_HOSTS`: replace the old `glances.<tailnet>.ts.net` entry with `$NODE` | — | §2.3 step 3 |
 | `speedtest-tracker` | `APP_URL` and `ASSET_URL` = `https://$NODE:8445` | — | §2.3 step 4 |
 | `adguard` (DNS watchdog) | `KUMA_PUSH_URL`: host → `http://127.0.0.1:3001` (keep `/api/push/<token>`); `NTFY_URL` = `http://127.0.0.1:8103` | — | after uptime-kuma, after ntfy |
@@ -548,13 +551,23 @@ Run on the Pi, in its `<repo>`.
    ```
 
    The dry-run's `==> Would run` lists only `set-raw`, and the diff adds
-   `TCP` 443, 8443 and 8449. Homepage, motioneye and adguard answer at once.
+   `TCP` 8443 and 8449 and the `/` and `/motioneye/` handlers. The `/glances`,
+   `/cockpit` and `:9443` routes that `linux-pi/serve.sh` published are in the
+   template with the same values, so the diff leaves them unchanged (on a Pi
+   where `serve.sh` never ran, the diff adds them and `TCP` 443 and 9443 too).
+   Homepage, motioneye and adguard answer at once.
    `:8449` gives 502 until step 5.
 5. **Stacks**, each with `docker compose config -q && docker compose up -d --remove-orphans`:
    - `homepage`: `.env` — set `HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN` to the Pi
      node's name and `HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN` to the server node's
-     name. Remove `HOMEPAGE_VAR_ADGUARD_PI_DOMAIN`,
-     `HOMEPAGE_VAR_MOTIONEYE_DOMAIN` and `HOMEPAGE_VAR_CUPS_DOMAIN`. This
+     name. Set `HOMEPAGE_VAR_MAIN_GLANCES_URL` to
+     `https://<server>.<tailnet>.ts.net/glances`, and the Shared services
+     values as in `homepage/.env.example`: `HOMEPAGE_VAR_UPTIMEKUMA_DOMAIN` to
+     `<server>.<tailnet>.ts.net:8444`, `HOMEPAGE_VAR_ADGUARD_DOMAIN` to
+     `<server>.<tailnet>.ts.net:8443` and `HOMEPAGE_VAR_SYNCTHING_DOMAIN` to
+     `<server>.<tailnet>.ts.net/syncthing`. Remove
+     `HOMEPAGE_VAR_ADGUARD_PI_DOMAIN`, `HOMEPAGE_VAR_MOTIONEYE_DOMAIN`,
+     `HOMEPAGE_VAR_CUPS_DOMAIN` and `HOMEPAGE_VAR_PI_NODE_DOMAIN`. This
      removes `homepage-pi-ts`.
    - `adguard`: removes `adguard-pi-ts`. `adguardhome` is unchanged, so DNS on
      `:53` is not touched: `dig @<pi-lan-ip> example.com +short` answers.
@@ -758,13 +771,15 @@ Do not start this early: the soak is what keeps rollback cheap.
   works from another device moves to its loopback fallback.
 - Syncthing peers that dial `tcp://syncthing.<tailnet>.ts.net:22000`: change
   the address to the server node's name.
-- Game host homepage (`linux-game-server/homepage/.env` on that host, which is
-  not in this PR): set `HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN` to the server node's
-  name and `HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN` to the Pi node's name. Set
+- Game host and Mac mini homepages (`linux-game-server/homepage/.env` and
+  `macos-server/homepage/.env` on those hosts): set
+  `HOMEPAGE_VAR_MAIN_HOMEPAGE_DOMAIN` to the server node's name,
+  `HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN` to the Pi node's name and
+  `HOMEPAGE_VAR_MAIN_GLANCES_URL` to `https://<server>.<tailnet>.ts.net/glances`. Set
   `HOMEPAGE_VAR_UPTIMEKUMA_DOMAIN` to `<server>.<tailnet>.ts.net:8444`,
   `HOMEPAGE_VAR_ADGUARD_DOMAIN` to `<server>.<tailnet>.ts.net:8443` and
   `HOMEPAGE_VAR_SYNCTHING_DOMAIN` to `<server>.<tailnet>.ts.net/syncthing`.
-  Then run `docker compose up -d` in its homepage dir. The ntfy, forgejo and
+  Then run `docker compose up -d` in each homepage dir. The ntfy, forgejo and
   immich values don't change.
 - Off-repo shell rc files or scripts that `curl` ntfy or another `*.ts.net`
   URL.

@@ -12,7 +12,8 @@ drive. Encrypted, deduplicated, pruned, and reported to ntfy + a homepage card.
 - **Syncthing** config + device keys, **qBittorrent** config (not downloads),
   **Portainer** BoltDB volume, **atvloadly** (`/etc/atvloadly`)
 - **Dragonwilds** `Saved/SaveGames` (worlds) + `Saved/Config` (server settings,
-  including `OwnerId`), resolved from `dragonwilds/.env`
+  including `OwnerId`), with the install path captured into the root-owned unit
+  during setup
 - Every service's gitignored **`.env`** (secrets needed to restore)
 
 Excluded as disposable/regenerable: qBittorrent downloads, any leftover
@@ -24,9 +25,11 @@ outgrow the 1TB target; offsite image backup is tracked in
 [#87](https://github.com/ulises-c/Computer-Setup/issues/87).
 
 A Dragonwilds world is a plain `.sav` with no online-snapshot equivalent to
-sqlite's `.backup`, so a save written at the moment the 03:30 run reads it could
-be captured torn. Nightly retention means the previous snapshot is the fallback;
-stop `dragonwilds.service` first if you want a guaranteed-clean copy.
+sqlite's `.backup`, so a save written at the moment the 03:00 run reads it could
+be captured torn. Nightly retention means the previous snapshot is the fallback.
+The Dragonwilds pre-update gate stops the game before invoking the backup service
+for a clean copy; a save without a readable, matching `DedicatedServer.ini` is
+rejected rather than reported as a successful partial backup.
 
 SQLite DBs are snapshotted with sqlite3's online `.backup` (consistent, **no
 downtime**); the staged copies carry a `.sqlitebak` suffix. Portainer's BoltDB
@@ -63,9 +66,18 @@ gets a ~1s `docker stop`/`start` around a volume copy — the one brief exceptio
    ```
 6. Render, install, and enable the system timer from the current checkout path:
    ```sh
-   bash setup.sh --dry-run
+   bash setup.sh --verify
    sudo bash setup.sh
    ```
+   `--verify` renders the units and runs `systemd-analyze verify` without
+   installing anything (`--dry-run` only prints the plan).
+   Setup also installs a root-owned executor bundle under
+   `/usr/local/libexec/computer-setup-backup/backup`; the systemd unit does not
+   execute backup code directly from this writable checkout. It also stores
+   status in `/var/lib/computer-setup-backup/backup/`. It captures both
+   `DRAGONWILDS_INSTALL_DIR` and `FORGEJO_DATA_PATH` into the root-owned unit;
+   re-run setup after changing either service `.env`, the backup `.env`, or
+   backup source code.
 7. Dry run + verify:
    ```sh
    sudo systemctl start backup.service
@@ -97,5 +109,14 @@ Then put state back per service:
 - **Never** point a service's data path (e.g. `FORGEJO_DATA_PATH`,
   `QBITTORRENT_DOWNLOADS_PATH`) at the backup drive — the script refuses to run if
   a source resolves under `/mnt/wd1tb`, but don't rely on that as policy.
-- The script skips missing source paths, so it's safe to enable before every
-  service is deployed; coverage grows automatically as data dirs appear.
+- The script skips ordinary missing source paths, so it's safe to enable before
+  every service is deployed; coverage grows automatically as data dirs appear.
+  Dragonwilds is deliberately stricter: once a `.sav` exists, a missing
+  `dragonwilds.service`, mismatched captured install path, or invalid world
+  configuration fails the backup instead of silently omitting the world. The
+  first backup that sees a world writes `/var/lib/dragonwilds/world-seen` (and
+  backs it up); after that an empty or missing `SaveGames`, or an empty
+  `BACKUP_DRAGONWILDS_INSTALL_DIR`, fails the backup too, even once the game has
+  moved to its own host. To retire the old saves on purpose, delete them and
+  that marker together. A world found at a different path than the marker
+  records is still backed up, with a warning to check nothing was left behind.

@@ -5,6 +5,40 @@ compose up -d`). Mirrors the `linux-server/<service>/` layout: each folder is a
 Docker Compose stack with a committed `docker-compose.yml` / `.env.example` and
 gitignored runtime dirs (`conf/ work/`) + `.env`.
 
+## Base layer (`setup.sh`)
+
+The Pi runs the same base as every server ([`../server-base`](../server-base/README.md)):
+
+```bash
+bash linux-pi/setup.sh --dry-run
+bash linux-pi/setup.sh
+```
+
+It installs the `server-base` tool set (zsh, tmux, fastfetch, eza, fzf, ripgrep,
+bat, fd, zoxide, htop, ncdu, git/gh, Cockpit, claude-code, opencode) and the
+shared dotfiles through the root engine, then Tailscale and Docker if missing.
+Raspberry Pi OS has no snapd, so snap-only tools (micro) are skipped, and the
+script requires a release whose archive has fastfetch and eza (Debian 13+). It
+does not restart Docker to pin address pools (that drops the backup DNS); do
+that by hand in a maintenance window.
+
+`glances/`, `portainer/` and `watchtower/` extend the shared stacks, bound to
+loopback. `serve.sh` (driven by `serve.conf`) publishes them on the Pi's own
+tailnet node, the #86 layout: `https://<pi-hostname>.<tailnet>.ts.net/glances/`,
+`/cockpit/` and `:9443` (Portainer). Copy `glances/.env.example` to `.env` first.
+Homepage, MotionEye, AdGuard and CUPS are published from
+`tailscale-serve/serve.json` by `scripts/ts-serve-apply.sh` (below). That
+template sets the whole `:443` handler map, so it repeats the `/glances` and
+`/cockpit` routes and the `:9443` port from `serve.conf`; change a route in both.
+
+`homepage/config/{services,settings}.yaml` are generated from
+`homepage/*.local.yaml` (`python3 server-base/homepage/generate.py`); copy
+`HOMEPAGE_VAR_MAIN_GLANCES_URL` and the Shared services domains from
+`homepage/.env.example` into the existing `.env`, run
+`bash server-base/homepage/fetch-assets.sh linux-pi`, and recreate Homepage.
+`backup/backup.sh` and `setup.sh` are symlinks into the shared restic engine;
+`backup/sources.sh` lists the Pi's paths.
+
 ## Why this node exists
 
 The home network had a **single point of DNS failure**: the Ubuntu server ran the
@@ -20,6 +54,9 @@ publishes every Pi web service with host `tailscale serve`, from the template
 [`tailscale-serve/serve.json`](tailscale-serve/serve.json), applied by the
 shared script `../scripts/ts-serve-apply.sh` (the same script the server uses;
 see `../linux-server/HTTPS.md` and `docs/ONE_NODE_PER_HOST.md` section 3).
+`serve.sh` also publishes the base routes (Glances, Cockpit, Portainer) from
+`serve.conf`; the template carries the same handlers, so whichever runs last
+leaves the full set in place.
 There are no per-service Tailscale sidecars, auth keys or `ts-state/`
 directories. Adding a Pi service means adding a handler to the template and
 re-running the script; it adds no node.
@@ -30,6 +67,9 @@ re-running the script; it adds no node.
 | motioneye | `https://<pi-hostname>.<tailnet>.ts.net/motioneye/` | `127.0.0.1:8765` (prefix stripped) |
 | adguard (web UI) | `https://<pi-hostname>.<tailnet>.ts.net:8443` | `127.0.0.1:80` |
 | cups | `https://<pi-hostname>.<tailnet>.ts.net:8449` | `127.0.0.1:8631` shim → `:631` ([`cups/README.md`](cups/README.md)) |
+| glances | `https://<pi-hostname>.<tailnet>.ts.net/glances/` | `127.0.0.1:61208` (also in `serve.conf`) |
+| cockpit | `https://<pi-hostname>.<tailnet>.ts.net/cockpit/` | `127.0.0.1:9090` (also in `serve.conf`) |
+| portainer | `https://<pi-hostname>.<tailnet>.ts.net:9443` | `127.0.0.1:9000` (also in `serve.conf`) |
 
 Ports `8443` and `8449` come from the shared registry in
 `../linux-server/HTTPS.md`; a service uses the same port on every host.
@@ -87,6 +127,9 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://<pi-hostname>.<tailnet>.ts.net
 
 ## `adguard/` — secondary AdGuard Home
 
+`adguardhome` extends the shared replica in
+[`server-base/adguard-replica`](../server-base/README.md#adguard-replicas).
+
 - **Host-networked** (`network_mode: host`): owns `:53` (tcp+udp) and the `:80`
   admin UI directly on the Pi. **Independent of Tailscale** — DNS keeps serving
   LAN clients even if the tailnet/internet is down. This is the whole point; do
@@ -98,11 +141,12 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://<pi-hostname>.<tailnet>.ts.net
 
 [`bakito/adguardhome-sync`](https://github.com/bakito/adguardhome-sync) runs on
 the Pi and pulls the primary's config (filters, rewrites, upstreams, rules,
-services) into this replica on a cron, so the two stay in lockstep. DHCP sync is
-disabled. The origin is the server's AdGuard port,
-`https://<server>.<tailnet>.ts.net:8443`. Because the syncer runs here, the Pi
-re-pulls the latest config on start; if the primary is down, the replica simply
-keeps its last-good config.
+services) into every replica on a cron — this one (`REPLICA1`) and the game
+server's (`REPLICA2`, [`linux-game-server/adguard`](../linux-game-server/README.md#adguard-replica)).
+DHCP sync is disabled: the router does DHCP. The origin is the server's AdGuard
+port, `https://<server>.<tailnet>.ts.net:8443`. Because the syncer runs here,
+the Pi re-pulls the latest config on start; if the primary is down, the replica
+simply keeps its last-good config.
 
 ## `homepage/`, `cups/`, MotionEye — Pi dashboard and services
 
@@ -180,7 +224,8 @@ per-service sidecars follows `docs/ONE_NODE_PER_HOST.md` section 4.4 instead.
    ```
    The Pi's filters/rewrites/upstreams should now match the primary.
 4. **Wire failover on the router (`<router-ip>`):** in its DHCP settings, set the
-   DNS servers to `[<server-ip>, <pi-ip>]` (primary = server, secondary = Pi).
+   DNS servers to `[<server-ip>, <pi-ip>]` (primary = server, secondary = Pi),
+   plus `<game-lan-ip>` third once the game server's replica is up.
    Renew a client lease to pick it up.
 5. **Bring up the Pi dashboard:** in `homepage/`, `cp .env.example .env`, set
    the `HOMEPAGE_VAR_*` names, LAN identity and AdGuard creds, then

@@ -363,6 +363,15 @@ Neighbours on the Pi:
 Pi loopback ports after the change: 80, 631, 3001, 8099, 8631, 8765. The only
 new listener is the cups shim on `127.0.0.1:8631`.
 
+Integration with `server-base/` (merged to `main` while this design was in
+review): the Pi's base stacks (Glances, Portainer, Watchtower) are published by
+`linux-pi/serve.sh` from `linux-pi/serve.conf` at `/glances`, `/cockpit` and
+`:9443`. Serve keeps one handler map per port, and the apply algorithm (§3.5)
+replaces the whole `:443` map, so `linux-pi/tailscale-serve/serve.json` carries
+those three routes too, with the same mount keys and targets. Either tool can
+then run last without dropping the other's routes. Unifying the two mechanisms
+is tracked in `docs/TODO.md`.
+
 ## 3. Serve-config mechanism
 
 This section is the contract for the implementers. It was checked against the

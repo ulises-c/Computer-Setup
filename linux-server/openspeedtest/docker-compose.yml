@@ -13,5 +13,6 @@ services:
       - "3030:3000"   # HTTP  — http://<server-ip>:3030 (LAN test path)
       - "3031:3001"   # HTTPS — https://<server-ip>:3031 (self-signed)
     restart: unless-stopped
-    environment:
-      - TZ=America/Los_Angeles
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true

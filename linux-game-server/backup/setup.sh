@@ -1,0 +1,1 @@
+../../server-base/backup/setup.sh

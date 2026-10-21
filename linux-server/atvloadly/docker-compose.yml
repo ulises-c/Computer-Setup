@@ -10,6 +10,9 @@ services:
     ports:
       - "127.0.0.1:8101:80"
     restart: unless-stopped
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     volumes:
       - /etc/atvloadly:/data
       - /var/run/dbus:/var/run/dbus

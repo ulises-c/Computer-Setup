@@ -1,0 +1,13 @@
+services:
+  homepage:
+    extends:
+      file: ../../server-base/homepage/compose.yml
+      service: homepage
+    # Host networking in OrbStack shares the Mac's localhost both ways, so the
+    # base service's loopback URLs (native Glances, status JSON) work unchanged.
+    env_file:
+      - .env
+    environment:
+      HOMEPAGE_ALLOWED_HOSTS: "${HOMEPAGE_ALLOWED_HOSTS:?Run macos-server/setup.sh to create .env}"
+    volumes:
+      - ./config:/app/config

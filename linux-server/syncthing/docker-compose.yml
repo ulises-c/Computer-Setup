@@ -11,10 +11,12 @@ services:
       - "22000:22000/udp"   # sync protocol (QUIC)
       - "21027:21027/udp"   # local discovery
     restart: unless-stopped
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     environment:
       - PUID=1000
       - PGID=1000
-      - TZ=America/Los_Angeles
       # All container interfaces, so the loopback publish above reaches it. A
       # non-loopback GUI address also turns off Syncthing's Host check, which
       # would reject the tailnet name ("Host check error"); the GUI password is

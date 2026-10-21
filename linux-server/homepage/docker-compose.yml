@@ -4,12 +4,14 @@ services:
   # network_mode: host so it reaches the loopback helpers (tailscale-proxy on
   # :8089, glances on :61208, the status nginx containers) via localhost.
   homepage:
-    image: ghcr.io/gethomepage/homepage:latest
-    container_name: homepage
-    network_mode: host
+    extends:
+      file: ../../server-base/homepage/compose.yml
+      service: homepage
     volumes:
       - ./config:/app/config
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Fetched by server-base/homepage/fetch-assets.sh; gitignored.
+      - ./assets/icons:/app/public/icons:ro
+      - ./assets/images:/app/public/images:ro
     env_file:
       - .env
     environment:
@@ -18,6 +20,5 @@ services:
       # HOMEPAGE_VAR_HOMEPAGE_DOMAIN both hold the host node's MagicDNS name,
       # the one serve forwards.
       HOMEPAGE_ALLOWED_HOSTS: "${HOSTNAME},${HOSTNAME}.local,localhost,${SERVER_IP},${TAILSCALE_HOSTNAME},${HOMEPAGE_VAR_HOMEPAGE_DOMAIN}"
+      # LAN clients reach :3000 directly as well as through serve.
       HOSTNAME: "0.0.0.0"
-      PORT: "3000"
-    restart: unless-stopped

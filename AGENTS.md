@@ -2,9 +2,10 @@
 
 Personal machine-provisioning repo: one unified installer for macOS, Linux
 desktop (Ubuntu/Arch), and an Ubuntu Server LTS home server, plus per-platform
-configs and docs. A Raspberry Pi (`<pi-hostname>`, Debian) node lives in `linux-pi/`
-— currently its own Docker Compose service stacks (a secondary AdGuard resolver);
-folding it into the `setup.sh` base provisioning is still tracked in docs/TODO.md.
+configs and docs. Two more servers have their own bootstraps on the same engine:
+the game server (`linux-game-server/`) and a Raspberry Pi (`<pi-hostname>`,
+Debian) in `linux-pi/`. The always-on Mac mini has its own bootstrap in
+`macos-server/` (launchd + OrbStack). All four share the layer in `server-base/`.
 
 This file is the shared instruction set for **every** coding agent working in
 this repo (Claude Code, opencode, Codex, …). `CLAUDE.md` imports it and adds
@@ -51,17 +52,33 @@ Claude-Code-only notes on top; keep cross-agent guidance here, not there.
   version managers/zoxide are command-guarded). The override system
   (`deploy_zshrc`) still lets a platform folder ship its own `zshrc.example` to
   win over the base, but no platform currently does.
+- `server-base/` — the layer every server shares (`server-base/README.md`):
+  base compose stacks that host compose files `extends`, `serve.sh` (one tailnet
+  node per host, routes in `<host>/serve.conf`), the restic engine (hosts symlink
+  `backup.sh`/`setup.sh` and keep a `sources.sh`), and `fleet.json` +
+  `homepage/generate.py`, which render every host's Homepage
+  `config/{services,settings}.yaml` from `<host>/homepage/*.local.yaml`. Never
+  edit the generated files; CI runs `generate.py --check`. The base tool set is
+  the `server-base` tag in `packages.json`.
+- `macos-server/` — the Mac mini's server role: LaunchAgents rendered by
+  `agents.sh` (native Glances, status exporter, backup, local inference), OrbStack
+  compose stacks, `serve.conf`, power settings and the Forgejo runner.
+  `INVENTORY.md` records the machine's state ahead of its reinstall.
 - `macOS/`, `linux-desktop/`, `linux-server/` — platform-specific configs,
-  docs, and thin shim scripts that exec the root entrypoints. `linux-pi/` holds
-  the Raspberry Pi node's Docker Compose service stacks (same
-  `<service>/{docker-compose.yml,.env.example}` layout as `linux-server/`),
-  not yet wired into `setup.sh`. Each host publishes its web services through
-  its own single Tailscale node: one serve template per host,
+  docs, and thin shim scripts that exec the root entrypoints. `linux-pi/` and
+  `linux-game-server/` hold those hosts' service stacks (same
+  `<service>/{docker-compose.yml,.env.example}` layout as `linux-server/`) and
+  their own `setup.sh` bootstraps, which source `lib/core.sh` with the
+  `server-base` tag filter instead of being root `setup.sh` platforms.
+  Each host publishes its web services through its own single Tailscale node.
+  The main server and the Pi use one serve template per host,
   `<host-dir>/tailscale-serve/serve.json`, applied by
   `scripts/ts-serve-apply.sh` (see `linux-server/HTTPS.md` and
-  `docs/ONE_NODE_PER_HOST.md`). There are no per-service Tailscale sidecars.
+  `docs/ONE_NODE_PER_HOST.md`); the game server, the Mac mini and the Pi's base
+  routes use `server-base/serve.sh` (below). There are no per-service Tailscale
+  sidecars.
 - `scripts/dryrun-smoke.sh` — runs `setup.sh --dry-run` for every platform and
-  asserts it exits clean with install actions; also run in CI.
+  the game server / Pi bootstraps, and asserts they exit clean; also run in CI.
 
 `docs/UNIFICATION.md` is the design doc for this layout; `docs/CHANGELOG.md` records
 what shipped and `docs/TODO.md` tracks remaining work.
@@ -109,18 +126,78 @@ These apply to every agent (the repo is almost entirely Bash).
 
 ## Privacy & Security
 
-This repo is **public**. Never commit identifying or secret information.
+This repo is **public**. Never commit identifying or secret information. Treat
+everything that leaves this checkout as published: tracked files, commit
+messages, branch names, PR titles and bodies, review comments and CI logs.
 
-- Keep these out of tracked files entirely: tailnet names / MagicDNS suffixes
-  (`tailXXXXXX.ts.net`), real hostnames, server IPs, usernames, emails, tokens,
-  auth keys, and personal absolute paths.
-- Put any machine-specific or private value in a `.env` file (gitignored
-  repo-wide) and ship a committed `.env.example` with placeholders instead —
-  e.g. `linux-server/forgejo/.env.example`, `macOS/forgejo-runner/.env.example`.
-  Scripts read these via `${VAR:-<placeholder>}` and source a local `.env` when
-  present; they never hardcode the real value.
-- In docs and configs use placeholders: `<tailnet>`, `<server-ip>`,
-  `<username>`, `<hostname>`. Default to `.env` whenever a value is
-  identifying — prefer one more env var over leaking a real value.
-- When editing, scan the diff for accidentally introduced real identifiers
-  before committing.
+### What never goes in
+
+- Tailnet names and MagicDNS suffixes (`tail<id>.ts.net`), real hostnames
+  (short or full), server, LAN and tailnet IPs, MAC addresses, SSIDs.
+- Login usernames, emails, personal absolute paths (`/home/<user>`,
+  `/Users/<user>`), GPG/SSH key IDs and fingerprints.
+- Tokens, auth keys, passwords, webhook URLs, private keys, `.env` contents.
+
+The repo owner's public handle in links to this repo (`github.com/<owner>/…`)
+is already public and fine. A value that is identifying stays out even when it
+seems harmless.
+
+### Where private values live instead
+
+- In a `.env` file (gitignored repo-wide), with a committed `.env.example`
+  holding placeholders — e.g. `linux-server/forgejo/.env.example`,
+  `macos-server/forgejo-runner/.env.example`. Scripts read these via
+  `${VAR:-<placeholder>}` and source a local `.env` when present; they never
+  hardcode the real value. Prefer one more env var over leaking a real value.
+- Systemd units and other root-owned files get real paths rendered in at setup
+  time (`@PLACEHOLDER@` templates), never committed with them.
+
+### Placeholders and fixtures
+
+- Docs and configs: `<tailnet>`, `<hostname>`, `<server-ip>`, `<username>`,
+  `<game-server>`, `<pi-hostname>`. Name hosts by role, not by hostname.
+- Example values that are reserved and can never be real: `example.com`,
+  `*.example`, `*.test`, `example.ts.net`, `192.0.2.0/24`, `198.51.100.0/24`,
+  `203.0.113.0/24`. Tests may use private-range IPs, but only made-up ones.
+
+### Agent-written records and pasted output
+
+Most leaks come from text an agent writes, not code. Review notes
+(`docs/reviews/`), verification logs, `docs/CHANGELOG.md`, `docs/TODO.md`
+entries, commit messages and PR descriptions are tracked content too.
+
+- Never paste raw command output (`hostname`, `tailscale status`, `ip addr`,
+  `systemctl status`, `journalctl`, `docker ps`, paths from `pwd`, prompts)
+  into any of them. Summarise it, or redact every identifier to a placeholder
+  first.
+- Report verification by role and result ("game server: `systemd-analyze
+  verify` passed"), not by machine name.
+- When an agent scans for leaks, it reports `file:line` and the kind of match,
+  never the matched value, so the scan itself cannot leak it into a transcript.
+
+### Checks
+
+- `scripts/check-privacy.py` runs as a pre-commit hook on staged changes and on
+  the commit message, and in CI on every added line and commit message of a
+  push or PR. Install both hooks once per clone:
+  `pre-commit install --hook-type pre-commit --hook-type commit-msg`.
+- Generic patterns cannot know your real names. Copy `.privacy-denylist.example`
+  to `.privacy-denylist` (gitignored) and list the real hostnames, tailnet,
+  usernames and emails; CI reads the same list from the `PRIVACY_DENYLIST`
+  repository secret. Without it the check says so on every run.
+- A deliberately public value on one line can be marked `privacy-check: allow`.
+  Use it rarely, and say why in the commit message.
+- Before opening or updating a PR, also run
+  `python3 scripts/check-privacy.py --file <pr-body.md>` on the description.
+- Before committing changes to `.env` handling, `custom` `install_command` shell
+  execution, or path/network code, perform a security review (see
+  Conventions).
+
+### If something leaks
+
+1. Replace it in a new commit straight away; do not wait for the PR.
+2. If it is a secret (token, key, password, webhook), rotate it first. A
+   rewrite does not un-publish it: forks, PR refs, CI logs and clones keep it.
+3. For an identifier, tell the owner and let them decide whether to rewrite
+   history. Do not force-push or rewrite on your own.
+4. Add the value to `.privacy-denylist` so it cannot come back.

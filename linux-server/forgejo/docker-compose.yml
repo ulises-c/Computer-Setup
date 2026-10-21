@@ -13,10 +13,12 @@ services:
       - "127.0.0.1:3300:3000"
       - "127.0.0.1:2222:22"
     restart: unless-stopped
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     environment:
       - USER_UID=1000
       - USER_GID=1000
-      - TZ=${TZ:-America/Los_Angeles}
       - FORGEJO__database__DB_TYPE=sqlite3
       - FORGEJO__server__ROOT_URL=https://${FORGEJO_DOMAIN}/
       - FORGEJO__server__SSH_DOMAIN=${FORGEJO_DOMAIN}
@@ -36,6 +38,9 @@ services:
     image: nginx:alpine
     container_name: forgejo-runner-status
     restart: unless-stopped
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     ports:
       - "127.0.0.1:8098:80"
     volumes:

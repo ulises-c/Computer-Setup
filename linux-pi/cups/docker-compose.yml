@@ -9,5 +9,8 @@ services:
     container_name: cups-proxy
     network_mode: host
     restart: unless-stopped
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro

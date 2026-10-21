@@ -1,15 +1,12 @@
 services:
-  # Secondary AdGuard Home on <pi-hostname> — a backup resolver mirroring the primary
-  # (linux-server/adguard) via adguardhome-sync. DELIBERATELY host-networked and
-  # independent of Tailscale: :53 must keep serving LAN clients even when the
-  # tailnet or internet is down. Host tailscale serve publishes only the :80 web
-  # UI, at https://<pi-hostname>.<tailnet>.ts.net:8443
+  # Secondary AdGuard Home on <pi-hostname>, the shared replica (rationale in
+  # server-base/adguard-replica/compose.yml). Host tailscale serve publishes only
+  # the :80 web UI, at https://<pi-hostname>.<tailnet>.ts.net:8443
   # (../tailscale-serve/serve.json); DNS never goes through serve.
   adguardhome:
-    image: adguard/adguardhome:latest
-    container_name: adguardhome
-    network_mode: host
-    restart: unless-stopped
+    extends:
+      file: ../../server-base/adguard-replica/compose.yml
+      service: adguardhome
     volumes:
       - ./work:/opt/adguardhome/work
       - ./conf:/opt/adguardhome/conf

@@ -1,0 +1,20 @@
+services:
+  # Third AdGuard replica. No Tailscale front door: the UI stays on the LAN.
+  # DNS binds the LAN address only (set by setup.sh at first run, kept in
+  # conf/AdGuardHome.yaml) so it coexists with systemd-resolved's 127.0.0.53 stub.
+  adguardhome:
+    extends:
+      file: ../../server-base/adguard-replica/compose.yml
+      service: adguardhome
+    # --web-addr also moves the first-run wizard off :3000, which Homepage owns.
+    command:
+      - --no-check-update
+      - -c
+      - /opt/adguardhome/conf/AdGuardHome.yaml
+      - -w
+      - /opt/adguardhome/work
+      - --web-addr
+      - "${LAN_IP:?set LAN_IP in linux-game-server/adguard/.env}:3053"
+    volumes:
+      - ./work:/opt/adguardhome/work
+      - ./conf:/opt/adguardhome/conf

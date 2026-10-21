@@ -1,0 +1,9 @@
+services:
+  # Base glances, loopback-only; Homepage and host `tailscale serve` (/glances/) reach it.
+  glances:
+    extends:
+      file: ../../server-base/glances/compose.yml
+      service: glances
+    environment:
+      GLANCES_SENSORS_SHOW: "^cpu_thermal 0$$"
+      GLANCES_SENSORS_ALIAS: "cpu_thermal 0:CPU"
