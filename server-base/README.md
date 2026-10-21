@@ -36,11 +36,13 @@ report that host down.
 - **Scripts** — `<host>/backup/backup.sh` and `setup.sh` are symlinks into
   `server-base/backup/`, so installed systemd units keep their paths; the host
   keeps `sources.sh`, its unit templates and its `.env`.
-- **Serve** — `<host>/serve.sh` execs `server-base/serve.sh`, which reads
-  `<host>/serve.conf` (compose dirs, routes, retired ports). The main server
-  and the Pi also apply `<host>/tailscale-serve/serve.json` with
-  `scripts/ts-serve-apply.sh`, which owns their Tailscale Services and service
-  routes; unifying the two is tracked in `docs/TODO.md`.
+- **Serve** — two mechanisms for now; unifying them is tracked in
+  `docs/TODO.md`. The game server and the Mac mini use `<host>/serve.sh`, which
+  execs `server-base/serve.sh` with `<host>/serve.conf` (compose dirs, routes,
+  retired ports). The main server uses only `scripts/ts-serve-apply.sh` with
+  `linux-server/tailscale-serve/serve.json`, which also owns its Tailscale
+  Services. The Pi uses both: `serve.conf` for the base routes and
+  `tailscale-serve/serve.json`, which repeats them, for the rest.
 - **Packages** — a host bootstrap selects the `server-base` tag
   (`TAG_FILTER_ACTIVE=true`, `SELECTED_TAGS=["server-base"]`); the main server's
   full `setup.sh --profile server` is a superset.
