@@ -3,6 +3,14 @@
 Open work only. Completed work is recorded in [CHANGELOG.md](CHANGELOG.md); the
 unified-layout design rationale is in [UNIFICATION.md](UNIFICATION.md).
 
+## 2004Scape follow-ups
+
+- [ ] (potential) Investigate a persistent PM-style global announcement with a
+      countdown updated in place every game tick, rather than repeated chat
+      messages. Feasibility and any client/UI changes remain to be assessed;
+      implementation is not committed. Keep the native system-update countdown
+      and occasional chat warnings in the meantime.
+
 ## RuneScape: Dragonwilds follow-ups
 
 - [ ] Keep `MAX_PLAYERS=6` for normal operation; if testing 10 or 20, make a
