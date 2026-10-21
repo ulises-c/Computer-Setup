@@ -37,23 +37,31 @@ Before inviting players, run `sudo bash server-base/backup/restore-check.sh linu
 
 The Dragonwilds `restore-drill.sh` does not cover these stacks. The activation script does not claim an application-consistent backup or a successful client join.
 
-## Updates
+## Weekly maintenance
 
-`update.sh` updates a running stack when its upstream checkout has moved on (Lost City: `engine`, `content` and `webclient` on the revision branch; RS-SDK: its checked-out branch). `install-update-timer.sh` runs it nightly at 04:30, after the 03:00 game backup:
+`maintenance.sh` restarts running stacks every Monday by default and applies pending updates only in that weekly window. The nightly 03:00 backup remains live on other nights, including CRC-staged player saves; a pending update never causes an extra nightly restart. Lost City updates only `engine` and `content` on the revision branch: the deployed client is `engine/public/client`, not the separate webclient checkout. RS-SDK updates its checked-out branch.
 
 ```sh
-sudo bash linux-game-server/2004scape/install-update-timer.sh   # --dry-run prints the plan
-bash linux-game-server/2004scape/update.sh --check              # what would update, changes nothing
+sudo bash linux-game-server/backup/setup.sh                    # install backup and root restore-check unit
+sudo bash linux-game-server/2004scape/install-maintenance-timer.sh  # --dry-run prints the plan
+bash linux-game-server/2004scape/maintenance.sh --check         # report pending updates
+bash linux-game-server/2004scape/maintenance.sh --now           # explicitly maintain outside the weekly window
+bash linux-game-server/2004scape/maintenance.sh --resume        # recover an interrupted update only
 ```
 
-When there is an update:
+The installer disables the former `2004scape-update.timer`, without stopping an active update or backup. If an old update is running, wait for it to finish and rerun the installer. Install the backup again after changing either stack's data paths. The maintenance service is unprivileged; its polkit rule grants only starting `game-backup.service` and `game-backup-restore-check.service`.
 
-1. **Countdown.** Players get the client's "System update in m:ss" timer and chat broadcasts ("the server goes down for a backup and update in 10 minutes", then at 5 and 2 minutes, 1 minute, 30 and 10 seconds). `countdown.js` sends these through the engine's friend-server relay on loopback; it is the same reboot timer as the in-game `::reboot` command. RS-SDK's engine ticks at 400 ms while the client counts 600 ms ticks, so its timer is resent every 2 s to stay accurate.
-2. **Graceful shutdown.** At zero the engine saves and logs everyone out, then exits. Docker's restart policy is off for the countdown so the container stays down. A stack that does not stop cleanly (exit 0 and `Server shutdown complete`) is restarted on its current code and not updated.
-3. **Backup.** A fresh `game-backup.service` run, allowed for this user by a polkit rule. The update refuses to start (before any countdown) if the installed backup does not cover the stack's data path, and it does not update when the backup fails.
-4. **Update.** Lost City: fast-forward the checkouts, then `bun install`, `sqlite:migrate` and `build` (repack the cache). RS-SDK: fast-forward and rebuild the image (its entrypoint migrates on start). The checkouts must be clean fast-forwards of the expected branch, or the stack is skipped.
-5. **Health and rollback.** The stack must report healthy within 15 minutes. Otherwise it is rolled back to its previous commits, image (`computer-setup/rs-sdk:rollback`) and database (a copy taken after the shutdown, kept next to the data directory as `<dir>.pre-update`), and that target is not retried until upstream moves again or `~/.local/state/computer-setup/2004scape-update/<stack>.failed` is removed.
+The maintenance timer checks daily at 01:45, but proceeds only when the **actual next run of `game-backup.timer`** falls on `MAINTENANCE_DAY`. It does not hardcode the backup time or catch up a missed window. With the normal 03:00 backup and ten-minute countdown:
 
-Stopped stacks are left alone. The countdown runs even when nobody is online. Settings, in this directory's `.env`: `UPDATE_COUNTDOWN_MINUTES` (default 10), `AUTO_UPDATE=false` to only be notified, and optional `NTFY_URL`/`NTFY_TOPIC`/`NTFY_TOKEN` for results. Logs: `journalctl -u 2004scape-update.service`. Update through this script, not by hand: a manual `git pull` skips the backup, the migrations and the rebuild.
+1. **Warn at about 02:48.** Players see the client's “System update in m:ss” timer and chat broadcasts. `countdown.js` uses the engine's loopback friend-server relay. RS-SDK's timer is resent every two seconds to account for its 400 ms engine ticks versus the client's 600 ms ticks.
+2. **Self-shutdown at about 02:58.** The engine saves and logs everyone out, then exits with Docker's restart policy temporarily disabled. Maintenance requires exit 0 and `Server shutdown complete`. An undelivered countdown or a server that does not self-shutdown is never force-stopped; it stays on its current code.
+3. **Let the 03:00 backup run.** Maintenance waits for the existing timer and reuses its run if it began after shutdown. A run that started too early does not count: maintenance waits for it, then requests another. In-progress backups are never stopped. Backup failure prevents updates.
+4. **Verify stopped data.** Root's `game-backup-restore-check.service` restores the latest backup, checks staged SQLite integrity and save checksums, requires exact snapshot coverage of expected game state, and compares it against the stopped files. Lost City configuration can use `.env`, `world.json`, or both; every present configuration path is compared. Its staged database (`lostcity/db.sqlite.sqlitebak`) is compared logically with a private copy of the live database and any WAL, so verification does not create SQLite sidecars in live data. Preflight requires those comparison arguments in the installed root unit. Failure restarts unchanged stacks without updating.
+5. **Update, then restart.** Stacks without updates start first. Lost City fast-forwards, installs dependencies, migrates SQLite and rebuilds. RS-SDK fast-forwards and rebuilds its image. Dirty, diverged or unexpected branches are skipped. Each updated stack must become healthy within 15 minutes.
+6. **Rollback if necessary.** Failed updates restore previous commits, SQLite and player saves. RS-SDK also restores its entire data directory and the image ID the container actually ran, tagged `computer-setup/rs-sdk:rollback`. Pre-change snapshots remain beside the data as `<dir>.pre-update`. If snapshot creation fails before code changes, the untouched stack simply restarts. A failed target is not retried until upstream moves or its `~/.local/state/computer-setup/2004scape-maintenance/<stack>.failed` marker is removed.
+
+An interrupted update leaves `<stack>.inprogress` in that state directory. The next run, or `--resume`, rolls it back before any new work. Signals retain their failure exit status and notifications identify interrupted updates needing recovery. Do not delete recovery markers or pre-update snapshots before recovery. If recovery is deferred because a backup remains active, let the backup finish before running `--resume` and manually starting any unchanged stacks that remain stopped.
+
+Stopped stacks are left alone. The countdown runs even with nobody online. Settings in this directory's `.env`: `MAINTENANCE_DAY=Mon` (Mon–Sun), `COUNTDOWN_MINUTES=10` (1–60), `AUTO_UPDATE=false` to retain the weekly restart but only notify about updates, and optional `NTFY_URL`/`NTFY_TOPIC`/`NTFY_TOKEN`. Logs: `journalctl -u 2004scape-maintenance.service`. Use this script instead of a manual `git pull`, which skips the backup, verification, migrations and rebuild.
 
 See `lostcity/README.md` and `rs-sdk/README.md` for per-stack details.

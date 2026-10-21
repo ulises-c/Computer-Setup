@@ -6,6 +6,18 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com). Remaining
 work lives in [TODO.md](TODO.md); the design rationale for the unified layout is
 in [UNIFICATION.md](UNIFICATION.md).
 
+## Unreleased — 2004Scape backup and maintenance safety
+
+### Added
+- Live nightly game backups include CRC-checked 2004Scape player-save copies.
+  Restore verification requires explicit state coverage and compares Lost City's
+  staged SQLite database against a private copy of stopped live data, including
+  WAL transactions, without creating live sidecars.
+- Weekly 2004Scape maintenance counts down in game, shuts down before the existing
+  03:00 backup, verifies the restored state, applies pending updates and restarts.
+  Failed or interrupted updates retain rollback state; other nights remain live.
+  Requires rerunning the backup installer and installing the maintenance timer.
+
 ## Unreleased — Shared server base and cross-linked dashboards
 
 ### Added

@@ -151,10 +151,11 @@ game backup covers it once `backup/setup.sh` is rerun after setup (see
 [Recurring backups](#recurring-backups)). Do not invite players until a restore
 of that state is verified.
 
-`2004scape/update.sh` keeps both up to date: nightly (after
-`sudo bash linux-game-server/2004scape/install-update-timer.sh`) it gives
-players an in-game countdown, takes a fresh backup, updates, and rolls back a
-stack that does not come back healthy. Details in the linked guide.
+`2004scape/maintenance.sh` maintains both weekly on Monday (after
+`sudo bash linux-game-server/2004scape/install-maintenance-timer.sh`): it gives
+players a countdown to clean shutdown before the existing 03:00 backup, verifies
+the stopped data, applies pending updates, and rolls back unhealthy updates.
+Other nights retain live CRC-staged backups without update restarts. Details in the linked guide.
 
 ## Migrate a running Dragonwilds world
 

@@ -4,7 +4,7 @@ Wants=network-online.target
 After=network-online.target
 
 [Service]
-# Restarted by 2004scape/maintenance.sh (polkit) right after its backup, while
+# Started by 2004scape/maintenance.sh (polkit) right after its backup, while
 # the games are stopped; run by hand while they are live, the comparison with
 # their data fails.
 Type=oneshot

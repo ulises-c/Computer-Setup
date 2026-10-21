@@ -1,4 +1,4 @@
-// Runs inside a 2004Scape engine container (`bun -e`, started by update.sh).
+// Runs inside a 2004Scape engine container (`bun -e`, started by maintenance.sh).
 // Announces a system update through the friend server's relay: the client's
 // "System update in m:ss" timer plus chat broadcasts, kept in step until
 // COUNTDOWN_DEADLINE_MS. Prints "announced" once the first messages are sent.
@@ -81,6 +81,7 @@ const op = relayOpcodes();
 const CLIENT_TICK_MS = 600;
 const resendMs = tickMs < CLIENT_TICK_MS ? 2_000 : 30_000;
 const checkpoints = [3600, 1800, 900, 600, 300, 120, 60, 30, 10];
+const reason = process.env.COUNTDOWN_WITH_UPDATE === '1' ? 'a backup and update' : 'a backup and restart';
 
 const remainingMs = () => deadline - Date.now();
 
@@ -107,7 +108,7 @@ function syncTimer() {
 }
 
 function broadcast(seconds) {
-    send({ type: op.broadcast, broadcast: `System update: the server goes down for a backup and update in ${describe(seconds)}.` });
+    send({ type: op.broadcast, broadcast: `System update: the server goes down for ${reason} in ${describe(seconds)}.` });
 }
 
 const openTimeout = setTimeout(() => fail(3, `friend server on port ${port} did not answer`), 10_000);
@@ -129,10 +130,11 @@ ws.onopen = () => {
             ws.close();
             process.exit(0);
         }
-        const due = checkpoints.find(mark => mark < announced && mark >= left);
+        // After a stall, announce what is actually left, not the first missed mark.
+        const due = checkpoints.filter(mark => mark < announced && mark >= left).pop();
         if (due !== undefined) {
             announced = due;
-            broadcast(due);
+            broadcast(left);
         }
     }, 1_000);
     const resync = setInterval(syncTimer, resendMs);
