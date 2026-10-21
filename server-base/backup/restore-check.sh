@@ -7,22 +7,34 @@ set -Eeuo pipefail
 # integrity_check, and that staged files with a .sha256 sidecar match it.
 #
 # Usage: sudo bash server-base/backup/restore-check.sh <host-dir> [--second] [--keep]
-#   <host-dir>  linux-server, linux-game-server or linux-pi (its backup/.env is used)
-#   --second    check SECOND_RESTIC_REPOSITORY instead of the primary
-#   --keep      leave the restored tree in place for inspection
+#                                                      [--compare-live <dir>]...
+#   <host-dir>      linux-server, linux-game-server or linux-pi (its backup/.env is used)
+#   --second        check SECOND_RESTIC_REPOSITORY instead of the primary
+#   --keep          leave the restored tree in place for inspection
+#   --compare-live  every snapshot path at or under <dir> must restore identical
+#                   to the live copy (contents, no missing or extra files). Only
+#                   meaningful while whatever writes there is stopped.
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 trap 'printf "error: restore-check stopped at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
 log() { printf '[restore-check] %s\n' "$*"; }
 
 host_dir="" second=false keep=false
-for arg in "$@"; do
-  case "$arg" in
+compare_live=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     --second) second=true ;;
     --keep) keep=true ;;
-    -*) die "unknown option: $arg" ;;
-    *) host_dir="$arg" ;;
+    --compare-live)
+      [[ $# -ge 2 ]] || die "--compare-live needs a directory"
+      [[ "$2" =~ ^/[[:alnum:]_./-]+$ && "$2" != *//* && "$2" != */./* && "$2" != */. && "$2" != */../* && "$2" != */.. && "$2" != */ ]] \
+        || die "--compare-live needs a plain absolute path: $2"
+      compare_live+=("$2")
+      shift ;;
+    -*) die "unknown option: $1" ;;
+    *) host_dir="$1" ;;
   esac
+  shift
 done
 [[ -n "$host_dir" ]] || die "usage: $0 <host-dir> [--second] [--keep]"
 [[ "$EUID" -eq 0 ]] || die "run with sudo (repositories are reached as root)"
@@ -141,6 +153,24 @@ while IFS= read -r -d '' sidecar; do
   sums=$((sums + 1))
 done <"$scan_list"
 log "checksummed staged copies verified: $sums"
+
+for live in ${compare_live[@]+"${compare_live[@]}"}; do
+  paths="$(jq -r --arg d "$live" '.[-1].paths[] | select(. == $d or startswith($d + "/"))' <<<"$snapshot_json")" \
+    || die "cannot read the paths of snapshot $snapshot"
+  [[ -n "$paths" ]] || die "snapshot $snapshot has nothing under $live"
+  n=0
+  while IFS= read -r path; do
+    rc=0
+    diff -r --no-dereference -q -- "$scratch$path" "$path" >/dev/null 2>&1 || rc=$?
+    case "$rc" in
+      0) ;;
+      1) die "restored $path differs from the live copy" ;;
+      *) die "cannot compare restored $path with the live copy" ;;
+    esac
+    n=$((n + 1))
+  done <<<"$paths"
+  log "identical to the live copy: $n snapshot path(s) under $live"
+done
 
 log "PASSED: snapshot $snapshot restores completely"
 [[ "$keep" == true ]] && log "restored tree kept at $scratch"

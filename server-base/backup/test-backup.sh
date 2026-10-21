@@ -876,18 +876,25 @@ case "$1" in
   snapshots)
     staged_path="${RC_SNAP_STAGING:-${STAGING_DIR:-/var/tmp/test-backup-staging}}"
     [[ -z "${RC_STAGING_NOT_IN_PATHS:-}" ]] || staged_path=/srv/elsewhere
-    printf '[{"short_id":"abcdef","time":"2026-10-18T00:00:00","paths":["/srv/service","%s"]}]' "$staged_path" ;;
+    live_path=""
+    [[ -z "${RC_LIVE:-}" ]] || live_path=",\"$RC_LIVE/data\""
+    printf '[{"short_id":"abcdef","time":"2026-10-18T00:00:00","paths":["/srv/service","%s"%s]}]' "$staged_path" "$live_path" ;;
   stats) printf '{"total_size":10}' ;;
   ls)
     n=3
     [[ -z "${RC_NO_MARKER:-}" ]] || n=$((n - 1))
     [[ -z "${RC_FOREIGN:-}" ]] || n=$((n + 4))
+    [[ -z "${RC_LIVE:-}" ]] || n=$((n + 1))
     for ((i = 0; i < n; i++)); do printf '{"type":"file"}\n'; done ;;
   restore)
     t="$4${RC_SNAP_STAGING:-${STAGING_DIR:-/var/tmp/test-backup-staging}}"; mkdir -p "$t/sqlite"
     [[ -n "${RC_NO_MARKER:-}" ]] || printf '%s\n' "${RC_MARKER_TEXT:-computer-setup backup staging}" >"$t/.backup-staging"
     printf 'SQLite format 3\0' >"$t/sqlite/db.sqlitebak"
     (cd "$t/sqlite" && sha256sum db.sqlitebak >db.sqlitebak.sha256)
+    if [[ -n "${RC_LIVE:-}" ]]; then
+      mkdir -p "$4$RC_LIVE/data"
+      printf '%s' "${RC_LIVE_RESTORED:-same}" >"$4$RC_LIVE/data/save.txt"
+    fi
     if [[ -n "${RC_FOREIGN:-}" ]]; then
       mkdir -p "$4/srv/service/archive"
       printf 'SQLite format 3\0' >"$4/srv/service/archive/old.sqlitebak"
@@ -1008,6 +1015,37 @@ if out="$("${nodocker_env[@]/docker/sqlite3}" PATH="$rc/bin:$PATH" bash "$rc/res
   fail "restore-check passed without sqlite3 to verify a database: $out"
 fi
 grep -q 'sqlite3 is required' <<<"$out" || fail "missing sqlite3 not reported: $out"
+# --compare-live: snapshot paths under the dir must restore identical to the
+# (stopped) live copy, in both directions, and the dir must be in the snapshot.
+live="$rc/live"
+mkdir -p "$live/data"
+printf 'same' >"$live/data/save.txt"
+out="$(RC_LIVE="$live" PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" --compare-live "$live" 2>&1)" \
+  || fail "restore-check rejected a restore identical to the live copy: $out"
+grep -q "identical to the live copy: 1 snapshot path(s) under $live" <<<"$out" && grep -q PASSED <<<"$out" \
+  || fail "live comparison not reported: $out"
+if out="$(RC_LIVE="$live" RC_LIVE_RESTORED=changed PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" --compare-live "$live" 2>&1)"; then
+  fail "restore-check passed a restore that differs from the live copy: $out"
+fi
+grep -q "restored $live/data differs from the live copy" <<<"$out" || fail "differing restore not reported: $out"
+if grep -q PASSED <<<"$out"; then fail "PASSED printed for a differing restore"; fi
+printf 'new save' >"$live/data/extra.txt"
+if out="$(RC_LIVE="$live" PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" --compare-live "$live" 2>&1)"; then
+  fail "restore-check passed a restore missing a live file: $out"
+fi
+rm "$live/data/extra.txt"
+for missing in "$rc/liv" "$rc/elsewhere"; do
+  if out="$(RC_LIVE="$live" PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" --compare-live "$missing" 2>&1)"; then
+    fail "restore-check passed --compare-live $missing with nothing of it in the snapshot: $out"
+  fi
+  grep -q "has nothing under $missing" <<<"$out" || fail "uncovered $missing not reported: $out"
+done
+for bad in relative/dir "$live/../x" "$live/"; do
+  if out="$(PATH="$rc/bin:$PATH" bash "$rc/restore-check.sh" "$rc/host" --compare-live "$bad" 2>&1)"; then
+    fail "restore-check accepted --compare-live $bad: $out"
+  fi
+  grep -q 'needs a plain absolute path' <<<"$out" || fail "bad --compare-live $bad failed for the wrong reason: $out"
+done
 [[ -z "$(ls -A "$rc/root")" ]] || fail "restore-check left scratch behind: $(ls -A "$rc/root")"
 
 printf 'backup engine tests: PASSED\n'
