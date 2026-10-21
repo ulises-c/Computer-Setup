@@ -74,6 +74,10 @@ class ComposeSafetyTests(unittest.TestCase):
         self.assertEqual(service["environment"]["NODE_PORT"], "43595")
         self.assertEqual(service["environment"]["GATEWAY_PUBLIC_PORT"], "7781")
 
+    def test_rs_sdk_creates_accounts_on_first_login(self):
+        env = load_compose("rs-sdk")["services"]["rs-sdk"]["environment"]
+        self.assertEqual(env["WEBSITE_REGISTRATION"], "false")
+
     def test_rs_sdk_internal_servers_avoid_lost_city_ports(self):
         # Both stacks share the host network. Lost City's setup wizard uses the
         # engine defaults, so RS-SDK must move every internal server off them, or
