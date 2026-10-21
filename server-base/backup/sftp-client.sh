@@ -26,7 +26,7 @@ env_file="$host_dir/backup/.env"
 
 case "$step" in
   key)
-    apt-get install -y restic jq
+    apt-get install -y restic jq sqlite3
     install -d -m 700 /root/.ssh
     [[ -f "$key" ]] || ssh-keygen -q -t ed25519 -N "" -C "$name-backup@$(hostname)" -f "$key"
     install -m 644 "$key.pub" "/tmp/$name-backup.pub"
