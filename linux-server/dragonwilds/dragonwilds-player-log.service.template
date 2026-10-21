@@ -1,0 +1,30 @@
+[Unit]
+Description=Record Dragonwilds player join history
+After=systemd-journald.service
+OnFailure=dragonwilds-player-log-failure.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 @PLAYER_LOG_SCRIPT@ --unit dragonwilds.service --install-dir @INSTALL_DIR@ --data-dir /var/lib/dragonwilds/player-log --retention-days 90
+TimeoutStartSec=30
+User=root
+Group=adm
+UMask=0027
+Environment=PYTHONDONTWRITEBYTECODE=1
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+PrivateDevices=yes
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+LockPersonality=yes
+RestrictRealtime=yes
+TasksMax=64
+MemoryMax=256M
+RestrictSUIDSGID=yes
+ReadWritePaths=/var/lib/dragonwilds/player-log

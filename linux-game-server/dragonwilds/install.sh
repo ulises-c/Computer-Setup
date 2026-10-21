@@ -21,10 +21,33 @@ if [[ "$DRY_RUN" == true ]]; then
     "$STEAMCMD" "$DRAGONWILDS_INSTALL_DIR"
   exit 0
 fi
-# shellcheck source=linux-game-server/dragonwilds/maintenance.sh
+# shellcheck disable=SC1091
 source "$SCRIPT_DIR/maintenance.sh"
 maintenance_hold -s
 maintenance_check
+configured_install_dir="$(systemctl show dragonwilds.service --property=WorkingDirectory --value 2>/dev/null || true)"
+if [[ -n "$configured_install_dir" ]]; then
+  DRAGONWILDS_INSTALL_DIR="$configured_install_dir"
+fi
+if ! [[ "$DRAGONWILDS_INSTALL_DIR" =~ ^/[[:alnum:]_./-]+$ && "$DRAGONWILDS_INSTALL_DIR" != *//* && "$DRAGONWILDS_INSTALL_DIR" != */./* && "$DRAGONWILDS_INSTALL_DIR" != */. && "$DRAGONWILDS_INSTALL_DIR" != */../* && "$DRAGONWILDS_INSTALL_DIR" != */.. && "$DRAGONWILDS_INSTALL_DIR" != */ ]]; then
+  printf 'error: invalid Dragonwilds install path: %s\n' "$DRAGONWILDS_INSTALL_DIR" >&2
+  exit 1
+fi
+# Checked here rather than left to the gate: a host mid-upgrade can still run
+# a gate unit without the world-marker condition.
+world_marker=/var/lib/dragonwilds/world-seen
+savegames="$DRAGONWILDS_INSTALL_DIR/RSDragonwilds/Saved/SaveGames"
+if compgen -G "$savegames/*.sav" >/dev/null; then
+  [[ -n "$configured_install_dir" ]] || {
+    printf 'error: an existing world requires the installed dragonwilds.service backup gate\n' >&2
+    exit 1
+  }
+  systemctl start --wait dragonwilds-pre-update-backup.service
+elif [[ -e "$world_marker" ]]; then
+  printf 'error: no Dragonwilds world in %s, but one was backed up before; restore it, or delete %s if it was removed on purpose\n' \
+    "$savegames" "$world_marker" >&2
+  exit 1
+fi
 if [[ ! -x "$STEAMCMD" ]]; then
   cache="$HOME/.cache/computer-setup"
   mkdir -p "$cache" "$(dirname "$STEAMCMD")"

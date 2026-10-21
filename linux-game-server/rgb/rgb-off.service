@@ -1,0 +1,32 @@
+[Unit]
+Description=Keep RGB lighting off (force #000000 at boot, or on a manual start)
+# Lighting is not persistent on this host's controller: it comes up in the
+# firmware default at power-on, so this runs once per boot after udev has
+# created the hidraw/i2c nodes. Boot-time enumeration can still race device
+# readiness, so rgb-off retries with backoff (about 2 minutes).
+After=systemd-udev-trigger.service
+
+[Service]
+Type=oneshot
+# `auto` records trigger=boot while systemd is still starting up and
+# trigger=manual for `systemctl start rgb-off.service` afterwards.
+ExecStart=/usr/local/libexec/rgb-off --trigger auto
+# Refresh the dashboard JSON right away (the exporter reuses its device cache).
+ExecStopPost=-/usr/bin/systemctl start --no-block rgb-status.service
+TimeoutStartSec=10min
+# OpenRGB keeps its config under $HOME; give it a private state dir.
+Environment=HOME=/var/lib/rgb-off
+Environment=PYTHONDONTWRITEBYTECODE=1
+StateDirectory=rgb-off
+# One lock shared with rgb-status.service so list-devices and set-colour
+# calls never overlap: /run/rgb-lock/openrgb.lock.
+RuntimeDirectory=rgb-lock
+RuntimeDirectoryPreserve=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/host-status
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

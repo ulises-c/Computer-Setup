@@ -35,7 +35,8 @@ elif name == 'systemctl':
         values = {'LoadState': 'not-found' if state.get('absent') else 'loaded',
                   'ActiveState': active, 'MainPID': '17' if active == 'active' else '0',
                   'ControlPID': '17' if active in ('activating', 'deactivating') else '0',
-                  'Job': '0', 'NeedDaemonReload': 'no'}
+                  'Job': '0', 'NeedDaemonReload': 'no',
+                  'WorkingDirectory': os.environ.get('DRAGONWILDS_INSTALL_DIR', '')}
         print(values[prop])
     elif args[0] == 'daemon-reload':
         state['loaded_guard'] = marker.exists()
@@ -50,6 +51,9 @@ elif name == 'systemctl':
         save()
     elif args[0] in ('start', 'enable'):
         for unit in (x for x in args[1:] if x.endswith(('.service', '.timer'))):
+            if args[0] == 'start' and unit == 'dragonwilds-pre-update-backup.service':
+                log('backup gate ' + unit)
+                continue
             if marker.exists() and state.get('loaded_guard'):
                 log('blocked ' + unit)
             else:
@@ -120,6 +124,7 @@ class SafetyTests(unittest.TestCase):
         self.game.mkdir(parents=True)
         for path in ROOT.glob('dragonwilds/*.sh'):
             text = path.read_text().replace('/var/lib/dragonwilds-maintenance', str(self.root / 'maintenance'))
+            text = text.replace('/var/lib/dragonwilds/world-seen', str(self.root / 'world-seen'))
             text = text.replace('/etc/systemd/system', str(self.root / 'units'))
             (self.game / path.name).write_text(text)
         bin_dir = self.root / 'bin'
@@ -190,15 +195,17 @@ class SafetyTests(unittest.TestCase):
         events = self.events()
         stops = [line for line in events if line.startswith('stop ')]
         self.assertEqual(stops, ['stop dragonwilds-auto-update.timer', 'stop dragonwilds-update-check.timer',
-                                'stop dragonwilds-auto-update.service', 'stop dragonwilds-update-check.service',
+                                'stop dragonwilds-player-log.timer', 'stop dragonwilds-auto-update.service',
+                                'stop dragonwilds-update-check.service', 'stop dragonwilds-player-log.service',
                                 'stop dragonwilds.service'])
         self.assertLess(events.index('reload'), events.index(stops[0]))
         self.assertIn('restart blocked', events)
         self.assertNotIn('UNSAFE restart', events)
         self.assertTrue((self.root / 'maintenance/blocked').exists())
         for unit in ('dragonwilds.service', 'dragonwilds-auto-update.service',
-                     'dragonwilds-update-check.service', 'dragonwilds-auto-update.timer',
-                     'dragonwilds-update-check.timer'):
+                     'dragonwilds-update-check.service', 'dragonwilds-player-log.service',
+                     'dragonwilds-auto-update.timer', 'dragonwilds-update-check.timer',
+                     'dragonwilds-player-log.timer'):
             self.assertIn('ConditionPathExists=!' + str(self.root / 'maintenance/blocked'),
                           (self.root / 'units' / (unit + '.d/90-maintenance.conf')).read_text())
         self.assertFalse(any('mask' in line for line in events))
@@ -316,6 +323,34 @@ class SafetyTests(unittest.TestCase):
         result = self.run_script('install.sh')
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn('validate', self.events())
+
+    def test_lost_world_refuses_steamcmd_before_validation(self):
+        self.enter()
+        for sav in (self.root / 'game/RSDragonwilds/Saved/SaveGames').glob('*.sav'):
+            sav.unlink()
+        (self.root / 'world-seen').write_text(str(self.root / 'game/RSDragonwilds/Saved/SaveGames') + '\n')
+        result = self.run_script('install.sh')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('one was backed up before', result.stderr)
+        self.assertNotIn('validate', self.events())
+        self.assertFalse(any('backup gate' in x for x in self.events()))
+
+    def test_fresh_install_without_marker_still_downloads(self):
+        self.enter()
+        for sav in (self.root / 'game/RSDragonwilds/Saved/SaveGames').glob('*.sav'):
+            sav.unlink()
+        result = self.run_script('install.sh')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('validate', self.events())
+        self.assertFalse(any('backup gate' in x for x in self.events()))
+
+    def test_existing_world_runs_backup_gate_before_validation(self):
+        self.enter()
+        (self.root / 'world-seen').write_text('x\n')
+        result = self.run_script('install.sh')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        events = self.events()
+        self.assertLess(events.index('backup gate dragonwilds-pre-update-backup.service'), events.index('validate'))
 
     def test_validation_failure_keeps_persistent_guard(self):
         self.enter()

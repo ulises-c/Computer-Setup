@@ -3,4 +3,5 @@ Description=Alert on server backup failure
 
 [Service]
 Type=oneshot
+Environment=STATUS_JSON=@BACKUP_STATUS_JSON@
 ExecStart=/usr/bin/env bash @BACKUP_SCRIPT@ notify-failure

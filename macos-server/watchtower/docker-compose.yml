@@ -1,0 +1,5 @@
+services:
+  watchtower:
+    extends:
+      file: ../../server-base/watchtower/compose.yml
+      service: watchtower

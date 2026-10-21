@@ -174,7 +174,7 @@ Everything Forgejo needs to restore from scratch lives in `FORGEJO_DATA_PATH` (d
 #### Runner status monitor
 
 A host timer (`runner-status.sh`) asks Forgejo whether the Mac mini Actions
-runner (see [`../macOS/forgejo-runner/`](../macOS/forgejo-runner/)) is
+runner (see [`../macos-server/forgejo-runner/`](../macos-server/forgejo-runner/)) is
 connected, and surfaces it three ways: the homepage **forgejo-runner** card,
 an Uptime Kuma push monitor, and an ntfy alert when it drops (and recovers).
 Optional — skip if you aren't running CI.
@@ -295,7 +295,7 @@ Three drives are attached via a TerraMas Thunderbolt DAS enclosure:
   `/dev/disk/by-label/` through sysfs on every refresh, so Homepage widgets see
   persistent label-based names even after a late mount or device reshuffle. Patch
   installation or API failures are written to the container log. See
-  `glances/rename_disks.py`.
+  `server-base/glances/rename_disks.py`.
 - **Homepage widgets** — the capacity widgets use `fs:/mnt/<path>` (stable mount
   points); the R/W speed widgets use `disk:<label>` resolved by the Glances
   patch above.
