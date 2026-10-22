@@ -200,21 +200,30 @@ def cached_bytes(root, relative, limit):
     return data
 
 
-def export_assets(wiki, snapshot, blobs):
+def export_assets(wiki, snapshot, blobs, strict=False):
     source = wiki / 'data/images.sqlite'
     if not source.exists():
         return
     blobs.mkdir(mode=0o700, parents=True, exist_ok=True)
-    with closing(sqlite3.connect(source.resolve().as_uri() + '?mode=ro', uri=True, timeout=0.25)) as src, closing(sqlite3.connect(snapshot)) as dst:
+    metadata = []
+    with closing(sqlite3.connect(source.resolve().as_uri() + '?mode=ro', uri=True, timeout=0.25)) as src:
         src.execute('PRAGMA query_only=ON')
         src.execute('BEGIN')
-        total = count = 0
+        row_count = 0
         for table in ('images', 'assets'):
             exists = src.execute('SELECT 1 FROM sqlite_master WHERE type=\'table\' AND name=?', (table,)).fetchone()
             if not exists:
                 continue
             query = "SELECT source,path,mime,bytes,sha256 FROM images WHERE status='ok'" if table == 'images' else 'SELECT source,url,file FROM assets'
-            for row in src.execute(query):
+            rows = src.execute(query).fetchmany(MAX_ENTRIES + 1)
+            row_count += len(rows)
+            if row_count > MAX_ENTRIES:
+                raise ValueError('Cache manifest limit')
+            metadata.append((table, rows))
+    with closing(sqlite3.connect(snapshot)) as dst:
+        total = count = 0
+        for table, rows in metadata:
+            for row in rows:
                 try:
                     source_id = row[0]
                     if source_id not in ORIGINS:
@@ -224,18 +233,26 @@ def export_assets(wiki, snapshot, blobs):
                         url = '/images/' + path
                         data = cached_bytes(wiki / 'images', source_id + '/' + path, MAX_ASSET)
                         if size != len(data) or digest != hashlib.sha256(data).hexdigest():
+                            if strict:
+                                raise ValueError('Cached image metadata mismatch')
                             continue
                     else:
                         _, url, file = row
                         if not isinstance(file, str) or not file.startswith(source_id + '/') or not file.endswith('.css'):
+                            if strict:
+                                raise ValueError('Invalid cached stylesheet path')
                             continue
                         mime = 'text/css'
                         data = cached_bytes(wiki / 'assets', file, MAX_CSS)
                         digest = hashlib.sha256(data).hexdigest()
                     if not valid_url(source_id, url, mime):
+                        if strict:
+                            raise ValueError('Invalid cached asset URL')
                         continue
                     validate_asset(data, mime)
                 except (OSError, ValueError, TypeError):
+                    if strict and table == 'assets':
+                        raise
                     continue
                 total += len(data)
                 count += 1
@@ -264,6 +281,7 @@ TABLES = {
 # Accepted from a sender that predates them.
 OPTIONAL_TABLES = {'scraped-wiki.sqlite': {'redirects'}}
 OPTIONAL_SNAPSHOTS = {'2004scape-wiki.sqlite'}
+ACCOUNT_SNAPSHOTS = {'accounts.sqlite', 'benchmarks.sqlite'}
 PAGE_SOURCES = {'2004scape-wiki.sqlite': ('2004scape',), 'rs-sdk-wiki.sqlite': ('rs-sdk',), 'scraped-wiki.sqlite': ('osrs', 'rs3')}
 DEFAULT_TARGET = Path.home() / '.local/share/rs-sdk-portal/data'
 DEFAULT_WANTED = Path.home() / '.local/share/rs-sdk-portal/wanted/wanted.sqlite'
@@ -281,30 +299,37 @@ def valid_wanted(entry):
     return entry['kind'] == 'page' and len(key.encode('utf-8')) <= 255 and not any(c in key for c in '#<>[]|{}\\')
 
 
-def take_wanted(path):
+def take_wanted(path, consumer=None):
     """Remove and return the oldest requests the portal recorded (server side)."""
     if path.is_symlink() or not path.is_file():
         return []
     with closing(sqlite3.connect(path, timeout=5)) as db:
-        db.execute('BEGIN IMMEDIATE')
-        rows = db.execute('SELECT rowid,source,kind,key FROM wanted ORDER BY requested_at LIMIT ?', (MAX_WANTED,)).fetchall()
-        db.executemany('DELETE FROM wanted WHERE rowid=?', [(r[0],) for r in rows])
-        db.commit()
+        rows = db.execute('SELECT rowid,source,kind,key,requested_at FROM wanted ORDER BY requested_at LIMIT ?', (MAX_WANTED,)).fetchall()
     entries = [{'source': r[1], 'kind': r[2], 'key': r[3]} for r in rows]
-    return [e for e in entries if valid_wanted(e)]
+    entries = [e for e in entries if valid_wanted(e)]
+    if consumer is not None:
+        consumer(entries)
+    with closing(sqlite3.connect(path, timeout=5)) as db, db:
+        db.executemany('DELETE FROM wanted WHERE rowid=? AND source=? AND kind=? AND key=? AND requested_at=?', rows)
+    return entries
 
 
-def queue_wanted(root, entries):
+def queue_wanted(root, entries, *, wiki_root=None):
     """Hand requested pages and images to the wiki's own fetch queues (source side)."""
     entries = [e for e in entries if valid_wanted(e)][:MAX_WANTED]
     if not entries:
+        return
+    payload = ''.join(json.dumps(e, ensure_ascii=False) + '\n' for e in entries)
+    if wiki_root is not None:
+        result = subprocess.run([str(wiki_root / 'bin/wiki'), 'want'], cwd=wiki_root, input=payload,
+                                capture_output=True, text=True, check=True, timeout=60)
+        print((result.stdout + result.stderr).strip() or 'Queued wanted pages.', flush=True)
         return
     bun = shutil.which('bun')
     wiki = root / '2004Scape-Wiki'
     if bun is None or not (wiki / 'src/cli.ts').is_file():
         print('Cannot queue wanted pages: bun or the wiki checkout is missing.', file=sys.stderr, flush=True)
         return
-    payload = ''.join(json.dumps(e, ensure_ascii=False) + '\n' for e in entries)
     result = subprocess.run([bun, 'src/cli.ts', 'want'], cwd=wiki, input=payload, capture_output=True, text=True, timeout=60)
     print((result.stdout + result.stderr).strip() or f'wiki want exited {result.returncode}', flush=True)
 
@@ -429,11 +454,20 @@ class BoundedArchive:
         return data
 
 
-def receive(stream, target):
+def receive(stream, target, accounts_only=False, *, wiki_only=False):
+    allowed = set(TABLES)
+    if accounts_only:
+        allowed = ACCOUNT_SNAPSHOTS
+    elif wiki_only:
+        allowed -= ACCOUNT_SNAPSHOTS
+    required = allowed if accounts_only else allowed - OPTIONAL_SNAPSHOTS
     target.mkdir(parents=True, exist_ok=True, mode=0o700)
     fd = os.open(target, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
+        authority = target / '.wiki-authority'
+        if not (accounts_only or wiki_only) and (authority.exists() or authority.is_symlink()):
+            raise ValueError('Server-authoritative wiki rejects full uploads; use --accounts-only')
         with tempfile.TemporaryDirectory(prefix='.incoming-', dir=target) as tmp:
             stage = Path(tmp)
             (stage / 'assets').mkdir()
@@ -444,8 +478,8 @@ def receive(stream, target):
                 decoded = BoundedArchive(gzip.GzipFile(fileobj=stream, mode='rb'))
                 with closing(decoded.stream), tarfile.open(fileobj=decoded, mode='r|') as archive:
                     for entry in archive:
-                        blob = entry.name.startswith('assets/') and valid_hash(entry.name[7:])
-                        if entry.name in seen or not entry.isfile() or entry.size < 0 or (entry.name not in TABLES and not blob) or entry.size > (MAX_ASSET if blob else MAX_SNAPSHOT):
+                        blob = not accounts_only and entry.name.startswith('assets/') and valid_hash(entry.name[7:])
+                        if entry.name in seen or not entry.isfile() or entry.size < 0 or (entry.name not in allowed and not blob) or entry.size > (MAX_ASSET if blob else MAX_SNAPSHOT):
                             raise ValueError('Invalid snapshot archive')
                         seen.add(entry.name)
                         total += entry.size
@@ -469,7 +503,7 @@ def receive(stream, target):
                         pass
             except (tarfile.TarError, EOFError, gzip.BadGzipFile, zlib.error, sqlite3.DatabaseError) as exc:
                 raise ValueError('Invalid snapshot archive') from exc
-            if not (set(TABLES) - OPTIONAL_SNAPSHOTS).issubset(seen):
+            if not required.issubset(seen):
                 raise ValueError('Incomplete snapshot set')
             referenced = {digest for digest, _, _ in metadata}
             if any(name[7:] not in referenced for name in seen if name.startswith('assets/')):
@@ -490,15 +524,19 @@ def receive(stream, target):
                 total += size
                 if total > MAX_TOTAL:
                     raise ValueError('Asset manifest limit')
+            for name in allowed:
+                if (target / name).is_symlink():
+                    raise ValueError('Symlink snapshot target')
+            if wiki_only:
+                if authority.is_symlink():
+                    raise ValueError('Symlink wiki authority marker')
+                authority.touch(mode=0o600, exist_ok=True)
             if referenced:
                 assets.mkdir(mode=0o700, exist_ok=True)
                 for digest in referenced:
                     if 'assets/' + digest in seen:
                         os.replace(stage / 'assets' / digest, assets / digest)
-            for name in TABLES:
-                if (target / name).is_symlink():
-                    raise ValueError('Symlink snapshot target')
-            for name in TABLES:
+            for name in allowed:
                 if name in seen:
                     os.replace(stage / name, target / name)
     finally:
@@ -506,13 +544,47 @@ def receive(stream, target):
     print(f'Published {len(set(TABLES) & seen)} sanitized database snapshots.', flush=True)
 
 
-def push(root, host, receiver, curated=False):
+def write_archive(payload, stage, names, have=()):
+    with tarfile.open(fileobj=payload, mode='w:gz') as archive:
+        assets = stage / 'assets'
+        if assets.exists():
+            for path in sorted(assets.iterdir()):
+                if path.name not in have:
+                    archive.add(path, arcname='assets/' + path.name)
+        for name in names:
+            archive.add(stage / name, arcname=name)
+    payload.seek(0)
+
+
+def publish_wiki(wiki, target, curated=False, wanted=None):
+    names = set(TABLES) - ACCOUNT_SNAPSHOTS - OPTIONAL_SNAPSHOTS
+    if curated:
+        subprocess.run([str(wiki / 'bin/wiki'), 'curate'], cwd=wiki, check=True, timeout=90)
+        names |= OPTIONAL_SNAPSHOTS
+    with tempfile.TemporaryDirectory(prefix='rs-sdk-portal-') as tmp:
+        stage = Path(tmp)
+        for name in names:
+            export_db(wiki / 'data/wiki.sqlite', stage / name, TABLES[name], PAGE_SOURCES[name])
+        export_assets(wiki, stage / 'scraped-wiki.sqlite', stage / 'assets', strict=True)
+        with tempfile.TemporaryFile() as payload:
+            write_archive(payload, stage, names)
+            receive(payload, target, wiki_only=True)
+    wanted = wanted if wanted is not None else target.parent / 'wanted/wanted.sqlite'
+    take_wanted(wanted, consumer=lambda entries: queue_wanted(wiki.parent, entries, wiki_root=wiki))
+
+
+def push(root, host, receiver, curated=False, accounts_only=False):
+    if accounts_only and curated:
+        raise ValueError('Accounts-only push cannot curate wiki')
     sources = {
         'accounts.sqlite': root / '2004Scape-Botting/data/accounts.sqlite',
         'benchmarks.sqlite': root / '2004Scape-Botting/data/benchmarks.sqlite',
-        'rs-sdk-wiki.sqlite': root / '2004Scape-Wiki/data/wiki.sqlite',
-        'scraped-wiki.sqlite': root / '2004Scape-Wiki/data/wiki.sqlite',
     }
+    if not accounts_only:
+        sources.update({
+            'rs-sdk-wiki.sqlite': root / '2004Scape-Wiki/data/wiki.sqlite',
+            'scraped-wiki.sqlite': root / '2004Scape-Wiki/data/wiki.sqlite',
+        })
     if curated:
         # Build generated pages before the read-only export. Explicitly enabled only
         # after the receiver is upgraded to accept the optional fifth snapshot.
@@ -523,24 +595,28 @@ def push(root, host, receiver, curated=False):
         stage = Path(tmp)
         for name, source in sources.items():
             export_db(source, stage / name, TABLES[name], sources=PAGE_SOURCES.get(name, ()))
-        export_assets(root / '2004Scape-Wiki', stage / 'scraped-wiki.sqlite', stage / 'assets')
+        if not accounts_only:
+            export_assets(root / '2004Scape-Wiki', stage / 'scraped-wiki.sqlite', stage / 'assets')
         ssh = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', '--', host]
         command = 'python3 ' + shlex.quote(receiver)
-        result = subprocess.run(ssh + [command + ' inventory'], capture_output=True, text=True, check=True, timeout=90)
-        if len(result.stdout) > MAX_ENTRIES * 70:
-            raise ValueError('Remote inventory limit')
-        have = json.loads(result.stdout)
-        if not isinstance(have, list) or len(have) > MAX_ENTRIES or any(not valid_hash(value) for value in have):
-            raise ValueError('Invalid remote inventory')
-        have = set(have)
+        have = set()
+        if not accounts_only:
+            result = subprocess.run(ssh + [command + ' inventory'], capture_output=True, text=True, check=True, timeout=90)
+            if len(result.stdout) > MAX_ENTRIES * 70:
+                raise ValueError('Remote inventory limit')
+            have = json.loads(result.stdout)
+            if not isinstance(have, list) or len(have) > MAX_ENTRIES or any(not valid_hash(value) for value in have):
+                raise ValueError('Invalid remote inventory')
+            have = set(have)
         wanted = []
         try:
-            result = subprocess.run(ssh + [command + ' take-wanted'], capture_output=True, text=True, check=True, timeout=90)
-            if len(result.stdout) > MAX_WANTED * 2200:
-                raise ValueError('Wanted list limit')
-            wanted = json.loads(result.stdout)
-            if not isinstance(wanted, list):
-                raise ValueError('Invalid wanted list')
+            if not accounts_only:
+                result = subprocess.run(ssh + [command + ' take-wanted'], capture_output=True, text=True, check=True, timeout=90)
+                if len(result.stdout) > MAX_WANTED * 2200:
+                    raise ValueError('Wanted list limit')
+                wanted = json.loads(result.stdout)
+                if not isinstance(wanted, list):
+                    raise ValueError('Invalid wanted list')
         except subprocess.CalledProcessError:
             # A receiver without take-wanted predates redirects too: send what it accepts.
             for name, optional in OPTIONAL_TABLES.items():
@@ -551,18 +627,12 @@ def push(root, host, receiver, curated=False):
         except (subprocess.SubprocessError, OSError, ValueError) as exc:
             print(f'Could not take wanted pages: {exc}', file=sys.stderr, flush=True)
         with tempfile.TemporaryFile() as payload:
-            with tarfile.open(fileobj=payload, mode='w:gz') as archive:
-                assets = stage / 'assets'
-                if assets.exists():
-                    for path in sorted(assets.iterdir()):
-                        if path.name not in have:
-                            archive.add(path, arcname='assets/' + path.name)
-                for name in sources:
-                    archive.add(stage / name, arcname=name)
-            payload.seek(0)
-            subprocess.run(ssh + [command + ' receive'], stdin=payload, check=True, timeout=300)
+            write_archive(payload, stage, sources, have)
+            mode = ' --accounts-only' if accounts_only else ''
+            subprocess.run(ssh + [command + ' receive' + mode], stdin=payload, check=True, timeout=300)
         try:
-            queue_wanted(root, wanted)
+            if not accounts_only:
+                queue_wanted(root, wanted)
         except (subprocess.SubprocessError, OSError) as exc:
             print(f'Could not queue wanted pages: {exc}', file=sys.stderr, flush=True)
 
@@ -573,24 +643,48 @@ def main():
     sender = sub.add_parser('push')
     sender.add_argument('--root', type=Path, default=Path.home() / 'forgejo')
     sender.add_argument('--host', required=True, help='Existing SSH alias for the game server')
-    sender.add_argument('--curated', action=argparse.BooleanOptionalAction, help='Build and publish the fifth, generated 2004Scape collection (upgrade receiver first)')
+    mode = sender.add_mutually_exclusive_group()
+    mode.add_argument('--curated', action=argparse.BooleanOptionalAction, help='Build and publish the fifth, generated 2004Scape collection (upgrade receiver first)')
+    mode.add_argument('--accounts-only', action='store_true', help='Publish only accounts and benchmarks; never access wiki or wanted queues')
     sender.add_argument('--receiver', default='github/Computer-Setup/linux-game-server/rs-sdk/portal/sync.py')
+    sender.add_argument('--bot-inputs', action=argparse.BooleanOptionalAction, default=False,
+                        help='With --accounts-only, also upload allowlisted bot observations and guides')
     receiver = sub.add_parser('receive')
     receiver.add_argument('--target', type=Path, default=DEFAULT_TARGET)
+    receiver.add_argument('--accounts-only', action='store_true', help='Require exactly accounts and benchmarks; preserve wiki')
+    publisher = sub.add_parser('publish-wiki', help='Publish authoritative server-local wiki projections and consume local wanted requests')
+    publisher.add_argument('--wiki-root', type=Path, required=True)
+    publisher.add_argument('--target', type=Path, default=DEFAULT_TARGET)
+    publisher.add_argument('--wanted', type=Path, help='Defaults to TARGET/../wanted/wanted.sqlite')
+    publisher.add_argument('--curated', action=argparse.BooleanOptionalAction, default=False)
     inventory_parser = sub.add_parser('inventory')
     inventory_parser.add_argument('--target', type=Path, default=DEFAULT_TARGET)
     wanted_parser = sub.add_parser('take-wanted')
     wanted_parser.add_argument('--wanted', type=Path, default=DEFAULT_WANTED)
+    wanted_parser.add_argument('--target', type=Path, default=DEFAULT_TARGET)
     args = parser.parse_args()
     os.umask(0o077)
     if args.command == 'push':
-        push(args.root.expanduser().resolve(), args.host, args.receiver, args.curated)
+        if args.bot_inputs and not args.accounts_only:
+            parser.error('--bot-inputs requires --accounts-only')
+        push(args.root.expanduser().resolve(), args.host, args.receiver, args.curated, accounts_only=args.accounts_only)
+        if args.bot_inputs:
+            helper = Path(__file__).resolve().parent.parent / 'wiki/inputs.py'
+            subprocess.run([sys.executable, '-B', str(helper), 'push', '--host', args.host,
+                            '--botting-root', str(args.root.expanduser().resolve() / '2004Scape-Botting')],
+                           check=True, timeout=120)
+    elif args.command == 'publish-wiki':
+        publish_wiki(args.wiki_root.expanduser().resolve(), args.target.expanduser().absolute(), args.curated,
+                     args.wanted.expanduser().absolute() if args.wanted is not None else None)
     elif args.command == 'take-wanted':
+        authority = args.target.expanduser().absolute() / '.wiki-authority'
+        if authority.exists() or authority.is_symlink():
+            raise ValueError('Server-authoritative wiki consumes wanted locally through publish-wiki')
         print(json.dumps(take_wanted(args.wanted.expanduser().absolute()), ensure_ascii=False))
     elif args.command == 'inventory':
         print(json.dumps(inventory(args.target.expanduser().absolute())))
     else:
-        receive(sys.stdin.buffer, args.target.expanduser().absolute())
+        receive(sys.stdin.buffer, args.target.expanduser().absolute(), accounts_only=args.accounts_only)
 
 
 if __name__ == '__main__':

@@ -5,7 +5,7 @@
     <key>ProgramArguments</key><array>
         <string>@PYTHON@</string><string>@SYNC@</string><string>push</string>
         <string>--host</string><string>@SSH_HOST@</string>
-        <string>@CURATED_ARG@</string>
+        <string>@INPUTS_ARG@</string><string>@SYNC_MODE_ARG@</string>
     </array>
     <key>EnvironmentVariables</key><dict>
         <key>PATH</key><string>@BREW@/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
