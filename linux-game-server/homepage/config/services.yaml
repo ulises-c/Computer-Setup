@@ -477,7 +477,7 @@
     - "RS-SDK: bot server":
         id: rs-sdk-server
         icon: mdi-robot-outline-#22d3ee
-        href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}:9445/
+        href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/rs-sdk/
         description: Agent/bot fork with an SDK gateway · own accounts
         siteMonitor: http://127.0.0.1:8080/engine-status
         server: my-docker

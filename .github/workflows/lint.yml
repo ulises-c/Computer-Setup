@@ -78,6 +78,9 @@ jobs:
       - name: Test ntfy to Discord relay
         run: python3 -m unittest discover -v -s linux-server/ntfy-discord/tests
 
+      - name: Test read-only RS-SDK portal and snapshot boundaries
+        run: python3 -m unittest discover -v -s linux-game-server/rs-sdk/portal
+
       - name: Test game server (Dragonwilds, player log, backups)
         working-directory: linux-game-server/tests
         run: python3 -m unittest discover -v -p 'test_*.py'

@@ -35,6 +35,14 @@ unified-layout design rationale is in [UNIFICATION.md](UNIFICATION.md).
 
 ### Homepage: RS-SDK card
 
+- [ ] Companion **Account Database**: show verified **currently online** presence
+      and, only when online, the current **world and server**. Query an
+      authoritative game/session presence source; do not infer online state from
+      account lifecycle (`active`), login timestamps or a running bot client.
+      Distinguish offline from unknown/stale data, show the observation time,
+      and keep RS-SDK and Lost City identities/worlds separate. Keep addresses
+      private; display role/world labels rather than real hostnames.
+
 - [ ] Richer RS-SDK card with metrics like the Dragonwilds card (players and bots
       online, sampled 24h resources).
 - [ ] Real icons: fetch the `.ico` from the Lost City title page and the rs-sdk

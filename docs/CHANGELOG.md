@@ -9,6 +9,20 @@ in [UNIFICATION.md](UNIFICATION.md).
 ## Unreleased — 2004Scape backup and maintenance safety
 
 ### Added
+- RS-SDK's Homepage card opens a Linux-game-server companion at `/rs-sdk/`, with
+  searchable account metadata, benchmark summaries/step timings and cached wiki
+  text, plus Play, HiScores and Grand Exchange links. A separate source-Mac sync
+  publishes allowlisted read-only SQLite views every two minutes, excluding
+  passwords and private host/notes/error fields; neither game nor bot/wiki source
+  code is modified (normal SQLite WAL shared-memory coordination still applies).
+  The portal matches RS-SDK's parchment/stone Grand Exchange and compact HiScores
+  theme. Wiki pages have a lightweight OSRS/MediaWiki-style reader with contents,
+  headings, lists and tables, without a separate MediaWiki stack. RS-SDK Wiki
+  and Scraped Wiki have separate search pages and physical SQLite snapshot
+  databases; their searches, pagination and article links never mix collections.
+  The source scraper cache remains unchanged. Live account
+  presence/world/server lookup is tracked in TODO, not inferred from lifecycle
+  status. See `linux-game-server/rs-sdk/portal/README.md`.
 - Live nightly game backups include CRC-checked 2004Scape player-save copies.
   Restore verification requires explicit state coverage and compares Lost City's
   staged SQLite database against a private copy of stopped live data, including

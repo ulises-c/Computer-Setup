@@ -15,6 +15,12 @@ These settings retain SDK connectivity and do not reset earned XP or player save
 
 ## Access
 
+The RS-SDK Homepage card opens the game-server-hosted
+[companion portal](portal/README.md) at `/rs-sdk/`: Account Database, Benchmarks,
+cached Wiki, Play, HiScores and Grand Exchange. Its source-side sync exports
+read-only, credential-free views without changing the bot/wiki repositories.
+Vanilla Lost City remains separate.
+
 - LAN web client: `http://<server-ip>:8080/`
 - Tailscale web client: `https://<game-host>.<tailnet>.ts.net:9445/`
 - LAN game TCP: `<server-ip>:43595`
