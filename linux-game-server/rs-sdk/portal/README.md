@@ -50,14 +50,25 @@ only the clean view.
 - Scripts, forms, SVG, media, frames, event handlers, `@import`, `@font-face`,
   custom properties and every CSS property outside a small allowlist are
   dropped. Only `@media` rules survive. Every `src`, `srcset` and CSS `url()` /
-  `image-set()` is rewritten to a cached raster served by content hash, or to a
-  placeholder. Rendering makes no upstream request.
-- Links to cached articles stay in the portal; uncached titles become a
-  Scraped Wiki search. Other links are plain external links that open nothing
-  until clicked (the sandbox blocks new windows, so they need a copy-paste).
+  `image-set()` under the wiki's `/images/` becomes
+  `/rs-sdk/wiki/scraped/images/<source>/<path>` (the latest cached version, or a
+  placeholder); other cached rasters are served by content hash, anything else
+  is a placeholder. Rendering makes no upstream request.
+- **Every wiki link is routed by title**, cached or not, so links come alive as
+  pages get scraped: `/w/Title#Section` (and `/w/index.php?title=…`) on either
+  wiki becomes `/rs-sdk/wiki/scraped/w/<source>/Title#Section`. Links to
+  uncached pages get MediaWiki's red-link class. `article?id=N`, other spellings
+  and cached redirect titles redirect to the canonical title URL. A section
+  fragment can't scroll inside the frame (that would need scripts). Links to
+  other sites are plain external links that open nothing until clicked (the
+  sandbox blocks new windows, so they need a copy-paste).
+- **Missing pages and images are requested, not fetched.** Opening an uncached
+  article shows a "not scraped yet" page with the upstream link and records the
+  title in `wanted.sqlite`; a missing image records its path. Non-article
+  namespaces (`File:`, `Category:`, `Special:`, talk pages, …) are routed but
+  never requested. The source-side sync takes these requests (below).
 - Cached assets are only PNG, JPEG, GIF and WebP images and CSS, up to 8 MiB
-  per image and 2 MiB per stylesheet. Anything missing is a placeholder: the
-  portal never downloads it. Interactive parts the site builds with scripts
+  per image and 2 MiB per stylesheet. Interactive parts the site builds with scripts
   (price charts, maps, calculators, infobox version switching) do not work.
 - Fidelity is deliberately conservative: because of the CSS allowlist, pages
   look close to, not identical to, the live wiki.
@@ -71,8 +82,11 @@ The web service runs in its own non-root, read-only container, published only on
 `127.0.0.1:8098`; Tailscale Serve publishes `/rs-sdk` on the host's existing node.
 There is no Funnel, additional tailnet node, or wildcard host listener. Anyone
 permitted to reach that tailnet service can view its data; there is no separate
-portal login. The viewer accepts no writes or SQL and serves no raw database
-files or scripts. Clean articles use escaped readable text; original articles
+portal login. The viewer accepts no SQL and serves no raw database files or
+scripts. Its only write is the request list: `/wanted/wanted.sqlite`, a separate
+writable bind of `~/.local/share/rs-sdk-portal/wanted/` (700), holding at most
+5,000 deduplicated `(source, page|image, title|path)` rows validated against the
+same title and path rules as rendering; recording failures never break a page. Clean articles use escaped readable text; original articles
 are sanitized and sandboxed as described above. It never fetches upstream pages
 or assets, starts bots or restarts either game.
 
@@ -81,10 +95,20 @@ Mac under `~/forgejo/2004Scape-Botting/data/` and
 `~/forgejo/2004Scape-Wiki/data/`. A **source-side sync only** runs every 120 seconds
 as a login-user LaunchAgent. No web service runs on the Mac. SQLite connections
 are read-only, use short-lived consistent read transactions, and do not run
-schema migrations, checkpoint WAL, invoke repository scripts, or commit Git.
+schema migrations, checkpoint WAL, or commit Git.
 Normal SQLite WAL coordination may create/update a source `-shm` sidecar; this
-is not a promise of zero filesystem writes. It does not alter database rows or
-repository source files. Live databases are never opened with `immutable=1` or
+is not a promise of zero filesystem writes. Exporting does not alter database
+rows or repository source files.
+
+After publishing, sync runs `sync.py take-wanted` on the server, which removes
+and returns up to 100 oldest requests. It validates them again and pipes them
+as JSON lines to the wiki's own `bun src/cli.ts want` in `2004Scape-Wiki`, the
+one repository command it invokes. The wiki puts requested images at the front
+of its image queue and requested articles (at most 100 waiting) in a page queue
+that its page worker fetches with their images and stylesheets, at the wiki's
+shared rate limit, committing as usual. A requested page appears after the next
+sync once fetched, typically a few minutes. Requests taken while the wiki can't
+queue them are dropped; opening the page again re-requests it. Live databases are never opened with `immutable=1` or
 copied without SQLite coordination, which would risk an inconsistent view.
 
 `sync.py` creates **new projected databases**, copying only explicit allowlisted
@@ -102,7 +126,9 @@ leave a mixed set until the next sync. Existing readers finish on the old inode.
 
 Original HTML and stylesheet references travel in `scraped-wiki.sqlite`
 (`pages.raw_html`, `pages.styles`) with an `assets` manifest (source, URL,
-SHA-256, MIME, size). The blobs themselves live in `assets/<sha256>` beside the
+SHA-256, MIME, size) and the wiki's `redirects` (source, from and to title), so
+links to a redirect title open the cached target. A receiver accepts snapshots
+without `redirects` from an older sender. The blobs themselves live in `assets/<sha256>` beside the
 snapshots. The sender asks the receiver which hashes it holds and sends only
 missing blobs, so the growing image cache is not recopied every two minutes. The
 sender reads the wiki cache's files without following symlinks, accepts only
@@ -172,6 +198,10 @@ Only the RS-SDK card's link changes; all metrics and the Lost City card remain.
 python3 -m unittest discover -s linux-game-server/rs-sdk/portal -v
 shellcheck linux-game-server/rs-sdk/portal/install.sh linux-game-server/rs-sdk/portal/install-sync.sh
 ```
+
+After upgrading, rerun `install.sh` on the game server (it adds the `wanted/`
+mount and `PORTAL_WANTED_DIR`); the source Mac needs `bun` on the LaunchAgent's
+`PATH` for requests to reach the wiki.
 
 On the game server, inspect `docker logs rs-sdk-portal`, check the snapshots'
 mtime and permissions, and fetch `/rs-sdk/accounts`, `/rs-sdk/benchmarks`,

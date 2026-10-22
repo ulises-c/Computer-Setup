@@ -8,6 +8,9 @@ DOMAIN="$(tailscale status --json | python3 -c 'import json,sys; print(json.load
 DATA_DIR="$HOME/.local/share/rs-sdk-portal/data"
 mkdir -p "$DATA_DIR"
 chmod 700 "$DATA_DIR"
+WANTED_DIR="$HOME/.local/share/rs-sdk-portal/wanted"
+mkdir -p "$WANTED_DIR"
+chmod 700 "$WANTED_DIR"
 mkdir -p "$SCRIPT_DIR/assets"
 if [[ ! -f "$SCRIPT_DIR/assets/background2.jpg" ]]; then
   curl --fail --silent --show-error --max-time 10 http://127.0.0.1:8080/img/background2.jpg \
@@ -19,8 +22,8 @@ if [[ -f "$SCRIPT_DIR/.env" ]]; then
   cp -p "$SCRIPT_DIR/.env" "$SCRIPT_DIR/.env.previous"
 fi
 umask 077
-printf 'PORTAL_UID=%s\nPORTAL_GID=%s\nPORTAL_GAME_DOMAIN=%s\nPORTAL_DATA_DIR=%s\n' \
-  "$(id -u)" "$(id -g)" "$DOMAIN" "$DATA_DIR" > "$SCRIPT_DIR/.env"
+printf 'PORTAL_UID=%s\nPORTAL_GID=%s\nPORTAL_GAME_DOMAIN=%s\nPORTAL_DATA_DIR=%s\nPORTAL_WANTED_DIR=%s\n' \
+  "$(id -u)" "$(id -g)" "$DOMAIN" "$DATA_DIR" "$WANTED_DIR" > "$SCRIPT_DIR/.env"
 docker compose --project-name rs-sdk-portal --project-directory "$SCRIPT_DIR" -f "$SCRIPT_DIR/docker-compose.yml" up -d --build --force-recreate
 for _ in {1..15}; do
   if curl --fail --silent http://127.0.0.1:8098/rs-sdk/ >/dev/null; then

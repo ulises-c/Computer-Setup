@@ -28,8 +28,13 @@ class OriginalHTTPTests(unittest.TestCase):
             db.execute('INSERT INTO pages VALUES (2,\'osrs\',\'Old\',\'Old text\',0,1,NULL,\'[]\')')
             db.execute('CREATE TABLE assets (source,url,sha256,mime,size)')
             db.execute('INSERT INTO assets VALUES (\'osrs\',\'/images/Oak.png\',?,\'image/png\',?)', (self.digest, len(self.image)))
+            db.execute('INSERT INTO assets VALUES (\'osrs\',\'/images/Oak (grown).png\',?,\'image/png\',?)', (self.digest, len(self.image)))
+            db.execute('CREATE TABLE redirects (source,from_title,to_title)')
+            db.execute('INSERT INTO redirects VALUES (\'osrs\',\'Oak tree\',\'Oak\')')
+        self.wanted = self.root / 'wanted' / 'wanted.sqlite'
+        self.wanted.parent.mkdir()
         self.http = server.PortalHTTPServer(('127.0.0.1', 0), server.Handler)
-        self.http.portal = server.Portal(self.root, 'https://game.example', 'https://home.example')
+        self.http.portal = server.Portal(self.root, 'https://game.example', 'https://home.example', self.wanted)
         self.worker = threading.Thread(target=self.http.serve_forever, daemon=True)
         self.worker.start()
         self.addCleanup(self.stop)
@@ -87,6 +92,66 @@ class OriginalHTTPTests(unittest.TestCase):
             self.assertEqual(error.exception.code, 404)
             error.exception.close()
 
+
+    def wanted_rows(self):
+        if not self.wanted.exists():
+            return []
+        with closing(sqlite3.connect(self.wanted)) as db:
+            return [tuple(r) for r in db.execute('SELECT source,kind,key FROM wanted ORDER BY kind,key')]
+
+    def fetch(self, path):
+        try:
+            with urlopen(self.base + path) as response:
+                return response.status, response.read(), response.headers, response.url
+        except HTTPError as error:
+            with error:
+                return error.code, error.read(), error.headers, error.url
+
+    def test_pages_route_by_title_with_aliases_and_redirects(self):
+        status, body, headers, final = self.fetch('/rs-sdk/wiki/scraped/w/osrs/Oak')
+        self.assertEqual(status, 200)
+        self.assertIn(b'/rs-sdk/wiki/scraped/document?id=1', body)
+        self.assertIn("frame-src 'self'", headers['Content-Security-Policy'])
+        self.assertIn(b'href="/rs-sdk/wiki/scraped/w/osrs/Oak?view=clean"', body)
+        for alias in ('/rs-sdk/wiki/scraped/article?id=1', '/rs-sdk/wiki/scraped/w/osrs/oak',
+                      '/rs-sdk/wiki/scraped/w/osrs/Oak%20tree', '/rs-sdk/wiki/scraped/w/osrs/Oak_tree'):
+            status, body, _, final = self.fetch(alias)
+            self.assertEqual((status, final), (200, self.base + '/rs-sdk/wiki/scraped/w/osrs/Oak'), alias)
+        status, body, _, final = self.fetch('/rs-sdk/wiki/scraped/article?id=1&view=clean')
+        self.assertTrue(final.endswith('/w/osrs/Oak?view=clean'))
+        self.assertNotIn(b'<iframe', body)
+        self.assertEqual(self.wanted_rows(), [])
+
+    def test_uncached_pages_are_requested_once_and_link_upstream(self):
+        for _ in range(2):
+            status, body, _, _ = self.fetch('/rs-sdk/wiki/scraped/w/rs3/Bronze_axe')
+            self.assertEqual(status, 404)
+            self.assertIn(b'has been requested', body)
+            self.assertIn(b'https://runescape.wiki/w/Bronze_axe', body)
+        status, body, _, _ = self.fetch('/rs-sdk/wiki/scraped/w/osrs/Category:Axes')
+        self.assertEqual(status, 404)
+        self.assertIn(b'isn\xe2\x80\x99t fetched on request', body)
+        for bad in ('/rs-sdk/wiki/scraped/w/evil/Oak', '/rs-sdk/wiki/scraped/w/osrs/a%3Cb', '/rs-sdk/wiki/scraped/w/osrs/..'):
+            self.assertIn(self.fetch(bad)[0], (400, 404), bad)
+        self.assertEqual(self.wanted_rows(), [('rs3', 'page', 'Bronze axe')])
+
+    def test_images_route_serves_cached_rasters_or_requests_a_placeholder(self):
+        for path in ('/rs-sdk/wiki/scraped/images/osrs/Oak.png', '/rs-sdk/wiki/scraped/images/osrs/Oak_%28grown%29.png'.replace('_', '%20')):
+            status, body, headers, _ = self.fetch(path)
+            self.assertEqual((status, body, headers['Content-Type']), (200, self.image, 'image/png'), path)
+        status, body, headers, _ = self.fetch('/rs-sdk/wiki/scraped/images/osrs/thumb/Pike.png/120px-Pike.png')
+        self.assertEqual((status, headers['Content-Type'], headers['Cache-Control']), (200, 'image/svg+xml', 'no-store'))
+        for bad in ('/rs-sdk/wiki/scraped/images/osrs/..%2fscraped-wiki.sqlite', '/rs-sdk/wiki/scraped/images/osrs/a//b.png',
+                    '/rs-sdk/wiki/scraped/images/evil/Oak.png', '/rs-sdk/wiki/scraped/images/osrs/'):
+            self.assertEqual(self.fetch(bad)[0], 404, bad)
+        self.assertEqual(self.wanted_rows(), [('osrs', 'image', 'thumb/Pike.png/120px-Pike.png')])
+
+    def test_nothing_is_recorded_without_a_wanted_file(self):
+        self.http.portal.wanted.path = None
+        status, body, _, _ = self.fetch('/rs-sdk/wiki/scraped/w/osrs/Shark')
+        self.assertEqual(status, 404)
+        self.assertIn(b'can\xe2\x80\x99t be recorded', body)
+        self.assertFalse(self.wanted.exists())
 
     def test_fifo_and_swapped_asset_directory_do_not_hang_or_leak(self):
         fifo = 'f' * 64

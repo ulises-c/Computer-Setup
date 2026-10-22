@@ -18,12 +18,12 @@ class OriginalTests(unittest.TestCase):
     def test_encoded_image_paths_match_decoded_cache_metadata(self):
         assets = {('osrs', '/images/Tree_(grown).png'): {'sha256': 'a' * 64, 'mime': 'image/png', 'size': 12}}
         html = self.render('<img src="/images/Tree_%28grown%29.png?abc123">', assets=assets)
-        self.assertIn('src="/rs-sdk/wiki/scraped/asset/' + 'a' * 64 + '"', html)
+        self.assertIn('src="/rs-sdk/wiki/scraped/images/osrs/Tree_(grown).png"', html)
 
     def test_srcset_candidates_are_rewritten_to_local_rasters(self):
         assets = {('osrs', '/images/Oak.png'): {'sha256': 'a' * 64, 'mime': 'image/png', 'size': 12}}
         html = self.render('<img src="/images/Oak.png" srcset="/images/Oak.png 1x, https://evil.test/x 2x, /images/Oak.png bad">', assets=assets)
-        self.assertIn('srcset="/rs-sdk/wiki/scraped/asset/' + 'a' * 64 + ' 1x, /rs-sdk/wiki/scraped/missing.svg 2x"', html)
+        self.assertIn('srcset="/rs-sdk/wiki/scraped/images/osrs/Oak.png 1x, /rs-sdk/wiki/scraped/missing.svg 2x"', html)
         self.assertNotIn('evil.test', html)
         self.assertNotIn('bad', html)
 
@@ -42,15 +42,22 @@ class OriginalTests(unittest.TestCase):
         for forbidden in ('bad()', '<script', '<form', '<svg', '<iframe', 'onclick', 'form content'):
             self.assertNotIn(forbidden, html)
 
-    def test_routes_links_to_cached_pages_or_local_search(self):
+    def test_routes_every_wiki_link_by_title_and_marks_uncached_ones(self):
         html = self.render('<a href="/w/Oak_tree#Wood">Oak</a><a href="https://runescape.wiki/w/Rune">Rune</a>'
-                           '<a href="/w/Unknown_title">Unknown</a><a href="#Stats">Stats</a>'
+                           '<a class="x" href="/w/Unknown_title">Unknown</a><a href="#Stats">Stats</a>'
+                           '<a class="new" href="/w/index.php?title=Shark_lure&amp;action=edit&amp;redlink=1">Red</a>'
+                           '<a href="/w/File:Oak.png">File</a><a href="/images/Oak.png?123">Image</a>'
+                           '<a href="/w/Treasure_Trails/Guide">Sub</a>'
                            '<a href="https://evil.test/w/Oak_tree">External</a>'
                            '<a href="javascript:alert(1)">Bad</a><a href="//oldschool.runescape.wiki.evil.test/x">Spoof</a>',
                            pages={('osrs', 'Oak tree'): 7, ('rs3', 'Rune'): 8})
-        self.assertIn('href="/rs-sdk/wiki/scraped/article?id=7#Wood" target="_top"', html)
-        self.assertIn('href="/rs-sdk/wiki/scraped/article?id=8" target="_top"', html)
-        self.assertIn('href="/rs-sdk/wiki/scraped?q=Unknown+title" target="_top"', html)
+        self.assertIn('<a href="/rs-sdk/wiki/scraped/w/osrs/Oak_tree#Wood" target="_top">', html)
+        self.assertIn('<a href="/rs-sdk/wiki/scraped/w/rs3/Rune" target="_top">', html)
+        self.assertIn('<a href="/rs-sdk/wiki/scraped/w/osrs/Unknown_title" target="_top" class="x new">', html)
+        self.assertIn('<a class="new" href="/rs-sdk/wiki/scraped/w/osrs/Shark_lure" target="_top">', html)
+        self.assertIn('href="/rs-sdk/wiki/scraped/w/osrs/File:Oak.png" target="_top" class="new"', html)
+        self.assertIn('href="/rs-sdk/wiki/scraped/images/osrs/Oak.png" target="_top"', html)
+        self.assertIn('href="/rs-sdk/wiki/scraped/w/osrs/Treasure_Trails/Guide"', html)
         self.assertIn('href="#Stats"', html)
         self.assertIn('href="https://evil.test/w/Oak_tree" target="_blank" rel="noreferrer noopener"', html)
         self.assertNotIn('javascript:', html)
@@ -62,8 +69,9 @@ class OriginalTests(unittest.TestCase):
         html = self.render('<img src="/images/Oak.png" srcset="https://evil.test/x 2x" onerror="bad()">'
                            '<img src="https://evil.test/images/Oak.png"><img src="/images/../secret">'
                            '<img src="data:image/svg+xml,bad"><img src="/images/missing.png">', assets=assets)
-        self.assertIn('src="/rs-sdk/wiki/scraped/asset/' + 'a' * 64 + '"', html)
-        self.assertEqual(html.count('src="/rs-sdk/wiki/scraped/missing.svg"'), 4)
+        self.assertIn('src="/rs-sdk/wiki/scraped/images/osrs/Oak.png"', html)
+        self.assertIn('src="/rs-sdk/wiki/scraped/images/osrs/missing.png"', html)
+        self.assertEqual(html.count('src="/rs-sdk/wiki/scraped/missing.svg"'), 3)
         for forbidden in ('evil.test', 'onerror', 'data:', '../secret'):
             self.assertNotIn(forbidden, html)
 
@@ -118,10 +126,10 @@ class OriginalTests(unittest.TestCase):
     def test_asset_metadata_and_paths_fail_closed(self):
         bad_paths = ['../private.png', '/images/%2e%2e/private.png', 'https://oldschool.runescape.wiki.evil.test/x',
                      'https://oldschool.runescape.wiki@evil.test/x', 'https://oldschool.runescape.wiki:444/x',
-                     '//evil.test/x', 'https://oldschool.runescape.wiki/images/vector.svg', '/images/bad.png']
-        assets = {('osrs', 'https://oldschool.runescape.wiki/images/vector.svg'):
+                     '//evil.test/x', '/assets/vector.svg', '/assets/bad.png', '/images/a//b.png', '/images/a%5cb.png']
+        assets = {('osrs', 'https://oldschool.runescape.wiki/assets/vector.svg'):
                   {'sha256': 'a' * 64, 'mime': 'image/svg+xml', 'size': 12},
-                  ('osrs', 'https://oldschool.runescape.wiki/images/bad.png'):
+                  ('osrs', 'https://oldschool.runescape.wiki/assets/bad.png'):
                   {'sha256': '../private', 'mime': 'image/png', 'size': 12}}
         html = self.render(''.join('<img src="' + path + '">' for path in bad_paths), assets=assets)
         self.assertEqual(html.count('src="/rs-sdk/wiki/scraped/missing.svg"'), len(bad_paths))
@@ -159,14 +167,16 @@ class OriginalTests(unittest.TestCase):
         self.assertIn('color:red;', html)
 
     def test_article_titles_follow_mediawiki_normalization(self):
-        html = self.render('<a href="/w/oak_tree">Oak</a>', pages={('osrs', 'Oak tree'): 11})
-        self.assertIn('href="/rs-sdk/wiki/scraped/article?id=11"', html)
+        html = self.render('<a href="/w/oak_tree">Oak</a><a href="/w/Bronze%20Axe">Axe</a>',
+                           pages={('osrs', 'Oak tree'), ('osrs', 'Bronze Axe')})
+        self.assertIn('<a href="/rs-sdk/wiki/scraped/w/osrs/Oak_tree" target="_top">', html)
+        self.assertIn('<a href="/rs-sdk/wiki/scraped/w/osrs/Bronze_Axe" target="_top">', html)
 
     def test_invalid_asset_mime_is_a_placeholder_not_an_exception(self):
-        assets = {('osrs', 'https://oldschool.runescape.wiki/images/Oak.png'):
+        assets = {('osrs', 'https://oldschool.runescape.wiki/assets/Oak.png'):
                   {'sha256': 'a' * 64, 'mime': None, 'size': 12}}
         self.assertIn('src="/rs-sdk/wiki/scraped/missing.svg"',
-                      self.render('<img src="/images/Oak.png">', assets=assets))
+                      self.render('<img src="/assets/Oak.png">', assets=assets))
 
 
 if __name__ == '__main__':

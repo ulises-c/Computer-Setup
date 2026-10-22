@@ -51,7 +51,7 @@ class SyncAssetTests(unittest.TestCase):
             with closing(sqlite3.connect(root / name)) as db, db:
                 for table, columns in tables.items():
                     if legacy and name == 'scraped-wiki.sqlite':
-                        if table == 'assets':
+                        if table in ('assets', 'redirects'):
                             continue
                         columns = columns[:6]
                     db.execute(f'CREATE TABLE {table} ({",".join(columns)})')
@@ -112,6 +112,8 @@ class SyncAssetTests(unittest.TestCase):
             def ssh(command, **kwargs):
                 if command[-1].endswith(' inventory'):
                     return subprocess.CompletedProcess(command, 0, stdout=json.dumps(sync.inventory(target)))
+                if command[-1].endswith(' take-wanted'):
+                    return subprocess.CompletedProcess(command, 0, stdout='[]')
                 payload = kwargs['stdin'].read()
                 with tarfile.open(fileobj=io.BytesIO(payload), mode='r:gz') as archive:
                     transfers.append(archive.getnames())
@@ -320,6 +322,56 @@ class SyncAssetTests(unittest.TestCase):
                 db.execute('CREATE TABLE deaths (username)')
             with self.assertRaises(ValueError):
                 sync.check_snapshot(path, 'accounts.sqlite')
+
+    def test_redirects_are_projected_per_collection_and_validated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / 'wiki.sqlite'
+            with closing(sqlite3.connect(source)) as db, db:
+                db.execute('CREATE TABLE pages (id,source,title,text,fetched_at,revid,raw_html,styles)')
+                db.execute('CREATE TABLE redirects (source,from_title,to_title)')
+                db.executemany('INSERT INTO redirects VALUES (?,?,?)', [('osrs', 'Oak tree', 'Oak'), ('rs-sdk', 'Secret', 'Oak')])
+            dest = root / 'scraped-wiki.sqlite'
+            sync.export_db(source, dest, sync.TABLES['scraped-wiki.sqlite'], ('osrs', 'rs3'))
+            with closing(sqlite3.connect(dest)) as db:
+                self.assertEqual(db.execute('SELECT * FROM redirects').fetchall(), [('osrs', 'Oak tree', 'Oak')])
+            self.assertEqual(sync.check_snapshot(dest, 'scraped-wiki.sqlite'), [])
+            with closing(sqlite3.connect(dest)) as db, db:
+                db.execute("INSERT INTO redirects VALUES ('evil','a','b')")
+            with self.assertRaises(ValueError):
+                sync.check_snapshot(dest, 'scraped-wiki.sqlite')
+
+    def test_wanted_requests_are_taken_once_and_revalidated(self):
+        from unittest.mock import patch
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.assertEqual(sync.take_wanted(root / 'none.sqlite'), [])
+            path = root / 'wanted.sqlite'
+            with closing(sqlite3.connect(path)) as db, db:
+                db.execute('CREATE TABLE wanted (source,kind,key,requested_at)')
+                db.executemany('INSERT INTO wanted VALUES (?,?,?,?)', [
+                    ('osrs', 'page', 'Bronze axe', 2), ('osrs', 'image', 'thumb/A.png/1px-A.png', 1),
+                    ('osrs', 'image', '../secret', 3), ('evil', 'page', 'X', 4), ('osrs', 'page', 'a<b', 5)])
+            taken = sync.take_wanted(path)
+            self.assertEqual(taken, [{'source': 'osrs', 'kind': 'image', 'key': 'thumb/A.png/1px-A.png'},
+                                     {'source': 'osrs', 'kind': 'page', 'key': 'Bronze axe'}])
+            self.assertEqual(sync.take_wanted(path), [])
+            (root / '2004Scape-Wiki/src').mkdir(parents=True)
+            (root / '2004Scape-Wiki/src/cli.ts').write_text('')
+            calls = []
+            def run(command, **kwargs):
+                calls.append((command, kwargs['input'], kwargs['cwd']))
+                return subprocess.CompletedProcess(command, 0, stdout='queued', stderr='')
+            with patch.object(sync.shutil, 'which', return_value='/bin/bun'), patch.object(sync.subprocess, 'run', side_effect=run), \
+                    patch('sys.stdout', io.StringIO()):
+                sync.queue_wanted(root, taken + [{'source': 'osrs', 'kind': 'page', 'key': 'x', 'extra': 1}])
+                sync.queue_wanted(root, [])
+            self.assertEqual(len(calls), 1)
+            command, payload, cwd = calls[0]
+            self.assertEqual(command, ['/bin/bun', 'src/cli.ts', 'want'])
+            self.assertEqual(cwd, root / '2004Scape-Wiki')
+            self.assertEqual([json.loads(line) for line in payload.splitlines()], taken)
 
 
 if __name__ == '__main__':

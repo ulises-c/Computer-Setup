@@ -5,7 +5,7 @@ Only the source's manifest-listed raster images and text/css blobs are consumed.
 """
 from html import escape
 from html.parser import HTMLParser
-from urllib.parse import quote, unquote, urlencode, urljoin, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urljoin, urlsplit
 
 import json
 import re
@@ -17,7 +17,7 @@ BASE = '/rs-sdk/wiki/scraped'
 HOSTS = {'osrs': 'oldschool.runescape.wiki', 'rs3': 'runescape.wiki'}
 READER_STYLE = '''
 body{margin:12px;color:#25221c;background:#f8f5ee;font:14px/1.6 Arial,sans-serif;overflow-wrap:anywhere}
-a{color:#315d8b}h1,h2,h3{font-family:Georgia,serif;font-weight:normal}h2{border-bottom:1px solid #aaa08e}
+a{color:#315d8b}a.new{color:#ba0000}h1,h2,h3{font-family:Georgia,serif;font-weight:normal}h2{border-bottom:1px solid #aaa08e}
 img{max-width:100%;height:auto}table{border-collapse:collapse;max-width:100%}td,th{padding:5px;border:1px solid #c7bba4}
 .infobox{float:right;max-width:340px;margin:0 0 16px 20px;background:#eee5d1}.wikitable{background:#f2ece0}
 @media(max-width:600px){.infobox{float:none;max-width:100%;margin:12px 0}body{margin:8px}table{display:block;overflow-x:auto}}
@@ -36,22 +36,70 @@ def safe_url(value, base):
         return None
 
 
+TITLE_BAD = re.compile(r'[\x00-\x1f\x7f#<>\[\]|{}\\]')
+# Namespaces whose pages aren't articles: routed like any title, never fetched on request.
+NON_ARTICLE = re.compile(r'^(?:File|Image|Special|Media|Category|Template|Module|User|Talk|RuneScape|Help|MediaWiki|Exchange|Map|Calculator|Property|Widget|Form|Gadget|Gadget definition|[^:]* talk):', re.I)
+
+
+def normalize_title(value):
+    """MediaWiki title normalization (underscores, spaces, first letter); None if invalid."""
+    if not isinstance(value, str):
+        return None
+    title = ' '.join(value.replace('_', ' ').split())
+    title = title[:1].upper() + title[1:]
+    if not title or TITLE_BAD.search(title) or len(title.encode('utf-8')) > 255 or title.startswith(('.', '/', ':')):
+        return None
+    if any(part in {'.', '..'} for part in title.split('/')):
+        return None
+    return title
+
+
+def fetchable_title(title):
+    return title is not None and not NON_ARTICLE.match(title)
+
+
+def page_href(source, title, fragment=''):
+    href = BASE + '/w/' + source + '/' + quote(title.replace(' ', '_'), safe="/:(),'!*@$;-._~")
+    return href + ('#' + quote(unquote(fragment), safe='') if fragment else '')
+
+
+def image_path(value):
+    """Decoded path under /images/ (no query), or None if unsafe."""
+    path = unquote(value)
+    if not path or len(path) > 1024 or '\\' in path or any(ord(c) < 32 or ord(c) == 127 for c in path):
+        return None
+    if any(part in {'', '.', '..'} for part in path.split('/')):
+        return None
+    return path
+
+
+def image_href(source, path):
+    return BASE + '/images/' + source + '/' + quote(path, safe="/(),'!*@$;-._~")
+
+
+def upstream_of(url):
+    return next((key for key, host in HOSTS.items() if url.hostname == host), None)
+
+
 def link(value, source, pages):
+    """Attributes for a link, and whether its target is cached (None: not a wiki page)."""
     if value.startswith('#'):
-        return [('href', value)]
+        return [('href', value)], None
     url = safe_url(value, 'https://' + HOSTS.get(source, 'invalid.test') + '/w/')
     if url is None:
-        return []
-    upstream = next((key for key, host in HOSTS.items() if url.hostname == host), None)
-    if upstream and url.path.startswith('/w/'):
-        title = ' '.join(unquote(url.path[3:]).replace('_', ' ').split())
-        title = title[:1].upper() + title[1:]
-        page_id = pages.get((upstream, title))
-        href = BASE + ('/article?' + urlencode({'id': page_id}) if page_id is not None else '?' + urlencode({'q': title}))
-        if url.fragment:
-            href += '#' + quote(unquote(url.fragment), safe='')
-        return [('href', href), ('target', '_top')]
-    return [('href', url.geturl()), ('target', '_blank'), ('rel', 'noreferrer noopener')]
+        return [], None
+    upstream = upstream_of(url)
+    raw_title = None
+    if upstream and url.path == '/w/index.php':
+        raw_title = parse_qs(url.query).get('title', [None])[0]
+    elif upstream and url.path.startswith('/w/'):
+        raw_title = unquote(url.path[3:])
+    title = normalize_title(raw_title) if raw_title is not None else None
+    if title is not None:
+        return [('href', page_href(upstream, title, url.fragment)), ('target', '_top')], (upstream, title) in pages
+    if upstream and url.path.startswith('/images/') and image_path(url.path[len('/images/'):]):
+        return [('href', image_href(upstream, image_path(url.path[len('/images/'):]))), ('target', '_top')], None
+    return [('href', url.geturl()), ('target', '_blank'), ('rel', 'noreferrer noopener')], None
 
 
 MISSING = BASE + '/missing.svg'
@@ -78,6 +126,17 @@ def cached_asset(value, source, assets, base, mimes):
 
 
 def image_url(value, source, assets, base):
+    """Upstream /images/ paths map to the portal's image route whether or not they are
+    cached; any other cached raster is served by hash; everything else is a placeholder."""
+    if any(part in {'.', '..'} for part in unquote(value).replace('\\', '/').split('/')):
+        return MISSING
+    url = safe_url(value, base)
+    if url is None or url.fragment:
+        return MISSING
+    upstream = upstream_of(url)
+    if upstream and url.path.startswith('/images/'):
+        path = image_path(url.path[len('/images/'):])
+        return image_href(upstream, path) if path else MISSING
     row = cached_asset(value, source, assets, base, RASTER)
     return BASE + '/asset/' + row['sha256'] if row else MISSING
 
@@ -229,7 +288,12 @@ class Article(HTMLParser):
             if style:
                 attrs.append(('style', style))
         if tag == 'a' and 'href' in values:
-            attrs += link(values['href'], self.source, self.pages)
+            extra, cached = link(values['href'], self.source, self.pages)
+            attrs += extra
+            if cached is False:
+                classes = values.get('class', '').split()
+                if 'new' not in classes:
+                    attrs = [(key, value) for key, value in attrs if key != 'class'] + [('class', ' '.join(classes + ['new']))]
         if tag == 'img':
             attrs = [(key, value) for key, value in attrs if key not in {'src', 'srcset'}]
             if 'srcset' in values:
@@ -261,11 +325,14 @@ ATTRS = {'a': {'href'}, '*': {'class', 'id', 'title', 'lang', 'dir', 'style'},
 def document(raw_html, styles, source, pages, assets, load_asset=None):
     """Return standalone article HTML without fetching or writing any material.
 
-    ``source`` is ``osrs`` or ``rs3``; ``pages[(source, title)]`` is a local id.
+    ``source`` is ``osrs`` or ``rs3``; ``pages`` holds the cached ``(source, title)``
+    pairs, redirect titles included. Wiki links route by title either way; links to
+    uncached pages get MediaWiki's ``new`` (red link) class.
     ``assets[(source, url)]`` contains sha256, mime and size. ``styles`` is a
     JSON-encoded list or a list of cached stylesheet URLs, not raw CSS.
     ``load_asset(sha256)`` reads local bytes; omitted callbacks disable styles.
-    Missing/unsupported images use the server-owned missing.svg placeholder.
+    Upstream /images/ paths become portal image routes (the server serves the cached
+    raster or a placeholder); other unknown images use missing.svg.
 
     Original fragments are kept; full documents require a recognized article
     container. CSS uses a conservative property/function allowlist and only

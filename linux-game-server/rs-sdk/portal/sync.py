@@ -257,10 +257,54 @@ TABLES = {
     'scraped-wiki.sqlite': {
         'pages': ('id', 'source', 'title', 'text', 'fetched_at', 'revid', 'raw_html', 'styles'),
         'assets': ('source', 'url', 'sha256', 'mime', 'size'),
+        'redirects': ('source', 'from_title', 'to_title'),
     },
 }
+# Accepted from a sender that predates them.
+OPTIONAL_TABLES = {'scraped-wiki.sqlite': {'redirects'}}
 PAGE_SOURCES = {'rs-sdk-wiki.sqlite': ('rs-sdk',), 'scraped-wiki.sqlite': ('osrs', 'rs3')}
 DEFAULT_TARGET = Path.home() / '.local/share/rs-sdk-portal/data'
+DEFAULT_WANTED = Path.home() / '.local/share/rs-sdk-portal/wanted/wanted.sqlite'
+MAX_WANTED = 100
+
+
+def valid_wanted(entry):
+    if not isinstance(entry, dict) or set(entry) != {'source', 'kind', 'key'} or entry['source'] not in ORIGINS:
+        return False
+    key = entry['key']
+    if not isinstance(key, str) or not 0 < len(key) <= 1024 or any(ord(c) < 32 or ord(c) == 127 for c in key):
+        return False
+    if entry['kind'] == 'image':
+        return safe_relative(key)
+    return entry['kind'] == 'page' and len(key.encode('utf-8')) <= 255 and not any(c in key for c in '#<>[]|{}\\')
+
+
+def take_wanted(path):
+    """Remove and return the oldest requests the portal recorded (server side)."""
+    if path.is_symlink() or not path.is_file():
+        return []
+    with closing(sqlite3.connect(path, timeout=5)) as db:
+        db.execute('BEGIN IMMEDIATE')
+        rows = db.execute('SELECT rowid,source,kind,key FROM wanted ORDER BY requested_at LIMIT ?', (MAX_WANTED,)).fetchall()
+        db.executemany('DELETE FROM wanted WHERE rowid=?', [(r[0],) for r in rows])
+        db.commit()
+    entries = [{'source': r[1], 'kind': r[2], 'key': r[3]} for r in rows]
+    return [e for e in entries if valid_wanted(e)]
+
+
+def queue_wanted(root, entries):
+    """Hand requested pages and images to the wiki's own fetch queues (source side)."""
+    entries = [e for e in entries if valid_wanted(e)][:MAX_WANTED]
+    if not entries:
+        return
+    bun = shutil.which('bun')
+    wiki = root / '2004Scape-Wiki'
+    if bun is None or not (wiki / 'src/cli.ts').is_file():
+        print('Cannot queue wanted pages: bun or the wiki checkout is missing.', file=sys.stderr, flush=True)
+        return
+    payload = ''.join(json.dumps(e, ensure_ascii=False) + '\n' for e in entries)
+    result = subprocess.run([bun, 'src/cli.ts', 'want'], cwd=wiki, input=payload, capture_output=True, text=True, timeout=60)
+    print((result.stdout + result.stderr).strip() or f'wiki want exited {result.returncode}', flush=True)
 
 
 def public_steps(raw):
@@ -293,6 +337,8 @@ def export_db(source, destination, tables, sources=()):
                 if table == 'assets':
                     continue
                 available = {r[1] for r in src.execute(f'PRAGMA table_info({table})')}
+                if not available and any(table in optional for optional in OPTIONAL_TABLES.values()):
+                    continue
                 selection = ','.join(c if c in available else "'[]'" if c == 'styles' else 'NULL' if c == 'raw_html' else c for c in columns)
                 where = f' WHERE source IN ({",".join("?" for _ in sources)})' if sources else ''
                 rows = src.execute(f'SELECT {selection} FROM {table}' + where, sources)
@@ -335,7 +381,7 @@ def check_snapshot(dest, name):
         actual_tables = {name for kind, name in objects if kind == 'table'}
         expected = TABLES[name]
         legacy = name == 'scraped-wiki.sqlite' and actual_tables == {'pages'}
-        if actual_tables != set(expected) and not legacy:
+        if not (set(expected) - OPTIONAL_TABLES.get(name, set()) <= actual_tables <= set(expected)) and not legacy:
             raise ValueError('Unexpected tables')
         if any(kind != 'table' for kind, _ in objects):
             raise ValueError('Unexpected database objects')
@@ -351,6 +397,10 @@ def check_snapshot(dest, name):
             wrong = db.execute(f'SELECT 1 FROM pages WHERE source IS NULL OR source NOT IN ({",".join("?" for _ in allowed)}) LIMIT 1', allowed).fetchone()
             if wrong:
                 raise ValueError('Unexpected wiki collection')
+        if 'redirects' in actual_tables:
+            for row in db.execute('SELECT source,from_title,to_title FROM redirects'):
+                if row[0] not in ORIGINS or not all(isinstance(v, str) and 0 < len(v) <= 512 for v in row[1:]):
+                    raise ValueError('Invalid redirect')
         result = []
         if name == 'scraped-wiki.sqlite' and not legacy:
             seen = set()
@@ -485,6 +535,16 @@ def push(root, host, receiver):
                     archive.add(stage / name, arcname=name)
             payload.seek(0)
             subprocess.run(ssh + [command + ' receive'], stdin=payload, check=True, timeout=300)
+        try:
+            result = subprocess.run(ssh + [command + ' take-wanted'], capture_output=True, text=True, check=True, timeout=90)
+            if len(result.stdout) > MAX_WANTED * 2200:
+                raise ValueError('Wanted list limit')
+            wanted = json.loads(result.stdout)
+            if not isinstance(wanted, list):
+                raise ValueError('Invalid wanted list')
+            queue_wanted(root, wanted)
+        except (subprocess.SubprocessError, OSError, ValueError) as exc:
+            print(f'Could not queue wanted pages: {exc}', file=sys.stderr, flush=True)
 
 
 def main():
@@ -498,10 +558,14 @@ def main():
     receiver.add_argument('--target', type=Path, default=DEFAULT_TARGET)
     inventory_parser = sub.add_parser('inventory')
     inventory_parser.add_argument('--target', type=Path, default=DEFAULT_TARGET)
+    wanted_parser = sub.add_parser('take-wanted')
+    wanted_parser.add_argument('--wanted', type=Path, default=DEFAULT_WANTED)
     args = parser.parse_args()
     os.umask(0o077)
     if args.command == 'push':
         push(args.root.expanduser().resolve(), args.host, args.receiver)
+    elif args.command == 'take-wanted':
+        print(json.dumps(take_wanted(args.wanted.expanduser().absolute()), ensure_ascii=False))
     elif args.command == 'inventory':
         print(json.dumps(inventory(args.target.expanduser().absolute())))
     else:

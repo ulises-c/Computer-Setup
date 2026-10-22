@@ -17,6 +17,8 @@ services:
       - 0.0.0.0
       - --root
       - /data
+      - --wanted
+      - /wanted/wanted.sqlite
       - --game-url
       - "https://${PORTAL_GAME_DOMAIN:?Run portal/install.sh}:9445"
       - --homepage-url
@@ -35,6 +37,13 @@ services:
         source: ${PORTAL_DATA_DIR:?Run portal/install.sh}
         target: /data
         read_only: true
+        bind:
+          create_host_path: false
+      # The only writable mount: requested pages/images, taken by the source-side sync.
+      - type: bind
+        source: ${PORTAL_WANTED_DIR:?Run portal/install.sh}
+        target: /wanted
+        read_only: false
         bind:
           create_host_path: false
     read_only: true

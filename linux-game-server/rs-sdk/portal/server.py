@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Read-only RS-SDK companion portal, independent of the bot/wiki checkouts."""
 import argparse
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -12,8 +12,9 @@ from pathlib import Path
 import re
 import sqlite3
 import stat
+import time
 from typing import cast
-from urllib.parse import parse_qs, quote, urlencode, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
 
 BASE = '/rs-sdk'
 STYLE = Path(__file__).with_name('theme.css').read_text()
@@ -109,6 +110,13 @@ def render_article(text, title, source):
     return '<article class="wiki-content">' + ''.join(body) + '</article>'
 
 
+def article_href(collection, row):
+    if collection == 'scraped' and row['source'] in ('osrs', 'rs3'):
+        import original
+        return original.page_href(row['source'], row['title'])
+    return f'{BASE}/wiki/{collection}/article?id={row["id"]}'
+
+
 def search_form(path, query, label=None):
     return f'<form action="{BASE}/{path}"><input type="search" name="q" aria-label="Search {esc(label or path)}" placeholder="Search {esc(label or path)}…" value="{esc(query)}"><button>Search</button></form>'
 
@@ -122,11 +130,77 @@ def pager(path, query, page, total):
     return '<div class="pager">' + ''.join(links) + '</div>'
 
 
+UPSTREAM = {'osrs': 'oldschool.runescape.wiki', 'rs3': 'runescape.wiki'}
+WANTED_LIMIT = 5000
+
+
+class Redirect(Exception):
+    def __init__(self, location):
+        super().__init__(location)
+        self.location = location
+
+
+class Wanted:
+    """The portal's only writable state: pages and images someone asked for that
+    aren't cached. The source-side sync takes them and queues them in the wiki."""
+    def __init__(self, path):
+        self.path = path
+
+    def record(self, source, kind, key):
+        if self.path is None or source not in UPSTREAM or kind not in ('page', 'image'):
+            return False
+        try:
+            with closing(sqlite3.connect(self.path, timeout=0.25)) as db, db:
+                db.execute('CREATE TABLE IF NOT EXISTS wanted (source TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL, requested_at INTEGER NOT NULL, PRIMARY KEY (source, kind, key))')
+                if db.execute('SELECT count(*) FROM wanted').fetchone()[0] >= WANTED_LIMIT:
+                    return False
+                db.execute('INSERT OR IGNORE INTO wanted VALUES (?,?,?,?)', (source, kind, key, int(time.time() * 1000)))
+            return True
+        except (OSError, sqlite3.Error):
+            return False
+
+
+def split_route(path, prefix):
+    """(source, decoded rest) of /prefix/<source>/<rest>, or None."""
+    if not path.startswith(prefix):
+        return None
+    source, _, rest = path[len(prefix):].partition('/')
+    if source not in UPSTREAM or not rest:
+        return None
+    return source, unquote(rest)
+
+
 class Portal:
-    def __init__(self, root, game_url, homepage_url):
+    def __init__(self, root, game_url, homepage_url, wanted=None):
         self.root = root
         self.game_url = game_url.rstrip('/')
         self.homepage_url = homepage_url.rstrip('/')
+        self.wanted = Wanted(wanted)
+
+    def scraped_image(self, source, rest):
+        """Bytes and MIME of a cached upstream image, or None (recorded as wanted)."""
+        import original
+        path = original.image_path(rest)
+        if path is None:
+            raise ValueError('Invalid image path')
+        with read_db(self.root / 'scraped-wiki.sqlite') as db:
+            row = db.execute('SELECT sha256,mime,size FROM assets WHERE source=? AND url=? AND mime LIKE \'image/%\'', (source, '/images/' + path)).fetchone()
+        if row is None:
+            self.wanted.record(source, 'image', path)
+            return None
+        return self.asset(row['sha256'], row)
+
+    def known_titles(self, db):
+        pages = {(r['source'], r['title']) for r in db.execute('SELECT source,title FROM pages')}
+        if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='redirects'").fetchone():
+            pages |= {(r['source'], r['from_title']) for r in db.execute('SELECT source,from_title,to_title FROM redirects') if (r['source'], r['to_title']) in pages}
+        return pages
+
+    def find_page(self, db, source, title):
+        row = db.execute('SELECT id,title FROM pages WHERE source=? AND title=?', (source, title)).fetchone()
+        if row is None and db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='redirects'").fetchone():
+            row = db.execute('SELECT p.id,p.title FROM redirects r JOIN pages p ON p.source=r.source AND p.title=r.to_title WHERE r.source=? AND r.from_title=?', (source, title)).fetchone()
+        return row
 
     def asset(self, digest, metadata=None):
         if not re.fullmatch(r'[0-9a-f]{64}', digest):
@@ -160,7 +234,7 @@ class Portal:
             row = db.execute('SELECT source,raw_html,styles FROM pages WHERE id=? AND source IN (\'osrs\',\'rs3\')', (article_id,)).fetchone()
             if row is None or not row['raw_html']:
                 return None
-            pages = {(r['source'], r['title']): r['id'] for r in db.execute('SELECT source,title,id FROM pages')}
+            pages = self.known_titles(db)
             assets = {(r['source'], r['url']): dict(r) for r in db.execute('SELECT source,url,sha256,mime,size FROM assets')}
         by_hash = {r['sha256']: r for r in assets.values()}
         return original.document(row['raw_html'], row['styles'], row['source'], pages, assets,
@@ -179,6 +253,8 @@ class Portal:
                 freshness = ' · stale: workstation sync may be offline' if (datetime.now(timezone.utc) - stamp).total_seconds() > 600 else ''
                 body = body.replace('<footer>', f'<footer>Snapshot exported {stamp:%Y-%m-%d %H:%M:%S %Z}{freshness}<br>')
             return status, body
+        except Redirect as redirect:
+            return 302, redirect.location
         except ValueError:
             return 400, layout('Invalid request', '<h1>Invalid request</h1><p>Use a positive page number.</p>')
         except sqlite3.Error:
@@ -274,32 +350,70 @@ class Portal:
                     ORDER BY title,source,id
                     LIMIT 50 OFFSET ?''', (q, q, (page-1)*50)).fetchall()
             body = f'<h1>{title}</h1><p class="note">{description}</p><p>{total} matching cached pages in this database. Browsing never fetches or refreshes upstream pages.</p>' + search_form('wiki/' + collection, q, title)
-            body += ''.join(f'<article><span class="eyebrow">{esc(r["source"])}</span><h2><a href="{BASE}/wiki/{collection}/article?id={r["id"]}">{esc(r["title"])}</a></h2><p>{esc(r["snippet"])}</p></article>' for r in rows)
+            body += ''.join(f'<article><span class="eyebrow">{esc(r["source"])}</span><h2><a href="{esc(article_href(collection, r))}">{esc(r["title"])}</a></h2><p>{esc(r["snippet"])}</p></article>' for r in rows)
             return 200, layout(title, body + pager('wiki/' + collection, q, page, total), wiki=True)
-        if wiki and wiki_path == collection + '/article':
-            title, filename, _ = wiki
-            article_id = int(params.get('id', ['0'])[0])
-            with read_db(self.root / filename) as db:
-                columns = {r[1] for r in db.execute('PRAGMA table_info(pages)')}
-                raw = 'raw_html' if collection == 'scraped' and 'raw_html' in columns else 'NULL AS raw_html'
-                row = db.execute(f'SELECT source,title,text,fetched_at,revid,{raw} FROM pages WHERE id=?', (article_id,)).fetchone()
-            if row is None:
+        route = split_route(path, BASE + '/wiki/scraped/w/')
+        if route:
+            import original
+            source, raw = route
+            title = original.normalize_title(raw)
+            if title is None:
+                raise ValueError('title')
+            with read_db(self.root / 'scraped-wiki.sqlite') as db:
+                row = self.find_page(db, source, title)
+            if row is not None and row['title'].replace(' ', '_') != raw:
+                view = params.get('view', [''])[0]
+                raise Redirect(original.page_href(source, row['title']) + ('?view=clean' if view == 'clean' else ''))
+            if row is not None:
+                return self.article('scraped', row['id'], params)
+            return 404, self.not_scraped(source, title)
+        if wiki and wiki_path == collection + '/article' and collection == 'scraped':
+            import original
+            with read_db(self.root / 'scraped-wiki.sqlite') as db:
+                row = db.execute('SELECT source,title FROM pages WHERE id=?', (int(params.get('id', ['0'])[0]),)).fetchone()
+            if row is None or row['source'] not in UPSTREAM:
                 return 404, layout('Article not found', '<h1>Article not found</h1>', wiki=True)
-            body = f'<a href="{BASE}/wiki/{collection}">← {title}</a><h1>{esc(row["title"])}</h1><p>{title} · source: {esc(row["source"])} · revision {esc(row["revid"])}</p>'
-            if row['source'] in ('osrs', 'rs3'):
-                domain = 'oldschool.runescape.wiki' if row['source'] == 'osrs' else 'runescape.wiki'
-                url = f'https://{domain}/w/{quote(row["title"].replace(" ", "_"), safe="")}'
-                body += f'<p>Content from <a href="{esc(url)}" rel="noreferrer">{esc(domain)} · upstream article</a>, CC BY-NC-SA 3.0. Cached for personal use; only already-cached assets are available.</p>'
-            else:
-                body += '<p>RS-SDK local knowledge · generated for this server. External wiki advice may describe later game versions.</p>'
-            if collection == 'scraped' and row['raw_html']:
-                article_url = f'{BASE}/wiki/scraped/article?id={article_id}'
-                body += f'<p class="view-choice"><a href="{article_url}">Original view</a> · <a href="{article_url}&amp;view=clean">Clean view</a></p>'
-                if params.get('view', ['original'])[0] != 'clean':
-                    body += f'<iframe title="Cached original article" class="original-article" sandbox="allow-top-navigation-by-user-activation" referrerpolicy="no-referrer" src="{BASE}/wiki/scraped/document?id={article_id}"></iframe>'
-                    return 200, layout(row['title'], body, wiki=True)
-            return 200, layout(row['title'], body + render_article(row['text'], row['title'], row['source']), wiki=True)
+            raise Redirect(original.page_href(row['source'], row['title']) + ('?view=clean' if params.get('view', [''])[0] == 'clean' else ''))
+        if wiki and wiki_path == collection + '/article':
+            return self.article(collection, int(params.get('id', ['0'])[0]), params)
         return 404, layout('Not found', '<h1>Not found</h1><p>This page does not exist.</p>')
+
+    def not_scraped(self, source, title):
+        import original
+        url = f'https://{UPSTREAM[source]}/w/{quote(title.replace(" ", "_"), safe="/:(),")}'
+        body = f'<a href="{BASE}/wiki/scraped">← Scraped Wiki</a><h1>{esc(title)}</h1><p>This {esc(source)} page hasn’t been scraped yet.</p>'
+        if original.fetchable_title(title) and self.wanted.record(source, 'page', title):
+            body += '<p>It has been requested: the workstation fetches it with its images within a few minutes while online (sync every two minutes, then at most five wiki requests a minute). Reload this page later.</p>'
+        elif original.fetchable_title(title):
+            body += '<p>Requests can’t be recorded right now; try again later.</p>'
+        else:
+            body += '<p>This kind of page (not an article) isn’t fetched on request.</p>'
+        body += f'<p>Original: <a href="{esc(url)}" rel="noreferrer">{esc(url)}</a></p>'
+        return layout(title, body, wiki=True)
+
+    def article(self, collection, article_id, params):
+        title, filename, _ = WIKIS[collection]
+        with read_db(self.root / filename) as db:
+            columns = {r[1] for r in db.execute('PRAGMA table_info(pages)')}
+            raw = 'raw_html' if collection == 'scraped' and 'raw_html' in columns else 'NULL AS raw_html'
+            row = db.execute(f'SELECT source,title,text,fetched_at,revid,{raw} FROM pages WHERE id=?', (article_id,)).fetchone()
+        if row is None:
+            return 404, layout('Article not found', '<h1>Article not found</h1>', wiki=True)
+        body = f'<a href="{BASE}/wiki/{collection}">← {title}</a><h1>{esc(row["title"])}</h1><p>{title} · source: {esc(row["source"])} · revision {esc(row["revid"])}</p>'
+        if row['source'] in ('osrs', 'rs3'):
+            domain = 'oldschool.runescape.wiki' if row['source'] == 'osrs' else 'runescape.wiki'
+            url = f'https://{domain}/w/{quote(row["title"].replace(" ", "_"), safe="")}'
+            body += f'<p>Content from <a href="{esc(url)}" rel="noreferrer">{esc(domain)} · upstream article</a>, CC BY-NC-SA 3.0. Cached for personal use; uncached pages and images are requested from the workstation when opened.</p>'
+        else:
+            body += '<p>RS-SDK local knowledge · generated for this server. External wiki advice may describe later game versions.</p>'
+        if collection == 'scraped' and row['raw_html']:
+            import original
+            article_url = esc(original.page_href(row['source'], row['title']))
+            body += f'<p class="view-choice"><a href="{article_url}">Original view</a> · <a href="{article_url}?view=clean">Clean view</a></p>'
+            if params.get('view', ['original'])[0] != 'clean':
+                body += f'<iframe title="Cached original article" class="original-article" sandbox="allow-top-navigation-by-user-activation" referrerpolicy="no-referrer" src="{BASE}/wiki/scraped/document?id={article_id}"></iframe>'
+                return 200, layout(row['title'], body, wiki=True)
+        return 200, layout(row['title'], body + render_article(row['text'], row['title'], row['source']), wiki=True)
 
 
 class PortalHTTPServer(ThreadingHTTPServer):
@@ -331,11 +445,32 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
             return
-        if path == BASE + '/wiki/scraped/missing.svg':
+        image_route = split_route(path, BASE + '/wiki/scraped/images/')
+        if path.startswith(BASE + '/wiki/scraped/images/'):
+            try:
+                found = portal.scraped_image(*image_route) if image_route else None
+                if found is None and image_route is None:
+                    raise ValueError('Invalid image route')
+            except (OSError, ValueError, sqlite3.Error):
+                self.send_error(404)
+                return
+            if found is not None:
+                data, mime = found
+                self.send_response(200)
+                self.send_header('Content-Type', mime)
+                self.send_header('Content-Length', str(len(data)))
+                self.send_header('Cache-Control', 'private, max-age=300')
+                self.send_header('X-Content-Type-Options', 'nosniff')
+                self.send_header('Content-Security-Policy', "default-src 'none'; sandbox")
+                self.end_headers()
+                self.wfile.write(data)
+                return
+        if path == BASE + '/wiki/scraped/missing.svg' or path.startswith(BASE + '/wiki/scraped/images/'):
             data = b'<svg xmlns="http://www.w3.org/2000/svg" width="120" height="48" viewBox="0 0 120 48"><rect width="120" height="48" fill="#e8dfcc"/><text x="8" y="28" font-size="12" fill="#554426">Not cached</text></svg>'
             self.send_response(200)
             self.send_header('Content-Type', 'image/svg+xml')
             self.send_header('Content-Length', str(len(data)))
+            self.send_header('Cache-Control', 'no-store')
             self.send_header('Content-Security-Policy', "default-src 'none'; sandbox")
             self.send_header('X-Content-Type-Options', 'nosniff')
             self.end_headers()
@@ -375,6 +510,13 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(data)
             return
         status, body = cast(PortalHTTPServer, self.server).portal.render(path, parse_qs(url.query))
+        if status == 302:
+            self.send_response(302)
+            self.send_header('Location', body)
+            self.send_header('Content-Length', '0')
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            return
         data = body.encode('utf-8')
         self.send_response(status)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
@@ -382,7 +524,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Referrer-Policy', 'no-referrer')
-        frame_policy = "; frame-src 'self'" if path == BASE + '/wiki/scraped/article' else ''
+        frame_policy = "; frame-src 'self'" if path == BASE + '/wiki/scraped/article' or path.startswith(BASE + '/wiki/scraped/w/') else ''
         self.send_header('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" + frame_policy)
         self.end_headers()
         self.wfile.write(data)
@@ -398,9 +540,11 @@ def main():
     parser.add_argument('--homepage-url', required=True)
     parser.add_argument('--port', type=int, default=8098)
     parser.add_argument('--host', default='127.0.0.1')
+    parser.add_argument('--wanted', type=Path, help='Writable SQLite file for requested pages and images (omit to record nothing)')
     args = parser.parse_args()
     server = PortalHTTPServer((args.host, args.port), Handler)
-    server.portal = Portal(args.root.expanduser().resolve(), args.game_url, args.homepage_url)
+    server.portal = Portal(args.root.expanduser().resolve(), args.game_url, args.homepage_url,
+                           args.wanted.expanduser() if args.wanted else None)
     server.serve_forever()
 
 
