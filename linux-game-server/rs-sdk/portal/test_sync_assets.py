@@ -126,6 +126,22 @@ class SyncAssetTests(unittest.TestCase):
             self.assertIn(blob, transfers[0])
             self.assertNotIn(blob, transfers[1])
             self.assertEqual(set(transfers[1]), set(sync.TABLES))
+            legacy = []
+            def old_receiver(command, **kwargs):
+                if command[-1].endswith(' take-wanted'):
+                    raise subprocess.CalledProcessError(2, command)
+                if command[-1].endswith(' receive'):
+                    payload = kwargs['stdin'].read()
+                    with tarfile.open(fileobj=io.BytesIO(payload), mode='r:gz') as archive:
+                        (root / 'old').mkdir(exist_ok=True)
+                        (root / 'old/scraped-wiki.sqlite').write_bytes(archive.extractfile('scraped-wiki.sqlite').read())
+                    with closing(sqlite3.connect(root / 'old/scraped-wiki.sqlite')) as db:
+                        legacy.extend(r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'"))
+                    return subprocess.CompletedProcess(command, 0)
+                return ssh(command, **kwargs)
+            with patch.object(sync.subprocess, 'run', side_effect=old_receiver):
+                sync.push(root, 'game.example', 'portal/sync.py')
+            self.assertEqual(sorted(legacy), ['assets', 'pages'])
 
     def test_interrupted_compression_preserves_previous_snapshots(self):
         with tempfile.TemporaryDirectory() as tmp:

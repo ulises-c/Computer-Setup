@@ -524,6 +524,23 @@ def push(root, host, receiver):
         if not isinstance(have, list) or len(have) > MAX_ENTRIES or any(not valid_hash(value) for value in have):
             raise ValueError('Invalid remote inventory')
         have = set(have)
+        wanted = []
+        try:
+            result = subprocess.run(ssh + [command + ' take-wanted'], capture_output=True, text=True, check=True, timeout=90)
+            if len(result.stdout) > MAX_WANTED * 2200:
+                raise ValueError('Wanted list limit')
+            wanted = json.loads(result.stdout)
+            if not isinstance(wanted, list):
+                raise ValueError('Invalid wanted list')
+        except subprocess.CalledProcessError:
+            # A receiver without take-wanted predates redirects too: send what it accepts.
+            for name, optional in OPTIONAL_TABLES.items():
+                with closing(sqlite3.connect(stage / name)) as db:
+                    for table in optional:
+                        db.execute(f'DROP TABLE IF EXISTS {table}')
+                    db.commit()
+        except (subprocess.SubprocessError, OSError, ValueError) as exc:
+            print(f'Could not take wanted pages: {exc}', file=sys.stderr, flush=True)
         with tempfile.TemporaryFile() as payload:
             with tarfile.open(fileobj=payload, mode='w:gz') as archive:
                 assets = stage / 'assets'
@@ -536,14 +553,8 @@ def push(root, host, receiver):
             payload.seek(0)
             subprocess.run(ssh + [command + ' receive'], stdin=payload, check=True, timeout=300)
         try:
-            result = subprocess.run(ssh + [command + ' take-wanted'], capture_output=True, text=True, check=True, timeout=90)
-            if len(result.stdout) > MAX_WANTED * 2200:
-                raise ValueError('Wanted list limit')
-            wanted = json.loads(result.stdout)
-            if not isinstance(wanted, list):
-                raise ValueError('Invalid wanted list')
             queue_wanted(root, wanted)
-        except (subprocess.SubprocessError, OSError, ValueError) as exc:
+        except (subprocess.SubprocessError, OSError) as exc:
             print(f'Could not queue wanted pages: {exc}', file=sys.stderr, flush=True)
 
 
