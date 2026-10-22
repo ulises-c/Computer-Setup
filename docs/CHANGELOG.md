@@ -23,6 +23,14 @@ in [UNIFICATION.md](UNIFICATION.md).
   The source scraper cache remains unchanged. Live account
   presence/world/server lookup is tracked in TODO, not inferred from lifecycle
   status. See `linux-game-server/rs-sdk/portal/README.md`.
+- Scraped Wiki articles gain an **original view** (clean text view kept): the
+  cached article HTML with its cached stylesheets and images, sanitized with
+  nh3/tinycss2, rewritten to local assets only and shown in a script-free
+  sandboxed frame under its own CSP. Missing images are placeholders; nothing is
+  fetched. The source-Mac sync sends cached rasters/CSS as content-addressed,
+  validated blobs and only those the server lacks. The portal is now built as a
+  small local image with two pinned dependencies. CSS fidelity is deliberately
+  conservative and script-driven page parts do not work.
 - Live nightly game backups include CRC-checked 2004Scape player-save copies.
   Restore verification requires explicit state coverage and compares Lost City's
   staged SQLite database against a private copy of stopped live data, including

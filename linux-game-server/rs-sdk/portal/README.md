@@ -30,12 +30,37 @@ is committed, and browsers do not contact an external asset CDN.
 
 The wiki uses an **OSRS/MediaWiki-inspired reader**, not a full MediaWiki
 installation: light parchment article pages, a sidebar, section contents,
-anchored headings, lists, tables and an initial infobox where the cached text
-has one. It remains the same small Python service: no PHP runtime, extra
-database service, extensions, editor or background worker. Only the cache's
-escaped readable text is formatted; upstream HTML and scripts never run.
-Images, templates, original hyperlink targets and other structure not preserved
-in the cache's readable text are not reconstructed.
+anchored headings, lists, tables and an initial infobox. It remains one small
+Python service: no PHP runtime, extra database service, extensions, editor or
+background worker.
+
+### Original and clean views (Scraped Wiki only)
+
+When the cache holds a page's original article HTML, Scraped Wiki articles open
+in an **original view**: the site's own article markup, its cached stylesheets
+and its cached images, with a **Clean view** link to the readable-text reader.
+Pages cached before the source stored original HTML, and the RS-SDK Wiki, show
+only the clean view.
+
+- The original is **untrusted**. `original.py` sanitizes it with nh3, parses
+  CSS with tinycss2 and serves it from `/wiki/scraped/document` inside a frame
+  whose sandbox allows no scripts, no same-origin access and no forms, under its
+  own CSP (`default-src 'none'`, `img-src 'self'`, no form actions). Portal
+  pages gain only `frame-src 'self'`, and only on the article route.
+- Scripts, forms, SVG, media, frames, event handlers, `@import`, `@font-face`,
+  custom properties and every CSS property outside a small allowlist are
+  dropped. Only `@media` rules survive. Every `src`, `srcset` and CSS `url()` /
+  `image-set()` is rewritten to a cached raster served by content hash, or to a
+  placeholder. Rendering makes no upstream request.
+- Links to cached articles stay in the portal; uncached titles become a
+  Scraped Wiki search. Other links are plain external links that open nothing
+  until clicked (the sandbox blocks new windows, so they need a copy-paste).
+- Cached assets are only PNG, JPEG, GIF and WebP images and CSS, up to 8 MiB
+  per image and 2 MiB per stylesheet. Anything missing is a placeholder: the
+  portal never downloads it. Interactive parts the site builds with scripts
+  (price charts, maps, calculators, infobox version switching) do not work.
+- Fidelity is deliberately conservative: because of the CSS allowlist, pages
+  look close to, not identical to, the live wiki.
 
 Account state is explicitly lifecycle metadata, not live presence. Current
 online state and world/server are tracked as a follow-up in `docs/TODO.md`.
@@ -47,8 +72,9 @@ The web service runs in its own non-root, read-only container, published only on
 There is no Funnel, additional tailnet node, or wildcard host listener. Anyone
 permitted to reach that tailnet service can view its data; there is no separate
 portal login. The viewer accepts no writes or SQL and serves no raw database
-files, scripts or upstream wiki HTML. Wiki articles use escaped readable text.
-It never fetches upstream pages, starts bots or restarts either game.
+files or scripts. Clean articles use escaped readable text; original articles
+are sanitized and sandboxed as described above. It never fetches upstream pages
+or assets, starts bots or restarts either game.
 
 The authoritative bot account/benchmark and wiki databases remain on the source
 Mac under `~/forgejo/2004Scape-Botting/data/` and
@@ -71,7 +97,18 @@ do not put secrets in these displayed fields. Snapshots are streamed over SSH,
 validated as a complete set, and individually atomically replaced under
 `~/.local/share/rs-sdk-portal/data/` (directory 700, files 600). They are disposable
 views, not backups, and do not need restic coverage. Separate databases need not
-represent precisely the same instant. Existing readers finish on the old inode.
+represent precisely the same instant, and a crash between file replacements can
+leave a mixed set until the next sync. Existing readers finish on the old inode.
+
+Original HTML and stylesheet references travel in `scraped-wiki.sqlite`
+(`pages.raw_html`, `pages.styles`) with an `assets` manifest (source, URL,
+SHA-256, MIME, size). The blobs themselves live in `assets/<sha256>` beside the
+snapshots. The sender asks the receiver which hashes it holds and sends only
+missing blobs, so the growing image cache is not recopied every two minutes. The
+sender reads the wiki cache's files without following symlinks, accepts only
+structurally valid rasters and CSS within size limits and skips files that are
+incomplete or still downloading; the receiver re-verifies every hash, MIME and
+size, holds a lock for the whole receive, and installs blobs before snapshots.
 
 Sync publishes four files: `accounts.sqlite`, `benchmarks.sqlite`,
 `rs-sdk-wiki.sqlite` and `scraped-wiki.sqlite`. The two wiki files are physically
@@ -101,8 +138,9 @@ bash linux-game-server/rs-sdk/portal/install.sh
 This creates only the portal's private `.env` and snapshot directory, recreates its
 separate Compose project, checks its loopback page and adds only the `/rs-sdk`
 Serve route. It requires Docker/Compose, Python 3, and Tailscale operator access.
-It reloads portal code/styles without touching either game or the full server
-installer. The game web server must be reachable for the first artwork fetch. The existing
+It builds a small local image with the portal's two pinned dependencies (nh3,
+tinycss2) and recreates only the portal container, without touching either game
+or the full server installer. The game web server must be reachable for the first artwork fetch. The existing
 host timezone file is reused, generating it only when absent. Watchtower is
 disabled for this container. To update Python, recreate this portal deliberately.
 The Serve route is also recorded in `linux-game-server/serve.conf` for subsequent
