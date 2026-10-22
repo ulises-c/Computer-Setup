@@ -122,7 +122,9 @@ jobs:
           python3 scripts/check-privacy.py --range "$BASE..HEAD"
 
       - name: Test the privacy check
-        run: python3 -m unittest -v scripts/test_check_privacy.py
+        run: |
+          python3 -m unittest -v scripts/test_check_privacy.py scripts/test_privacy_audit.py
+          python3 -m unittest discover -v -s macos-server/privacy-audit -p 'test_setup.py'
 
   dryrun-smoke:
     runs-on: ubuntu-latest
