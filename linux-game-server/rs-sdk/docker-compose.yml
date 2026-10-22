@@ -7,6 +7,9 @@ services:
     network_mode: none
     entrypoint: ["/bin/true"]
     restart: "no"
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
 
   rs-sdk:
     build:
@@ -23,6 +26,9 @@ services:
       # Locally built image: there is nothing to pull, and a restart must go
       # through the 2004Scape update job so players get the countdown.
       - com.centurylinklabs.watchtower.enable=false
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     environment:
       BUG_REPORTS_FILE: /opt/server/data/bug-reports.jsonl
       GE_DATABASE: /opt/server/data/market.sqlite

@@ -15,6 +15,9 @@ services:
       # Locally built image: there is nothing to pull, and a restart must go
       # through the 2004Scape update job so players get the countdown.
       - com.centurylinklabs.watchtower.enable=false
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     environment:
       NODE_ENV: production
       # `bun install` (run on every start) would let husky rewrite .git/config.
@@ -76,6 +79,9 @@ services:
     user: "1000:1000"
     working_dir: /opt/server
     command: ["/bin/bash", "/usr/local/bin/lostcity-bootstrap"]
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
     environment:
       LOSTCITY_REVISION: ${LOSTCITY_REVISION:-254}
     stdin_open: true
