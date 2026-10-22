@@ -16,11 +16,11 @@ class HomepageCardTests(unittest.TestCase):
         self.lostcity = card(self.services, '"Lost City: 2004Scape"')
         self.rs_sdk = card(self.services, '"RS-SDK: bot server"')
 
-    def test_both_stacks_link_their_tailnet_clients(self):
+    def test_both_stacks_link_their_tailnet_entrypoints(self):
         self.assertIn("id: lostcity-server", self.lostcity)
         self.assertIn(":9444/rs2.cgi", self.lostcity)
         self.assertIn("id: rs-sdk-server", self.rs_sdk)
-        self.assertIn(":9445/", self.rs_sdk)
+        self.assertIn("href: https://{{HOMEPAGE_VAR_GAME_HOMEPAGE_DOMAIN}}/rs-sdk/\n", self.rs_sdk)
 
     def test_cards_read_the_loopback_status_producer(self):
         for text, stack in ((self.lostcity, "lostcity"), (self.rs_sdk, "rs-sdk")):
