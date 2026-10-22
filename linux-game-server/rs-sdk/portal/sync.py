@@ -573,7 +573,7 @@ def main():
     sender = sub.add_parser('push')
     sender.add_argument('--root', type=Path, default=Path.home() / 'forgejo')
     sender.add_argument('--host', required=True, help='Existing SSH alias for the game server')
-    sender.add_argument('--curated', action='store_true', help='Build and publish the fifth, generated 2004Scape collection (upgrade receiver first)')
+    sender.add_argument('--curated', action=argparse.BooleanOptionalAction, help='Build and publish the fifth, generated 2004Scape collection (upgrade receiver first)')
     sender.add_argument('--receiver', default='github/Computer-Setup/linux-game-server/rs-sdk/portal/sync.py')
     receiver = sub.add_parser('receive')
     receiver.add_argument('--target', type=Path, default=DEFAULT_TARGET)

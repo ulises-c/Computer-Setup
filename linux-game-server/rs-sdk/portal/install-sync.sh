@@ -3,9 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SSH_HOST="${1:?usage: install-sync.sh <game-server-ssh-alias> [--curated]}"
-CURATED_ARG=''
+CURATED_ARG='--no-curated'
 if [[ ${2:-} == --curated ]]; then
-  CURATED_ARG='<string>--curated</string>'
+  CURATED_ARG='--curated'
 elif [[ $# -gt 1 ]]; then
   printf 'error: expected --curated (upgrade receiver first)\n' >&2
   exit 1
