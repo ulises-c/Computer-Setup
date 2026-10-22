@@ -15,6 +15,8 @@ import unittest
 from unittest.mock import patch
 
 import sync
+from test_policy import fresh_policy
+from datetime import datetime, timezone
 
 
 ACCOUNTS = {'accounts.sqlite', 'benchmarks.sqlite'}
@@ -46,7 +48,7 @@ class SplitSyncTests(unittest.TestCase):
         payload.seek(0)
         return payload
 
-    def wiki(self):
+    def wiki(self, as_of=None):
         wiki = self.root / 'authoritative-wiki'
         (wiki / 'data').mkdir(parents=True)
         with closing(sqlite3.connect(wiki / 'data/wiki.sqlite')) as db, db:
@@ -61,6 +63,25 @@ class SplitSyncTests(unittest.TestCase):
             db.execute('CREATE TABLE assets (source,url,file,bytes)')
             db.execute('INSERT INTO assets VALUES (?,?,?,?)',
                        ('osrs', 'https://oldschool.runescape.wiki/load.php', 'osrs/main.css', len(css)))
+        (wiki / 'bin').mkdir()
+        projection = {'policy': fresh_policy(), 'pages': [
+            {'id': index, 'source': source, 'title': 'Tree', 'text': 'public text',
+             'html': '<p>public text</p>', 'wikitext': '# Tree', 'categories': '[]',
+             'fetched_at': 0, 'revid': 1, 'raw_html': None, 'styles': '[]'}
+            for index, source in enumerate(('rs-sdk', 'osrs', 'rs3', '2004scape'))]}
+        if as_of is not None:
+            projection['policy'].update(mode='override', asOf=as_of, effectiveDate=as_of)
+        (wiki / 'visible.json').write_text(json.dumps(projection))
+        command = wiki / 'bin/wiki'
+        command.write_text('#!' + sys.executable + '\n'
+                           'import json, pathlib, sys\n'
+                           'with pathlib.Path("calls.jsonl").open("a") as out:\n'
+                           '    out.write(json.dumps([sys.argv[1:], sys.stdin.read() if sys.argv[1] == "want" else ""]) + "\\n")\n'
+                           'if sys.argv[1] == "export-visible":\n'
+                           '    print(pathlib.Path("visible.json").read_text())\n')
+        command.chmod(0o700)
+        with closing(sqlite3.connect(wiki / 'data/wiki.sqlite')) as db, db:
+            db.execute("UPDATE pages SET text='MODERN_RAW_SECRET'")
         return wiki, css
 
     def test_asset_projection_releases_source_database_before_blob_io(self):
@@ -73,7 +94,199 @@ class SplitSyncTests(unittest.TestCase):
             return original(*args)
 
         with patch.object(sync, 'cached_bytes', side_effect=read_while_writer_runs):
-            sync.publish_wiki(wiki, self.target)
+            sync.export_assets(wiki, self.stage / 'scraped-wiki.sqlite', self.stage / 'assets')
+
+    def test_invalid_canonical_projection_never_replaces_snapshots(self):
+        wiki, _ = self.wiki()
+        sync.receive(self.archive(set(sync.TABLES)), self.target)
+        before = {name: (self.target / name).read_bytes() for name in sync.TABLES}
+        good = json.loads((wiki / 'visible.json').read_text())
+        invalid = [None, [], {}, {'policy': None, 'pages': []}, {'policy': {}, 'pages': {}},
+                   dict(good, pages=[None]), dict(good, pages=[{}])]
+        for key, value in [('source', 'private'), ('source', []), ('id', True), ('id', -1),
+                           ('title', None), ('text', []), ('html', 1), ('wikitext', []),
+                           ('categories', {}), ('fetched_at', 'yesterday'), ('revid', False),
+                           ('raw_html', '<p>MODERN_RAW_SECRET</p>'), ('styles', '["secret.css"]')]:
+            page = dict(good['pages'][1], **{key: value})
+            invalid.append(dict(good, pages=[page]))
+        for key in good['pages'][1]:
+            page = dict(good['pages'][1])
+            del page[key]
+            invalid.append(dict(good, pages=[page]))
+        invalid.append(dict(good, pages=[good['pages'][0]] * 2))
+        for projection in invalid:
+            with self.subTest(projection=projection):
+                (wiki / 'visible.json').write_text(json.dumps(projection))
+                with self.assertRaises(ValueError):
+                    sync.publish_wiki(wiki, self.target, curated=True)
+                self.assertEqual(before, {name: (self.target / name).read_bytes() for name in sync.TABLES})
+                self.assertFalse((self.target / '.wiki-authority').exists())
+        (wiki / 'visible.json').write_text(json.dumps(good))
+        for limit in ('MAX_ENTRIES', 'MAX_SNAPSHOT'):
+            with self.subTest(limit=limit), patch.object(sync, limit, 1), self.assertRaisesRegex(ValueError, 'limit'):
+                sync.publish_wiki(wiki, self.target)
+
+    def test_publication_forwards_explicit_cutoff_to_canonical_command(self):
+        wiki, _ = self.wiki(as_of='2004-05-18')
+        cli = [sys.executable, str(Path(sync.__file__))]
+        result = subprocess.run(cli + ['publish-wiki', '--wiki-root', str(wiki), '--target', str(self.target),
+                                       '--as-of', '2004-05-18'], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = [json.loads(line)[0] for line in (wiki / 'calls.jsonl').read_text().splitlines()]
+        self.assertEqual(calls, [['export-visible', '--as-of', '2004-05-18']])
+        with patch.object(sys, 'argv', ['sync.py', 'push', '--host', 'game.example', '--as-of', '2004-05-18']), \
+                patch.object(sync, 'push') as push:
+            sync.main()
+        self.assertEqual(push.call_args.kwargs['as_of'], '2004-05-18')
+        with self.assertRaisesRegex(ValueError, 'Accounts-only'):
+            sync.push(self.root, 'game.example', 'sync.py', accounts_only=True, as_of='2004-05-18')
+        result = subprocess.run(cli + ['push', '--host', 'game.example', '--accounts-only', '--as-of', '2004-05-18'],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('--as-of', result.stderr)
+
+    def test_publication_rejects_unrequested_or_mismatched_override(self):
+        wiki, _ = self.wiki()
+        good = json.loads((wiki / 'visible.json').read_text())
+        sync.publish_wiki(wiki, self.target)
+        before = {name: (self.target / name).read_bytes() for name in WIKI - sync.OPTIONAL_SNAPSHOTS}
+        for requested, mode, cutoff in [(None, 'override', '2004-05-18'),
+                                         ('2004-05-18', 'automatic', None),
+                                         ('2004-05-19', 'override', '2004-05-18')]:
+            projection = dict(good, policy=dict(good['policy'], mode=mode, asOf=cutoff))
+            (wiki / 'visible.json').write_text(json.dumps(projection))
+            with self.subTest(requested=requested, mode=mode, cutoff=cutoff):
+                with self.assertRaisesRegex(ValueError, 'override'):
+                    sync.publish_wiki(wiki, self.target, as_of=requested)
+                self.assertEqual(before, {name: (self.target / name).read_bytes() for name in before})
+
+    def test_publication_embeds_policy_in_every_snapshot_and_expires_without_republish(self):
+        import server
+        wiki, _ = self.wiki()
+        policy = json.loads((wiki / 'visible.json').read_text())['policy']
+        sync.publish_wiki(wiki, self.target, curated=True)
+        portal = server.Portal(self.target, 'https://game.example', 'https://home.example')
+        expiry = datetime.fromisoformat(policy['expiresAt'].replace('Z', '+00:00')).timestamp()
+        before = {}
+        for collection, (_, name, _) in server.WIKIS.items():
+            with closing(sqlite3.connect(self.target / name)) as db:
+                self.assertEqual(json.loads(db.execute('SELECT policy FROM wiki_policy').fetchone()[0]), policy)
+            before[name] = (self.target / name).read_bytes()
+            with patch('time.time', return_value=expiry - 0.001):
+                self.assertEqual(portal.render('/rs-sdk/wiki/' + collection, {})[0], 200)
+            with patch('time.time', return_value=expiry):
+                self.assertEqual(portal.render('/rs-sdk/wiki/' + collection, {})[0], 503)
+                self.assertEqual(portal.render('/rs-sdk/wiki/' + collection + '/article', {'id': ['0']})[0], 503)
+        self.assertEqual(before, {name: (self.target / name).read_bytes() for name in before})
+        projection = json.loads((wiki / 'visible.json').read_text())
+        projection['policy'].update(effectiveDate=None, deployment=None, expiresAt=None, status='missing-or-invalid')
+        (wiki / 'visible.json').write_text(json.dumps(projection))
+        with self.assertRaises(ValueError):
+            sync.publish_wiki(wiki, self.target, curated=True)
+        self.assertEqual(before, {name: (self.target / name).read_bytes() for name in before})
+        with patch('time.time', return_value=expiry + 1):
+            for collection in server.WIKIS:
+                self.assertEqual(portal.render('/rs-sdk/wiki/' + collection, {})[0], 503)
+            projection['policy'] = fresh_policy(datetime.fromtimestamp(expiry + 1, timezone.utc))
+            (wiki / 'visible.json').write_text(json.dumps(projection))
+            sync.publish_wiki(wiki, self.target, curated=True)
+            for collection, (_, name, _) in server.WIKIS.items():
+                with closing(sqlite3.connect(self.target / name)) as db:
+                    self.assertEqual(json.loads(db.execute('SELECT policy FROM wiki_policy').fetchone()[0]), projection['policy'])
+                self.assertEqual(portal.render('/rs-sdk/wiki/' + collection, {})[0], 200)
+
+    def test_canonical_non_scraped_rows_need_no_original_fields(self):
+        wiki, _ = self.wiki()
+        projection = json.loads((wiki / 'visible.json').read_text())
+        for page in projection['pages']:
+            if page['source'] not in sync.ORIGINS:
+                del page['raw_html'], page['styles']
+        (wiki / 'visible.json').write_text(json.dumps(projection))
+        sync.publish_wiki(wiki, self.target, curated=True)
+        sync.check_snapshot(self.target / '2004scape-wiki.sqlite', '2004scape-wiki.sqlite')
+
+    def test_default_publication_invalidates_stale_optional_collection(self):
+        wiki, _ = self.wiki()
+        sync.receive(self.archive(set(sync.TABLES)), self.target)
+        with closing(sqlite3.connect(self.target / '2004scape-wiki.sqlite')) as db, db:
+            db.execute("INSERT INTO pages (id,source,title,text) VALUES (99,'2004scape','Future','MODERN_RAW_SECRET')")
+        sync.publish_wiki(wiki, self.target)
+        self.assertFalse((self.target / '2004scape-wiki.sqlite').exists())
+
+    def test_projected_snapshots_block_every_original_asset_surface(self):
+        import server
+        wiki, _ = self.wiki()
+        sync.receive(self.archive(set(sync.TABLES)), self.target)
+        old_assets = self.target / 'assets'
+        old_assets.mkdir()
+        secret = b'MODERN_RAW_SECRET'
+        digest = hashlib.sha256(secret).hexdigest()
+        (old_assets / digest).write_bytes(secret)
+        sync.publish_wiki(wiki, self.target, curated=True)
+        portal = server.Portal(self.target, 'https://game.example', 'https://home.example', self.root / 'wanted.sqlite')
+        for collection, source in [('rs-sdk', None), ('scraped', 'osrs'), ('scraped', 'rs3'), ('2004scape', None)]:
+            article = '/w/' + (source + '/' if source else '') + 'Tree'
+            article_params = {}
+            if collection == 'rs-sdk':
+                article, article_params = '/article', {'id': ['0']}
+            for suffix, params in [('', {}), (article, article_params), (article, dict(article_params, view=['clean']))]:
+                status, body = portal.render('/rs-sdk/wiki/' + collection + suffix, params)
+                self.assertEqual(status, 200)
+                self.assertNotIn('MODERN_RAW_SECRET', body)
+                self.assertNotIn('<iframe', body)
+        self.assertIsNone(portal.original_document(1))
+        self.assertIsNone(portal.original_document(2))
+        with self.assertRaisesRegex(ValueError, 'Missing asset'):
+            portal.asset(digest)
+        self.assertEqual((old_assets / digest).read_bytes(), secret)
+
+    def test_collection_descriptions_reference_deployment_policy_not_fixed_date(self):
+        import server
+        portal = server.Portal(self.root, 'https://game.example', 'https://home.example')
+        status, body = portal.render('/rs-sdk/wiki', {})
+        self.assertEqual(status, 200)
+        self.assertNotIn('late 2004', body)
+        self.assertIn('deployment policy', body)
+
+    def test_full_push_transports_only_canonical_visible_content(self):
+        wiki, _ = self.wiki(as_of='2004-05-18')
+        wiki = wiki.rename(self.root / '2004Scape-Wiki')
+        bot = self.root / '2004Scape-Botting/data'
+        bot.mkdir(parents=True)
+        for name in ACCOUNTS:
+            shutil.copyfile(self.stage / name, bot / name)
+        run = sync.subprocess.run
+        remote = []
+
+        def transport(command, **kwargs):
+            if command[0] != 'ssh':
+                return run(command, **kwargs)
+            remote.append(command[-1])
+            if command[-1].endswith(' inventory') or command[-1].endswith(' take-wanted'):
+                return subprocess.CompletedProcess(command, 0, stdout='[]')
+            payload = kwargs['stdin'].read()
+            with tarfile.open(fileobj=io.BytesIO(payload), mode='r:gz') as archive:
+                self.assertEqual(set(archive.getnames()), set(sync.TABLES))
+                for entry in archive:
+                    content = archive.extractfile(entry)
+                    assert content is not None
+                    self.assertNotIn(b'MODERN_RAW_SECRET', content.read())
+            sync.receive(io.BytesIO(payload), self.target)
+            return subprocess.CompletedProcess(command, 0)
+
+        with patch.object(sync.subprocess, 'run', side_effect=transport), \
+                patch.object(sync, 'export_assets', side_effect=AssertionError('raw cache read')):
+            sync.push(self.root, 'game.example', 'sync.py', curated=True, as_of='2004-05-18')
+        with closing(sqlite3.connect(self.target / 'scraped-wiki.sqlite')) as db:
+            self.assertEqual(db.execute('SELECT text,raw_html,styles FROM pages').fetchall(),
+                             [('public text', None, '[]')] * 2)
+        calls = [json.loads(line)[0] for line in (wiki / 'calls.jsonl').read_text().splitlines()]
+        self.assertEqual(calls, [['export-visible', '--as-of', '2004-05-18']])
+        (wiki / 'bin/wiki').unlink()
+        remote.clear()
+        with patch.object(sync.subprocess, 'run', side_effect=transport), self.assertRaises(OSError):
+            sync.push(self.root, 'game.example', 'sync.py')
+        self.assertEqual(remote, [])
 
     def test_wanted_consumer_does_not_block_portal_writers(self):
         wanted = self.root / 'wanted.sqlite'
@@ -107,13 +320,23 @@ class SplitSyncTests(unittest.TestCase):
         sync.receive(self.archive(set(sync.TABLES)), self.target)
         before = {name: (self.target / name).read_bytes() for name in ACCOUNTS}
         source_before = (wiki / 'data/wiki.sqlite').read_bytes()
-        sync.publish_wiki(wiki, self.target)
+        with patch.object(sync, 'export_assets', side_effect=AssertionError('raw cache read')):
+            sync.publish_wiki(wiki, self.target, curated=True)
         self.assertEqual(before, {name: (self.target / name).read_bytes() for name in ACCOUNTS})
-        for name in WIKI - {'2004scape-wiki.sqlite'}:
+        for name in WIKI:
             sync.check_snapshot(self.target / name, name)
+            self.assertNotIn(b'MODERN_RAW_SECRET', (self.target / name).read_bytes())
         with closing(sqlite3.connect(self.target / 'rs-sdk-wiki.sqlite')) as db:
-            self.assertEqual(db.execute('SELECT source FROM pages').fetchall(), [('rs-sdk',)])
-        self.assertEqual((self.target / 'assets' / hashlib.sha256(css).hexdigest()).read_bytes(), css)
+            self.assertEqual(db.execute('SELECT source,text FROM pages').fetchall(), [('rs-sdk', 'public text')])
+        with closing(sqlite3.connect(self.target / '2004scape-wiki.sqlite')) as db:
+            self.assertEqual(db.execute('SELECT text,brief FROM pages').fetchall(), [('# Tree', 'public text')])
+        with closing(sqlite3.connect(self.target / 'scraped-wiki.sqlite')) as db:
+            self.assertEqual(db.execute('SELECT text,raw_html,styles FROM pages').fetchall(),
+                             [('public text', None, '[]')] * 2)
+            self.assertEqual(db.execute('SELECT * FROM assets').fetchall(), [])
+            self.assertEqual(db.execute('SELECT * FROM redirects').fetchall(), [])
+        self.assertFalse((self.target / 'assets').exists())
+        self.assertEqual((wiki / 'assets/osrs/main.css').read_bytes(), css)
         self.assertEqual(source_before, (wiki / 'data/wiki.sqlite').read_bytes())
 
     def test_local_publication_omits_unsupported_cached_image_formats(self):
@@ -128,8 +351,9 @@ class SplitSyncTests(unittest.TestCase):
                            ('osrs', name, mime, len(data), hashlib.sha256(data).hexdigest(), 'ok'))
         sync.publish_wiki(wiki, self.target)
         with closing(sqlite3.connect(self.target / 'scraped-wiki.sqlite')) as db:
-            self.assertEqual(db.execute('SELECT mime FROM assets').fetchall(), [('text/css',)])
-        self.assertEqual({p.name for p in (self.target / 'assets').iterdir()}, {hashlib.sha256(css).hexdigest()})
+            self.assertEqual(db.execute('SELECT mime FROM assets').fetchall(), [])
+        self.assertFalse((self.target / 'assets').exists())
+        self.assertEqual((wiki / 'assets/osrs/main.css').read_bytes(), css)
 
     def test_local_publish_enables_authority_guard_against_legacy_push(self):
         wiki, _ = self.wiki()
@@ -142,16 +366,28 @@ class SplitSyncTests(unittest.TestCase):
         sync.publish_wiki(wiki, self.target)
         self.assertEqual(before, {name: (self.target / name).read_bytes() for name in before})
 
-    def test_local_publish_rejects_invalid_source_blob_before_any_changes(self):
+    def test_publication_fails_closed_without_canonical_command(self):
         wiki, _ = self.wiki()
         sync.receive(self.archive(set(sync.TABLES)), self.target)
         before = {name: (self.target / name).read_bytes() for name in sync.TABLES}
-        (wiki / 'assets/osrs/main.css').write_bytes(b'<script>bad</script>')
-        with self.assertRaises(ValueError):
+        command = wiki / 'bin/wiki'
+        command.unlink()
+        with self.assertRaises(OSError):
             sync.publish_wiki(wiki, self.target)
         self.assertEqual(before, {name: (self.target / name).read_bytes() for name in sync.TABLES})
-        self.assertFalse((self.target / '.wiki-authority').exists())
+        command.write_text('#!' + sys.executable + '\nimport sys\nsys.exit(2)\n')
+        command.chmod(0o700)
+        with self.assertRaises(subprocess.CalledProcessError):
+            sync.publish_wiki(wiki, self.target)
+        self.assertEqual(before, {name: (self.target / name).read_bytes() for name in sync.TABLES})
+
+    def test_local_publish_ignores_even_invalid_raw_source_blobs(self):
+        wiki, _ = self.wiki()
+        (wiki / 'assets/osrs/main.css').write_bytes(b'<script>MODERN_RAW_SECRET</script>')
+        sync.publish_wiki(wiki, self.target)
         self.assertFalse((self.target / 'assets').exists())
+        with closing(sqlite3.connect(self.target / 'scraped-wiki.sqlite')) as db:
+            self.assertEqual(db.execute('SELECT * FROM assets').fetchall(), [])
 
     def test_local_publish_validates_targets_before_installing_any_blobs(self):
         wiki, _ = self.wiki()
@@ -167,13 +403,6 @@ class SplitSyncTests(unittest.TestCase):
 
     def test_local_publish_curates_and_consumes_wanted_through_wiki_command(self):
         wiki, _ = self.wiki()
-        (wiki / 'bin').mkdir()
-        command = wiki / 'bin/wiki'
-        command.write_text('#!/usr/bin/env python3\n'
-                           'import json, pathlib, sys\n'
-                           'with pathlib.Path("calls.jsonl").open("a") as out:\n'
-                           '    out.write(json.dumps([sys.argv[1], sys.stdin.read() if sys.argv[1] == "want" else ""]) + "\\n")\n')
-        command.chmod(0o700)
         wanted = self.target.parent / 'wanted/wanted.sqlite'
         wanted.parent.mkdir()
         with closing(sqlite3.connect(wanted)) as db, db:
@@ -183,7 +412,7 @@ class SplitSyncTests(unittest.TestCase):
                 ('osrs', 'image', '../secret', 3)])
         sync.publish_wiki(wiki, self.target, curated=True)
         calls = [json.loads(line) for line in (wiki / 'calls.jsonl').read_text().splitlines()]
-        self.assertEqual([call[0] for call in calls], ['curate', 'want'])
+        self.assertEqual([call[0] for call in calls], [['export-visible'], ['want']])
         self.assertEqual([json.loads(line) for line in calls[1][1].splitlines()], [
             {'source': 'osrs', 'kind': 'image', 'key': 'Tree.png'},
             {'source': 'osrs', 'kind': 'page', 'key': 'Tree'}])
@@ -197,7 +426,9 @@ class SplitSyncTests(unittest.TestCase):
         with closing(sqlite3.connect(wanted)) as db, db:
             db.execute('CREATE TABLE wanted (source,kind,key,requested_at)')
             db.execute("INSERT INTO wanted VALUES ('osrs','page','Tree',1)")
-        with self.assertRaises(OSError):
+        command = wiki / 'bin/wiki'
+        command.write_text(command.read_text() + 'if sys.argv[1] == "want": sys.exit(2)\n')
+        with self.assertRaises(subprocess.CalledProcessError):
             sync.publish_wiki(wiki, self.target, wanted=wanted)
         self.assertEqual(sync.take_wanted(wanted), [{'source': 'osrs', 'kind': 'page', 'key': 'Tree'}])
 

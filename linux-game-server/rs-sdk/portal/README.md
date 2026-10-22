@@ -11,16 +11,17 @@ card and game client stay unchanged. The portal offers:
 - **2004Scape Wiki** (`/rs-sdk/wiki/2004scape`): a third, generated collection in
   `2004scape-wiki.sqlite`. It combines the rs-sdk reference wiki, bot observations
   (IDs, world coordinates and provenance), field guides and lazily cached OSRS
-  excerpts. Historical applicability is provisional, not inferred as fact from
-  the client revision alone. Pages have an infobox, contents, internal title
-  links, references and a **Compact context** view (`?view=brief`) for agents.
+  excerpts selected by the canonical wiki's current deployment policy.
+  Missing or expired automatic policies make wiki content unavailable, including
+  previously generated rows with scraped facts. Pages have an infobox, contents,
+  internal title links, references and a **Compact context** view (`?view=brief`) for agents.
   Reading one queues its missing OSRS article through the same wanted mechanism;
   it does not crawl linked pages.
 - **RS-SDK Wiki** (`/rs-sdk/wiki/rs-sdk`): searches only server-specific RS-SDK
   knowledge, stored in its own `rs-sdk-wiki.sqlite` snapshot.
-- **Scraped Wiki** (`/rs-sdk/wiki/scraped`): searches only cached OSRS/RS3 pages,
-  stored in a separate `scraped-wiki.sqlite` snapshot. Articles show attribution
-  and original links, and warn that later game versions may differ.
+- **Scraped Wiki** (`/rs-sdk/wiki/scraped`): searches only canonical visible
+  OSRS/RS3 context, stored in a separate `scraped-wiki.sqlite` snapshot.
+  Articles show attribution and original links; raw modern documents never ship.
 - **Play**, **HiScores**, **Grand Exchange**, and a link back to Homepage.
 
 `/rs-sdk/wiki` is a collection chooser, not a combined search. Each collection's
@@ -42,13 +43,18 @@ anchored headings, lists, tables and an initial infobox. It remains one small
 Python service: no PHP runtime, extra database service, extensions, editor or
 background worker.
 
-### Original and clean views (Scraped Wiki only)
+### Clean publication and legacy original renderer
 
-When the cache holds a page's original article HTML, Scraped Wiki articles open
-in an **original view**: the site's own article markup, its cached stylesheets
-and its cached images, with a **Clean view** link to the readable-text reader.
-Pages cached before the source stored original HTML, and the RS-SDK Wiki, show
-only the clean view.
+Canonical publication exposes only clean projected text. It always writes
+`raw_html = NULL`, `styles = '[]'`, and empty assets/redirects tables. Original
+HTML, CSS, cached rasters and raw redirects stay on the wiki source. Neither
+original-document routes nor image/hash routes can bypass the empty manifest,
+even if old blobs remain on disk. No `export_assets` call runs on this path.
+
+The renderer below remains for compatibility tests and policy-stamped snapshots;
+it is **not** part of canonical publication. Old snapshots without policy are
+never served, even if their modification time is recent. Republish them through
+`export-visible`; do not stamp unfiltered legacy content by hand.
 
 - The original is **untrusted**. `original.py` sanitizes it with nh3, parses
   CSS with tinycss2 and serves it from `/wiki/scraped/document` inside a frame
@@ -100,14 +106,68 @@ python3 linux-game-server/rs-sdk/portal/sync.py publish-wiki \
   --target ~/.local/share/rs-sdk-portal/data --curated
 ```
 
-This exports only wiki snapshots/assets, validates them before installation,
-and leaves account/benchmark snapshots unchanged. Unsupported or invalid cached
-images are omitted (the reader shows placeholders); malformed stylesheets fail
-publication. Replacements are individually atomic, not a multi-file transaction.
+This invokes `bin/wiki export-visible` once and consumes its JSON object
+`{policy, pages}`. The canonical command rebuilds generated context internally;
+there is no redundant `curate` invocation. Python validates the projection's
+shape, sources, fields, size and the complete version-1 policy/metadata contract,
+but does not duplicate historical classification or parse a build's README.
+Missing commands, command failures and malformed projections abort publication
+without a raw SQLite fallback.
+
+Only fresh projected wiki snapshots are published; account/benchmark snapshots
+are unchanged. Source databases and caches are not copied, scrubbed or deleted
+by the publisher (the canonical command owns its normal curated rebuild).
+Replacements are individually atomic, not a multi-file transaction.
 Successful publication creates `data/.wiki-authority` under the receiver lock,
 blocking legacy full uploads and remote `take-wanted`. Do not remove that marker
 except during a deliberate rollback. It protects against stale clients, not a
 malicious account that already owns the directory.
+
+To deliberately publish another cutoff, pass `--as-of YYYY-MM-DD` to
+`publish-wiki` or legacy non-account `push`; the canonical command validates it.
+Without that flag the current deployment policy is used. `--as-of` is rejected
+with `--accounts-only`. Changing dates requires republishing: no later content
+is retained in portal snapshots for a client-side date toggle.
+
+### Request-time policy gate and bounded staleness
+
+Every new wiki snapshot, including generated `2004scape` pages containing scraped
+facts, stores its canonical policy in a singleton `wiki_policy (policy TEXT NOT
+NULL)` table. The JSON policy and pages are committed in the **same SQLite
+transaction** and replaced together in the same database file: no policy sidecar
+can disagree with its pages. The receiver validates the optional table's exact
+columns/type, singleton row, policy modes/dates, deployment metadata and lifetime
+before installing any files. Legacy schema helpers and unmarked uploads remain
+compatible, but an unmarked database is **never eligible to serve wiki content**.
+Account-only uploads neither need nor modify wiki policy.
+
+Each wiki read checks policy using the same read transaction as its content.
+Automatic policies require a valid effective date matching deployment metadata,
+no override, fresh status, a non-future observation and a strictly valid UTC
+`expiresAt`. Expiry cannot exceed the observation plus **10 minutes**, and access
+stops at the expiry instant, independently of file mtime or successful later
+publication. Missing, malformed, unknown or expired policies fail closed across
+search, articles, generated compact context, original documents, images and
+hash-addressed assets. Wiki HTML and asset responses use `Cache-Control: no-store`
+so new browser caches cannot extend access beyond the gate. The collection chooser,
+accounts, benchmarks and the portal's decorative background remain available.
+
+The producer normally observes the running build every **2 minutes** and the
+publisher runs every **5 minutes**. This is bounded staleness, **not instant
+running-game detection**: after a build change or metadata failure, a previous
+automatic snapshot can remain visible only until its embedded expiry, at most
+10 minutes after its last successful build observation. A successful publication
+may replace it earlier. Failed metadata refresh/publication preserves the old
+files without renewing their policy; once expired they stay unavailable until a
+healthy policy-stamped publication arrives. Take wiki serving offline during a
+build transition if even that residual interval is unacceptable. Already downloaded
+content and browser caches created by older portal versions cannot be revoked.
+
+An explicit `--as-of` publication must return a matching `override` policy and
+valid calendar cutoff. Search and article views label it **Date-preview override**,
+not the automatic deployment cutoff. This deliberate preview remains available
+independently of missing/expired deployment metadata; it is not advertised as
+fresh deployment knowledge. Changing or leaving preview mode requires republishing.
 
 Wanted requests are passed to the server's `bin/wiki want` and deleted only after
 that command succeeds; failed commands leave them queued. `--wanted PATH`
@@ -141,20 +201,17 @@ same title and path rules as rendering; recording failures never break a page. C
 are sanitized and sandboxed as described above. It never fetches upstream pages
 or assets, starts bots or restarts either game.
 
-The authoritative bot account/benchmark and wiki databases remain on the source
-Mac under `~/forgejo/2004Scape-Botting/data/` and
-`~/forgejo/2004Scape-Wiki/data/`. A **source-side sync only** runs every 120 seconds
-as a login-user LaunchAgent. No web service runs on the Mac. SQLite connections
-are read-only, use short-lived consistent read transactions, and do not run
-schema migrations, checkpoint WAL, or commit Git.
-Normal SQLite WAL coordination may create/update a source `-shm` sidecar; this
-is not a promise of zero filesystem writes. Exporting does not alter database
-rows or repository source files.
+In legacy full-sync deployments, source data lives under
+`~/forgejo/2004Scape-Botting/data/` and `~/forgejo/2004Scape-Wiki/` on the Mac.
+The default source-side LaunchAgent runs every 120 seconds. No web service runs
+on the Mac. Account/benchmark export uses read-only, short-lived SQLite read
+transactions; normal WAL coordination may update `-shm` sidecars. Wiki data
+comes exclusively from `bin/wiki export-visible`, never raw SQLite queries.
 
 After publishing, sync runs `sync.py take-wanted` on the server, which removes
 and returns up to 100 oldest requests. It validates them again and pipes them
 as JSON lines to the wiki's own `bun src/cli.ts want` in `2004Scape-Wiki`, the
-one repository command it invokes. The wiki puts requested images at the front
+wiki queue command. The wiki puts requested images at the front
 of its image queue and requested articles (at most 100 waiting) in a page queue
 that its page worker fetches with their images and stylesheets, at the wiki's
 shared rate limit, committing as usual. A requested page appears after the next
@@ -175,44 +232,38 @@ views, not backups, and do not need restic coverage. Separate databases need not
 represent precisely the same instant, and a crash between file replacements can
 leave a mixed set until the next sync. Existing readers finish on the old inode.
 
-Original HTML and stylesheet references travel in `scraped-wiki.sqlite`
-(`pages.raw_html`, `pages.styles`) with an `assets` manifest (source, URL,
-SHA-256, MIME, size) and the wiki's `redirects` (source, from and to title), so
-links to a redirect title open the cached target. A receiver accepts snapshots
-without `redirects` from an older sender. The blobs themselves live in `assets/<sha256>` beside the
-snapshots. The sender asks the receiver which hashes it holds and sends only
-missing blobs, so the growing image cache is not recopied every two minutes. The
-sender reads the wiki cache's files without following symlinks, accepts only
-structurally valid rasters and CSS within size limits and skips files that are
-incomplete or still downloading; the receiver re-verifies every hash, MIME and
-size, holds a lock for the whole receive, and installs blobs before snapshots.
+The legacy receiver still validates original-asset archives for compatibility,
+including hashes, MIME, sizes, archive paths and symlink restrictions. New
+`publish-wiki` and non-account `push` send **no original asset blobs**, and empty
+assets/redirects manifests. The receiver's archive security checks are unchanged.
 
-By default sync publishes four files: `accounts.sqlite`, `benchmarks.sqlite`,
-`rs-sdk-wiki.sqlite` and `scraped-wiki.sqlite`. The two wiki files are physically
-separate database projections, not just views or UI filters. Export selects
-`source = 'rs-sdk'` for the first and `source IN ('osrs','rs3')` for the second;
-the receiver rejects a mislabeled collection before publishing any files. The
-original combined `2004Scape-Wiki/data/wiki.sqlite` remains unchanged for the
-active scraper/bots. With `push --curated`, sync first invokes `bun src/cli.ts curate` in the wiki
-checkout, rebuilding generated pages only when inputs changed, then projects an
-optional fifth file, `2004scape-wiki.sqlite` (only source `2004scape`). Its `text`
-is the full markdown, `brief` is compact agent context, and `categories` labels
-page kinds. The receiver accepts this file but still accepts older four-file
-senders. **Upgrade the receiver and portal before enabling `--curated`**, then
-run `install-sync.sh <game-server-ssh-alias> --curated` on the Mac to enable it
-for scheduled syncs. Without it, the third collection reports unavailable until
-its first snapshot arrives. Generation reads working-tree inputs, not only git
-commits; it never starts a bot or issues gameplay actions.
+By default a full push publishes four files: `accounts.sqlite`,
+`benchmarks.sqlite`, `rs-sdk-wiki.sqlite` and `scraped-wiki.sqlite`. Wiki snapshots
+are physically separate canonical projections, not UI-only filters. The
+receiver rejects mislabeled collections before replacing files.
+
+`--curated` includes the optional fifth file, `2004scape-wiki.sqlite`, containing
+only source `2004scape`. Its `text` is canonical `wikitext`, `brief` is canonical
+`text`, and `categories` labels page kinds. This flag controls snapshot inclusion
+only: canonical export always prepares generated context. Upgrade receivers
+before enabling it. A successful wiki publication **removes any previously
+published optional snapshot if omitted**, rather than leaving stale unfiltered
+content accessible. Account-only pushes never remove or alter wiki files.
+
+The raw combined wiki database and cached originals remain source-side for the
+scraper. Canonical export owns its curated generation and policy; publication
+never starts a bot or issues gameplay actions.
 
 An old portal-side `wiki.sqlite` is no longer read or
 published; retain it outside the active data directory as a rollback copy when
 upgrading. Sync never deletes an arbitrary `wiki.sqlite` from its target.
 
 Every data view shows its export time and warns after ten minutes without an
-update. If the Mac sleeps, logs out or loses SSH access, the portal stays on the
-game server and shows the last successful snapshots. A LaunchAgent requires a
-logged-in source user. Sync has a 90-second SSH timeout; failures leave prior
-server snapshots available. The view has no auto-refresh; reload for new data.
+update. Account/benchmark views retain their last successful snapshots if the
+source goes offline; automatic wiki snapshots instead become unavailable at their
+embedded policy expiry. A LaunchAgent requires a logged-in source user. Sync has
+a 90-second SSH timeout; failures never renew prior wiki policy. The view has no
+auto-refresh; reload for new data.
 
 ## Install
 
@@ -261,9 +312,14 @@ python3 -m unittest discover -s linux-game-server/rs-sdk/portal -v
 shellcheck linux-game-server/rs-sdk/portal/install.sh linux-game-server/rs-sdk/portal/install-sync.sh
 ```
 
-After upgrading, rerun `install.sh` on the game server (it adds the `wanted/`
-mount and `PORTAL_WANTED_DIR`); the source Mac needs `bun` on the LaunchAgent's
-`PATH` for requests to reach the wiki.
+After upgrading, rebuild/recreate the **portal only** with `install.sh` so its
+image includes `snapshot_policy.py`, and upgrade the receiver before publishing
+the new table. This is a required code/image update, not just a snapshot copy.
+Publish fresh stamped snapshots before expecting wiki routes to return content;
+unmarked legacy files intentionally return unavailable. Account-only sync is
+unchanged. The installer also maintains the `wanted/` mount and
+`PORTAL_WANTED_DIR`; the legacy source Mac needs `bun` on the LaunchAgent's `PATH`
+for requests to reach the wiki.
 
 On the game server, inspect `docker logs rs-sdk-portal`, check the snapshots'
 mtime and permissions, and fetch `/rs-sdk/accounts`, `/rs-sdk/benchmarks`,

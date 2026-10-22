@@ -7,6 +7,7 @@ import tarfile
 import tempfile
 import threading
 import unittest
+from test_policy import stamp
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -131,11 +132,13 @@ class PortalTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             with closing(sqlite3.connect(root / 'rs-sdk-wiki.sqlite')) as db, db:
+                stamp(db)
                 db.executescript('''
                     CREATE TABLE pages (id, source, title, text, fetched_at, revid);
                     INSERT INTO pages VALUES (1,'rs-sdk','Oak tree','Woodcutting <script>evil</script>',0,1);
                 ''')
             with closing(sqlite3.connect(root / 'scraped-wiki.sqlite')) as db, db:
+                stamp(db)
                 db.executescript('''
                     CREATE TABLE pages (id, source, title, text, fetched_at, revid);
                     INSERT INTO pages VALUES (1,'osrs','Raw shark','Fishing and Woodcutting',0,2);
@@ -181,6 +184,7 @@ class PortalTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             with closing(sqlite3.connect(root / 'rs-sdk-wiki.sqlite')) as db, db:
+                stamp(db)
                 db.execute('CREATE TABLE pages (id,source,title,text,fetched_at,revid)')
                 db.executemany('INSERT INTO pages VALUES (?,\'rs-sdk\',?,\'Woodcutting\',0,1)', [(i, f'Tree {i:02}') for i in range(51)])
             app = server.Portal(root, 'https://game.example', 'https://home.example')

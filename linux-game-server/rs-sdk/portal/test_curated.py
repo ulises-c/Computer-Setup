@@ -6,6 +6,7 @@ import unittest
 
 import server
 import sync
+from test_policy import stamp
 
 
 class CuratedTests(unittest.TestCase):
@@ -23,7 +24,10 @@ class CuratedTests(unittest.TestCase):
                 (3, 'osrs', 'Later item', 'untrusted later-game advice', 'raw', '[]', 0, 99),
             ])
         sync.export_db(self.source, self.root / '2004scape-wiki.sqlite', sync.TABLES['2004scape-wiki.sqlite'], ('2004scape',))
-        with closing(sqlite3.connect(self.root / 'scraped-wiki.sqlite')) as db:
+        with closing(sqlite3.connect(self.root / '2004scape-wiki.sqlite')) as db, db:
+            stamp(db)
+        with closing(sqlite3.connect(self.root / 'scraped-wiki.sqlite')) as db, db:
+            stamp(db)
             db.execute('CREATE TABLE pages (id,source,title,text,fetched_at,revid)')
         self.portal = server.Portal(self.root, 'https://game.example', 'https://home.example', self.root / 'wanted.sqlite')
 

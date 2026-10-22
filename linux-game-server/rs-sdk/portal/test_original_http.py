@@ -11,6 +11,10 @@ from urllib.error import HTTPError
 from urllib.request import urlopen
 
 import server
+from test_policy import fresh_policy, stamp
+from unittest.mock import patch
+from datetime import datetime, timezone
+import json
 
 
 class OriginalHTTPTests(unittest.TestCase):
@@ -23,6 +27,7 @@ class OriginalHTTPTests(unittest.TestCase):
         (self.root / 'assets').mkdir()
         (self.root / 'assets' / self.digest).write_bytes(self.image)
         with closing(sqlite3.connect(self.root / 'scraped-wiki.sqlite')) as db, db:
+            stamp(db)
             db.execute('CREATE TABLE pages (id,source,title,text,fetched_at,revid,raw_html,styles)')
             db.execute('INSERT INTO pages VALUES (1,\'osrs\',\'Oak\',\'Readable fallback\',0,1,?,\'[]\')', ('<p>Original oak</p><script>evil()</script>',))
             db.execute('INSERT INTO pages VALUES (2,\'osrs\',\'Old\',\'Old text\',0,1,NULL,\'[]\')')
@@ -44,6 +49,53 @@ class OriginalHTTPTests(unittest.TestCase):
         self.http.shutdown()
         self.http.server_close()
         self.worker.join()
+
+    def test_expiry_and_missing_policy_block_every_wiki_http_surface(self):
+        policy = fresh_policy()
+        expiry = datetime.fromisoformat(policy['expiresAt'].replace('Z', '+00:00')).timestamp()
+        routes = ['/rs-sdk/wiki/scraped', '/wiki/scraped?q=Oak',
+                  '/rs-sdk/wiki/scraped/article?id=1', '/rs-sdk/wiki/scraped/w/osrs/Oak',
+                  '/rs-sdk/wiki/scraped/w/osrs/Oak?view=clean',
+                  '/rs-sdk/wiki/scraped/document?id=1',
+                  '/rs-sdk/wiki/scraped/images/osrs/Oak.png',
+                  '/rs-sdk/wiki/scraped/asset/' + self.digest]
+        with closing(sqlite3.connect(self.root / 'scraped-wiki.sqlite')) as db, db:
+            db.execute('UPDATE wiki_policy SET policy=?', (json.dumps(policy),))
+        with patch('time.time', return_value=expiry - 0.001):
+            for route in routes:
+                with self.subTest(route=route):
+                    status, _, headers, _ = self.fetch(route)
+                    self.assertEqual(status, 200)
+                    self.assertEqual(headers['Cache-Control'], 'no-store')
+        for state in ('expired', 'missing'):
+            if state == 'missing':
+                with closing(sqlite3.connect(self.root / 'scraped-wiki.sqlite')) as db, db:
+                    db.execute('DROP TABLE wiki_policy')
+            with patch('time.time', return_value=expiry):
+                for route in routes:
+                    with self.subTest(state=state, route=route):
+                        status, body, _, _ = self.fetch(route)
+                        self.assertNotEqual(status, 200)
+                        self.assertNotIn(b'Original oak', body)
+                        self.assertNotIn(b'Readable fallback', body)
+                        self.assertNotEqual(body, self.image)
+        self.assertEqual(self.wanted_rows(), [])
+
+    def test_cached_asset_metadata_cannot_bypass_expiry(self):
+        policy = fresh_policy(datetime(2004, 5, 18, tzinfo=timezone.utc))
+        with closing(sqlite3.connect(self.root / 'scraped-wiki.sqlite')) as db, db:
+            db.execute('UPDATE wiki_policy SET policy=?', (json.dumps(policy),))
+        with self.assertRaises(sqlite3.Error):
+            self.http.portal.asset(self.digest, {'mime': 'image/png', 'size': len(self.image)})
+
+    def test_override_original_document_is_labelled(self):
+        policy = dict(fresh_policy(), mode='override', asOf='2004-05-18',
+                      deployment=None, expiresAt=None, status='missing-or-invalid')
+        with closing(sqlite3.connect(self.root / 'scraped-wiki.sqlite')) as db, db:
+            db.execute('UPDATE wiki_policy SET policy=?', (json.dumps(policy),))
+        status, body, _, _ = self.fetch('/rs-sdk/wiki/scraped/document?id=1')
+        self.assertEqual(status, 200)
+        self.assertTrue(b'Date-preview override: 2004-05-18' in body)
 
     def test_original_frame_is_isolated_and_clean_view_remains(self):
         with urlopen(self.base + '/rs-sdk/wiki/scraped/article?id=1') as response:

@@ -16,12 +16,14 @@ import time
 from typing import cast
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
 
+from snapshot_policy import read_policy
+
 BASE = '/rs-sdk'
 STYLE = Path(__file__).with_name('theme.css').read_text()
 WIKIS = {
-    '2004scape': ('2004Scape Wiki', '2004scape-wiki.sqlite', 'This game, one page per thing: server data, what the bots saw in game (IDs, coordinates) and OSRS wiki knowledge filtered to late 2004.'),
+    '2004scape': ('2004Scape Wiki', '2004scape-wiki.sqlite', 'This game, one page per thing: server data, bot observations and wiki context selected by the deployment policy at publication time.'),
     'rs-sdk': ('RS-SDK Wiki', 'rs-sdk-wiki.sqlite', 'Server-specific knowledge generated from RS-SDK. Search only the local game wiki.'),
-    'scraped': ('Scraped Wiki', 'scraped-wiki.sqlite', 'Cached OSRS and RuneScape Wiki articles. This advice may describe later game versions, not this server.'),
+    'scraped': ('Scraped Wiki', 'scraped-wiki.sqlite', 'Cached OSRS and RuneScape Wiki context selected by the deployment policy at publication time. Original documents and assets are not published.'),
 }
 
 
@@ -42,9 +44,22 @@ def read_db(path):
     db.row_factory = sqlite3.Row
     try:
         db.execute('PRAGMA query_only=ON')
+        db.execute('BEGIN')
+        if path.name in {wiki[1] for wiki in WIKIS.values()}:
+            try:
+                read_policy(db)
+            except (ValueError, TypeError, OverflowError) as exc:
+                raise sqlite3.DatabaseError('Unavailable wiki policy') from exc
         yield db
     finally:
         db.close()
+
+
+def policy_note(db):
+    policy = read_policy(db)
+    if policy['mode'] == 'override':
+        return f'<p class="note">Date-preview override: {esc(policy["effectiveDate"])} · not the automatic deployment cutoff.</p>'
+    return ''
 
 
 def table(headers, rows, cell=esc):
@@ -225,8 +240,8 @@ class Portal:
     def asset(self, digest, metadata=None):
         if not re.fullmatch(r'[0-9a-f]{64}', digest):
             raise ValueError('Invalid asset')
-        if metadata is None:
-            with read_db(self.root / 'scraped-wiki.sqlite') as db:
+        with read_db(self.root / 'scraped-wiki.sqlite') as db:
+            if metadata is None:
                 metadata = db.execute('SELECT mime,size FROM assets WHERE sha256=? AND source IN (\'osrs\',\'rs3\') LIMIT 1', (digest,)).fetchone()
         if metadata is None or metadata['mime'] not in ('image/png', 'image/jpeg', 'image/gif', 'image/webp', 'text/css'):
             raise ValueError('Missing asset')
@@ -251,14 +266,16 @@ class Portal:
     def original_document(self, article_id):
         import original
         with read_db(self.root / 'scraped-wiki.sqlite') as db:
+            note = policy_note(db)
             row = db.execute('SELECT source,raw_html,styles FROM pages WHERE id=? AND source IN (\'osrs\',\'rs3\')', (article_id,)).fetchone()
             if row is None or not row['raw_html']:
                 return None
             pages = self.known_titles(db)
             assets = {(r['source'], r['url']): dict(r) for r in db.execute('SELECT source,url,sha256,mime,size FROM assets')}
         by_hash = {r['sha256']: r for r in assets.values()}
-        return original.document(row['raw_html'], row['styles'], row['source'], pages, assets,
+        body = original.document(row['raw_html'], row['styles'], row['source'], pages, assets,
                                  lambda digest: self.asset(digest, by_hash.get(digest))[0])
+        return body.replace('<div class="mw-body-content">', '<div class="mw-body-content">' + note, 1)
 
     def render(self, path, params):
         try:
@@ -365,12 +382,13 @@ class Portal:
             if not 1 <= page <= 1000000:
                 raise ValueError('page')
             with read_db(self.root / filename) as db:
+                note = policy_note(db)
                 where = 'WHERE instr(lower(title),lower(?))>0 OR instr(lower(text),lower(?))>0'
                 total = db.execute(f'SELECT count(*) FROM pages {where}', (q, q)).fetchone()[0]
                 rows = db.execute(f'''SELECT id,source,title,substr(text,1,180) AS snippet FROM pages {where}
                     ORDER BY title,source,id
                     LIMIT 50 OFFSET ?''', (q, q, (page-1)*50)).fetchall()
-            body = f'<h1>{title}</h1><p class="note">{description}</p><p>{total} matching cached pages in this database. Browsing never fetches or refreshes upstream pages.</p>' + search_form('wiki/' + collection, q, title)
+            body = note + f'<h1>{title}</h1><p class="note">{description}</p><p>{total} matching cached pages in this database. Browsing never fetches or refreshes upstream pages.</p>' + search_form('wiki/' + collection, q, title)
             body += ''.join(f'<article><span class="eyebrow">{esc(r["source"])}</span><h2><a href="{esc(article_href(collection, r))}">{esc(r["title"])}</a></h2><p>{esc(r["snippet"])}</p></article>' for r in rows)
             return 200, layout(title, body + pager('wiki/' + collection, q, page, total), wiki=True)
         if path.startswith(BASE + '/wiki/2004scape/w/'):
@@ -427,6 +445,7 @@ class Portal:
     def article(self, collection, article_id, params):
         title, filename, _ = WIKIS[collection]
         with read_db(self.root / filename) as db:
+            note = policy_note(db)
             columns = {r[1] for r in db.execute('PRAGMA table_info(pages)')}
             raw = 'raw_html' if collection == 'scraped' and 'raw_html' in columns else 'NULL AS raw_html'
             extra = ',brief,categories' if collection == '2004scape' else ''
@@ -434,7 +453,7 @@ class Portal:
         if row is None:
             return 404, layout('Article not found', '<h1>Article not found</h1>', wiki=True)
         revision_label = 'generator format' if collection == '2004scape' else 'revision'
-        body = f'<a href="{BASE}/wiki/{collection}">← {title}</a><h1>{esc(row["title"])}</h1><p>{title} · source: {esc(row["source"])} · {revision_label} {esc(row["revid"])}</p>'
+        body = note + f'<a href="{BASE}/wiki/{collection}">← {title}</a><h1>{esc(row["title"])}</h1><p>{title} · source: {esc(row["source"])} · {revision_label} {esc(row["revid"])}</p>'
         if collection == '2004scape':
             category = (json.loads(row['categories'] or '[]') or [''])[0]
             osrs = None if category == 'guides' else re.sub(r' \((object|NPC|npcs|items|shops|quests|skills)\)$', '', row['title'])
@@ -489,7 +508,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-Type', mime)
             self.send_header('Content-Length', str(len(data)))
-            self.send_header('Cache-Control', 'private, max-age=86400, immutable')
+            self.send_header('Cache-Control', 'no-store')
             self.send_header('X-Content-Type-Options', 'nosniff')
             self.send_header('Content-Security-Policy', "default-src 'none'; sandbox")
             self.end_headers()
@@ -509,7 +528,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header('Content-Type', mime)
                 self.send_header('Content-Length', str(len(data)))
-                self.send_header('Cache-Control', 'private, max-age=300')
+                self.send_header('Cache-Control', 'no-store')
                 self.send_header('X-Content-Type-Options', 'nosniff')
                 self.send_header('Content-Security-Policy', "default-src 'none'; sandbox")
                 self.end_headers()

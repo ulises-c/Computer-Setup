@@ -19,6 +19,8 @@ import tempfile
 from urllib.parse import unquote, urlsplit
 import zlib
 
+from snapshot_policy import POLICY_COLUMNS, POLICY_SCHEMA, POLICY_TABLE, read_policy, validate_policy
+
 MAX_ASSET = 8 * 1024 * 1024
 MAX_CSS = 2 * 1024 * 1024
 MAX_SNAPSHOT = 512 * 1024 * 1024
@@ -406,9 +408,13 @@ def check_snapshot(dest, name):
             raise ValueError('Snapshot integrity failure')
         objects = list(db.execute("SELECT type,name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'"))
         actual_tables = {name for kind, name in objects if kind == 'table'}
-        expected = TABLES[name]
-        legacy = name == 'scraped-wiki.sqlite' and actual_tables == {'pages'}
-        if not (set(expected) - OPTIONAL_TABLES.get(name, set()) <= actual_tables <= set(expected)) and not legacy:
+        expected = dict(TABLES[name])
+        optional = OPTIONAL_TABLES.get(name, set())
+        if name in PAGE_SOURCES:
+            expected[POLICY_TABLE] = POLICY_COLUMNS
+            optional = optional | {POLICY_TABLE}
+        legacy = name == 'scraped-wiki.sqlite' and actual_tables - {POLICY_TABLE} == {'pages'}
+        if not (set(expected) - optional <= actual_tables <= set(expected)) and not legacy:
             raise ValueError('Unexpected tables')
         if any(kind != 'table' for kind, _ in objects):
             raise ValueError('Unexpected database objects')
@@ -416,9 +422,11 @@ def check_snapshot(dest, name):
             if any(r[6] for r in db.execute(f'PRAGMA table_xinfo({table})')):
                 raise ValueError('Unexpected generated column')
             columns = tuple(r[1] for r in db.execute(f'PRAGMA table_info({table})'))
-            allowed = expected[table][:6] if legacy else expected[table]
+            allowed = expected[table][:6] if legacy and table == 'pages' else expected[table]
             if columns != allowed:
                 raise ValueError('Unexpected columns')
+        if POLICY_TABLE in actual_tables:
+            read_policy(db)
         if name in PAGE_SOURCES:
             allowed = PAGE_SOURCES[name]
             wrong = db.execute(f'SELECT 1 FROM pages WHERE source IS NULL OR source NOT IN ({",".join("?" for _ in allowed)}) LIMIT 1', allowed).fetchone()
@@ -539,6 +547,9 @@ def receive(stream, target, accounts_only=False, *, wiki_only=False):
             for name in allowed:
                 if name in seen:
                     os.replace(stage / name, target / name)
+            if not accounts_only:
+                for name in OPTIONAL_SNAPSHOTS - seen:
+                    (target / name).unlink(missing_ok=True)
     finally:
         os.close(fd)
     print(f'Published {len(set(TABLES) & seen)} sanitized database snapshots.', flush=True)
@@ -556,16 +567,75 @@ def write_archive(payload, stage, names, have=()):
     payload.seek(0)
 
 
-def publish_wiki(wiki, target, curated=False, wanted=None):
+def export_visible(wiki, stage, names, as_of=None):
+    with tempfile.TemporaryFile() as output:
+        command = [str(wiki / 'bin/wiki'), 'export-visible']
+        if as_of is not None:
+            command += ['--as-of', as_of]
+        subprocess.run(command, cwd=wiki,
+                       stdout=output, check=True, timeout=90)
+        if output.tell() > MAX_SNAPSHOT:
+            raise ValueError('Visible projection size limit')
+        output.seek(0)
+        projection = json.load(output)
+    if not isinstance(projection, dict) or not isinstance(projection.get('policy'), dict) or not isinstance(projection.get('pages'), list):
+        raise ValueError('Invalid visible projection')
+    policy = validate_policy(projection['policy'])
+    if policy['mode'] != ('automatic' if as_of is None else 'override') or policy['asOf'] != as_of:
+        raise ValueError('Visible projection override does not match requested cutoff')
+    if len(projection['pages']) > MAX_ENTRIES:
+        raise ValueError('Visible projection page limit')
+    required = {'id', 'source', 'title', 'text', 'html', 'wikitext', 'categories', 'fetched_at', 'revid'}
+    seen = set()
+    for page in projection['pages']:
+        if not isinstance(page, dict) or not required <= page.keys():
+            raise ValueError('Invalid visible page fields')
+        if not isinstance(page['source'], str) or page['source'] not in ('2004scape', 'rs-sdk', 'osrs', 'rs3'):
+            raise ValueError('Invalid visible page source')
+        if type(page['id']) is not int or not 0 <= page['id'] < 2**63:
+            raise ValueError('Invalid visible page id')
+        if not isinstance(page['title'], str) or not page['title'] or not isinstance(page['text'], str):
+            raise ValueError('Invalid visible page text')
+        if any(page[key] is not None and not isinstance(page[key], str) for key in ('html', 'wikitext', 'categories')):
+            raise ValueError('Invalid visible page content')
+        if page['source'] == '2004scape' and not isinstance(page['wikitext'], str):
+            raise ValueError('Invalid visible curated page')
+        if type(page['fetched_at']) not in (int, float) or not math.isfinite(page['fetched_at']) or not 0 <= page['fetched_at'] < 2**63:
+            raise ValueError('Invalid visible page timestamp')
+        if page['revid'] is not None and (type(page['revid']) is not int or not 0 <= page['revid'] < 2**63):
+            raise ValueError('Invalid visible page revision')
+        if page['source'] in ORIGINS and (page.get('raw_html', '') is not None or page.get('styles') != '[]'):
+            raise ValueError('Invalid visible page originals')
+        identity = (page['source'], page['id'])
+        if identity in seen:
+            raise ValueError('Duplicate visible page')
+        seen.add(identity)
+    for name in names:
+        with closing(sqlite3.connect(stage / name)) as db, db:
+            db.execute('BEGIN')
+            db.execute(POLICY_SCHEMA)
+            db.execute('INSERT INTO wiki_policy VALUES (?)', (json.dumps(projection['policy']),))
+            for table, columns in TABLES[name].items():
+                db.execute(f'CREATE TABLE {table} ({",".join(columns)})')
+            columns = TABLES[name]['pages']
+            for page in projection['pages']:
+                if page['source'] not in PAGE_SOURCES[name]:
+                    continue
+                row = dict(page, raw_html=None, styles='[]')
+                if name == '2004scape-wiki.sqlite':
+                    row.update(text=page['wikitext'], brief=page['text'])
+                db.execute(f'INSERT INTO pages VALUES ({",".join("?" for _ in columns)})',
+                           tuple(row[column] for column in columns))
+        (stage / name).chmod(0o600)
+
+
+def publish_wiki(wiki, target, curated=False, wanted=None, as_of=None):
     names = set(TABLES) - ACCOUNT_SNAPSHOTS - OPTIONAL_SNAPSHOTS
     if curated:
-        subprocess.run([str(wiki / 'bin/wiki'), 'curate'], cwd=wiki, check=True, timeout=90)
         names |= OPTIONAL_SNAPSHOTS
     with tempfile.TemporaryDirectory(prefix='rs-sdk-portal-') as tmp:
         stage = Path(tmp)
-        for name in names:
-            export_db(wiki / 'data/wiki.sqlite', stage / name, TABLES[name], PAGE_SOURCES[name])
-        export_assets(wiki, stage / 'scraped-wiki.sqlite', stage / 'assets', strict=True)
+        export_visible(wiki, stage, names, as_of=as_of)
         with tempfile.TemporaryFile() as payload:
             write_archive(payload, stage, names)
             receive(payload, target, wiki_only=True)
@@ -573,30 +643,25 @@ def publish_wiki(wiki, target, curated=False, wanted=None):
     take_wanted(wanted, consumer=lambda entries: queue_wanted(wiki.parent, entries, wiki_root=wiki))
 
 
-def push(root, host, receiver, curated=False, accounts_only=False):
-    if accounts_only and curated:
-        raise ValueError('Accounts-only push cannot curate wiki')
+def push(root, host, receiver, curated=False, accounts_only=False, as_of=None):
+    if accounts_only and (curated or as_of is not None):
+        raise ValueError('Accounts-only push cannot curate wiki or override --as-of')
     sources = {
         'accounts.sqlite': root / '2004Scape-Botting/data/accounts.sqlite',
         'benchmarks.sqlite': root / '2004Scape-Botting/data/benchmarks.sqlite',
     }
+    wiki_names = set()
     if not accounts_only:
-        sources.update({
-            'rs-sdk-wiki.sqlite': root / '2004Scape-Wiki/data/wiki.sqlite',
-            'scraped-wiki.sqlite': root / '2004Scape-Wiki/data/wiki.sqlite',
-        })
-    if curated:
-        # Build generated pages before the read-only export. Explicitly enabled only
-        # after the receiver is upgraded to accept the optional fifth snapshot.
-        wiki = root / '2004Scape-Wiki'
-        subprocess.run(['bun', 'src/cli.ts', 'curate'], cwd=wiki, check=True, timeout=90)
-        sources['2004scape-wiki.sqlite'] = wiki / 'data/wiki.sqlite'
+        wiki_names = set(PAGE_SOURCES) - OPTIONAL_SNAPSHOTS
+        if curated:
+            wiki_names |= OPTIONAL_SNAPSHOTS
     with tempfile.TemporaryDirectory(prefix='rs-sdk-portal-') as tmp:
         stage = Path(tmp)
         for name, source in sources.items():
-            export_db(source, stage / name, TABLES[name], sources=PAGE_SOURCES.get(name, ()))
-        if not accounts_only:
-            export_assets(root / '2004Scape-Wiki', stage / 'scraped-wiki.sqlite', stage / 'assets')
+            export_db(source, stage / name, TABLES[name])
+        if wiki_names:
+            export_visible(root / '2004Scape-Wiki', stage, wiki_names, as_of=as_of)
+        names = set(sources) | wiki_names
         ssh = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', '--', host]
         command = 'python3 ' + shlex.quote(receiver)
         have = set()
@@ -627,7 +692,7 @@ def push(root, host, receiver, curated=False, accounts_only=False):
         except (subprocess.SubprocessError, OSError, ValueError) as exc:
             print(f'Could not take wanted pages: {exc}', file=sys.stderr, flush=True)
         with tempfile.TemporaryFile() as payload:
-            write_archive(payload, stage, sources, have)
+            write_archive(payload, stage, names, have)
             mode = ' --accounts-only' if accounts_only else ''
             subprocess.run(ssh + [command + ' receive' + mode], stdin=payload, check=True, timeout=300)
         try:
@@ -644,8 +709,9 @@ def main():
     sender.add_argument('--root', type=Path, default=Path.home() / 'forgejo')
     sender.add_argument('--host', required=True, help='Existing SSH alias for the game server')
     mode = sender.add_mutually_exclusive_group()
-    mode.add_argument('--curated', action=argparse.BooleanOptionalAction, help='Build and publish the fifth, generated 2004Scape collection (upgrade receiver first)')
+    mode.add_argument('--curated', action=argparse.BooleanOptionalAction, help='Include the fifth, generated 2004Scape snapshot (upgrade receiver first)')
     mode.add_argument('--accounts-only', action='store_true', help='Publish only accounts and benchmarks; never access wiki or wanted queues')
+    sender.add_argument('--as-of', help='Explicit publication date override; validated by canonical wiki policy')
     sender.add_argument('--receiver', default='github/Computer-Setup/linux-game-server/rs-sdk/portal/sync.py')
     sender.add_argument('--bot-inputs', action=argparse.BooleanOptionalAction, default=False,
                         help='With --accounts-only, also upload allowlisted bot observations and guides')
@@ -657,6 +723,7 @@ def main():
     publisher.add_argument('--target', type=Path, default=DEFAULT_TARGET)
     publisher.add_argument('--wanted', type=Path, help='Defaults to TARGET/../wanted/wanted.sqlite')
     publisher.add_argument('--curated', action=argparse.BooleanOptionalAction, default=False)
+    publisher.add_argument('--as-of', help='Explicit publication date override; requires republishing to change')
     inventory_parser = sub.add_parser('inventory')
     inventory_parser.add_argument('--target', type=Path, default=DEFAULT_TARGET)
     wanted_parser = sub.add_parser('take-wanted')
@@ -667,7 +734,10 @@ def main():
     if args.command == 'push':
         if args.bot_inputs and not args.accounts_only:
             parser.error('--bot-inputs requires --accounts-only')
-        push(args.root.expanduser().resolve(), args.host, args.receiver, args.curated, accounts_only=args.accounts_only)
+        if args.accounts_only and args.as_of is not None:
+            parser.error('--as-of cannot be used with --accounts-only')
+        push(args.root.expanduser().resolve(), args.host, args.receiver, args.curated,
+             accounts_only=args.accounts_only, as_of=args.as_of)
         if args.bot_inputs:
             helper = Path(__file__).resolve().parent.parent / 'wiki/inputs.py'
             subprocess.run([sys.executable, '-B', str(helper), 'push', '--host', args.host,
@@ -675,7 +745,7 @@ def main():
                            check=True, timeout=120)
     elif args.command == 'publish-wiki':
         publish_wiki(args.wiki_root.expanduser().resolve(), args.target.expanduser().absolute(), args.curated,
-                     args.wanted.expanduser().absolute() if args.wanted is not None else None)
+                     args.wanted.expanduser().absolute() if args.wanted is not None else None, as_of=args.as_of)
     elif args.command == 'take-wanted':
         authority = args.target.expanduser().absolute() / '.wiki-authority'
         if authority.exists() or authority.is_symlink():

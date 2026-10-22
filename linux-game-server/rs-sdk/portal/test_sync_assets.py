@@ -9,6 +9,7 @@ import tempfile
 import unittest
 
 import sync
+from test_policy import fresh_policy
 
 
 class SyncAssetTests(unittest.TestCase):
@@ -110,6 +111,10 @@ class SyncAssetTests(unittest.TestCase):
             target = root / 'target'
             transfers = []
             def ssh(command, **kwargs):
+                if command[1:2] == ['export-visible']:
+                    self.assertEqual(Path(command[0]), wiki / 'bin/wiki')
+                    kwargs['stdout'].write(json.dumps({'policy': fresh_policy(), 'pages': []}).encode())
+                    return subprocess.CompletedProcess(command, 0)
                 if command[-1].endswith(' inventory'):
                     return subprocess.CompletedProcess(command, 0, stdout=json.dumps(sync.inventory(target)))
                 if command[-1].endswith(' take-wanted'):
@@ -123,7 +128,7 @@ class SyncAssetTests(unittest.TestCase):
                 sync.push(root, 'game.example', 'portal/sync.py')
                 sync.push(root, 'game.example', 'portal/sync.py')
             blob = 'assets/' + hashlib.sha256(css).hexdigest()
-            self.assertIn(blob, transfers[0])
+            self.assertNotIn(blob, transfers[0])
             self.assertNotIn(blob, transfers[1])
             self.assertEqual(set(transfers[1]), set(sync.TABLES) - sync.OPTIONAL_SNAPSHOTS)
             legacy = []
@@ -141,7 +146,7 @@ class SyncAssetTests(unittest.TestCase):
                 return ssh(command, **kwargs)
             with patch.object(sync.subprocess, 'run', side_effect=old_receiver):
                 sync.push(root, 'game.example', 'portal/sync.py')
-            self.assertEqual(sorted(legacy), ['assets', 'pages'])
+            self.assertEqual(sorted(legacy), ['assets', 'pages', 'wiki_policy'])
 
     def test_interrupted_compression_preserves_previous_snapshots(self):
         with tempfile.TemporaryDirectory() as tmp:
