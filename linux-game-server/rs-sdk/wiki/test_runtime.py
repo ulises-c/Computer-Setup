@@ -31,6 +31,16 @@ class RuntimeTest(unittest.TestCase):
         self.bin.mkdir(parents=True)
         self.log = self.home / 'calls'
         self.env = dict(os.environ, HOME=str(self.home), PATH=f'{self.bin}:' + os.environ['PATH'], CALL_LOG=str(self.log))
+        site = self.home / 'python-fixtures'
+        site.mkdir()
+        (site / 'sitecustomize.py').write_text(
+            'import os, shutil\n'
+            '_which = shutil.which\n'
+            'def fixture_which(command, mode=os.F_OK | os.X_OK, path=None):\n'
+            ' if command in ("bun", "git-lfs"): path = os.path.join(os.environ["HOME"], ".local/bin")\n'
+            ' return _which(command, mode=mode, path=path)\n'
+            'shutil.which = fixture_which\n')
+        self.env['PYTHONPATH'] = str(site)
         for name, body in {
             'systemctl': 'printf "%s\\n" "$*" >> "$CALL_LOG"',
             'loginctl': 'printf "%s\\n" "${TEST_LINGER:-yes}"',
@@ -55,6 +65,21 @@ class RuntimeTest(unittest.TestCase):
 
     def run_install(self, *args):
         return subprocess.run(['bash', str(self.runtime / 'install.sh'), *args], env=self.env, text=True, capture_output=True)
+
+    def test_runtime_binary_lookup_ignores_unrelated_path_entries(self):
+        fallback = self.home / 'fallback-bin'
+        fallback.mkdir()
+        self.env['PATH'] += os.pathsep + str(fallback)
+        for name in ('bun', 'git-lfs'):
+            with self.subTest(binary=name):
+                executable = fallback / name
+                executable.write_text('#!/bin/sh\nexit 0\n')
+                executable.chmod(0o755)
+                (self.bin / name).unlink()
+                result = subprocess.run(
+                    [sys.executable, '-c', 'import shutil, sys; print(shutil.which(sys.argv[1]))', name],
+                    env=self.env, text=True, capture_output=True, check=True)
+                self.assertEqual(result.stdout.strip(), 'None')
 
     def test_prerequisites_fail_closed_without_writes(self):
         paths = [self.bin / 'bun', self.bin / 'git-lfs', self.wiki / 'bin/wiki',
