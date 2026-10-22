@@ -1,6 +1,7 @@
 services:
   portal:
-    image: python:3.14-alpine
+    image: rs-sdk-portal:local
+    build: .
     container_name: rs-sdk-portal
     user: "${PORTAL_UID:?Run portal/install.sh}:${PORTAL_GID:?Run portal/install.sh}"
     restart: unless-stopped
@@ -23,18 +24,7 @@ services:
     ports:
       - "127.0.0.1:8098:8098"
     volumes:
-      - type: bind
-        source: ./server.py
-        target: /app/server.py
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ./theme.css
-        target: /app/theme.css
-        read_only: true
-        bind:
-          create_host_path: false
+
       - type: bind
         source: ./assets
         target: /app/assets

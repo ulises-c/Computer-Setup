@@ -79,7 +79,9 @@ jobs:
         run: python3 -m unittest discover -v -s linux-server/ntfy-discord/tests
 
       - name: Test read-only RS-SDK portal and snapshot boundaries
-        run: python3 -m unittest discover -v -s linux-game-server/rs-sdk/portal
+        run: |
+          python3 -m pip install -r linux-game-server/rs-sdk/portal/requirements.txt
+          python3 -m unittest discover -v -s linux-game-server/rs-sdk/portal
 
       - name: Test game server (Dragonwilds, player log, backups)
         working-directory: linux-game-server/tests

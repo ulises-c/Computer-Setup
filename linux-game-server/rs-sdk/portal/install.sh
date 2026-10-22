@@ -21,7 +21,7 @@ fi
 umask 077
 printf 'PORTAL_UID=%s\nPORTAL_GID=%s\nPORTAL_GAME_DOMAIN=%s\nPORTAL_DATA_DIR=%s\n' \
   "$(id -u)" "$(id -g)" "$DOMAIN" "$DATA_DIR" > "$SCRIPT_DIR/.env"
-docker compose --project-name rs-sdk-portal --project-directory "$SCRIPT_DIR" -f "$SCRIPT_DIR/docker-compose.yml" up -d --force-recreate
+docker compose --project-name rs-sdk-portal --project-directory "$SCRIPT_DIR" -f "$SCRIPT_DIR/docker-compose.yml" up -d --build --force-recreate
 for _ in {1..15}; do
   if curl --fail --silent http://127.0.0.1:8098/rs-sdk/ >/dev/null; then
     tailscale serve --bg --https=443 --set-path=/rs-sdk http://127.0.0.1:8098
