@@ -312,6 +312,15 @@ class SyncAssetTests(unittest.TestCase):
             self.assertEqual(before, source.read_bytes())
             self.assertEqual(sync.TABLES['rs-sdk-wiki.sqlite']['pages'], ('id', 'source', 'title', 'text', 'fetched_at', 'revid'))
 
+    def test_generated_columns_are_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'accounts.sqlite'
+            with closing(sqlite3.connect(path)) as db, db:
+                db.execute('CREATE TABLE accounts (username,status,purpose,created_at,first_login_at,last_login_at,login_count,extra AS (username) VIRTUAL)')
+                db.execute('CREATE TABLE deaths (username)')
+            with self.assertRaises(ValueError):
+                sync.check_snapshot(path, 'accounts.sqlite')
+
 
 if __name__ == '__main__':
     unittest.main()

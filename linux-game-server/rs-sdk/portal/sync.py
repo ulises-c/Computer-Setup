@@ -340,6 +340,8 @@ def check_snapshot(dest, name):
         if any(kind != 'table' for kind, _ in objects):
             raise ValueError('Unexpected database objects')
         for table in actual_tables:
+            if any(r[6] for r in db.execute(f'PRAGMA table_xinfo({table})')):
+                raise ValueError('Unexpected generated column')
             columns = tuple(r[1] for r in db.execute(f'PRAGMA table_info({table})'))
             allowed = expected[table][:6] if legacy else expected[table]
             if columns != allowed:

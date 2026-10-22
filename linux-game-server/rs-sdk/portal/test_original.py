@@ -4,6 +4,11 @@ import original
 
 
 class OriginalTests(unittest.TestCase):
+    def test_deeply_nested_css_is_dropped_not_fatal(self):
+        html = self.render('<p style="color:red;width:' + 'calc(' * 600 + '1px' + ')' * 600 + '">x</p>')
+        self.assertIn('color:red;', html)
+        self.assertNotIn('calc(', html)
+
     def test_original_has_responsive_fallback_style_without_cached_css(self):
         html = self.render('<p>Article</p>')
         self.assertIn('name="viewport"', html)

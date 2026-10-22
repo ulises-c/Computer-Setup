@@ -1,4 +1,6 @@
 import hashlib
+import os
+import socket
 from contextlib import closing
 from pathlib import Path
 import sqlite3
@@ -84,6 +86,20 @@ class OriginalHTTPTests(unittest.TestCase):
                 urlopen(self.base + '/rs-sdk/wiki/scraped/asset/' + tail)
             self.assertEqual(error.exception.code, 404)
             error.exception.close()
+
+
+    def test_fifo_and_swapped_asset_directory_do_not_hang_or_leak(self):
+        fifo = 'f' * 64
+        os.mkfifo(self.root / 'assets' / fifo)
+        with closing(sqlite3.connect(self.root / 'scraped-wiki.sqlite')) as db, db:
+            db.execute('INSERT INTO assets VALUES (\'osrs\',\'/images/Fifo.png\',?,\'image/png\',4)', (fifo,))
+        self.addCleanup(lambda: os.path.lexists(self.root / 'assets' / fifo) and os.unlink(self.root / 'assets' / fifo))
+        socket.setdefaulttimeout(3)
+        self.addCleanup(socket.setdefaulttimeout, None)
+        with self.assertRaises(HTTPError) as error:
+            urlopen(self.base + '/rs-sdk/wiki/scraped/asset/' + fifo)
+        self.assertEqual(error.exception.code, 404)
+        error.exception.close()
 
 
 if __name__ == '__main__':

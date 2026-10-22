@@ -113,7 +113,9 @@ FUNCTIONS = set('''
 '''.split())
 
 
-def css_values(tokens, source, assets, base, image_set=False):
+def css_values(tokens, source, assets, base, image_set=False, depth=0):
+    if depth > 32:
+        return None
     output = []
     for token in tokens:
         if token.type == 'comment':
@@ -130,7 +132,7 @@ def css_values(tokens, source, assets, base, image_set=False):
                 local = image_url(args[0].value, source, assets, base)
                 output.extend(tinycss2.parse_component_value_list('url("' + local + '")'))
             elif name in FUNCTIONS:
-                args = css_values(token.arguments, source, assets, base, name.endswith('image-set'))
+                args = css_values(token.arguments, source, assets, base, name.endswith('image-set'), depth + 1)
                 if args is None:
                     return None
                 token.arguments = args
@@ -138,7 +140,7 @@ def css_values(tokens, source, assets, base, image_set=False):
             else:
                 return None
         elif token.type in {'() block'}:
-            content = css_values(token.content, source, assets, base, image_set)
+            content = css_values(token.content, source, assets, base, image_set, depth + 1)
             if content is None:
                 return None
             token.content = content
@@ -155,7 +157,10 @@ def declarations(css, source, assets, base):
     for item in tinycss2.parse_blocks_contents(css, skip_comments=True, skip_whitespace=True):
         if item.type != 'declaration' or item.lower_name not in PROPERTIES:
             continue
-        value = css_values(item.value, source, assets, base)
+        try:
+            value = css_values(item.value, source, assets, base)
+        except RecursionError:
+            value = None
         if value is not None:
             result.append(item.lower_name + ':' + tinycss2.serialize(value).strip() + ('!important' if item.important else '') + ';')
     return ''.join(result)

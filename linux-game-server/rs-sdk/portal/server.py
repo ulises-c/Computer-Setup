@@ -136,10 +136,15 @@ class Portal:
                 metadata = db.execute('SELECT mime,size FROM assets WHERE sha256=? AND source IN (\'osrs\',\'rs3\') LIMIT 1', (digest,)).fetchone()
         if metadata is None or metadata['mime'] not in ('image/png', 'image/jpeg', 'image/gif', 'image/webp', 'text/css'):
             raise ValueError('Missing asset')
-        directory = self.root / 'assets'
-        if directory.is_symlink():
-            raise ValueError('Invalid asset directory')
-        fd = os.open(directory / digest, os.O_RDONLY | os.O_NOFOLLOW)
+        root_fd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            directory_fd = os.open('assets', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd)
+            try:
+                fd = os.open(digest, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory_fd)
+            finally:
+                os.close(directory_fd)
+        finally:
+            os.close(root_fd)
         with os.fdopen(fd, 'rb') as stream:
             info = os.fstat(stream.fileno())
             if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= 16 * 1024 * 1024 or info.st_size != metadata['size']:
@@ -339,7 +344,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == document_path:
             try:
                 body = portal.original_document(int(parse_qs(url.query).get('id', ['0'])[0]))
-            except (OSError, ValueError, sqlite3.Error):
+            except (OSError, ValueError, RecursionError, sqlite3.Error):
                 body = None
             if body is None:
                 self.send_error(404)
