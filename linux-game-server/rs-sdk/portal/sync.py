@@ -253,6 +253,7 @@ TABLES = {
     'benchmarks.sqlite': {
         'runs': ('id', 'benchmark', 'username', 'routine_sha', 'started_at', 'finished_at', 'success', 'total_ms', 'routine_ms', 'ticks', 'steps', 'mode'),
     },
+    '2004scape-wiki.sqlite': {'pages': ('id', 'source', 'title', 'text', 'brief', 'categories', 'fetched_at', 'revid')},
     'rs-sdk-wiki.sqlite': {'pages': ('id', 'source', 'title', 'text', 'fetched_at', 'revid')},
     'scraped-wiki.sqlite': {
         'pages': ('id', 'source', 'title', 'text', 'fetched_at', 'revid', 'raw_html', 'styles'),
@@ -262,7 +263,8 @@ TABLES = {
 }
 # Accepted from a sender that predates them.
 OPTIONAL_TABLES = {'scraped-wiki.sqlite': {'redirects'}}
-PAGE_SOURCES = {'rs-sdk-wiki.sqlite': ('rs-sdk',), 'scraped-wiki.sqlite': ('osrs', 'rs3')}
+OPTIONAL_SNAPSHOTS = {'2004scape-wiki.sqlite'}
+PAGE_SOURCES = {'2004scape-wiki.sqlite': ('2004scape',), 'rs-sdk-wiki.sqlite': ('rs-sdk',), 'scraped-wiki.sqlite': ('osrs', 'rs3')}
 DEFAULT_TARGET = Path.home() / '.local/share/rs-sdk-portal/data'
 DEFAULT_WANTED = Path.home() / '.local/share/rs-sdk-portal/wanted/wanted.sqlite'
 MAX_WANTED = 100
@@ -339,7 +341,7 @@ def export_db(source, destination, tables, sources=()):
                 available = {r[1] for r in src.execute(f'PRAGMA table_info({table})')}
                 if not available and any(table in optional for optional in OPTIONAL_TABLES.values()):
                     continue
-                selection = ','.join(c if c in available else "'[]'" if c == 'styles' else 'NULL' if c == 'raw_html' else c for c in columns)
+                selection = ','.join('wikitext' if destination.name == '2004scape-wiki.sqlite' and c == 'text' else 'text' if destination.name == '2004scape-wiki.sqlite' and c == 'brief' else c if c in available else "'[]'" if c == 'styles' else 'NULL' if c == 'raw_html' else c for c in columns)
                 where = f' WHERE source IN ({",".join("?" for _ in sources)})' if sources else ''
                 rows = src.execute(f'SELECT {selection} FROM {table}' + where, sources)
                 def projected_rows():
@@ -467,7 +469,7 @@ def receive(stream, target):
                         pass
             except (tarfile.TarError, EOFError, gzip.BadGzipFile, zlib.error, sqlite3.DatabaseError) as exc:
                 raise ValueError('Invalid snapshot archive') from exc
-            if not set(TABLES).issubset(seen):
+            if not (set(TABLES) - OPTIONAL_SNAPSHOTS).issubset(seen):
                 raise ValueError('Incomplete snapshot set')
             referenced = {digest for digest, _, _ in metadata}
             if any(name[7:] not in referenced for name in seen if name.startswith('assets/')):
@@ -497,19 +499,26 @@ def receive(stream, target):
                 if (target / name).is_symlink():
                     raise ValueError('Symlink snapshot target')
             for name in TABLES:
-                os.replace(stage / name, target / name)
+                if name in seen:
+                    os.replace(stage / name, target / name)
     finally:
         os.close(fd)
-    print(f'Published {len(TABLES)} sanitized database snapshots.', flush=True)
+    print(f'Published {len(set(TABLES) & seen)} sanitized database snapshots.', flush=True)
 
 
-def push(root, host, receiver):
+def push(root, host, receiver, curated=False):
     sources = {
         'accounts.sqlite': root / '2004Scape-Botting/data/accounts.sqlite',
         'benchmarks.sqlite': root / '2004Scape-Botting/data/benchmarks.sqlite',
         'rs-sdk-wiki.sqlite': root / '2004Scape-Wiki/data/wiki.sqlite',
         'scraped-wiki.sqlite': root / '2004Scape-Wiki/data/wiki.sqlite',
     }
+    if curated:
+        # Build generated pages before the read-only export. Explicitly enabled only
+        # after the receiver is upgraded to accept the optional fifth snapshot.
+        wiki = root / '2004Scape-Wiki'
+        subprocess.run(['bun', 'src/cli.ts', 'curate'], cwd=wiki, check=True, timeout=90)
+        sources['2004scape-wiki.sqlite'] = wiki / 'data/wiki.sqlite'
     with tempfile.TemporaryDirectory(prefix='rs-sdk-portal-') as tmp:
         stage = Path(tmp)
         for name, source in sources.items():
@@ -548,7 +557,7 @@ def push(root, host, receiver):
                     for path in sorted(assets.iterdir()):
                         if path.name not in have:
                             archive.add(path, arcname='assets/' + path.name)
-                for name in TABLES:
+                for name in sources:
                     archive.add(stage / name, arcname=name)
             payload.seek(0)
             subprocess.run(ssh + [command + ' receive'], stdin=payload, check=True, timeout=300)
@@ -564,6 +573,7 @@ def main():
     sender = sub.add_parser('push')
     sender.add_argument('--root', type=Path, default=Path.home() / 'forgejo')
     sender.add_argument('--host', required=True, help='Existing SSH alias for the game server')
+    sender.add_argument('--curated', action='store_true', help='Build and publish the fifth, generated 2004Scape collection (upgrade receiver first)')
     sender.add_argument('--receiver', default='github/Computer-Setup/linux-game-server/rs-sdk/portal/sync.py')
     receiver = sub.add_parser('receive')
     receiver.add_argument('--target', type=Path, default=DEFAULT_TARGET)
@@ -574,7 +584,7 @@ def main():
     args = parser.parse_args()
     os.umask(0o077)
     if args.command == 'push':
-        push(args.root.expanduser().resolve(), args.host, args.receiver)
+        push(args.root.expanduser().resolve(), args.host, args.receiver, args.curated)
     elif args.command == 'take-wanted':
         print(json.dumps(take_wanted(args.wanted.expanduser().absolute()), ensure_ascii=False))
     elif args.command == 'inventory':

@@ -125,7 +125,7 @@ class SyncAssetTests(unittest.TestCase):
             blob = 'assets/' + hashlib.sha256(css).hexdigest()
             self.assertIn(blob, transfers[0])
             self.assertNotIn(blob, transfers[1])
-            self.assertEqual(set(transfers[1]), set(sync.TABLES))
+            self.assertEqual(set(transfers[1]), set(sync.TABLES) - sync.OPTIONAL_SNAPSHOTS)
             legacy = []
             def old_receiver(command, **kwargs):
                 if command[-1].endswith(' take-wanted'):

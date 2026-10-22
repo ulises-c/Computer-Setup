@@ -3,7 +3,7 @@
 import argparse
 from contextlib import closing, contextmanager
 from datetime import datetime, timezone
-from html import escape
+from html import escape, unescape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import hashlib
@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
 BASE = '/rs-sdk'
 STYLE = Path(__file__).with_name('theme.css').read_text()
 WIKIS = {
+    '2004scape': ('2004Scape Wiki', '2004scape-wiki.sqlite', 'This game, one page per thing: server data, what the bots saw in game (IDs, coordinates) and OSRS wiki knowledge filtered to late 2004.'),
     'rs-sdk': ('RS-SDK Wiki', 'rs-sdk-wiki.sqlite', 'Server-specific knowledge generated from RS-SDK. Search only the local game wiki.'),
     'scraped': ('Scraped Wiki', 'scraped-wiki.sqlite', 'Cached OSRS and RuneScape Wiki articles. This advice may describe later game versions, not this server.'),
 }
@@ -32,7 +33,7 @@ def layout(title, body, wiki=False):
     theme = 'wiki-page' if wiki else 'game-page'
     menu_title = 'Wiki navigation' if wiki else 'Game tools'
     note = 'Read-only article cache' if wiki else 'Account state is not live presence.'
-    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)} · RS-SDK</title><style>{STYLE}</style></head><body class="{theme}"><div class="world"><header><nav><a class="brand" href="{BASE}/">RS-SDK / companion</a><a href="{BASE}/accounts">Accounts</a><a href="{BASE}/benchmarks">Benchmarks</a><a href="{BASE}/wiki">Wikis</a></nav></header><div class="page-layout"><aside class="tool-menu"><h2>{menu_title}</h2><a href="{BASE}/">Companion home</a><a href="{BASE}/accounts">Account Database</a><a href="{BASE}/benchmarks">Benchmarks</a><a href="{BASE}/wiki/rs-sdk">RS-SDK Wiki</a><a href="{BASE}/wiki/scraped">Scraped Wiki</a><p>{note}</p></aside><main>{body}<footer>Read-only companion · no account controls, database downloads or background polling.</footer></main></div></div></body></html>'''
+    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)} · RS-SDK</title><style>{STYLE}</style></head><body class="{theme}"><div class="world"><header><nav><a class="brand" href="{BASE}/">RS-SDK / companion</a><a href="{BASE}/accounts">Accounts</a><a href="{BASE}/benchmarks">Benchmarks</a><a href="{BASE}/wiki">Wikis</a></nav></header><div class="page-layout"><aside class="tool-menu"><h2>{menu_title}</h2><a href="{BASE}/">Companion home</a><a href="{BASE}/accounts">Account Database</a><a href="{BASE}/benchmarks">Benchmarks</a><a href="{BASE}/wiki/2004scape">2004Scape Wiki</a><a href="{BASE}/wiki/rs-sdk">RS-SDK Wiki</a><a href="{BASE}/wiki/scraped">Scraped Wiki</a><p>{note}</p></aside><main>{body}<footer>Read-only companion · no account controls, database downloads or background polling.</footer></main></div></div></body></html>'''
 
 
 @contextmanager
@@ -46,11 +47,28 @@ def read_db(path):
         db.close()
 
 
-def table(headers, rows):
-    return '<div class="scroll"><table><thead><tr>' + ''.join(f'<th>{esc(h)}</th>' for h in headers) + '</tr></thead><tbody>' + ''.join('<tr>' + ''.join(f'<td>{esc(v)}</td>' for v in row) + '</tr>' for row in rows) + '</tbody></table></div>'
+def table(headers, rows, cell=esc):
+    return '<div class="scroll"><table><thead><tr>' + ''.join(f'<th>{cell(h)}</th>' for h in headers) + '</tr></thead><tbody>' + ''.join('<tr>' + ''.join(f'<td>{cell(v)}</td>' for v in row) + '</tr>' for row in rows) + '</tbody></table></div>'
+
+
+def curated_href(title):
+    return BASE + '/wiki/2004scape/w/' + quote(title.replace(' ', '_'), safe="/:(),'!*@$;-._~")
+
+
+def inline(text):
+    """Escaped text with the generated wiki's inline markdown: [label](wiki:Title) links to
+    its own pages (other links keep only their label), **bold**, *italics* and `code`."""
+    out = esc(text)
+    out = re.sub(r'\[([^\]]+)\]\(wiki:([^)\s]+)\)',
+                 lambda m: f'<a href="{esc(curated_href(unquote(unescape(m[2])).replace("_", " ")))}">{m[1]}</a>', out)
+    out = re.sub(r'\[([^\]]+)\]\([^)]*\)', r'\1', out)
+    out = re.sub(r'\*\*([^*]+)\*\*', r'<b>\1</b>', out)
+    out = re.sub(r'(?<![\w*])\*([^*\s][^*]*)\*(?![\w*])', r'<i>\1</i>', out)
+    return re.sub(r'`([^`]+)`', r'<code>\1</code>', out)
 
 
 def render_article(text, title, source):
+    fmt = inline if source == '2004scape' else esc
     lines = text.strip().splitlines()
     body = []
     headings = []
@@ -68,7 +86,7 @@ def render_article(text, title, source):
             level = max(2, len(heading[1]))
             anchor = f'section-{len(headings) + 1}'
             headings.append((anchor, heading[2], level))
-            body.append(f'<h{level} id="{anchor}">{esc(heading[2])}</h{level}>')
+            body.append(f'<h{level} id="{anchor}">{fmt(heading[2])}</h{level}>')
             continue
         if line.startswith('|'):
             rows = []
@@ -78,7 +96,7 @@ def render_article(text, title, source):
                     rows.append(cells)
                 index += 1
             if rows:
-                markup = table(rows[0], rows[1:])
+                markup = table(rows[0], rows[1:], fmt)
                 if not body and source != 'rs-sdk':
                     markup = markup.replace('class="scroll"', 'class="scroll wiki-infobox"', 1)
                 body.append(markup)
@@ -89,7 +107,7 @@ def render_article(text, title, source):
                 item = re.match(r'^\s*[-*]\s+(.+)$', lines[index])
                 if not item:
                     break
-                items.append(f'<li>{esc(item[1])}</li>')
+                items.append(f'<li>{fmt(item[1])}</li>')
                 index += 1
             body.append('<ul>' + ''.join(items) + '</ul>')
             continue
@@ -100,10 +118,10 @@ def render_article(text, title, source):
                 break
             paragraph.append(line)
             index += 1
-        body.append('<p>' + esc(' '.join(paragraph)) + '</p>')
+        body.append('<p>' + fmt(' '.join(paragraph)) + '</p>')
     if headings:
         contents = '<details class="wiki-toc" open><summary>Contents</summary><ol>'
-        contents += ''.join(f'<li class="{"subsection" if level > 2 else "section"}"><a href="#{anchor}">{esc(label)}</a></li>' for anchor, label, level in headings)
+        contents += ''.join(f'<li class="{"subsection" if level > 2 else "section"}"><a href="#{anchor}">{esc(re.sub(r"[*`]|\[([^\]]*)\]\([^)]*\)", r"\1", label))}</a></li>' for anchor, label, level in headings)
         contents += '</ol></details>'
         first_section = next(i for i, block in enumerate(body) if re.match(r'<h[2-6] ', block))
         body.insert(first_section, contents)
@@ -111,6 +129,8 @@ def render_article(text, title, source):
 
 
 def article_href(collection, row):
+    if collection == '2004scape':
+        return curated_href(row['title'])
     if collection == 'scraped' and row['source'] in ('osrs', 'rs3'):
         import original
         return original.page_href(row['source'], row['title'])
@@ -265,11 +285,12 @@ class Portal:
             cards = [
                 ('01 / ACCOUNTS', 'Account Database', BASE + '/accounts', 'Account status, purpose, logins and recorded deaths. Credentials stay private.'),
                 ('02 / PERFORMANCE', 'Benchmarks', BASE + '/benchmarks', 'Compare full runs, timings and routine versions. Inspect individual steps.'),
-                ('03 / SERVER KNOWLEDGE', 'RS-SDK Wiki', BASE + '/wiki/rs-sdk', WIKIS['rs-sdk'][2]),
-                ('04 / EXTERNAL KNOWLEDGE', 'Scraped Wiki', BASE + '/wiki/scraped', WIKIS['scraped'][2]),
-                ('05 / GAME', 'Play', self.game_url + '/', 'Open the browser client. Your human and bot accounts share this SDK world.'),
-                ('06 / RANKINGS', 'HiScores', self.game_url + '/hiscores', 'Browse the game server’s player rankings.'),
-                ('07 / TRADING', 'Grand Exchange', self.game_url + '/market.html', 'Open the server’s market and trading page.'),
+                ('03 / THIS GAME', '2004Scape Wiki', BASE + '/wiki/2004scape', WIKIS['2004scape'][2]),
+                ('04 / SERVER KNOWLEDGE', 'RS-SDK Wiki', BASE + '/wiki/rs-sdk', WIKIS['rs-sdk'][2]),
+                ('05 / EXTERNAL KNOWLEDGE', 'Scraped Wiki', BASE + '/wiki/scraped', WIKIS['scraped'][2]),
+                ('06 / GAME', 'Play', self.game_url + '/', 'Open the browser client. Your human and bot accounts share this SDK world.'),
+                ('07 / RANKINGS', 'HiScores', self.game_url + '/hiscores', 'Browse the game server’s player rankings.'),
+                ('08 / TRADING', 'Grand Exchange', self.game_url + '/market.html', 'Open the server’s market and trading page.'),
             ]
             body = '<div class="eyebrow">2004SCAPE / RS-SDK WORLD</div><h1>RS-SDK Companion</h1><p>Play, inspect your accounts, compare runs and explore what the bots know.</p><div class="grid">'
             body += ''.join(f'<a class="card" href="{esc(url)}"><small>{tag}</small><b>{title} ↗</b><p>{description}</p></a>' for tag, title, url, description in cards)
@@ -352,6 +373,18 @@ class Portal:
             body = f'<h1>{title}</h1><p class="note">{description}</p><p>{total} matching cached pages in this database. Browsing never fetches or refreshes upstream pages.</p>' + search_form('wiki/' + collection, q, title)
             body += ''.join(f'<article><span class="eyebrow">{esc(r["source"])}</span><h2><a href="{esc(article_href(collection, r))}">{esc(r["title"])}</a></h2><p>{esc(r["snippet"])}</p></article>' for r in rows)
             return 200, layout(title, body + pager('wiki/' + collection, q, page, total), wiki=True)
+        if path.startswith(BASE + '/wiki/2004scape/w/'):
+            raw = unquote(path[len(BASE + '/wiki/2004scape/w/'):])
+            title = ' '.join(raw.replace('_', ' ').split())
+            if not title or len(title) > 300 or any(ord(c) < 32 for c in title):
+                raise ValueError('title')
+            with read_db(self.root / '2004scape-wiki.sqlite') as db:
+                row = db.execute('SELECT id,title FROM pages WHERE title=?', (title,)).fetchone()
+            if row is None:
+                return 404, layout(title, f'<h1>{esc(title)}</h1><p>No generated page yet. <a href="{BASE}/wiki/2004scape?{esc(urlencode({"q": title}))}">Search this wiki</a>.</p>', wiki=True)
+            if row['title'].replace(' ', '_') != raw:
+                raise Redirect(curated_href(row['title']))
+            return self.article('2004scape', row['id'], params)
         route = split_route(path, BASE + '/wiki/scraped/w/')
         if route:
             import original
@@ -396,11 +429,28 @@ class Portal:
         with read_db(self.root / filename) as db:
             columns = {r[1] for r in db.execute('PRAGMA table_info(pages)')}
             raw = 'raw_html' if collection == 'scraped' and 'raw_html' in columns else 'NULL AS raw_html'
-            row = db.execute(f'SELECT source,title,text,fetched_at,revid,{raw} FROM pages WHERE id=?', (article_id,)).fetchone()
+            extra = ',brief,categories' if collection == '2004scape' else ''
+            row = db.execute(f'SELECT source,title,text,fetched_at,revid,{raw}{extra} FROM pages WHERE id=?', (article_id,)).fetchone()
         if row is None:
             return 404, layout('Article not found', '<h1>Article not found</h1>', wiki=True)
-        body = f'<a href="{BASE}/wiki/{collection}">← {title}</a><h1>{esc(row["title"])}</h1><p>{title} · source: {esc(row["source"])} · revision {esc(row["revid"])}</p>'
-        if row['source'] in ('osrs', 'rs3'):
+        revision_label = 'generator format' if collection == '2004scape' else 'revision'
+        body = f'<a href="{BASE}/wiki/{collection}">← {title}</a><h1>{esc(row["title"])}</h1><p>{title} · source: {esc(row["source"])} · {revision_label} {esc(row["revid"])}</p>'
+        if collection == '2004scape':
+            category = (json.loads(row['categories'] or '[]') or [''])[0]
+            osrs = None if category == 'guides' else re.sub(r' \((object|NPC|npcs|items|shops|quests|skills)\)$', '', row['title'])
+            if osrs:
+                try:
+                    with read_db(self.root / 'scraped-wiki.sqlite') as db:
+                        cached = self.find_page(db, 'osrs', osrs)
+                    if not cached:
+                        self.wanted.record('osrs', 'page', osrs)
+                except sqlite3.Error:
+                    pass
+            url = esc(curated_href(row['title']))
+            body += f'<p>Server reference data, bot observations and explicitly labelled OSRS excerpts. Historical applicability is provisional; see references and warnings.</p><p><a href="{url}">Article</a> · <a href="{url}?view=brief">Compact context</a></p>'
+            if params.get('view', [''])[0] == 'brief':
+                return 200, layout(row['title'], body + '<pre>' + esc(row['brief']) + '</pre>', wiki=True)
+        elif row['source'] in ('osrs', 'rs3'):
             domain = 'oldschool.runescape.wiki' if row['source'] == 'osrs' else 'runescape.wiki'
             url = f'https://{domain}/w/{quote(row["title"].replace(" ", "_"), safe="")}'
             body += f'<p>Content from <a href="{esc(url)}" rel="noreferrer">{esc(domain)} · upstream article</a>, CC BY-NC-SA 3.0. Cached for personal use; uncached pages and images are requested from the workstation when opened.</p>'

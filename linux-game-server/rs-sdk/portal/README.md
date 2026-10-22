@@ -8,6 +8,14 @@ card and game client stay unchanged. The portal offers:
   timestamps, and recorded death counts. It is not the game login database.
 - **Benchmarks**: full-run success rates, successful best/average total times,
   paginated history including resume runs, routine hashes and per-step timings.
+- **2004Scape Wiki** (`/rs-sdk/wiki/2004scape`): a third, generated collection in
+  `2004scape-wiki.sqlite`. It combines the rs-sdk reference wiki, bot observations
+  (IDs, world coordinates and provenance), field guides and lazily cached OSRS
+  excerpts. Historical applicability is provisional, not inferred as fact from
+  the client revision alone. Pages have an infobox, contents, internal title
+  links, references and a **Compact context** view (`?view=brief`) for agents.
+  Reading one queues its missing OSRS article through the same wanted mechanism;
+  it does not crawl linked pages.
 - **RS-SDK Wiki** (`/rs-sdk/wiki/rs-sdk`): searches only server-specific RS-SDK
   knowledge, stored in its own `rs-sdk-wiki.sqlite` snapshot.
 - **Scraped Wiki** (`/rs-sdk/wiki/scraped`): searches only cached OSRS/RS3 pages,
@@ -17,7 +25,7 @@ card and game client stay unchanged. The portal offers:
 
 `/rs-sdk/wiki` is a collection chooser, not a combined search. Each collection's
 search, pagination, article links, back links and snapshot timestamp stay scoped
-to its database. Both are linked directly from the companion and sidebar.
+to its database. All three are linked directly from the companion and sidebar.
 
 ## Appearance
 
@@ -136,13 +144,24 @@ structurally valid rasters and CSS within size limits and skips files that are
 incomplete or still downloading; the receiver re-verifies every hash, MIME and
 size, holds a lock for the whole receive, and installs blobs before snapshots.
 
-Sync publishes four files: `accounts.sqlite`, `benchmarks.sqlite`,
+By default sync publishes four files: `accounts.sqlite`, `benchmarks.sqlite`,
 `rs-sdk-wiki.sqlite` and `scraped-wiki.sqlite`. The two wiki files are physically
 separate database projections, not just views or UI filters. Export selects
 `source = 'rs-sdk'` for the first and `source IN ('osrs','rs3')` for the second;
 the receiver rejects a mislabeled collection before publishing any files. The
 original combined `2004Scape-Wiki/data/wiki.sqlite` remains unchanged for the
-active scraper/bots. An old portal-side `wiki.sqlite` is no longer read or
+active scraper/bots. With `push --curated`, sync first invokes `bun src/cli.ts curate` in the wiki
+checkout, rebuilding generated pages only when inputs changed, then projects an
+optional fifth file, `2004scape-wiki.sqlite` (only source `2004scape`). Its `text`
+is the full markdown, `brief` is compact agent context, and `categories` labels
+page kinds. The receiver accepts this file but still accepts older four-file
+senders. **Upgrade the receiver and portal before enabling `--curated`**, then
+run `install-sync.sh <game-server-ssh-alias> --curated` on the Mac to enable it
+for scheduled syncs. Without it, the third collection reports unavailable until
+its first snapshot arrives. Generation reads working-tree inputs, not only git
+commits; it never starts a bot or issues gameplay actions.
+
+An old portal-side `wiki.sqlite` is no longer read or
 published; retain it outside the active data directory as a rollback copy when
 upgrading. Sync never deletes an arbitrary `wiki.sqlite` from its target.
 
