@@ -83,6 +83,9 @@ jobs:
           python3 -m pip install -r linux-game-server/rs-sdk/portal/requirements.txt
           python3 -m unittest discover -v -s linux-game-server/rs-sdk/portal
 
+      - name: Test server-owned wiki runtime and input boundary
+        run: python3 -m unittest discover -v -s linux-game-server/rs-sdk/wiki
+
       - name: Test game server (Dragonwilds, player log, backups)
         working-directory: linux-game-server/tests
         run: python3 -m unittest discover -v -p 'test_*.py'
