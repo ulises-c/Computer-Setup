@@ -105,8 +105,23 @@ plain denylist, and optionally syncs the secret. It refuses to write the checkou
 update the checkout denylist. Run `refresh` first. `run` performs both while holding
 one lock. Suggested scheduler arguments are `--config CONFIG run` daily and
 `--config CONFIG --full run` monthly, using an always-on machine that can SSH to
-all explicit fleet aliases. Invoke the trusted runtime with a native scheduler;
-no scheduled jobs are installed by the audit command itself.
+all explicit fleet aliases. The macOS installer
+`macos-server/privacy-audit/setup.py --config /absolute/private/config.json`
+copies both scripts into `runtime/` beside that private config and renders
+LaunchAgents. Add `--enable` to register the schedules: daily at **09:17** and
+monthly on **day 1 at 10:17**, in local time. Neither uses `RunAtLoad` or KeepAlive,
+and registration does not start an audit. Config, runtime, and state belong
+outside the audited checkout. The installer uses the same configuration schema
+above; no second scheduler-specific schema is needed. It refuses installation
+while a scheduled audit is running; defer runtime deployment until it finishes.
+
+LaunchAgents run in the logged-in user's GUI session; registration does not
+make a FileVault-locked or logged-out Mac an unattended service host. The
+installed interpreter runs isolated (`-I`) with the private runtime as its
+working directory. Updating the checkout does not update that trusted copy:
+review changes and rerun the installer deliberately. Results remain local in
+the private state files and scheduler logs; no external alert channel is
+configured by this installer.
 
 ### Before-push guard
 
