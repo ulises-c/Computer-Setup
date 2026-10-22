@@ -99,7 +99,12 @@ def main():
         support = subprocess.run([sys.executable, '-B', str(publisher), '--help'], check=True, text=True, capture_output=True)
         if 'publish-wiki' not in support.stdout:
             raise ValueError('portal sync.py must support publish-wiki before installing timers')
+    metadata = [sys.executable, '-B', str(HERE / 'build_metadata.py'), '--wiki-root', str(wiki)]
+    if args.dry_run:
+        print(shlex.join(metadata))
     else:
+        subprocess.run(metadata, check=True, timeout=150)
+    if args.action != 'install':
         os.environ['WIKI_AUTO_IMAGES'] = '0'
         command = ([str(wiki / 'bin/wiki'), 'downloads', '--drain'] if args.action == 'drain' else
                    [sys.executable, '-B', str(publisher), 'publish-wiki', '--wiki-root', str(wiki), '--target', str(target), '--curated'])

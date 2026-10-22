@@ -15,7 +15,7 @@ class RuntimeTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.home = Path(self.temp.name) / 'home space%'
+        self.home = Path(self.temp.name).resolve() / 'home space%'
         self.home.mkdir()
         self.runtime = self.home / 'checkout space%/wiki'
         shutil.copytree(HERE, self.runtime, ignore=shutil.ignore_patterns('__pycache__'))
@@ -31,6 +31,12 @@ class RuntimeTest(unittest.TestCase):
         self.bin.mkdir(parents=True)
         self.log = self.home / 'calls'
         self.env = dict(os.environ, HOME=str(self.home), PATH=f'{self.bin}:' + os.environ['PATH'], CALL_LOG=str(self.log))
+        self.metadata_log = self.home / 'metadata-calls'
+        self.env['METADATA_LOG'] = str(self.metadata_log)
+        (self.runtime / 'build_metadata.py').write_text(
+            'import json, os, sys\n'
+            'with open(os.environ["METADATA_LOG"], "a") as out: out.write(json.dumps(sys.argv[1:]) + "\\n")\n'
+            'sys.exit(int(os.environ.get("METADATA_FAIL", "0")))\n')
         site = self.home / 'python-fixtures'
         site.mkdir()
         (site / 'sitecustomize.py').write_text(
@@ -65,6 +71,42 @@ class RuntimeTest(unittest.TestCase):
 
     def run_install(self, *args):
         return subprocess.run(['bash', str(self.runtime / 'install.sh'), *args], env=self.env, text=True, capture_output=True)
+
+    def test_metadata_refresh_precedes_each_managed_consumer(self):
+        (self.wiki / 'bin/wiki').write_text('#!/bin/sh\nprintf "drain\\n" >> "$METADATA_LOG"\n')
+        (self.runtime.parent / 'portal/sync.py').write_text(
+            'import os\nwith open(os.environ["METADATA_LOG"], "a") as out: out.write("publish\\n")\n')
+        for action in ('drain', 'publish'):
+            result = subprocess.run([sys.executable, '-B', str(self.runtime / 'runtime.py'), action],
+                                    env=self.env, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        lines = self.metadata_log.read_text().splitlines()
+        expected = json.dumps(['--wiki-root', str(self.wiki)])
+        self.assertEqual(lines, [expected, 'drain', expected, 'publish'])
+
+    def test_failed_metadata_refresh_blocks_consumers_and_installation(self):
+        self.env['METADATA_FAIL'] = '1'
+        for action in ('drain', 'publish', 'install'):
+            with self.subTest(action=action):
+                result = subprocess.run([sys.executable, '-B', str(self.runtime / 'runtime.py'), action],
+                                        env=self.env, text=True, capture_output=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(self.log.exists())
+                self.assertFalse((self.home / '.config/systemd').exists())
+
+    def test_dry_runs_never_refresh_metadata(self):
+        self.env['METADATA_FAIL'] = '1'
+        for action in ('drain', 'publish', 'install'):
+            result = subprocess.run([sys.executable, '-B', str(self.runtime / 'runtime.py'), action, '--dry-run'],
+                                    env=self.env, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('build_metadata.py', result.stdout)
+        self.assertFalse(self.metadata_log.exists())
+
+    def test_install_bootstraps_metadata_before_starting_timers(self):
+        result = self.run_install('--no-start')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(self.metadata_log.read_text()), ['--wiki-root', str(self.wiki)])
 
     def test_runtime_binary_lookup_ignores_unrelated_path_entries(self):
         fallback = self.home / 'fallback-bin'

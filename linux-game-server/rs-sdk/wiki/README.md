@@ -10,6 +10,10 @@ packages, clones repositories, imports references, or fetches LFS objects.
   at `~/forgejo/2004Scape-Wiki` (or `--wiki-root PATH`).
 - This Computer-Setup checkout must stay in place: units call its `runtime.py`
   and sibling `../portal/sync.py`. The latter must support `publish-wiki`.
+- Docker CLI access to the already-running Compose service `rs-sdk` (container
+  `rs-sdk-server`), which provides `bun` and uses `/opt/server` as its working
+  directory. No Docker probe is made for `--dry-run`; live installation,
+  including `--no-start`, bootstraps build metadata before writing units.
 - Working `systemctl --user` and `loginctl show-user "$USER" -p Linger --value`
   reporting `yes`. Installation fails otherwise, including with `--no-start`.
   Have the host administrator arrange linger if the account cannot enable it;
@@ -106,6 +110,72 @@ Only authenticated SSH/session tooling should mutate server wiki/input state;
 the web portal remains a snapshot reader/request producer, not a wiki writer.
 Retire the old source-side wiki publisher before enabling the server publisher;
 never let two machines compete to publish the same wiki snapshot.
+
+## Running build provenance
+
+Before **every** managed drain and publication, `runtime.py` invokes
+`build_metadata.py` to refresh the private canonical
+`WIKI_CHECKOUT/data/game-build.json`. Live installation bootstraps the same file;
+all dry-run actions only print the planned producer command.
+
+The producer reads the running container, not the host source checkout. A narrow
+`docker inspect --format` checks its running state, immutable container/image IDs,
+start time, restart count and expected working directory. `docker exec` pins that
+container ID and uses Bun to read only `content/README.md` and
+`webclient/src/client/Client.ts` under the inspected `/opt/server`. A second
+inspection must match before publishing. The date comes only from the content
+README's `Lost City - Month Day, Year` heading, with calendar validation; protocol
+revision comes independently from the client's `CLIENT_VERSION` constant.
+**Never substitute the engine README**, infer a date from protocol revision, or
+use a Git/reconstruction timestamp. A later deployed content target automatically
+produces the later declared date on the next refresh.
+
+The version-1 contract is:
+
+```text
+version: 1
+protocolRevision: positive integer
+historicalContentDate: YYYY-MM-DD
+historicalContentDateSource: "content-readme"
+contentIdentity: "sha256:<digest>"
+observedAt: ISO-8601 UTC timestamp
+confidence: "declared-target"
+```
+
+`contentIdentity` hashes the inspected container/image identity and content README
+SHA-256; it contains no host paths, credentials or environment values. This is
+**declared-target provenance, not comprehensive verification** that every script,
+asset or mechanic matches that date. No `.env` files, container environment,
+account data, image registry credentials or host source paths are read.
+
+Concurrent refreshes serialize with a private lock. Each Docker subprocess has a
+20-second timeout. Previous metadata is removed before probing; missing Docker,
+a stopped/replaced/restarted container, missing files, malformed declarations,
+an impossible calendar date or a failed probe leave no usable previous date and
+block the managed consumer. Successful JSON is atomically replaced with mode
+`600`, owned by the current user. Symlink metadata is removed without following
+its target; symlink/foreign/writable-by-others data directories are rejected.
+No game or portal service is restarted and no elevated privileges are requested.
+Only this derived metadata is invalidated: raw wiki cache/store/history remains
+untouched.
+
+Consumers must require the complete schema, private regular-file ownership and
+permissions, and a non-future `observedAt` no more than **10 minutes old**; absent,
+invalid or stale metadata means an unknown cutoff, not a fallback date. The
+producer does not itself alter wiki selection policies or portal publication
+logic. A long drain may outlive freshness; consumers must recheck when selecting
+historical material rather than treating an initial date as permanent.
+
+Direct deployment probe, run **on the game server as the service user**, from the
+repository root (writes only private build metadata and its lock):
+
+```bash
+python3 -B linux-game-server/rs-sdk/wiki/build_metadata.py --wiki-root ~/forgejo/2004Scape-Wiki
+```
+
+Success is silent; read the private JSON locally to review the observation. Probe
+errors are deliberately generic so Docker diagnostics cannot disclose private
+paths or configuration through this helper.
 
 ## Operations
 
