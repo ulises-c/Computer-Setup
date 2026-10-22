@@ -48,6 +48,18 @@ unified-layout design rationale is in [UNIFICATION.md](UNIFICATION.md).
 - [ ] Real icons: fetch the `.ico` from the Lost City title page and the rs-sdk
       demo site in `fetch-assets.sh`, replacing the `mdi-robot-outline` icon.
 
+### Server-owned wiki operations
+
+- [ ] Extend the nightly encrypted game backup to the authoritative wiki store,
+      Git/LFS objects, consistent snapshots of both SQLite databases (including
+      queues and pacing), and curated input generations. Verify an off-host
+      restore. The portal projections remain disposable, but the server's
+      source wiki no longer is; retained cutover archives are not nightly backups.
+- [ ] Verify worker/publication timer recovery after a natural server reboot
+      while the Mac is unavailable. User timers, linger, unit validation and
+      live server-side fetch/publication are verified; no game-host reboot was
+      forced for this migration.
+
 ## RuneScape: Dragonwilds follow-ups
 
 - [ ] Keep `MAX_PLAYERS=6` for normal operation; if testing 10 or 20, make a

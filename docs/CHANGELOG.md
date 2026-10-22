@@ -9,6 +9,18 @@ in [UNIFICATION.md](UNIFICATION.md).
 ## Unreleased — 2004Scape backup and maintenance safety
 
 ### Added
+- Server-authoritative RS-SDK wiki: the game server owns the scraped store,
+  SQLite databases, image/stylesheet queues and shared request pacing. Existing
+  bot wiki commands forward over SSH without local-fetch fallback. User timers
+  drain requests and publish the three sanitized wiki snapshots locally; a
+  server-authority marker rejects stale full uploads. The Mac publishes only
+  account/benchmark projections and allowlisted observation/guide inputs.
+  Capacity failures retain portal requests for retry, publication releases
+  database locks before filesystem/subprocess work, and timers and interactive
+  commands share one private input configuration. Frozen transfer verified
+  database contents, Git history and LFS objects, retained private rollback
+  archives, and left both game containers and Dragonwilds running unchanged.
+  Nightly off-host backup coverage and a natural-reboot check remain in TODO.
 - RS-SDK's Homepage card opens a Linux-game-server companion at `/rs-sdk/`, with
   searchable account metadata, benchmark summaries/step timings and cached wiki
   text, plus Play, HiScores and Grand Exchange links. A separate source-Mac sync

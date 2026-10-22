@@ -17,8 +17,9 @@ These settings retain SDK connectivity and do not reset earned XP or player save
 
 The RS-SDK Homepage card opens the game-server-hosted
 [companion portal](portal/README.md) at `/rs-sdk/`: Account Database, Benchmarks,
-cached Wiki, Play, HiScores and Grand Exchange. Its source-side sync exports
-read-only, credential-free views without changing the bot/wiki repositories.
+cached Wiki, Play, HiScores and Grand Exchange. The [wiki runtime](wiki/README.md)
+keeps scraped data and its queue on the server; clients request pages over SSH.
+The Mac separately publishes read-only, credential-free account/benchmark views.
 Vanilla Lost City remains separate.
 
 - LAN web client: `http://<server-ip>:8080/`

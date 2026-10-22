@@ -84,7 +84,50 @@ only the clean view.
 Account state is explicitly lifecycle metadata, not live presence. Current
 online state and world/server are tracked as a follow-up in `docs/TODO.md`.
 
-## Isolation and freshness
+## Server-authoritative wiki
+
+The preferred deployment keeps the scraper, store, both wiki databases, shared
+rate limit and download queue **on the game server**. Client `bin/wiki` commands
+forward over authenticated SSH; the sanitized web portal remains separate from
+the scraper and never proxies the original wiki viewer. See
+[the wiki runtime](../wiki/README.md) for user timers and input prerequisites.
+
+On the server, publish the local wiki collections:
+
+```sh
+python3 linux-game-server/rs-sdk/portal/sync.py publish-wiki \
+  --wiki-root ~/forgejo/2004Scape-Wiki \
+  --target ~/.local/share/rs-sdk-portal/data --curated
+```
+
+This exports only wiki snapshots/assets, validates them before installation,
+and leaves account/benchmark snapshots unchanged. Unsupported or invalid cached
+images are omitted (the reader shows placeholders); malformed stylesheets fail
+publication. Replacements are individually atomic, not a multi-file transaction.
+Successful publication creates `data/.wiki-authority` under the receiver lock,
+blocking legacy full uploads and remote `take-wanted`. Do not remove that marker
+except during a deliberate rollback. It protects against stale clients, not a
+malicious account that already owns the directory.
+
+Wanted requests are passed to the server's `bin/wiki want` and deleted only after
+that command succeeds; failed commands leave them queued. `--wanted PATH`
+overrides the default `TARGET/../wanted/wanted.sqlite`.
+
+The Mac still owns bot-account and benchmark data. Its separate job must use:
+
+```sh
+python3 linux-game-server/rs-sdk/portal/sync.py push --host <game-server-ssh-alias> --accounts-only
+bash linux-game-server/rs-sdk/portal/install-sync.sh <game-server-ssh-alias> --accounts-only
+```
+
+Account-only uploads contain exactly two snapshots and cannot overwrite wiki
+snapshots or assets. They never open Mac wiki databases, scrape, curate or take
+wanted requests. Curated observation/guide inputs originate with the bots and
+are uploaded separately; these are not scraped wiki copies. The account-only
+LaunchAgent enables this allowlisted upload with `--bot-inputs`; manual pushes
+can opt into it with the same flag.
+
+## Legacy full-sync isolation and freshness
 
 The web service runs in its own non-root, read-only container, published only on
 `127.0.0.1:8098`; Tailscale Serve publishes `/rs-sdk` on the host's existing node.
