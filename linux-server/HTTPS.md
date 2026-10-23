@@ -192,6 +192,8 @@ once per Service, before the first apply that includes it:
    free: delete an old node with that name from the Machines page first.
 2. Access controls: `autoApprovers.services["svc:<name>"] = ["tag:server"]`,
    and a grant from `autogroup:member` to `svc:<name>` on the same ports.
+   Add the tag of every tagged host that calls the Service (for example
+   `tag:pi` for `svc:ntfy`): a tagged host is not a member.
 3. Add the Service to the template: a `Services["svc:<name>"]` entry with its
    own `TCP` and a `Web` key `<name>.${TS_MAGICDNS_SUFFIX}:443`.
 4. `scripts/ts-serve-apply.sh linux-server/tailscale-serve/serve.json --services svc:<name> --dry-run`,

@@ -182,14 +182,16 @@ Choice:
   from `autogroup:member` to each Service with explicit ports (`tcp:443`, plus
   `tcp:22` for forgejo), plus the tag of every tagged host that consumes the
   Service (`tag:pi` for `svc:ntfy`, because the Pi's backup alerts publish
-  there; the Mac mini runner's tag for `svc:forgejo` if it has one); declare
+  there; the Mac mini's tag for `svc:forgejo` and `svc:ntfy` and the game
+  server's for `svc:ntfy`, if they are tagged); declare
   the three Services with their ports.
 - Tagged hosts as sources: a tag replaces the host's user identity on its
   outgoing connections too. If the policy is not an allow-all from `*`, add
   grants between the host tags for the cross-host flows: Pi → server `:443`
-  (Glances widget, 4.5 probes), `:8443` (adguardhome-sync) and `:8444` (Kuma
-  push); server → Pi, game server and Mac mini `:443` (Glances widgets, 4.5
-  probes).
+  (Glances widget), `:8443` (adguardhome-sync) and `:8444` (Kuma push); server
+  and Pi → the other hosts' `:443` (Homepage Glances widgets). The 4.5 probes
+  use every registry port and Service, so under such a policy they run from a
+  member device, not from the other host.
 - Retire `tag:container` from `tagOwners` after the last sidecar is gone.
 - Do not tighten the rest of the policy in this migration. The tailnet's
   existing member-to-device rule stays, so host-published ports (Syncthing,
@@ -285,7 +287,7 @@ A service keeps the same tailnet HTTPS port on every host, so a second server
 reuses it with no new choice. None of these ports has a host listener in the
 repo, and none is 5252 (reserved for the web client [B Q4]). A serve route
 published by hand on an owned port is replaced by the apply (3.5 step 3), so
-the runbook looks for one before the first apply (HANDOFF §1 step 3);
+the runbook looks for one before the first apply (HANDOFF §1 step 2);
 llama-telemetry's README used to suggest `:443 /` or `:8443`, and it now has
 `8450`.
 

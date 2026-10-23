@@ -100,6 +100,7 @@ the base routes; the Pi template repeats them (design §2.3, last paragraph).
 | Tools | `command -v jq docker curl ss` on both hosts | Four paths. Install `jq` if missing (`sudo apt install jq`) |
 | Daemon | `tailscale status --json \| jq -r .BackendState` | `Running` |
 | Operator | `tailscale serve status --json >/dev/null && echo ok` as the normal user | `ok`. If permission is denied: `sudo tailscale set --operator=$USER` |
+| Advertise state | On the server, as the normal user: `tailscale debug prefs \| jq -e '(.AdvertiseServices // []) \| type == "array"'` | `true`. `ts-serve-apply.sh` reads this for every Service step (§2.3 step 9); a failure here would otherwise first show after the old node is deleted |
 | Admin access | HUMAN | The user can open the admin console as Owner or Admin (Access controls, Machines, Services, DNS, Settings → Keys / OAuth clients) |
 | Escape hatch | HUMAN | The user can reach the server without the tailnet (LAN SSH or a local console). Tagging (§0.1 step 4) and the cutover can cut tailnet access |
 | Pi access | `ssh <pi-lan-ip> true` from the server, or a separate session on the Pi | Works. The Pi has its own checkout of this repo |
@@ -122,11 +123,16 @@ If any row fails: STOP.
    user identity as well. Unless the policy allows all traffic from `*`, add
    grants (design D8) from `tag:pi` to `tag:server` on `tcp:443`, `tcp:8443`
    and `tcp:8444` (Glances widget and §4 probes, adguardhome-sync, the Kuma
-   push), and from `tag:server` to `tag:pi`, the game server and the Mac mini
-   on `tcp:443` (Homepage Glances widgets, §4 probes). Preview `tag:pi` and
-   `tag:server` as sources for those flows. Record the tags the game server
-   and the Mac mini carry (`tailscale status --json | jq -r '.Self.Tags'` on
-   each), for the Service grants in §2.3 step 9.
+   push), from `tag:server` to `tag:pi`, the game server and the Mac mini on
+   `tcp:443`, and from `tag:pi` to the game server and the Mac mini on
+   `tcp:443` (Homepage Glances widgets). Preview `tag:pi` and `tag:server` as
+   sources for those flows. These grants do not cover the §4 front-door probe,
+   which uses every registry port and Service: with such a policy, run that
+   probe from a member device (HUMAN), not from the other host. Record whether
+   the policy is allow-all from `*`, and the tags the game server and the Mac
+   mini carry (`tailscale status --json | jq -r '.Self.Tags'` on each), for
+   the Service grants in §2.3 step 9 and the §4 probe. Save these grants in
+   the same policy edit as step 2's `tagOwners`, which they depend on.
 2. **tagOwners.** Add `tag:server` and `tag:pi` with the same owners as the
    existing `tag:container` entry. Leave `tag:container` until §6.
 3. **DNS page.** Record every global nameserver. On the server:
@@ -162,7 +168,7 @@ says `sudo`.
    apply replaces each owned listener whole):
 
    ```sh
-   srvcheck() { local tpl cur
+   srvcheck() { local tpl cur out
      tpl=$(git -C <repo> show "origin/feat/86-one-node-per-host:$1") || return 1
      cur=$(tailscale serve status --json) || return 1
      out=$(jq -rn --argjson tpl "$tpl" '
@@ -508,16 +514,19 @@ Expected: `applied …`, then `up to date`. A non-zero exit or
 
       For forgejo, `"ip": ["tcp:443", "tcp:22"]`. Add the tags of hosts that
       consume the Service to `src`: `tag:pi` for `svc:ntfy` (the Pi's backup
-      alerts), and the Mac mini's tag for `svc:forgejo` (its runner) if §0.1
-      step 1 found one, likewise the game server's tag for `svc:ntfy` if its
-      `.env` files send there. Merge the entries into the existing
+      alerts), and, if §0.1 step 1 found them tagged, the Mac mini's tag for
+      `svc:forgejo` (its runner) and `svc:ntfy` (its backup alerts) and the
+      game server's tag for `svc:ntfy` (its backup and dragonwilds alerts). Merge the entries into the existing
       `autoApprovers` and `grants`, keeping the rules already there.
    4. `scripts/ts-serve-apply.sh linux-server/tailscale-serve/serve.json --services svc:X --dry-run`.
       Expected: `==> Would run` has `set-raw` and `tailscale serve advertise svc:X`,
       and the diff adds only `Services["svc:X"]`. Then the same without
       `--dry-run`: `applied …`.
    5. HUMAN: on the Services page, approve the host if `autoApprovers` did
-      not. If the Service shows as misconfigured, use the fallback from design §3.5:
+      not. If step 4 ended with `read-back: svc:X is not advertised` after the
+      advertise itself succeeded, check the Services page: if the host shows
+      as advertising `svc:X`, log the deviation (design §6, the
+      `.AdvertiseServices` item) and go on; otherwise STOP. If the Service shows as misconfigured, use the fallback from design §3.5:
       `tailscale serve --service=svc:X --https=443 http://127.0.0.1:<port>`
       (forgejo also `--tcp=22 tcp://127.0.0.1:2222`), and log the deviation.
    6. Run the §4 probe for `X` from another tailnet device. The outage ends.
@@ -660,9 +669,10 @@ Run on the Pi, in its `<repo>`.
    green (`sudo systemctl start pi-backup.service` to force one). The Pi's
    backup alerts go to `svc:ntfy` as `tag:pi` (§2.3 step 9.3), and they fire
    only on failure, so publish a test from the Pi:
-   `curl -sS -o /dev/null -w '%{http_code}\n' -d test "https://ntfy.$SUFFIX/<a-test-topic>"`
-   prints `200`, and the message reaches the phone (HUMAN). STOP on `000` or a
-   `403`: the `svc:ntfy` grant is missing `tag:pi`. Then on the
+   `curl -sS -o /dev/null -w '%{http_code}\n' --max-time 20 -d test "https://ntfy.$SUFFIX/<a-test-topic>"`
+   prints `200`, and the message reaches the phone (HUMAN). STOP otherwise. A
+   `000` after the timeout means the ACL drops the traffic: the `svc:ntfy`
+   grant is missing `tag:pi`. A `403` comes from ntfy's own access control. Then on the
    **server**, set `HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN` in
    `linux-server/homepage/.env` to the Pi node's name, and run
    `docker compose up -d` in `linux-server/homepage`.
@@ -684,7 +694,9 @@ scripts/ts-serve-apply.sh <host-dir>/tailscale-serve/serve.json --services <none
 
 **Front-door probe**, from a tailnet device other than the host (D10). Use
 the Pi for the server and the server for the Pi, if their MagicDNS
-resolves (§1 step 6). Otherwise ask the user to run it on a laptop (HUMAN).
+resolves (§1 step 6) and §0.1 step 1 found the policy allow-all from `*`.
+Otherwise ask the user to run it on a member device such as a laptop
+(HUMAN): the tag-to-tag grants cover only the widget and push ports.
 Set `S`, `P` and `T` to the server node name, the Pi node name and the
 MagicDNS suffix, then run only the lines for stacks already cut over:
 
@@ -746,8 +758,10 @@ has the credentials in a `.env` it may use without printing them:
 **#86 acceptance**, after both hosts:
 - `docker ps -a --format '{{.Names}}' | grep -c -- '-ts$'` prints `0` on both
   hosts.
-- `tailscale serve status --json` matches each template (the apply script
-  prints `up to date`).
+- `tailscale serve status --json` matches each template: the apply script
+  with `--dry-run` prints `up to date`, with
+  `--services svc:ntfy,svc:immich,svc:forgejo` on the server and
+  `--services none` on the Pi.
 - The old nodes are offline in the admin console. They are deleted in §6,
   after the soak.
 
@@ -771,15 +785,17 @@ restart cockpit. For `tailscale-web`, run
 `sudo install -o "$USER" -m 644 <backup-dir>/tailscale-web.service ~/.config/systemd/user/`,
 then `systemctl --user daemon-reload && systemctl --user restart tailscale-web`.
 For `qbittorrent`, stop it and restore `qBittorrent.conf` from `<backup-dir>`
-first. For the Pi's `cups`, also restore the old policy, which still allows
-the sidecar subnet:
+first. For the Pi's `cups`, restore the old policy first too, because it is
+the one that still allows the sidecar subnet:
 `sudo cp -a <backup-dir>/cupsd.conf /etc/cups/cupsd.conf && sudo systemctl restart cups`
 (the Pi's `<backup-dir>` from §3 step 3). Then `https://cups-pi.<tailnet>.ts.net/`
 from another tailnet device answers 200 through the old sidecar. Log the dirty paths; `git checkout HEAD -- <path>` undoes them before
 the stack is retried.
 
 **5.2 One Service, after its node was deleted:**
-`tailscale serve drain svc:X`, then `tailscale serve clear svc:X`. HUMAN:
+`tailscale serve drain svc:X`, then `tailscale serve clear svc:X`. Then
+`tailscale debug prefs | jq -e --arg s svc:X '(.AdvertiseServices // []) | index($s) == null'`
+prints `true` (the host no longer advertises it); STOP otherwise. HUMAN:
 delete the Service on the Services page, so the name is free again. Then empty
 that stack's `ts-state/` (`sudo find <repo>/linux-server/X/ts-state -mindepth 1 -delete`;
 its node key belonged to the deleted node), and do 5.1. The sidecar
@@ -807,10 +823,10 @@ Then `git -C <repo> checkout <pre-migration-commit>`, and restore every `.env` f
 `<backup-dir>/env/`. For a server rollback, also restore the Pi's
 `adguardhome-sync` and `backup` `.env` from `<pi-env-backup-dir>`, on the Pi.
 Restore `cockpit.conf`, the tailscale-web unit and `qBittorrent.conf` as in
-5.1, and bring up every stack with `docker compose up -d --remove-orphans`.
-If an `.env` copy is missing, use the restic snapshot from §1.1
-(`linux-server/backup/README.md`, "restore"). The host tags can stay. On the
-Pi, restore `cupsd.conf` as in 5.1.
+5.1, and on the Pi `cupsd.conf` as in 5.1. Then bring up every stack with
+`docker compose up -d --remove-orphans`. If an `.env` copy is missing, use
+the restic snapshot from §1.1 (`linux-server/backup/README.md`, "restore").
+The host tags can stay.
 
 ### 6. After the soak (7 days, both hosts verified; design §4.7)
 
