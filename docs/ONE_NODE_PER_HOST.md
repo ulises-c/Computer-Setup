@@ -1123,7 +1123,7 @@ record the change as a deviation afterwards (5.1).
 | O4 | Tailnet port registry 8443–8450 plus 9443 for Portainer, and its order | Any other free ports | Bookmarks and monitors use these numbers | 2.1 |
 | O5 | New loopback ports 2222, 3300, 8100–8105 | Any free ports | None outside the host | 2.2 |
 | O6 | Mount names equal the stack directory name; `/cockpit-ui/` for cockpit | Shorter names (`/qbt/`, `/st/`) | App base-path settings must match | 2.2, 2.3 |
-| O7 | NPM bound to `NPM_BIND_IP` (the LAN IP) | A DHCP reservation plus the same bind; an interface-name firewall rule; test the all-interfaces bind live and keep it if self-traffic reaches serve | A DHCP change breaks the bind at boot | D7, 4.3 |
+| O7 | NPM bound to `NPM_BIND_IP` (the LAN IP) | A DHCP reservation plus the same bind; an interface-name firewall rule; test the all-interfaces bind live and keep it if self-traffic reaches serve | A DHCP change breaks the bind at boot. The server has a static IP; a bind that survives a network change is #135 | D7, 4.3 |
 | O8 | Host tags `tag:server`, `tag:pi`; ACL tightening deferred to #49 | Tighten grants in this change | A missed port breaks a service | D8, D9, 4.1 |
 | O9 | Same-host consumers use loopback | Use the front-door URLs once self-reach is verified live | Alerts depend on tailscaled | D10 |
 | O10 | Syncthing GUI on `0.0.0.0` inside its container | `insecureSkipHostcheck` in its config with a loopback bind | The same effect, but in off-repo config | 2.2 |
@@ -1145,8 +1145,10 @@ check does not help, because the request comes from the allowed origin. A
 registry port is a separate origin for scripts and localStorage, but browsers
 do not isolate cookies by port, so a `Path=/` cookie on the host name reaches
 it too. Only the three Services have their own host name. Portainer (the
-Docker socket) is on `9443` for that reason; Cockpit, filebrowser and
-tailscale-web stay on the shared origin, and moving them is tracked in #105.
+Docker socket) is on `9443` for that reason. Cockpit and filebrowser stay on
+the shared origin for the install and move to registry ports in a follow-up
+(#133); filebrowser's `FB_ROOT=/` mount is narrowed separately (#134).
+tailscale-web stays, under #105.
 
 UNVERIFIED items and their fallbacks, in one place:
 - A Service claiming a live node's name (fallback: delete the node first; D3).
