@@ -10,6 +10,8 @@ re-trigger, plus commit messages. Two layers:
   `.privacy-denylist` at the repo root (gitignored), or the PRIVACY_DENYLIST
   environment variable in CI. One value per line, `#` comments allowed. The
   repo owner's public handle is exempt only within links to the origin repo.
+  PUBLIC_IDENTITIES exempts the owner's approved full name and two exact emails
+  from email and denylist matching, not from path or secret checks.
 
 A hit is reported as path:line and the check name. The matched text is never
 printed; identifying paths are redacted while safe filenames stay useful.
@@ -36,6 +38,10 @@ import sys
 
 ALLOW_MARKER = "privacy-check: allow"
 DENYLIST_FILE = ".privacy-denylist"
+PUBLIC_IDENTITIES = re.compile(
+    r"(?<![\w@.%+-])(?ai:" + "|".join(map(re.escape, (
+        "Ulises Chavarria", "ulises.engineer@gmail.com", "uchavarria@scu.edu",
+    ))) + r")(?![\w@.%+-])")
 
 TAILNET_HOST = re.compile(r"([A-Za-z0-9-]+)\.ts\.net\b")
 TAILNET_ID = re.compile(r"\btail[0-9a-f]{6}\b")
@@ -163,6 +169,7 @@ def denylisted(text, entry, addresses=None):
 
 def check_line(text, denylist, path="", owner="", *, no_allow=False):
     hits = []
+    public_text = PUBLIC_IDENTITIES.sub(" ", text)
     if any(m.group(1) != "example" for m in TAILNET_HOST.finditer(text)):
         hits.append("tailnet hostname (use <tailnet>.ts.net or example.ts.net)")
     if TAILNET_ID.search(text):
@@ -170,7 +177,7 @@ def check_line(text, denylist, path="", owner="", *, no_allow=False):
     # Test fixtures need private-looking addresses; real ones still hit the denylist.
     if not is_test_path(path) and any(private_ip(m) for m in IPV4.finditer(text)):
         hits.append("private or tailnet IPv4 address (use 192.0.2.x in examples)")
-    if any(personal_email(m) for m in EMAIL.finditer(text)):
+    if any(personal_email(m) for m in EMAIL.finditer(public_text)):
         hits.append("email address (use example.com)")
     if any(m.group(1) not in GENERIC_HOME_NAMES for m in HOME_PATH.finditer(text)):
         hits.append("personal home path (use $HOME or <username>)")
@@ -179,7 +186,7 @@ def check_line(text, denylist, path="", owner="", *, no_allow=False):
     if not no_allow and ALLOW_MARKER in text:
         hits = []
     hits += [name for name, pattern in SECRETS if pattern.search(text)]
-    lowered = text.lower()
+    lowered = public_text.lower()
     if owner:
         scope = repo_scope(os.getcwd())
         if scope and scope.group(2) == owner.lower():

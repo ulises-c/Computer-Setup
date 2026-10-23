@@ -232,6 +232,53 @@ class PrivacyCheckTests(unittest.TestCase):
         self.git("commit", "--allow-empty", "-qm", "fine")
         self.assertEqual(self.check("--range", "HEAD~1..HEAD").returncode, 0)
 
+    def test_approved_public_identity_passes_generic_and_denylist_rules(self):
+        name = "Ulises Chavarria"
+        emails = ["ulises.engineer@gmail.com", "uchavarria@scu.edu"]
+        denylist = "\n".join([name, *name.lower().split(), *emails])
+        for email in emails:
+            with self.subTest(email=email):
+                self.git("config", "user.name", name)
+                self.git("config", "user.email", email)
+                self.git("commit", "--allow-empty", "-qm", "fine")
+                result = self.check("--range", "HEAD~1..HEAD", denylist=denylist)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                for text in [name, email, f"Contact {name} <{email}>"]:
+                    self.assertEqual(SCANNER.check_line(text, denylist.splitlines(),
+                                                       no_allow=True), [])
+
+    def test_public_identity_exception_does_not_allow_lookalikes(self):
+        name = "Ulises Chavarria"
+        emails = ["ulises.engineer@gmail.com", "uchavarria@scu.edu"]
+        for value in [name, *emails]:
+            for text in [f"prefix{value}", f"{value}.evil", f"{value}-private",
+                         f"{value}@example.com", f"{value}+private"]:
+                with self.subTest(text=text):
+                    self.assertTrue(SCANNER.check_line(text, [*name.lower().split(), value],
+                                                       no_allow=True))
+
+    def test_public_identity_exception_preserves_other_privacy_checks(self):
+        name = "Ulises Chavarria"
+        email = "ulises.engineer@gmail.com"
+        identity = "Ulises Chavarria <ulises.engineer@gmail.com>"
+        for leak in LEAKS.values():
+            with self.subTest(leak=leak):
+                self.assertTrue(SCANNER.check_line(f"{identity} {leak}", [], no_allow=True))
+        for text in [f"{identity} zephyrbox", f"/home/{name}/projects",
+                     f"/Users/{email}/projects", name.lower().split()[0]]:
+            with self.subTest(text=text):
+                self.assertTrue(SCANNER.check_line(text, ["zephyrbox", *name.lower().split()],
+                                                   no_allow=True))
+
+    def test_public_identity_exception_rejects_unicode_lookalikes(self):
+        for text in ["Ul\u0131ses Chavarria", "uli\u017fes.engineer@" + "gmail.com",
+                     "uchavarr\u0131a@" + "scu.edu"]:
+            with self.subTest(text=text):
+                self.assertIn("denylist entry", SCANNER.check_line(text, [text], no_allow=True))
+        for text in ["\u00e9Ulises Chavarria", "Ulises Chavarria\u00e9"]:
+            with self.subTest(text=text):
+                self.assertIn("denylist entry", SCANNER.check_line(text, [text], no_allow=True))
+
     def test_modes_scan_identifying_filenames_even_without_text_hunks(self):
         for name in ["zephyrbox empty.bin", "zephyrbox\tquoted.bin"]:
             (self.root / name).write_bytes(b"\x00\x01")
