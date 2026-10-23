@@ -29,7 +29,12 @@ case "$*" in
   "serve status --json") cat "$STATE/serve.json" ;;
   "serve set-raw")
     if [[ -f "$STATE/drop_on_write" ]]; then jq 'del(.Web)' > "$STATE/serve.json"; else cat > "$STATE/serve.json"; fi ;;
-  "serve advertise "*) ;;
+  "debug prefs") cat "$STATE/prefs.json" ;;
+  "serve advertise "*)
+    [[ ! -f "$STATE/fail_advertise" ]] || exit 1
+    [[ -f "$STATE/ignore_advertise" ]] && exit 0
+    jq --arg s "${3:?}" '.AdvertiseServices = ((.AdvertiseServices // []) + [$s] | unique)' "$STATE/prefs.json" > "$STATE/p" \
+      && mv "$STATE/p" "$STATE/prefs.json" ;;
   *) exit 64 ;;
 esac
 EOF
@@ -45,6 +50,7 @@ new_host() {
     '{BackendState: "Running", Self: {DNSName: $dns, Tags: $tags}, CurrentTailnet: {MagicDNSSuffix: $sfx}}' \
     > "$STATE/status.json"
   : > "$STATE/serve.json"
+  printf '{}\n' > "$STATE/prefs.json"
   : > "$STATE/calls"
 }
 
@@ -58,7 +64,8 @@ apply() {
 }
 
 writes() { grep -cE '^serve (set-raw|advertise)' "$STATE/calls" || true; }
-only_reads() { ! grep -vqE '^(version|status --json|serve status --json)$' "$STATE/calls"; }
+only_reads() { ! grep -vqE '^(version|status --json|serve status --json|debug prefs)$' "$STATE/calls"; }
+advertised() { jq -c '.AdvertiseServices // []' "$STATE/prefs.json"; }
 serve_has() { jq -e "$1" "$STATE/serve.json" >/dev/null; }
 
 expect_err() {
@@ -134,9 +141,12 @@ expect_err 'BackendState not Running' 'BackendState is not Running' "$STATE/tpl/
 
 new_host untagged '[]'
 good_env
-expect_err 'Services need a tagged host' 'Services need a tagged host' "$STATE/tpl/serve.json" --dry-run
+expect_err 'Services need a tagged host' 'Services need a tagged host' "$STATE/tpl/serve.json" --services all --dry-run
 apply "$STATE/tpl/serve.json" --services none --dry-run
 [[ $RC == 0 ]] && ok '--services none runs on an untagged host' || fail "untagged none: $ERR"
+apply "$STATE/tpl/serve.json" --dry-run
+[[ $RC == 0 ]] && ! grep -q 'advertise' <<< "$OUT" \
+  && ok 'the default is --services none' || fail "default services: rc=$RC $ERR"
 
 # ── Validation ───────────────────────────────────────────────────────────────
 # $1 = name, $2 = expected error, $3 = jq edit of the template.
@@ -166,7 +176,7 @@ expect_err 'validation: invalid JSON' 'not valid JSON after rendering' "$STATE/t
 # ── Dry run ──────────────────────────────────────────────────────────────────
 new_host dry
 good_env
-apply "$STATE/tpl/serve.json" --dry-run
+apply "$STATE/tpl/serve.json" --services all --dry-run
 [[ $RC == 0 && "$(writes)" == 0 ]] && only_reads && [[ ! -s "$STATE/serve.json" ]] \
   && grep -q '^==> Diff' <<< "$OUT" && grep -q 'tailscale serve set-raw' <<< "$OUT" \
   && grep -q 'tailscale serve advertise svc:forgejo' <<< "$OUT" \
@@ -207,10 +217,79 @@ apply "$STATE/tpl/serve.json" --services svc:ntfy
 
 expect_err '--services with a name not in the template' 'svc:nope is not in' "$STATE/tpl/serve.json" --services svc:nope
 
-apply "$STATE/tpl/serve.json"
+apply "$STATE/tpl/serve.json" --services all
 [[ $RC == 0 ]] && serve_has '(.Services | keys) == ["svc:forgejo", "svc:immich", "svc:ntfy", "svc:other"]' \
   && serve_has '.Services["svc:forgejo"].TCP["22"].TCPForward == "127.0.0.1:2222"' \
-  && ok 'default --services all applies every template Service' || fail "services all: $ERR"
+  && [[ "$(advertised)" == '["svc:forgejo","svc:immich","svc:ntfy"]' ]] \
+  && ok '--services all applies and advertises every template Service' || fail "services all: $ERR"
+
+# ── --services parsing ───────────────────────────────────────────────────────
+new_host svcparse
+good_env
+expect_err '--services with spaces instead of commas' "is not svc:<name>; separate names with commas" \
+  "$STATE/tpl/serve.json" --services 'svc:forgejo svc:immich' --dry-run
+expect_err '--services with an empty name' 'empty name' "$STATE/tpl/serve.json" --services 'svc:ntfy,' --dry-run
+expect_err '--services empty' 'empty name' "$STATE/tpl/serve.json" --services '' --dry-run
+expect_err '--services with a duplicate' 'svc:ntfy is listed twice' "$STATE/tpl/serve.json" --services svc:ntfy,svc:ntfy --dry-run
+expect_err '--services prefix of a real name' 'svc:ntf is not in' "$STATE/tpl/serve.json" --services svc:ntf --dry-run
+
+# ── Funnel ───────────────────────────────────────────────────────────────────
+new_host funnel
+good_env
+jq -n --arg h "$CERT" '{AllowFunnel: {("\($h):443"): true}}' > "$STATE/serve.json"
+expect_err 'Funnel on an owned node listener stops the run' 'Funnel is on for owned listener :443' \
+  "$STATE/tpl/serve.json" --services none --dry-run
+grep -qF "$CERT" <<< "$ERR" && fail 'Funnel error printed the host name'
+
+new_host funnelsvc
+good_env
+jq -n --arg s "$SUFFIX" '{AllowFunnel: {("ntfy.\($s):443"): true}}' > "$STATE/serve.json"
+expect_err 'Funnel on a picked Service listener stops the run' 'Funnel is on for owned listener :443' \
+  "$STATE/tpl/serve.json" --services svc:ntfy --dry-run
+apply "$STATE/tpl/serve.json" --services none
+[[ $RC == 0 ]] && jq -e --arg s "$SUFFIX" '.AllowFunnel["ntfy.\($s):443"] == true' "$STATE/serve.json" >/dev/null \
+  && ok 'Funnel on a Service this run does not own is left alone' || fail "funnel unowned: rc=$RC $ERR"
+
+new_host funnelother
+good_env
+jq -n --arg h "$CERT" '{AllowFunnel: {("\($h):10000"): true, ("\($h):8443"): false}}' > "$STATE/serve.json"
+apply "$STATE/tpl/serve.json" --services none
+[[ $RC == 0 ]] && serve_has '.AllowFunnel | length == 2' \
+  && ok 'Funnel on an unowned port or set to false is kept' || fail "funnel other: rc=$RC $ERR"
+
+# ── Advertise state ──────────────────────────────────────────────────────────
+new_host advretry
+good_env
+touch "$STATE/fail_advertise"
+apply "$STATE/tpl/serve.json" --services svc:ntfy
+[[ $RC != 0 ]] && grep -q 'advertise svc:ntfy failed' <<< "$ERR" && serve_has '.Services["svc:ntfy"]' \
+  || fail "failed advertise: rc=$RC $ERR"
+rm "$STATE/fail_advertise"
+: > "$STATE/calls"
+apply "$STATE/tpl/serve.json" --services svc:ntfy --dry-run
+[[ $RC == 0 ]] && grep -q 'tailscale serve advertise svc:ntfy' <<< "$OUT" && ! grep -q 'set-raw <' <<< "$OUT" \
+  && only_reads && ok 'dry-run after a failed advertise plans only the advertise' || fail "retry dry-run: $OUT $ERR"
+: > "$STATE/calls"
+apply "$STATE/tpl/serve.json" --services svc:ntfy
+[[ $RC == 0 ]] && grep -qx 'serve advertise svc:ntfy' "$STATE/calls" && ! grep -q '^serve set-raw' "$STATE/calls" \
+  && [[ "$(advertised)" == '["svc:ntfy"]' ]] \
+  && ok 're-run after a failed advertise retries it without set-raw' || fail "advertise retry: rc=$RC out=$OUT $ERR"
+: > "$STATE/calls"
+apply "$STATE/tpl/serve.json" --services svc:ntfy
+[[ $RC == 0 && "$OUT" == "up to date" && "$(writes)" == 0 ]] \
+  && ok 'up to date once config and advertise both match' || fail "post-retry no-op: rc=$RC out=$OUT"
+
+new_host advreadback
+good_env
+touch "$STATE/ignore_advertise"
+apply "$STATE/tpl/serve.json" --services svc:immich
+[[ $RC != 0 ]] && grep -q 'read-back: svc:immich is not advertised' <<< "$ERR" \
+  && ok 'advertise read-back mismatch exits non-zero' || fail "advertise read-back: rc=$RC $ERR"
+
+new_host badprefs
+good_env
+printf 'not json\n' > "$STATE/prefs.json"
+expect_err 'unreadable prefs stops the run' 'debug prefs did not print' "$STATE/tpl/serve.json" --services svc:ntfy --dry-run
 
 # ── Conflicts and read-back ──────────────────────────────────────────────────
 new_host conflict
@@ -221,7 +300,7 @@ expect_err 'conflicting listener type stops the run' 'node port 8444 is HTTP, th
 new_host svcconflict
 good_env
 jq -n '{Services: {"svc:forgejo": {TCP: {"22": {HTTPS: true}}}}}' > "$STATE/serve.json"
-expect_err 'conflicting Service listener stops the run' 'svc:forgejo port 22 is HTTPS, the template wants TCPForward' "$STATE/tpl/serve.json"
+expect_err 'conflicting Service listener stops the run' 'svc:forgejo port 22 is HTTPS, the template wants TCPForward' "$STATE/tpl/serve.json" --services all
 
 new_host nullserve
 good_env

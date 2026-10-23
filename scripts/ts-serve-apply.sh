@@ -15,7 +15,7 @@ usage() {
   printf 'usage: %s <template> [--services all|none|svc:a[,svc:b]] [--dry-run]\n' "${0##*/}"
 }
 
-template="" services=all dry_run=false
+template="" services=none dry_run=false
 while (( $# )); do
   case "$1" in
     --dry-run) dry_run=true ;;
@@ -169,9 +169,18 @@ case "$services" in
   all) picked=("${tpl_services[@]}") ;;
   none) ;;
   *)
+    [[ -n "$services" && "$services" != *, && "$services" != ,* && "$services" != *,,* ]] \
+      || die "--services: empty name in a comma-separated list"
     IFS=, read -ra picked <<< "$services"
+    svc_re='^svc:[a-z0-9-]+$'
+    declare -A seen_svc=()
     for s in "${picked[@]}"; do
-      [[ " ${tpl_services[*]} " == *" $s "* ]] || die "--services: $s is not in $template"
+      [[ "$s" =~ $svc_re ]] || die "--services: '$s' is not svc:<name>; separate names with commas"
+      [[ -z "${seen_svc[$s]:-}" ]] || die "--services: $s is listed twice"
+      seen_svc[$s]=1
+      found=false
+      for t in "${tpl_services[@]}"; do [[ "$t" == "$s" ]] && found=true; done
+      [[ "$found" == true ]] || die "--services: $s is not in $template"
     done
     ;;
 esac
@@ -223,6 +232,22 @@ if [[ -n "$conflicts" ]]; then
   exit 1
 fi
 
+# A preserved AllowFunnel entry would put every handler of an owned listener on
+# the public internet, so a true entry on one stops the run.
+# shellcheck disable=SC2016
+funnel="$(jqm -r '
+  ([($tpl.Web // {}) | keys[]] + [$picked[] as $s | ($tpl.Services[$s].Web // {}) | keys[]]) as $owned
+  | (.AllowFunnel // {}) | to_entries[]
+  | select(.value == true and (.key as $k | any($owned[]; . == $k)))
+  | .key | sub("^.*:"; "")
+' <<< "$current")"
+if [[ -n "$funnel" ]]; then
+  while IFS= read -r p; do
+    printf 'error: Funnel is on for owned listener :%s; turn it off by hand first\n' "$p" >&2
+  done <<< "$funnel"
+  exit 1
+fi
+
 # shellcheck disable=SC2016
 merged="$(jqm '
   def put($k; $v): if ($v | length) > 0 then .[$k] = ((.[$k] // {}) + $v) else . end;
@@ -231,7 +256,23 @@ merged="$(jqm '
   | put("Services"; ($tpl.Services // {}) | with_entries(select(.key as $k | any($picked[]; . == $k))))
 ' <<< "$current")"
 
-if [[ "$(jq -S . <<< "$merged")" == "$(jq -S . <<< "$current")" ]]; then
+# A Service whose advertise failed after set-raw has a matching config, so the
+# advertise state is read separately and a re-run retries only what is missing.
+advertised='[]'
+missing=()
+if (( ${#picked[@]} )); then
+  prefs="$(tailscale debug prefs)" || die "tailscale debug prefs failed"
+  advertised="$(jq -c '.AdvertiseServices // [] | arrays' <<< "$prefs" 2>/dev/null)" \
+    || die "tailscale debug prefs did not print a JSON object"
+  [[ -n "$advertised" ]] || die "tailscale debug prefs: AdvertiseServices is not a list"
+  for s in "${picked[@]}"; do
+    jq -e --arg s "$s" 'any(.[]; . == $s)' <<< "$advertised" >/dev/null || missing+=("$s")
+  done
+fi
+
+config_same=false
+[[ "$(jq -S . <<< "$merged")" == "$(jq -S . <<< "$current")" ]] && config_same=true
+if [[ "$config_same" == true ]] && (( ${#missing[@]} == 0 )); then
   printf 'up to date\n'
   exit 0
 fi
@@ -255,16 +296,19 @@ if [[ "$dry_run" == true ]]; then
   ' <<< "$current"
   printf '\n==> Diff (current -> merged)\n'
   diff -u --label current --label merged "$work/current.json" "$work/merged.json" || true
-  printf '\n==> Would run\n  tailscale serve set-raw < <merged config>\n'
-  for s in "${picked[@]}"; do printf '  tailscale serve advertise %s\n' "$s"; done
+  printf '\n==> Would run\n'
+  [[ "$config_same" == true ]] || printf '  tailscale serve set-raw < <merged config>\n'
+  for s in "${missing[@]}"; do printf '  tailscale serve advertise %s\n' "$s"; done
   printf '\nDry run: nothing was written.\n'
   exit 0
 fi
 
 # ── Write, advertise, read back ──────────────────────────────────────────────
-tailscale serve set-raw <<< "$merged" || die "tailscale serve set-raw failed"
-for s in "${picked[@]}"; do
-  tailscale serve advertise "$s" || die "tailscale serve advertise $s failed"
+if [[ "$config_same" != true ]]; then
+  tailscale serve set-raw <<< "$merged" || die "tailscale serve set-raw failed"
+fi
+for s in "${missing[@]}"; do
+  tailscale serve advertise "$s" || die "tailscale serve advertise $s failed; re-run to retry"
 done
 
 after="$(read_serve)"
@@ -272,4 +316,11 @@ after="$(read_serve)"
 jq -e --argjson after "$after" --argjson tpl "$rendered" --argjson picked "$picked_json" \
   "$owned_def"' ($after | owned($tpl; $picked)) == owned($tpl; $picked)' <<< "$merged" >/dev/null \
   || die "read-back: tailscale serve status --json does not match the rendered template"
+if (( ${#picked[@]} )); then
+  prefs="$(tailscale debug prefs)" || die "read-back: tailscale debug prefs failed"
+  for s in "${picked[@]}"; do
+    jq -e --arg s "$s" '(.AdvertiseServices // []) | any(.[]; . == $s)' <<< "$prefs" >/dev/null \
+      || die "read-back: $s is not advertised"
+  done
+fi
 printf 'applied %s\n' "$template"
