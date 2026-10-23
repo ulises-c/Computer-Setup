@@ -1,0 +1,11 @@
+[Unit]
+Description=Check for the weekly 2004Scape maintenance window
+
+[Timer]
+# Daily check allows MAINTENANCE_DAY to change without reinstalling the timer.
+# Leave room for the longest countdown; never catch up a missed window.
+OnCalendar=*-*-* 01:45:00
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

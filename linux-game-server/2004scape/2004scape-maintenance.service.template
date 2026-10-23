@@ -1,0 +1,16 @@
+[Unit]
+Description=2004Scape maintenance (in-game countdown, verified backup, updates)
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+# Unprivileged: Docker access comes from the user's docker group, and the only
+# root-only actions, the game backup and its restore check, are granted by the
+# polkit rule.
+User=@USER@
+Group=@GROUP@
+ExecStart=/usr/bin/env bash @MAINTENANCE_SCRIPT@
+# Waiting for the countdown slot (up to ~75 min), the countdown (up to 60 min),
+# backup and restore check, then rebuilds, health waits and possible rollbacks.
+TimeoutStartSec=8h

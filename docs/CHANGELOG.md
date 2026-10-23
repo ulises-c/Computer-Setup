@@ -6,6 +6,61 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com). Remaining
 work lives in [TODO.md](TODO.md); the design rationale for the unified layout is
 in [UNIFICATION.md](UNIFICATION.md).
 
+## Unreleased — 2004Scape backup and maintenance safety
+
+### Added
+- Server-authoritative RS-SDK wiki: the game server owns the scraped store,
+  SQLite databases, image/stylesheet queues and shared request pacing. Existing
+  bot wiki commands forward over SSH without local-fetch fallback. User timers
+  drain requests and publish the three sanitized wiki snapshots locally; a
+  server-authority marker rejects stale full uploads. The Mac publishes only
+  account/benchmark projections and allowlisted observation/guide inputs.
+  Capacity failures retain portal requests for retry, publication releases
+  database locks before filesystem/subprocess work, and timers and interactive
+  commands share one private input configuration. Frozen transfer verified
+  database contents, Git history and LFS objects, retained private rollback
+  archives, and left both game containers and Dragonwilds running unchanged.
+  Nightly off-host backup coverage and a natural-reboot check remain in TODO.
+- RS-SDK's Homepage card opens a Linux-game-server companion at `/rs-sdk/`, with
+  searchable account metadata, benchmark summaries/step timings and cached wiki
+  text, plus Play, HiScores and Grand Exchange links. A separate source-Mac sync
+  publishes allowlisted read-only SQLite views every two minutes, excluding
+  passwords and private host/notes/error fields; neither game nor bot/wiki source
+  code is modified (normal SQLite WAL shared-memory coordination still applies).
+  The portal matches RS-SDK's parchment/stone Grand Exchange and compact HiScores
+  theme. Wiki pages have a lightweight OSRS/MediaWiki-style reader with contents,
+  headings, lists and tables, without a separate MediaWiki stack. RS-SDK Wiki
+  and Scraped Wiki have separate search pages and physical SQLite snapshot
+  databases; their searches, pagination and article links never mix collections.
+  The source scraper cache remains unchanged. Live account
+  presence/world/server lookup is tracked in TODO, not inferred from lifecycle
+  status. See `linux-game-server/rs-sdk/portal/README.md`.
+- Scraped Wiki articles gain an **original view** (clean text view kept): the
+  cached article HTML with its cached stylesheets and images, sanitized with
+  nh3/tinycss2, rewritten to local assets only and shown in a script-free
+  sandboxed frame under its own CSP. Missing images are placeholders; nothing is
+  fetched. The source-Mac sync sends cached rasters/CSS as content-addressed,
+  validated blobs and only those the server lacks. The portal is now built as a
+  small local image with two pinned dependencies. CSS fidelity is deliberately
+  conservative and script-driven page parts do not work.
+- Live nightly game backups include CRC-checked 2004Scape player-save copies.
+  Restore verification requires explicit state coverage and compares Lost City's
+  staged SQLite database against a private copy of stopped live data, including
+  WAL transactions, without creating live sidecars.
+- Weekly 2004Scape maintenance counts down in game, shuts down before the existing
+  03:00 backup, verifies the restored state, applies pending updates and restarts.
+  Failed or interrupted updates retain rollback state; other nights remain live.
+  Requires rerunning the backup installer and installing the maintenance timer.
+- Lost City and RS-SDK Homepage cards match the Dragonwilds card: a 15-second
+  status producer (`2004scape/game_status.py`, loopback nginx on 8097) reports
+  container health, software and gameplay rules, 24h CPU/memory, players and
+  accounts (read-only SQLite), saves, LAN address, maintenance window and backup.
+  RS-SDK adds bot, SDK-client and gateway rows. The cards are styled apart: Lost
+  City shows the mirrored 2004 login art and logo, RS-SDK the Lava Maze art,
+  scanlines, a robot icon and a BOT SERVER tag. Requires
+  `fetch-assets.sh linux-game-server` and `sudo bash
+  linux-game-server/2004scape/install-status-timer.sh`.
+
 ## Unreleased — Shared server base and cross-linked dashboards
 
 ### Added

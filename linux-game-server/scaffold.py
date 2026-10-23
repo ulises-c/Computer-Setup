@@ -86,6 +86,9 @@ def main():
     add_missing(ROOT / "glances/.env",
                 {"GLANCES_ALLOWED_HOSTS": ",".join(["localhost", "127.0.0.1"] + ([domain] if domain else []))})
 
+    # Bind-mounted by 2004scape-status; Docker would create a missing source as root.
+    (ROOT / "2004scape/status").mkdir(parents=True, exist_ok=True)
+
     dragonwilds_env = ROOT / "dragonwilds/.env"
     if not dragonwilds_env.exists():
         values = {

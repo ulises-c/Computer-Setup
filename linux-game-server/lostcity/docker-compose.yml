@@ -1,0 +1,105 @@
+services:
+  lostcity:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: computer-setup/lostcity:node24
+    container_name: lostcity
+    init: true
+    network_mode: host
+    restart: unless-stopped
+    user: "1000:1000"
+    working_dir: /opt/server
+    command: ["npm", "--prefix", "engine", "start"]
+    labels:
+      # Locally built image: there is nothing to pull, and a restart must go
+      # through the 2004Scape update job so players get the countdown.
+      - com.centurylinklabs.watchtower.enable=false
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
+    environment:
+      NODE_ENV: production
+      # `bun install` (run on every start) would let husky rewrite .git/config.
+      HUSKY: "0"
+    volumes:
+      - type: bind
+        source: ${LOSTCITY_RUNTIME_DIR:?Set LOSTCITY_RUNTIME_DIR in .env}
+        target: /opt/server
+        bind:
+          create_host_path: false
+      # The host runs git on these checkouts; the game must not be able to plant
+      # config (filters, ext:: remotes) that git would execute there.
+      - type: bind
+        source: ${LOSTCITY_RUNTIME_DIR}/engine/.git
+        target: /opt/server/engine/.git
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${LOSTCITY_RUNTIME_DIR}/content/.git
+        target: /opt/server/content/.git
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${LOSTCITY_RUNTIME_DIR}/webclient/.git
+        target: /opt/server/webclient/.git
+        read_only: true
+        bind:
+          create_host_path: false
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 90s
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8888/rs2.cgi').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 180s
+
+  bootstrap:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: computer-setup/lostcity:node24
+    profiles: [bootstrap]
+    network_mode: host
+    user: "1000:1000"
+    working_dir: /opt/server
+    command: ["/bin/bash", "/usr/local/bin/lostcity-bootstrap"]
+    env_file:
+      - path: ../../server-base/timezone.env
+        required: true
+    environment:
+      LOSTCITY_REVISION: ${LOSTCITY_REVISION:-254}
+    stdin_open: true
+    tty: true
+    restart: "no"
+    volumes:
+      - type: bind
+        source: ${LOSTCITY_RUNTIME_DIR:?Set LOSTCITY_RUNTIME_DIR in .env}
+        target: /opt/server
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./bootstrap-container.sh
+        target: /usr/local/bin/lostcity-bootstrap
+        read_only: true
+        bind:
+          create_host_path: false
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

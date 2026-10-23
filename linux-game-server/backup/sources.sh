@@ -57,11 +57,161 @@ resolve_sources() {
   if [[ -n "$saved" ]]; then
     CANDIDATES+=("$saved/SaveGames" "$saved/Config")
   fi
+  resolve_2004scape_sources
+}
+
+# 2004Scape state only: the engine/content/client checkouts come back from the
+# bootstrap's revision clone. The engine scans the RS-SDK data dir for SQLite;
+# Lost City's db.sqlite sits beside the checkout, so stage_extra snapshots it.
+# The game containers can write these trees, so a symlink in the fixed path
+# could point root's backup elsewhere; only canonical paths are accepted.
+BACKUP_2004SCAPE_MARKER_DIR=/var/lib/computer-setup-backup/game-backup
+resolve_2004scape_sources() {
+  local runtime="${BACKUP_LOSTCITY_RUNTIME_DIR:-}" rs_sdk="${BACKUP_RS_SDK_DATA_DIR:-}" path
+  for path in "$runtime" "$rs_sdk"; do
+    [[ -z "$path" ]] && continue
+    [[ "$path" =~ ^/[[:alnum:]_./-]+$ && "$path" != *//* && "$path" != */./* && "$path" != */. && "$path" != */../* && "$path" != */.. && "$path" != */ ]] \
+      || die "invalid fixed 2004Scape data path"
+  done
+  [[ -z "$runtime" ]] || add_2004scape_tree lostcity "$runtime/engine" "Lost City runtime" \
+    "$runtime/server.json" "$runtime/engine/.env" "$runtime/engine/data/players" "$runtime/engine/data/config"
+  [[ -z "$rs_sdk" ]] || add_2004scape_tree rs-sdk "$rs_sdk" "RS-SDK data" "$rs_sdk"
+}
+
+# $1 stack, $2 dir that must exist, $3 label, $4.. paths to back up. A stack
+# seen by an earlier backup and now missing fails the run instead of pruning it.
+add_2004scape_tree() {
+  local stack="$1" dir="$2" label="$3" marker="$BACKUP_2004SCAPE_MARKER_DIR/$1-seen" real
+  shift 3
+  if [[ ! -d "$dir" ]]; then
+    [[ ! -e "$marker" ]] \
+      || die "$label missing at $dir, but it was backed up before; restore it, or delete $marker if it was removed on purpose"
+    log "warning: $label not found at $dir — not backed up"
+    return 0
+  fi
+  real="$(realpath -e -- "$dir")" || die "cannot resolve $dir"
+  [[ "$real" == "$dir" ]] || die "$label path $dir resolves to $real; refusing to follow a symlink"
+  if [[ "$stack" == lostcity ]]; then
+    real="$(realpath -e -- "$dir/data")" || die "cannot resolve $dir/data"
+    [[ "$real" == "$dir/data" ]] || die "$label path $dir/data is a symlink; refusing to follow it"
+  fi
+  if [[ ! -e "$marker" ]]; then
+    install -d -m 755 "$BACKUP_2004SCAPE_MARKER_DIR"
+    printf '%s\n' "$dir" >"$marker"
+  fi
+  CANDIDATES+=("$@" "$marker")
+}
+
+stage_lostcity_db() {
+  local db="${BACKUP_LOSTCITY_RUNTIME_DIR:-}/engine/db.sqlite"
+  [[ -n "${BACKUP_LOSTCITY_RUNTIME_DIR:-}" ]] && [[ -e "$db" || -L "$db" ]] || return 0
+  [[ -f "$db" && ! -L "$db" ]] || die "Lost City $db is not a regular file; refusing to follow it"
+  command -v sqlite3 >/dev/null || die "sqlite3 not installed (apt install sqlite3); needed for $db"
+  install -d -m 700 "$STAGING_DIR/lostcity"
+  # Lost City uses a rollback journal: wait out a write instead of failing the night.
+  sqlite3 "$db" ".timeout 30000" ".backup '$STAGING_DIR/lostcity/db.sqlite.sqlitebak'" \
+    || die "sqlite snapshot of $db failed"
+  log "sqlite snapshot: Lost City db.sqlite"
+}
+
+# Player saves are rewritten in place, not atomically, so a live copy can catch
+# one mid-write. Stage a copy of each that was stable while read and passes the
+# save's own check (0x2004 magic, big-endian CRC32 of the rest in the last four
+# bytes), with a .sha256 sidecar that restore-check verifies. A save that never
+# validates keeps only its raw copy in the backup, and is reported.
+stage_2004scape_saves() {
+  local -a roots=()
+  [[ -z "${BACKUP_LOSTCITY_RUNTIME_DIR:-}" ]] || roots+=("lostcity=$BACKUP_LOSTCITY_RUNTIME_DIR/engine/data/players")
+  [[ -z "${BACKUP_RS_SDK_DATA_DIR:-}" ]] || roots+=("rs-sdk=$BACKUP_RS_SDK_DATA_DIR/players")
+  (( ${#roots[@]} )) || return 0
+  local out
+  out="$(python3 - "$STAGING_DIR/saves" "${roots[@]}" <<'PY'
+import errno, hashlib, os, stat, sys, time, zlib
+
+dest_root, roots = sys.argv[1], sys.argv[2:]
+staged = bad = 0
+
+def valid(data):
+    return (len(data) >= 8 and data[:2] == b"\x20\x04"
+            and zlib.crc32(data[:-4]) == int.from_bytes(data[-4:], "big"))
+
+def stable_read(name, directory):
+    for _ in range(5):
+        try:
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+        except OSError as error:
+            if error.errno in (errno.ELOOP, errno.ENOENT):
+                return None
+            raise
+        try:
+            before = os.fstat(fd)
+            if not stat.S_ISREG(before.st_mode):
+                return None
+            with os.fdopen(fd, "rb", closefd=False) as f:
+                data = f.read()
+            after = os.fstat(fd)
+        finally:
+            os.close(fd)
+        if (before.st_mtime_ns, before.st_size) == (after.st_mtime_ns, after.st_size) \
+                and len(data) == after.st_size and valid(data):
+            return data
+        time.sleep(0.2)
+    return False
+
+def open_directory(path):
+    fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in path.split("/")[1:]:
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = child
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+def walk_error(error):
+    raise error
+
+for spec in roots:
+    stack, root = spec.split("=", 1)
+    try:
+        directory = open_directory(root)
+    except FileNotFoundError:
+        continue
+    try:
+        for dirpath, _, filenames, dirfd in os.fwalk(".", dir_fd=directory, follow_symlinks=False, onerror=walk_error):
+            for name in sorted(filenames):
+                if not name.endswith(".sav"):
+                    continue
+                data = stable_read(name, dirfd)
+                if data is None:
+                    continue
+                rel = os.path.normpath(os.path.join(dirpath, name))
+                if data is False:
+                    bad += 1
+                    print(f"warning: {stack} save {rel} failed its check; only the raw copy is backed up", file=sys.stderr)
+                    continue
+                dest = os.path.join(dest_root, stack, rel)
+                os.makedirs(os.path.dirname(dest), mode=0o700, exist_ok=True)
+                with open(dest, "xb") as f:
+                    f.write(data)
+                with open(dest + ".sha256", "x") as f:
+                    f.write(f"{hashlib.sha256(data).hexdigest()}  {name}\n")
+                staged += 1
+    finally:
+        os.close(directory)
+print(f"{staged} {bad}")
+PY
+)" || die "staging 2004Scape player saves failed"
+  log "staged CRC-checked 2004Scape saves: ${out% *} (failed the check: ${out#* })"
 }
 
 # The game writes its world while running, so a raw file copy can be torn. Also
 # stage a header-checked, hash-verified copy taken while the file was stable.
 stage_extra() {
+  stage_lostcity_db
+  stage_2004scape_saves
   [[ "$world_exists" == true ]] || return 0
   [[ "${BACKUP_SAVE_SCRIPT:-}" == "$SCRIPT_DIR/backup-save.py" ]] \
     || die "Dragonwilds backup helper is not the installed root-owned bundle copy"

@@ -9,20 +9,28 @@ re-trigger, plus commit messages. Two layers:
 * A private denylist of the real values (hostnames, tailnet, usernames, ...):
   `.privacy-denylist` at the repo root (gitignored), or the PRIVACY_DENYLIST
   environment variable in CI. One value per line, `#` comments allowed. The
-  repo owner's public handle (from the origin URL) is ignored, so a username
-  that is part of it does not flag every link to this repo.
+  repo owner's public handle is exempt only within links to the origin repo.
+  PUBLIC_IDENTITIES exempts the owner's approved full name and two exact emails
+  from email and denylist matching, not from path or secret checks.
 
 A hit is reported as path:line and the check name. The matched text is never
-printed, so running the check cannot itself leak the value into a log.
+printed; identifying paths are redacted while safe filenames stay useful.
 
 Usage:
   check-privacy.py --staged             staged changes (pre-commit)
   check-privacy.py --message FILE       a commit message (commit-msg hook)
   check-privacy.py --range BASE..HEAD   added lines and commit messages (CI)
   check-privacy.py --file PATH...       whole files, e.g. a PR body draft
+  check-privacy.py --pre-push           outgoing commits from hook stdin;
+                                      requires a usable denylist
+  --require-denylist                   fail closed without usable entries
+  --no-allow                           ignore generic fixture allow markers
 """
 import argparse
+import ast
+import functools
 import ipaddress
+import itertools
 import os
 import re
 import subprocess
@@ -30,6 +38,10 @@ import sys
 
 ALLOW_MARKER = "privacy-check: allow"
 DENYLIST_FILE = ".privacy-denylist"
+PUBLIC_IDENTITIES = re.compile(
+    r"(?<![\w@.%+-])(?ai:" + "|".join(map(re.escape, (
+        "Ulises Chavarria", "ulises.engineer@gmail.com", "uchavarria@scu.edu",
+    ))) + r")(?![\w@.%+-])")
 
 TAILNET_HOST = re.compile(r"([A-Za-z0-9-]+)\.ts\.net\b")
 TAILNET_ID = re.compile(r"\btail[0-9a-f]{6}\b")
@@ -106,20 +118,58 @@ def is_test_path(path):
     return "/tests/" in f"/{path}" or name.startswith(("test_", "test-"))
 
 
-def repo_owner():
-    """The public GitHub/Forgejo owner of this repo; its handle is not a leak."""
+@functools.lru_cache(maxsize=8)
+def repo_scope(directory):
     try:
-        url = git("remote", "get-url", "origin").strip()
+        origin = git("-C", directory, "remote", "get-url", "origin").strip().lower()
     except subprocess.CalledProcessError:
-        return ""
-    match = re.search(r"[:/]([A-Za-z0-9_.-]+)/[A-Za-z0-9_.-]+?(?:\.git)?$", url)
-    return match.group(1).lower() if match else ""
+        return None
+    return re.search(r"(?:://(?:[^/@]+@)?|@)([^/:]+)[:/]([^/]+)/([^/]+?)(?:\.git)?$", origin)
 
 
-def check_line(text, denylist, path="", owner=""):
-    if ALLOW_MARKER in text:
-        return []
+def repo_owner():
+    scope = repo_scope(os.getcwd())
+    return scope.group(2) if scope else ""
+
+
+@functools.lru_cache(maxsize=4096)
+def denylist_rule(entry):
+    try:
+        address = ipaddress.ip_address(entry)
+    except ValueError:
+        return None, re.compile(rf"(?<![\w-]){re.escape(entry)}(?![\w-])")
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+        address = address.ipv4_mapped
+    return address, None
+
+
+def text_addresses(text):
+    addresses = set()
+    for match in re.finditer(r"(?<![\w:.])[0-9a-f:.]+(?:%[\w.-]+)?(?![\w:.])", text):
+        candidate = match.group().rstrip(".")
+        if candidate.count(":") == 1 and "." in candidate:
+            candidate = candidate.split(":", 1)[0]
+        try:
+            address = ipaddress.ip_address(candidate)
+            if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+                address = address.ipv4_mapped
+            addresses.add(address)
+        except ValueError:
+            pass
+    return addresses
+
+
+def denylisted(text, entry, addresses=None):
+    address, pattern = denylist_rule(entry)
+    if address is None:
+        assert pattern is not None
+        return bool(pattern.search(text))
+    return address in (text_addresses(text) if addresses is None else addresses)
+
+
+def check_line(text, denylist, path="", owner="", *, no_allow=False):
     hits = []
+    public_text = PUBLIC_IDENTITIES.sub(" ", text)
     if any(m.group(1) != "example" for m in TAILNET_HOST.finditer(text)):
         hits.append("tailnet hostname (use <tailnet>.ts.net or example.ts.net)")
     if TAILNET_ID.search(text):
@@ -127,24 +177,48 @@ def check_line(text, denylist, path="", owner=""):
     # Test fixtures need private-looking addresses; real ones still hit the denylist.
     if not is_test_path(path) and any(private_ip(m) for m in IPV4.finditer(text)):
         hits.append("private or tailnet IPv4 address (use 192.0.2.x in examples)")
-    if any(personal_email(m) for m in EMAIL.finditer(text)):
+    if any(personal_email(m) for m in EMAIL.finditer(public_text)):
         hits.append("email address (use example.com)")
     if any(m.group(1) not in GENERIC_HOME_NAMES for m in HOME_PATH.finditer(text)):
         hits.append("personal home path (use $HOME or <username>)")
     if any(real_mac(m) for m in MAC.finditer(text)):
         hits.append("MAC address")
+    if not no_allow and ALLOW_MARKER in text:
+        hits = []
     hits += [name for name, pattern in SECRETS if pattern.search(text)]
-    lowered = text.lower()
+    lowered = public_text.lower()
     if owner:
-        lowered = re.sub(rf"(?<![a-z0-9-]){re.escape(owner)}(?![a-z0-9-])", " ", lowered)
+        scope = repo_scope(os.getcwd())
+        if scope and scope.group(2) == owner.lower():
+            host, handle, repo = map(re.escape, scope.groups())
+            lowered = re.sub(
+                rf"((?<![\w@./-])https?://{host}/){handle}(/{repo}(?:\.git)?)(?=$|[/#?\s)\]>,]|\.(?=$|\s))",
+                r"\1 \2", lowered)
+    addresses = text_addresses(lowered) if ':' in lowered or any(c.isdigit() for c in lowered) else set()
     for entry in denylist:
-        if entry in lowered:
-            hits.append(f"denylist entry ({len(entry)}ch, {entry[:3]}…)")
+        if denylisted(lowered, entry.lower(), addresses):
+            hits.append("denylist entry")
     return hits
 
 
+def safe_location(path, denylist):
+    if not check_line(path, denylist, no_allow=True):
+        return path
+    name = os.path.basename(path)
+    if check_line(name, denylist, no_allow=True):
+        return "<redacted path>"
+    return "<redacted path>/" + name
+
+
 def git(*args):
-    return subprocess.run(["git", *args], check=True, capture_output=True, text=True,
+    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    env.update(GIT_TERMINAL_PROMPT="0", GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull,
+               GIT_NO_REPLACE_OBJECTS="1", GIT_OPTIONAL_LOCKS="0")
+    return subprocess.run(["git", "--no-pager", "-c", "core.fsmonitor=false",
+                           "-c", f"core.hooksPath={os.devnull}",
+                           "-c", f"core.attributesFile={os.devnull}", "-c", "diff.external=",
+                           "-c", "credential.helper=", "-c", "protocol.allow=never", *args],
+                          check=True, capture_output=True, text=True, env=env,
                           encoding="utf-8", errors="replace").stdout
 
 
@@ -152,9 +226,10 @@ def added_lines(diff):
     path, line = None, 0
     for raw in diff.splitlines():
         if raw.startswith("+++ "):
-            path = raw[6:] if raw.startswith("+++ b/") else None
-            if path:
-                yield path, 0, path
+            name = raw[4:]
+            if name.startswith('"'):
+                name = ast.literal_eval("b" + name).decode("utf-8", errors="replace")
+            path = name[2:] if name.startswith("b/") else None
         elif raw.startswith("@@"):
             hunk = re.search(r"\+(\d+)", raw)
             line = int(hunk.group(1)) if hunk else 0
@@ -165,10 +240,29 @@ def added_lines(diff):
             line += 1
 
 
-def message_lines(label, text):
+def message_lines(label, text, skip_comments=True):
     for number, raw in enumerate(text.splitlines(), 1):
-        if not raw.startswith("#"):
+        if not skip_comments or not raw.startswith("#"):
             yield label, number, raw
+
+
+def filename_lines(names):
+    for name in names.split("\0"):
+        if name:
+            yield name, 0, name
+
+
+def commit_sources(commits):
+    for commit in commits:
+        yield added_lines(git("-c", "core.quotePath=true", "diff-tree", "--root", "-m", "-r", "-p", "-U0",
+                              "--src-prefix=a/", "--dst-prefix=b/",
+                              "--no-renames", "--no-color", "--no-ext-diff", "--no-textconv", commit))
+        yield filename_lines(git("diff-tree", "--root", "-m", "-r", "--no-commit-id",
+                                 "--no-renames", "--name-only", "-z", commit))
+        yield message_lines(f"commit {commit[:12]} message",
+                            git("log", "-1", "--format=%B", commit), skip_comments=False)
+        yield message_lines(f"commit {commit[:12]} metadata",
+                            git("log", "-1", "--format=%an%n%ae%n%cn%n%ce", commit), skip_comments=False)
 
 
 def main():
@@ -177,34 +271,71 @@ def main():
     mode.add_argument("--staged", action="store_true")
     mode.add_argument("--message", metavar="FILE")
     mode.add_argument("--range", metavar="BASE..HEAD")
+    mode.add_argument("--pre-push", action="store_true")
     mode.add_argument("--file", nargs="+", metavar="PATH")
+    parser.add_argument("--no-allow", action="store_true")
+    parser.add_argument("--require-denylist", action="store_true")
     args = parser.parse_args()
 
     root = git("rev-parse", "--show-toplevel").strip()
     denylist, have_denylist = load_denylist(root)
+    if (args.require_denylist or args.pre_push) and not denylist:
+        print("error: a usable denylist is required", file=sys.stderr)
+        return 1
     owner = repo_owner()
     sources = []
     if args.staged:
-        sources.append(added_lines(git("diff", "--cached", "-U0", "--no-color", "--no-ext-diff")))
+        sources.append(added_lines(git("-c", "core.quotePath=true", "diff", "--cached", "-U0",
+                                      "--src-prefix=a/", "--dst-prefix=b/",
+                                      "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames")))
+        sources.append(filename_lines(git("diff", "--cached", "--no-renames", "--name-only", "-z")))
     elif args.message:
         with open(args.message, encoding="utf-8", errors="replace") as handle:
             sources.append(message_lines("commit message", handle.read()))
     elif args.range:
         base, _, head = args.range.partition("..")
         head = head or "HEAD"
-        sources.append(added_lines(git("diff", "-U0", "--no-color", "--no-ext-diff", f"{base}...{head}")))
-        for commit in git("rev-list", f"{base}..{head}").split():
-            sources.append(message_lines(f"commit {commit[:12]} message", git("log", "-1", "--format=%B", commit)))
+        sources = commit_sources(git("rev-list", f"{base}..{head}").split())
+    elif args.pre_push:
+        commits = set()
+        for raw in sys.stdin:
+            local_ref, local_sha, remote_ref, remote_sha = raw.split()
+            if not all(re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", value)
+                       for value in (local_sha, remote_sha)):
+                raise ValueError("invalid pre-push object id")
+            sources.append(message_lines("push refs", f"{local_ref}\n{remote_ref}",
+                                         skip_comments=False))
+            if set(local_sha) == {"0"}:
+                continue
+            tag_sha = local_sha
+            while git("cat-file", "-t", tag_sha).strip() == "tag":
+                tag = git("cat-file", "tag", tag_sha)
+                sources.append(message_lines(f"tag {tag_sha[:12]} metadata", tag,
+                                             skip_comments=False))
+                kind, _, tag_sha = tag.partition("\n")[0].partition(" ")
+                if kind != "object" or not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", tag_sha):
+                    raise ValueError("invalid tag target")
+            if set(remote_sha) == {"0"}:
+                commits.update(git("rev-list", local_sha).split())
+            else:
+                commits.update(git("rev-list", f"{remote_sha}..{local_sha}").split())
+        sources = itertools.chain(sources, commit_sources(sorted(commits)))
     else:
         for path in args.file:
+            absolute = os.path.abspath(path)
+            name = (os.path.relpath(absolute, root) if os.path.commonpath([absolute, root]) == root
+                    else os.path.basename(path))
+            sources.append([(path, 0, name)])
             with open(path, encoding="utf-8", errors="replace") as handle:
-                sources.append(message_lines(path, handle.read()))
+                sources.append(message_lines(path, handle.read(), skip_comments=False))
 
     count = 0
     for source in sources:
         for where, line, text in source:
-            for hit in check_line(text, denylist, where, owner):
-                location = f"{where}:{line}" if line else f"{where} (file name)"
+            for hit in check_line(text, denylist, where if line else "", owner,
+                                  no_allow=args.no_allow or not line):
+                safe_where = safe_location(where, denylist)
+                location = f"{safe_where}:{line}" if line else f"{safe_where} (file name)"
                 print(f"{location}: {hit}")
                 count += 1
     if not have_denylist:
@@ -212,11 +343,15 @@ def main():
               file=sys.stderr)
     if count:
         print(f"\n{count} possible identifying value(s); see 'Privacy & Security' in AGENTS.md. "
-              f"Replace with a placeholder, or mark a deliberately public value with "
-              f"'{ALLOW_MARKER}' on that line.", file=sys.stderr)
+              "Replace with a placeholder. Allow markers never suppress denylist entries or secrets.",
+              file=sys.stderr)
         return 1
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except (OSError, subprocess.CalledProcessError, ValueError, SyntaxError):
+        print("error: privacy scan could not complete; check inputs and local Git objects", file=sys.stderr)
+        sys.exit(1)

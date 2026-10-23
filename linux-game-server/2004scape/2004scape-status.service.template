@@ -1,0 +1,13 @@
+[Unit]
+Description=Write the Lost City and RS-SDK status JSON for the homepage cards
+After=docker.service
+
+[Service]
+Type=oneshot
+# Unprivileged: docker inspect comes from the user's docker group; databases are
+# opened read-only.
+User=@USER@
+Group=@GROUP@
+Nice=10
+ExecStart=/usr/bin/env python3 @STATUS_SCRIPT@
+TimeoutStartSec=60

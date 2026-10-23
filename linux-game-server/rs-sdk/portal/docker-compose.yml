@@ -1,0 +1,60 @@
+services:
+  portal:
+    image: rs-sdk-portal:local
+    build: .
+    container_name: rs-sdk-portal
+    user: "${PORTAL_UID:?Run portal/install.sh}:${PORTAL_GID:?Run portal/install.sh}"
+    restart: unless-stopped
+    env_file:
+      - path: ../../../server-base/timezone.env
+        required: true
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+    command:
+      - python3
+      - /app/server.py
+      - --host
+      - 0.0.0.0
+      - --root
+      - /data
+      - --wanted
+      - /wanted/wanted.sqlite
+      - --game-url
+      - "https://${PORTAL_GAME_DOMAIN:?Run portal/install.sh}:9445"
+      - --homepage-url
+      - "https://${PORTAL_GAME_DOMAIN:?Run portal/install.sh}"
+    ports:
+      - "127.0.0.1:8098:8098"
+    volumes:
+
+      - type: bind
+        source: ./assets
+        target: /app/assets
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${PORTAL_DATA_DIR:?Run portal/install.sh}
+        target: /data
+        read_only: true
+        bind:
+          create_host_path: false
+      # The only writable mount: requested pages/images, taken by the source-side sync.
+      - type: bind
+        source: ${PORTAL_WANTED_DIR:?Run portal/install.sh}
+        target: /wanted
+        read_only: false
+        bind:
+          create_host_path: false
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      - com.centurylinklabs.watchtower.enable=false
+    logging:
+      driver: local
+      options:
+        max-size: 5m
+        max-file: "2"

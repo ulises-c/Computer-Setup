@@ -60,6 +60,9 @@ jobs:
       - name: Test server-base Homepage generator (outputs current, cross-links)
         run: python3 server-base/tests/test_generate.py -v
 
+      - name: Test Homepage sprite colour keying
+        run: python3 server-base/tests/test_png_colorkey.py -v
+
       - name: Test provisioning safety (AdGuard, Serve, clean server bootstrap)
         run: python3 server-base/tests/test_provisioning_safety.py -v
 
@@ -74,6 +77,14 @@ jobs:
 
       - name: Test ntfy to Discord relay
         run: python3 -m unittest discover -v -s linux-server/ntfy-discord/tests
+
+      - name: Test read-only RS-SDK portal and snapshot boundaries
+        run: |
+          python3 -m pip install -r linux-game-server/rs-sdk/portal/requirements.txt
+          python3 -m unittest discover -v -s linux-game-server/rs-sdk/portal
+
+      - name: Test server-owned wiki runtime and input boundary
+        run: python3 -m unittest discover -v -s linux-game-server/rs-sdk/wiki
 
       - name: Test game server (Dragonwilds, player log, backups)
         working-directory: linux-game-server/tests
@@ -111,7 +122,9 @@ jobs:
           python3 scripts/check-privacy.py --range "$BASE..HEAD"
 
       - name: Test the privacy check
-        run: python3 -m unittest -v scripts/test_check_privacy.py
+        run: |
+          python3 -m unittest -v scripts/test_check_privacy.py scripts/test_privacy_audit.py
+          python3 -m unittest discover -v -s macos-server/privacy-audit -p 'test_setup.py'
 
   dryrun-smoke:
     runs-on: ubuntu-latest

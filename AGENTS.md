@@ -135,6 +135,11 @@ The repo owner's public handle in links to this repo (`github.com/<owner>/…`)
 is already public and fine. A value that is identifying stays out even when it
 seems harmless.
 
+The owner explicitly approved the full name and two exact email addresses in
+`PUBLIC_IDENTITIES` in `scripts/check-privacy.py` for publication. Those identities
+are exempt from email and denylist matching, including in commit metadata;
+partial names, other addresses, personal paths and secrets remain protected.
+
 ### Where private values live instead
 
 - In a `.env` file (gitignored repo-wide), with a committed `.env.example`
