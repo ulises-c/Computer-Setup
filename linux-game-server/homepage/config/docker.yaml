@@ -1,2 +1,4 @@
+# Filtered Docker API from the docker-socket-proxy service
+# (server-base/homepage/compose.yml); Homepage never mounts the real socket.
 my-docker:
-  socket: /var/run/docker.sock
+  socket: /run/homepage-docker/docker.sock

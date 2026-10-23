@@ -15,7 +15,7 @@ consume it and add only what is genuinely theirs.
 | Agents | claude-code, opencode | `packages.json` (`server-base`), installed by `claude_code_step` / `opencode_step` |
 | Dotfiles | `~/.zshrc`, `~/.tmux.conf`, antidote plugins, p10k | `dotfiles/`, deployed by `deploy_dotfiles` |
 | Network | Tailscale, one tailnet node per host ([#86](https://github.com/ulises-c/Computer-Setup/issues/86)) | `serve.sh` + each host's `serve.conf` |
-| Containers | Docker, Glances, Portainer, Watchtower, Homepage | `glances/`, `portainer/`, `watchtower/`, `homepage/compose.yml` |
+| Containers | Docker, Glances, Portainer, Watchtower, Homepage (+ its read-only Docker proxy) | `glances/`, `portainer/`, `watchtower/`, `homepage/compose.yml` |
 | Admin | Cockpit (host package, served under `/cockpit`) | `serve.sh` writes its `UrlRoot`/origin config |
 | Backups | restic nightly + status card + ntfy / Uptime Kuma alerts | `backup/` |
 | Dashboard | cross-linked Homepage (Servers group, Shared services, design system) | `fleet.json`, `homepage/` |
@@ -53,6 +53,45 @@ report that host down.
 | Pi | `linux-pi/setup.sh` | one node: base routes from `serve.conf`, the rest from `tailscale-serve/serve.json` |
 | game server | `linux-game-server/setup.sh` | one node, `/<service>` paths |
 | Mac mini | `macos-server/setup.sh` | one node, `/<service>` paths |
+
+## Homepage's Docker access
+
+Homepage never mounts the Docker socket: a read-only mount still grants the full
+Docker API, which is root on the host. `homepage/compose.yml` adds a second
+service, `docker-socket-proxy` (`wollomatic/socket-proxy`, digest-pinned), which
+every host's Homepage compose file extends:
+
+- It serves a filtered API on a Unix socket in the `homepage-docker` volume,
+  mode `0600` and owned by root, and has no network (`network_mode: none`). Only
+  Homepage is granted that volume (read-only), and it runs as root, so it can
+  open the socket; non-root clients and host processes without the volume
+  cannot. No TCP port exists for another local process to reach.
+- It allows only `GET /containers/json` and `GET /containers/<id>/stats`,
+  which are all the calls Homepage makes.
+- It runs read-only with every capability dropped.
+
+Each host's `homepage/config/docker.yaml` points at that socket. If the proxy is
+down, Homepage's Docker badges fail; Homepage never falls back to the real
+socket.
+
+That is why the main server and the Pi can keep Homepage on the LAN
+(`HOSTNAME: 0.0.0.0`) as a fallback when Tailscale is down: a LAN client sees
+container names, images, labels, ports, mounts, commands and stats, but no
+environment variables and no control. Their `HOMEPAGE_ALLOWED_HOSTS` list the LAN
+names with the port (`<hostname>:3000`), because Homepage compares the whole
+`Host` header.
+
+**Deploying or rolling back:** run `docker compose up -d` in the host's Homepage
+directory (never `restart`, which keeps the old mounts), then check that
+`docker inspect -f '{{range .Mounts}}{{.Source}} {{end}}' homepage` lists no
+`docker.sock`. A rollback to a commit before this change puts the socket back on
+Homepage: re-bind it to `127.0.0.1` before you roll back.
+
+If a Homepage upgrade calls another endpoint, its cards show a Docker error and
+the proxy logs `blocked request`; widen `-allowGET` only to that read-only path.
+`server-base/tests/test-homepage-docker-proxy.sh` runs both containers against a
+real daemon in CI. It checks the allowlist, root-only access to the socket,
+Homepage's live mounts, fail-closed behavior and the LAN `Host` form.
 
 ## AdGuard replicas
 

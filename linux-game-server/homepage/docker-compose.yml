@@ -12,3 +12,12 @@ services:
       # Fetched by server-base/homepage/fetch-assets.sh; gitignored.
       - ./assets/icons:/app/public/icons:ro
       - ./assets/images:/app/public/images:ro
+
+  # Homepage's only route to Docker (config/docker.yaml); see the base file.
+  docker-socket-proxy:
+    extends:
+      file: ../../server-base/homepage/compose.yml
+      service: docker-socket-proxy
+
+volumes:
+  homepage-docker:

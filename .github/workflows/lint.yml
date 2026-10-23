@@ -147,6 +147,9 @@ jobs:
       - name: Test Tailscale Serve apply script
         run: bash scripts/test-ts-serve-apply.sh
 
+      - name: Test the Homepage Docker proxy against a real daemon
+        run: bash server-base/tests/test-homepage-docker-proxy.sh
+
   zsh-syntax:
     runs-on: ubuntu-latest
     steps:

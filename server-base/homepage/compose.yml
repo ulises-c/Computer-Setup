@@ -16,5 +16,37 @@ services:
       HOSTNAME: "127.0.0.1"
       PORT: "3000"
     volumes:
-      # Read-only still grants full Docker API access; keep Homepage tailnet-only.
+      # The filtered socket below, never /var/run/docker.sock (config/docker.yaml).
+      - homepage-docker:/run/homepage-docker:ro
+
+  # Homepage's only route to Docker. It serves a filtered API on a Unix socket
+  # in the homepage-docker volume (mode 0600, root only), not on a TCP port, so
+  # no other local process can reach it and a missing proxy fails closed.
+  # Container list and stats are the only calls Homepage makes; everything
+  # else is refused. This is what lets a host expose Homepage on its LAN.
+  docker-socket-proxy:
+    image: wollomatic/socket-proxy:1.13.1@sha256:3935b709275e4ec35d6ed5a5c4a1f0d01ed31eec5e7234efc3357ecd47689002
+    container_name: homepage-docker-proxy
+    restart: unless-stopped
+    network_mode: none
+    # Root only to open the Docker socket without a per-host docker GID; it
+    # holds no capabilities and cannot gain any.
+    user: "0:0"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - path: ../timezone.env
+        required: true
+    command:
+      - -proxysocketendpoint=/run/homepage-docker/docker.sock
+      - -allowGET=(/v1\.[0-9]+)?/containers/(json|[0-9a-f]{64}/stats)
+    volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - homepage-docker:/run/homepage-docker
+
+# Hosts that extend these services declare this volume too.
+volumes:
+  homepage-docker:
