@@ -11,7 +11,7 @@
             container: homepage
         - portainer:
             icon: sh-portainer-light.svg
-            href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}/portainer/
+            href: https://{{HOMEPAGE_VAR_HOMEPAGE_DOMAIN}}:9443/
             description: Docker manager
             server: my-docker
             container: portainer

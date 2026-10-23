@@ -84,7 +84,7 @@ docker compose up -d
 
 # Portainer
 cd linux-server/portainer && docker compose up -d
-# Access at https://<server>.<tailnet>.ts.net/portainer/ — create admin account within 5 minutes
+# Access at https://<server>.<tailnet>.ts.net:9443 — create admin account within 5 minutes
 
 # Glances
 cd linux-server/glances && cp .env.example .env   # GLANCES_ALLOWED_HOSTS
@@ -227,7 +227,7 @@ address: serve reaches every app through its `127.0.0.1` publish.
       cd linux-server/portainer
       docker compose up -d
       ```
-   3. Access at `https://<server>.<tailnet>.ts.net/portainer/` (`--base-url /portainer`; the plaintext UI is published on `127.0.0.1:9000` only)
+   3. Access at `https://<server>.<tailnet>.ts.net:9443` (the plaintext UI is published on `127.0.0.1:9000` only; serve terminates TLS)
    4. On first launch, set up an admin account within 5 minutes or the setup will time out
 
 3. atvloadly | [GitHub](https://github.com/bitxeno/atvloadly)

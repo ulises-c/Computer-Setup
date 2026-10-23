@@ -14,9 +14,11 @@ the reasons behind each step are in
 [ONE_NODE_PER_HOST.md](ONE_NODE_PER_HOST.md), cited as "design §n" or Dn.
 A bare §n is a section of this file. This file is
 the executable copy of design §4. It also adds these checks, which the design
-doesn't have: the ACL gate before tagging (§0.1 step 1), per-stack `.env`
-copies for rollback (§1 step 7, §1.1), stopping qBittorrent before its config
-edit, rendering `cockpit.conf` from the example, and the scripted probe (§4).
+doesn't have: the ACL gate before tagging (§0.1 step 1), the rollback-anchor,
+Funnel and owned-port checks (§1 steps 1–2), the rollback-credential gate
+(§2.3 step 8), per-stack `.env` copies for rollback (§1 step 7, §1.1),
+stopping qBittorrent before its config edit, rendering `cockpit.conf` from
+the example, and the scripted probe (§4).
 If this file and the design disagree on a value (a port, a name, an order),
 stop and ask.
 
@@ -116,6 +118,15 @@ If any row fails: STOP.
    rule that covers `tag:container`. If it uses Tailscale SSH rules, add a
    matching `ssh` entry for `tag:server`/`tag:pi`. Use **Preview rules** for
    the user against the server to confirm SSH and `:443` stay allowed.
+   The tags are sources too: a tagged host's outgoing connections lose the
+   user identity as well. Unless the policy allows all traffic from `*`, add
+   grants (design D8) from `tag:pi` to `tag:server` on `tcp:443`, `tcp:8443`
+   and `tcp:8444` (Glances widget and §4 probes, adguardhome-sync, the Kuma
+   push), and from `tag:server` to `tag:pi`, the game server and the Mac mini
+   on `tcp:443` (Homepage Glances widgets, §4 probes). Preview `tag:pi` and
+   `tag:server` as sources for those flows. Record the tags the game server
+   and the Mac mini carry (`tailscale status --json | jq -r '.Self.Tags'` on
+   each), for the Service grants in §2.3 step 9.
 2. **tagOwners.** Add `tag:server` and `tag:pi` with the same owners as the
    existing `tag:container` entry. Leave `tag:container` until §6.
 3. **DNS page.** Record every global nameserver. On the server:
@@ -138,22 +149,50 @@ Run these on the server, in `<repo>`, as the operator user unless the step
 says `sudo`.
 
 1. Record `git rev-parse HEAD` as `<pre-migration-commit>` in the log. It is
-   the commit the checkout is on now, normally `main`.
+   the commit the checkout is on now, normally `main`. It must still have the
+   sidecars, or every §5 rollback restores the new files:
+   `git -C <repo> cat-file -e <pre-migration-commit>:linux-server/portainer/ts-serve.json && echo anchor-ok`
+   prints `anchor-ok`. STOP otherwise (for example when this PR is already
+   merged into the checkout).
 2. `tailscale serve status --json`. Expected: `{}` or empty. Anything else
    must survive the migration; record the keys
    (`jq -r 'paths(scalars) | map(tostring) | join(".")'`) and check them again
-   after every apply.
+   after every apply. Then check that no Funnel is on and that nothing sits on
+   a port the template owns unless the template has the same handler (the
+   apply replaces each owned listener whole):
+
+   ```sh
+   srvcheck() { local tpl cur
+     tpl=$(git -C <repo> show "origin/feat/86-one-node-per-host:$1") || return 1
+     cur=$(tailscale serve status --json) || return 1
+     out=$(jq -rn --argjson tpl "$tpl" '
+       (input? // {}) as $cur
+       | ($tpl.Web | with_entries(.key |= sub("^.*:"; ""))) as $own
+       | (($cur.AllowFunnel // {}) | to_entries[] | select(.value == true) | "FUNNEL :\(.key | sub("^.*:"; ""))"),
+         (($cur.Web // {}) | to_entries[] | (.key | sub("^.*:"; "")) as $p | select($own[$p])
+          | (.value.Handlers // {}) | to_entries[] | select($own[$p].Handlers[.key] != .value)
+          | "NOT IN TEMPLATE :\($p)\(.key)")' <<< "$cur") || return 1
+     if [[ -z "$out" ]]; then echo checked; else printf '%s\n' "$out"; return 1; fi; }
+   srvcheck linux-server/tailscale-serve/serve.json
+   ```
+
+   Expected: `checked`. STOP on a `FUNNEL` line (never turn Funnel off
+   or on yourself; the user decides). STOP on a `NOT IN TEMPLATE` line and ask
+   the user: if it is llama-telemetry on `:443 /` or `:8443`, the template
+   already moves it to `:8450` and the user may approve that move; anything
+   else needs its own registry port in the template first, in a reviewed
+   commit.
 3. The backend ports in design §2.2 must be free or held by their owner:
 
    ```sh
-   for p in 2222 3300 8100 8101 8102 8103 8104 8105 8443 8444 8445 8446 8447 8448 8449; do
+   for p in 2222 3300 8100 8101 8102 8103 8104 8105 8443 8444 8445 8446 8447 8448 8449 8450 9443; do
      ss -ltnH "sport = :$p" | grep -q . && printf 'BUSY %s\n' "$p"; done; echo checked
    ```
 
    Expected: only `checked`. Then `ss -ltnpH 'sport = :81'` shows
    nginx-proxy-manager (docker-proxy), and the other design §2.2 backends (3000,
-   3001, 3030, 8080, 8088, 8097, 8384, 9000, 9090, 61208) are absent or held
-   by the service the table names. STOP on an unknown owner.
+   3001, 3030, 8080, 8088, 8097, 8384, 9000, 9090, 17483, 61208) are absent
+   or held by the service the table names. STOP on an unknown owner.
 4. Units the backup scripts read exist:
    `systemctl cat backup.service >/dev/null && ls ~/.config/systemd/user/tailscale-web.service`.
    Expected: the unit path. STOP if `backup.service` is missing; set it up
@@ -350,8 +389,8 @@ scripts/ts-serve-apply.sh linux-server/tailscale-serve/serve.json --services non
 ```
 
 Expected: rc 0, no `error:` lines, and `==> Would run` lists only
-`tailscale serve set-raw < <merged config>`. The diff adds `TCP` 443 and
-8443–8448 and the `<node>:443` … `<node>:8448` `Web` entries. **Preserved
+`tailscale serve set-raw < <merged config>`. The diff adds `TCP` 443,
+8443–8448, 8450 and 9443 and the matching `<node>:<port>` `Web` entries. **Preserved
 keys** lists anything from §1 step 2. Read the whole diff; STOP if it removes
 anything you did not expect. Then:
 
@@ -445,7 +484,14 @@ Expected: `applied …`, then `up to date`. A non-zero exit or
    `immich-ts` and `forgejo-ts`.
 8. **The three Services, one at a time, in this order: ntfy, immich,
    forgejo** (D3). Each has a short planned outage; tell the user before
-   starting.
+   starting. First, the rollback credential, because step 9.2 cannot be
+   undone and §5.2 re-creates the sidecar with `TS_AUTHKEY`:
+   `for s in ntfy immich forgejo; do printf '%s ' "$s"; grep -cE "^TS_AUTHKEY=['\"]?tskey-(client|auth)-" "linux-server/$s/.env"; done`
+   prints `1` for each (no value is printed). HUMAN: if the keys start with
+   `tskey-client-`, confirm in Settings → OAuth clients that the client still
+   exists with the Auth Keys scope and may create `tag:container` nodes; if
+   they start with `tskey-auth-`, confirm in Settings → Keys that the key is
+   reusable, unexpired and tagged `tag:container`. STOP otherwise.
 9. For each `svc:X`, with sidecar `X-ts` (forgejo also has `tcp:22`):
    1. Run a stack step in `linux-server/X`. **DESTRUCTIVE**: the old node goes
       offline and the outage starts.
@@ -460,8 +506,12 @@ Expected: `applied …`, then `up to date`. A non-zero exit or
       "grants": [ { "src": ["autogroup:member"], "dst": ["svc:X"], "ip": ["tcp:443"] } ]
       ```
 
-      For forgejo, `"ip": ["tcp:443", "tcp:22"]`. Merge the entries into the
-      existing `autoApprovers` and `grants`, keeping the rules already there.
+      For forgejo, `"ip": ["tcp:443", "tcp:22"]`. Add the tags of hosts that
+      consume the Service to `src`: `tag:pi` for `svc:ntfy` (the Pi's backup
+      alerts), and the Mac mini's tag for `svc:forgejo` (its runner) if §0.1
+      step 1 found one, likewise the game server's tag for `svc:ntfy` if its
+      `.env` files send there. Merge the entries into the existing
+      `autoApprovers` and `grants`, keeping the rules already there.
    4. `scripts/ts-serve-apply.sh linux-server/tailscale-serve/serve.json --services svc:X --dry-run`.
       Expected: `==> Would run` has `set-raw` and `tailscale serve advertise svc:X`,
       and the diff adds only `Services["svc:X"]`. Then the same without
@@ -483,17 +533,24 @@ Expected: `applied …`, then `up to date`. A non-zero exit or
 10. **Reboot the server.** `sudo systemctl reboot`. After it is up: NPM is
     running bound to the LAN IP (`docker ps --filter name=nginx-proxy-manager`,
     and `ss` as in step 1), and
-    `scripts/ts-serve-apply.sh linux-server/tailscale-serve/serve.json` prints
-    `up to date`. Run the full §4 probe again.
+    `scripts/ts-serve-apply.sh linux-server/tailscale-serve/serve.json --services svc:ntfy,svc:immich,svc:forgejo --dry-run`
+    prints `up to date` (name only the Services that are applied; drop one
+    that was rolled back with §5.2). Run the full §4 probe again.
 
 ### 3. Pi: host node and cutover (design §4.4)
 
 Run on the Pi, in its `<repo>`.
 
 1. **Pre-flight.** Record `git rev-parse HEAD` as the Pi's
-   `<pre-migration-commit>`. Then `ss -ltnH` for 80, 631, 3001 and 8765 shows
-   the host services, and `ss -ltnH 'sport = :8631'` prints nothing. Check
-   `tailscale version` (floor 1.102.3) and `systemctl cat pi-backup.service`.
+   `<pre-migration-commit>`, and check it as in §1 step 1 with
+   `linux-pi/adguard/ts-serve.json`: `anchor-ok`, or STOP. Then `ss -ltnH` for
+   80, 631, 3001 and 8765 shows the host services, and
+   `ss -ltnH 'sport = :8631'` prints nothing. Check `tailscale version` (floor
+   1.102.3) and `systemctl cat pi-backup.service`. Run the §1 step 2 check
+   with the Pi template (define `srvcheck` on the Pi first):
+   `srvcheck linux-pi/tailscale-serve/serve.json` prints only `checked`; the
+   routes `linux-pi/serve.sh` published are in the template, so they pass.
+   STOP otherwise.
 2. **Host node.** If `tailscale status --json` shows `BackendState: Running`
    for the Pi host (not a container), HUMAN: apply `tag:pi` on the Machines
    page and disable key expiry, as in §0.1 step 4. If there is no host
@@ -518,6 +575,7 @@ Run on the Pi, in its `<repo>`.
    if [[ "$(jq length "$B/serve-before.json")" == 0 ]]; then printf "empty\n"; else printf "config\n"; fi > "$B/serve-before.state"
    rc=0; tailscale serve get-config --all "$B/serve-services-before.json" || rc=$?
    printf "%s\n" "$rc" > "$B/serve-services-before.rc"
+   cp -a /etc/cups/cupsd.conf "$B/cupsd.conf"
    mkdir -m 700 -- "$B/env"; cd "$R"; cp -a --parents linux-pi/*/.env "$B/env/"
    : > "$B/capture-complete"' _ <backup-dir> <repo>
 
@@ -529,10 +587,13 @@ Run on the Pi, in its `<repo>`.
    n=$(jq -e "objects | length" "$B/serve-before.json")
    state=$(<"$B/serve-before.state")
    [[ ( "$state" == empty && "$n" == 0 ) || ( "$state" == config && "$n" != 0 ) ]]
+   [[ -s "$B/cupsd.conf" ]]
    printf "backup-ok\n"' _ <backup-dir>
    ```
 
-   Do not continue unless it prints `backup-ok`. The `env/` copy already
+   Do not continue unless it prints `backup-ok`. `cupsd.conf` is the old CUPS
+   policy, which still allows the sidecar subnet; the cups rollback (§5.1)
+   restores it. The `env/` copy already
    holds the §2 edits to adguardhome-sync and backup. The pre-server values
    are in `<pi-env-backup-dir>`.
 4. **Checkout and serve.**
@@ -588,19 +649,25 @@ Run on the Pi, in its `<repo>`.
      `/var/lib/cups-policy-review/pending.diff` and `candidate.conf` (see
      `linux-pi/cups/README.md`). Then run
      `sudo bash setup.sh --apply-reviewed <source-sha256> <candidate-sha256>`
-     with the hashes `--prepare-review` printed. Its
-     `cupsd.conf.bak.<timestamp>` is this step's rollback.
+     with the hashes `--prepare-review` printed. Its rollback is
+     `<backup-dir>/cupsd.conf` from step 3 (§5.1).
    - Check the shim without the tailnet:
      `curl -sS -o /dev/null -w '%{http_code}\n' -H "Host: $NODE:8449" http://127.0.0.1:8631/`
      prints `200`. The same request to `http://127.0.0.1:631/` prints `400`.
 6. Run `getent hosts <server>.<tailnet>.ts.net` again on the Pi. It resolves.
 7. **Neighbours.** `adguardhome-sync` and `backup` hold the §2 values. The
    next sync run is OK, and the next `pi-backup` push turns the Kuma monitor
-   green (`sudo systemctl start pi-backup.service` to force one). Then on the
+   green (`sudo systemctl start pi-backup.service` to force one). The Pi's
+   backup alerts go to `svc:ntfy` as `tag:pi` (§2.3 step 9.3), and they fire
+   only on failure, so publish a test from the Pi:
+   `curl -sS -o /dev/null -w '%{http_code}\n' -d test "https://ntfy.$SUFFIX/<a-test-topic>"`
+   prints `200`, and the message reaches the phone (HUMAN). STOP on `000` or a
+   `403`: the `svc:ntfy` grant is missing `tag:pi`. Then on the
    **server**, set `HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN` in
    `linux-server/homepage/.env` to the Pi node's name, and run
    `docker compose up -d` in `linux-server/homepage`.
-8. **Reboot the Pi.** Then `scripts/ts-serve-apply.sh linux-pi/tailscale-serve/serve.json`
+8. **Reboot the Pi.** Then
+   `scripts/ts-serve-apply.sh linux-pi/tailscale-serve/serve.json --services none --dry-run`
    prints `up to date`, `dig @<pi-lan-ip>` answers, and the Pi probes in §4
    pass.
 
@@ -611,7 +678,7 @@ Run on the Pi, in its `<repo>`.
 ```sh
 ss -ltnH 'sport = :<backend-port>'                        # only 127.0.0.1:<port> (or the host service named in design §2.2/§2.3)
 docker ps -a --format '{{.Names}}' | grep -- '-ts$'       # only stacks not yet cut over
-tailscale serve status --json | jq -r '.TCP | keys | join(",")'  # server: 443,8443,...,8448; Pi: 443,8443,8449 (plus anything preserved from §1 step 2)
+tailscale serve status --json | jq -r '.TCP | keys | join(",")'  # server: 443,8443,...,8448,8450,9443; Pi: 443,8443,8449,9443 (plus anything preserved from §1 step 2)
 scripts/ts-serve-apply.sh <host-dir>/tailscale-serve/serve.json --services <none|svc:a,svc:b> --dry-run   # "up to date"; pick the Services already applied
 ```
 
@@ -636,7 +703,6 @@ probe <<EOF
 401 https://$S/watchtower/v1/metrics
 200 https://$S/cockpit-ui/
 200 https://$S/filebrowser/
-200 https://$S/portainer/api/system/status
 200 https://$S/tailscale-web/
 401,403 https://$S:8443/control/status
 200,302 https://$S:8444/
@@ -644,6 +710,8 @@ probe <<EOF
 200 https://$S:8446/
 200 https://$S:8447/
 200 https://$S:8448/
+200 https://$S:9443/api/system/status
+200 https://$S:8450/health
 200 https://ntfy.$T/v1/health
 200 https://immich.$T/api/server/ping
 200 https://forgejo.$T/api/v1/version
@@ -654,7 +722,8 @@ probe <<EOF
 EOF
 ```
 
-Expected: every line `ok`. The output masks host names. A redirect must stay
+Expected: every line `ok`. Skip the `:8450` line if llama-telemetry is not
+deployed on the server. The output masks host names. A redirect must stay
 on the same origin and under its mount:
 `curl -sS -o /dev/null -w '%{redirect_url}\n' <url>`.
 
@@ -702,7 +771,11 @@ restart cockpit. For `tailscale-web`, run
 `sudo install -o "$USER" -m 644 <backup-dir>/tailscale-web.service ~/.config/systemd/user/`,
 then `systemctl --user daemon-reload && systemctl --user restart tailscale-web`.
 For `qbittorrent`, stop it and restore `qBittorrent.conf` from `<backup-dir>`
-first. Log the dirty paths; `git checkout HEAD -- <path>` undoes them before
+first. For the Pi's `cups`, also restore the old policy, which still allows
+the sidecar subnet:
+`sudo cp -a <backup-dir>/cupsd.conf /etc/cups/cupsd.conf && sudo systemctl restart cups`
+(the Pi's `<backup-dir>` from §3 step 3). Then `https://cups-pi.<tailnet>.ts.net/`
+from another tailnet device answers 200 through the old sidecar. Log the dirty paths; `git checkout HEAD -- <path>` undoes them before
 the stack is retried.
 
 **5.2 One Service, after its node was deleted:**
@@ -737,7 +810,7 @@ Restore `cockpit.conf`, the tailscale-web unit and `qBittorrent.conf` as in
 5.1, and bring up every stack with `docker compose up -d --remove-orphans`.
 If an `.env` copy is missing, use the restic snapshot from §1.1
 (`linux-server/backup/README.md`, "restore"). The host tags can stay. On the
-Pi, the CUPS policy rolls back from its `cupsd.conf.bak.<timestamp>`.
+Pi, restore `cupsd.conf` as in 5.1.
 
 ### 6. After the soak (7 days, both hosts verified; design §4.7)
 

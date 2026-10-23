@@ -6,7 +6,9 @@
     "8445": { "HTTPS": true },
     "8446": { "HTTPS": true },
     "8447": { "HTTPS": true },
-    "8448": { "HTTPS": true }
+    "8448": { "HTTPS": true },
+    "8450": { "HTTPS": true },
+    "9443": { "HTTPS": true }
   },
   "Web": {
     "${TS_CERT_DOMAIN}:443": {
@@ -19,7 +21,6 @@
         "/watchtower/": { "Proxy": "http://127.0.0.1:8105" },
         "/cockpit-ui/": { "Proxy": "https+insecure://127.0.0.1:9090/cockpit-ui/" },
         "/filebrowser/": { "Proxy": "http://127.0.0.1:8102" },
-        "/portainer/": { "Proxy": "http://127.0.0.1:9000" },
         "/tailscale-web/": { "Proxy": "http://127.0.0.1:8088" }
       }
     },
@@ -40,6 +41,12 @@
     },
     "${TS_CERT_DOMAIN}:8448": {
       "Handlers": { "/": { "Proxy": "http://127.0.0.1:8101" } }
+    },
+    "${TS_CERT_DOMAIN}:8450": {
+      "Handlers": { "/": { "Proxy": "http://127.0.0.1:17483" } }
+    },
+    "${TS_CERT_DOMAIN}:9443": {
+      "Handlers": { "/": { "Proxy": "http://127.0.0.1:9000" } }
     }
   },
   "Services": {

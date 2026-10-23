@@ -418,9 +418,9 @@ Shared layer for every server; see [server-base/README.md](../server-base/README
       + `serve.json`, the game server and Mac mini use `server-base/serve.sh` +
       `serve.conf`, and the Pi runs both with duplicated base routes. Pick one
       (`ts-serve-apply.sh` needs bash 4, the Mac mini runs `serve.sh` under
-      bash 3.2), and settle one Cockpit (`/cockpit` vs the server's
-      `/cockpit-ui/`) and Portainer (`:9443` vs the server's `/portainer/`,
-      which portainer#12615 may break) URL convention across hosts
+      bash 3.2), and settle one Cockpit URL convention across hosts
+      (`/cockpit` vs the server's `/cockpit-ui/`). Portainer is on `:9443`
+      everywhere
 - [ ] Round-2 review (PR #106) follow-ups, non-blocking:
   - [ ] Portainer snapshot helper (`backup/backup.sh`, `--volumes-from portainer`)
         also inherits the Docker socket: mount only the data volume read-only,

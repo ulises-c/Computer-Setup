@@ -27,7 +27,7 @@ switch that monitor to the loopback URL in the last column.
 | watchtower | `https://<host>/watchtower/v1/metrics`, header below | 200 | `http://127.0.0.1:8105/v1/metrics` |
 | cockpit | `https://<host>/cockpit-ui/` | 200 | `https://127.0.0.1:9090/cockpit-ui/` (ignore TLS errors) |
 | filebrowser | `https://<host>/filebrowser/` | 200 | `http://127.0.0.1:8102/` |
-| portainer | `https://<host>/portainer/api/system/status` | 200 | `http://127.0.0.1:9000/api/system/status` |
+| portainer | `https://<host>:9443/api/system/status` | 200 | `http://127.0.0.1:9000/api/system/status` |
 | tailscale-web | `https://<host>/tailscale-web/` | 200 | `http://127.0.0.1:8088/` |
 | adguard | `https://<host>:8443/control/status` | 401, 403 | `http://127.0.0.1:8100/control/status` |
 | speedtest-tracker | `https://<host>:8445/admin/login` | 200 | `http://127.0.0.1:8104/admin/login` |

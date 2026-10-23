@@ -15,13 +15,14 @@ in [UNIFICATION.md](UNIFICATION.md).
   `docs/ONE_NODE_PER_HOST.md`; reference: `linux-server/HTTPS.md`.
 - Front doors: path mounts on `https://<server>.<tailnet>.ts.net/<service>/`
   (glances, openspeedtest, qbittorrent, syncthing, watchtower, cockpit at
-  `/cockpit-ui/`, filebrowser, portainer, tailscale-web), homepage at `/`, a
+  `/cockpit-ui/`, filebrowser, tailscale-web), homepage at `/`, a
   per-service HTTPS port for root-only apps (adguard `:8443`, uptime-kuma
   `:8444`, speedtest-tracker `:8445`, PeaNUT `:8446`, NPM admin `:8447`,
-  atvloadly `:8448`), and Tailscale Services `svc:forgejo` (with git SSH on
+  atvloadly `:8448`, llama-telemetry `:8450`) and for Portainer (`:9443`, as on
+  the other hosts, off the shared `:443` origin), and Tailscale Services `svc:forgejo` (with git SSH on
   `:22`), `svc:ntfy` and `svc:immich`, which keep their old names and URLs.
 - Apps publish on `127.0.0.1` only; base paths set where needed
-  (`FB_BASE_URL`, `--base-url /portainer`, Cockpit `UrlRoot`, `tailscale web
+  (`FB_BASE_URL`, Cockpit `UrlRoot`, `tailscale web
   --prefix`). Non-HTTP ports (Syncthing, BitTorrent, openspeedtest LAN) move
   from the sidecars to the apps.
 - NPM binds `:80`/`:443`/`:81` to `NPM_BIND_IP` (the LAN IP), off the tailnet IP.

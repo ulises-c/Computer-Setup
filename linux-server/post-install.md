@@ -105,7 +105,7 @@ server's own node. Full reference: [`HTTPS.md`](HTTPS.md).
 
 ## 7. First-login service setup
 
-### Portainer — https://\<server\>.\<tailnet\>.ts.net/portainer/
+### Portainer — https://\<server\>.\<tailnet\>.ts.net:9443
 - [ ] Create admin account **within 5 minutes** — if you miss the window, restart the container
 
 ### Filebrowser — https://\<server\>.\<tailnet\>.ts.net/filebrowser/
@@ -323,7 +323,7 @@ in [`tailscale-serve/serve.json`](tailscale-serve/serve.json); see [`HTTPS.md`](
 | Service | URL | Notes |
 |---|---|---|
 | Homepage | https://\<server\>/ | Or http://\<server-ip\>:3000 on LAN |
-| Portainer | https://\<server\>/portainer/ | Create admin within 5 min |
+| Portainer | https://\<server\>:9443 | Create admin within 5 min |
 | Glances | https://\<server\>/glances/ | Loopback-bound by the shared base; no LAN port |
 | Speedtest Tracker | https://\<server\>:8445 | |
 | Filebrowser | https://\<server\>/filebrowser/ | Default: admin / admin |

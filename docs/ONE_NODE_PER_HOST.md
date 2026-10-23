@@ -41,10 +41,13 @@ file [B Q2].
 ### D2. Addressing: path, root, per-service port, or Tailscale Service
 
 Choice, per service (full list in section 2):
-- Path `https://<server>.<tailnet>.ts.net/<service>/` on `:443` for the 10
-  prefix-safe apps across both hosts: 6 `subpath` and 4 `subpath-with-config`
-  [A]. Forgejo is the fifth `subpath-with-config` app; it becomes a Service
-  instead (D3).
+- Path `https://<server>.<tailnet>.ts.net/<service>/` on `:443` for 9 of the
+  prefix-safe apps across both hosts: 6 `subpath` and 3 `subpath-with-config`
+  [A]. Forgejo, a `subpath-with-config` app, becomes a Service instead (D3).
+  Portainer, another one, takes registry port `9443` instead (2.1, O18): it
+  holds the Docker socket, and it ignores `--base-url` for some assets
+  ([portainer#12615](https://github.com/portainer/portainer/issues/12615)),
+  which is why the other hosts already serve it on `9443`.
 - Root `/` of each host node for that host's homepage. Homepage is root-only
   (Next.js without a base path [A #7]) and is the natural landing page. Any
   root-absolute request that escapes another app's prefix lands on homepage,
@@ -177,7 +180,16 @@ Choice:
 - Policy changes: add both to `tagOwners`; add
   `autoApprovers.services` for the three Services → `tag:server`; add grants
   from `autogroup:member` to each Service with explicit ports (`tcp:443`, plus
-  `tcp:22` for forgejo); declare the three Services with their ports.
+  `tcp:22` for forgejo), plus the tag of every tagged host that consumes the
+  Service (`tag:pi` for `svc:ntfy`, because the Pi's backup alerts publish
+  there; the Mac mini runner's tag for `svc:forgejo` if it has one); declare
+  the three Services with their ports.
+- Tagged hosts as sources: a tag replaces the host's user identity on its
+  outgoing connections too. If the policy is not an allow-all from `*`, add
+  grants between the host tags for the cross-host flows: Pi → server `:443`
+  (Glances widget, 4.5 probes), `:8443` (adguardhome-sync) and `:8444` (Kuma
+  push); server → Pi, game server and Mac mini `:443` (Glances widgets, 4.5
+  probes).
 - Retire `tag:container` from `tagOwners` after the last sidecar is gone.
 - Do not tighten the rest of the policy in this migration. The tailnet's
   existing member-to-device rule stays, so host-published ports (Syncthing,
@@ -185,9 +197,9 @@ Choice:
 
 Accepted trade-off: per-service tailnet ACLs. A grant matches a destination
 host and port, never a URL path, so every path mount on a host's `:443`
-(portainer, cockpit, filebrowser, qbittorrent, syncthing, tailscale-web, …)
-shares one ACL boundary, and the registry-port apps share the host identity
-too. #49 can narrow ports but cannot rebuild a per-path rule. Today's policy
+(cockpit, filebrowser, qbittorrent, syncthing, tailscale-web, …)
+shares one ACL boundary, and the registry-port apps (portainer among them)
+share the host identity too. #49 can narrow ports but cannot rebuild a per-path rule. Today's policy
 already lets every member reach every device, so no rule in use is lost; each
 app's own login is the boundary (HANDOFF gates on it before serve applies).
 An app that later needs its own ACL moves to a Tailscale Service (#105), as forgejo,
@@ -270,8 +282,12 @@ Conventions used in the rows:
 ### 2.1 Per-service HTTPS port registry
 
 A service keeps the same tailnet HTTPS port on every host, so a second server
-reuses it with no new choice. None of these ports has a listener on either
-host in the repo, and none is 5252 (reserved for the web client [B Q4]).
+reuses it with no new choice. None of these ports has a host listener in the
+repo, and none is 5252 (reserved for the web client [B Q4]). A serve route
+published by hand on an owned port is replaced by the apply (3.5 step 3), so
+the runbook looks for one before the first apply (HANDOFF §1 step 3);
+llama-telemetry's README used to suggest `:443 /` or `:8443`, and it now has
+`8450`.
 
 | Tailnet port | Service |
 |---|---|
@@ -283,6 +299,8 @@ host in the repo, and none is 5252 (reserved for the web client [B Q4]).
 | 8447 | nginx-proxy-manager admin UI |
 | 8448 | atvloadly |
 | 8449 | cups (Pi) |
+| 8450 | llama-telemetry (server) |
+| 9443 | portainer (every host; the Pi, game server and Mac mini already use it) |
 
 The three Services (D3) each use `:443` (plus `:22` for forgejo) on their own
 VIP, so they need no entry here.
@@ -299,7 +317,7 @@ VIP, so they need no entry here.
 | watchtower | `/watchtower/` | `http://127.0.0.1:8105` (STRIP) | None; token-only API [A #19] | Leaves the sidecar netns; `127.0.0.1:8105:8080` | yes |
 | cockpit | `/cockpit-ui/` | `https+insecure://127.0.0.1:9090/cockpit-ui/` (KEEP) | `cockpit.conf` `[WebService] UrlRoot=/cockpit-ui`, `Origins = https://<server>.<tailnet>.ts.net wss://<server>.<tailnet>.ts.net`. The mount cannot be `/cockpit/`, which Cockpit reserves [A #3] | Stack deleted (sidecar-only); `cockpit.conf.example` stays | yes |
 | filebrowser | `/filebrowser/` | `http://127.0.0.1:8102` (STRIP) | `FB_BASE_URL=/filebrowser` [A #4] | Leaves the sidecar netns; `127.0.0.1:8102:80` | yes |
-| portainer | `/portainer/` | `http://127.0.0.1:9000` (STRIP) | `command: --base-url /portainer` [A #12] | Leaves the sidecar netns; `127.0.0.1:9000:9000` | yes |
+| portainer | `:9443` | `http://127.0.0.1:9000` | None (no `--base-url`; D2) | Leaves the sidecar netns; `127.0.0.1:9000:9000` | yes |
 | tailscale-web | `/tailscale-web/` | `http://127.0.0.1:8088` (STRIP) | `tailscale-web.service` `ExecStart=tailscale web --listen 127.0.0.1:8088 --prefix /tailscale-web --origin https://<server>.<tailnet>.ts.net` [A #16] | Stack deleted (sidecar-only) | yes |
 | adguard | `https://<server>.<tailnet>.ts.net:8443` | `http://127.0.0.1:8100` | None | `adguardhome` gains `127.0.0.1:8100:80`; DNS `53` unchanged (D5) | yes |
 | uptime-kuma | `:8444` | `http://127.0.0.1:3001` | Monitors move to the new URLs [C §7] | Leaves the sidecar netns; `127.0.0.1:3001:3001` | yes |
@@ -307,6 +325,7 @@ VIP, so they need no entry here.
 | ups (PeaNUT) | `:8446` | `http://127.0.0.1:8097` | None | Stays `network_mode: host`, `WEB_PORT=8097` | yes (`peanut-ts`) |
 | nginx-proxy-manager | `:8447` (admin UI) | `http://127.0.0.1:81` | None | `80`, `443`, `81` bound to `${NPM_BIND_IP}` (LAN IP from `.env`), plus `127.0.0.1:81:81` (D7) | yes |
 | atvloadly | `:8448` | `http://127.0.0.1:8101` | None | Leaves the sidecar netns; `127.0.0.1:8101:80`. Avahi and D-Bus sockets are bind mounts, so discovery is unaffected | yes |
+| llama-telemetry | `:8450` | `http://127.0.0.1:17483` | None; it checks the Tailscale identity header | None: a user unit that already listens on `127.0.0.1:17483` | no (never had a sidecar) |
 | forgejo | `svc:forgejo`: `https://forgejo.<tailnet>.ts.net`, `ssh://git@forgejo.<tailnet>.ts.net` | `https:443` → `http://127.0.0.1:3300`; `tcp:22` → `127.0.0.1:2222` | None: `FORGEJO_DOMAIN`, `ROOT_URL`, `SSH_DOMAIN`, `SSH_PORT=22` keep their values (D3, D4) | Leaves the sidecar netns; `127.0.0.1:3300:3000`, `127.0.0.1:2222:22`. `forgejo-runner-status` stays on `127.0.0.1:8098` | yes |
 | ntfy | `svc:ntfy`: `https://ntfy.<tailnet>.ts.net` | `https:443` → `http://127.0.0.1:8103` | None: `NTFY_BASE_URL` keeps its value | Leaves the sidecar netns; `127.0.0.1:8103:80` | yes |
 | immich | `svc:immich`: `https://immich.<tailnet>.ts.net` | `https:443` → `http://127.0.0.1:2283` | None | `immich-server` leaves the sidecar netns and joins the project's default network, so `database`, `redis` and `immich-machine-learning` still resolve; `127.0.0.1:2283:2283` | yes |
@@ -322,7 +341,7 @@ Neighbours on the server (no front door of their own):
 
 Server loopback ports after the change, one owner each: 81, 2222, 2283, 3000,
 3001, 3030, 3031, 3300, 8080, 8088, 8089, 8096, 8097, 8098, 8099, 8100, 8101,
-8102, 8103, 8104, 8105, 8384, 9000, 9090, 61208. The only ones that are new
+8102, 8103, 8104, 8105, 8384, 9000, 9090, 17483, 61208. The only ones that are new
 are 2222, 3300 and 8100–8105. The other new publishes reuse the container's
 own port, which no other stack uses on the host. Where two apps both listen
 on container `:80` (adguard, atvloadly, filebrowser, ntfy, speedtest-tracker)
@@ -385,7 +404,7 @@ and [KB 1589](https://tailscale.com/kb/1589/tailscale-services-configuration-fil
 | Path | Owner | What |
 |---|---|---|
 | `scripts/ts-serve-apply.sh` | server card | The one apply script. Host-agnostic: it takes the template path as an argument. The Pi runs this same file from its checkout; there is no copy |
-| `scripts/test-ts-serve-apply.sh` | server card | Regression test with a stubbed `tailscale` on `PATH` (the `test-docker-address-pools.sh` pattern); a step in `.github/workflows/lint.yml` runs it. It covers render, the `.env` precedence and each render-value error of 3.3 (missing file fallback, malformed line, unknown key, empty key, unedited placeholder, drift), each validation error, merge-preserves-unrelated-keys, the no-op re-apply, the conflict stop, `--services` selection, and that `--dry-run` calls no write command |
+| `scripts/test-ts-serve-apply.sh` | server card | Regression test with a stubbed `tailscale` on `PATH` (the `test-docker-address-pools.sh` pattern); a step in `.github/workflows/lint.yml` runs it. It covers render, the `.env` precedence and each render-value error of 3.3 (missing file fallback, malformed line, unknown key, empty key, unedited placeholder, drift), each validation error, merge-preserves-unrelated-keys, the no-op re-apply, the conflict stop, `--services` selection and its parsing, the Funnel stop, retrying a failed advertise, the advertise read-back, and that `--dry-run` calls no write command |
 | `linux-server/tailscale-serve/serve.json` | server card | Server template: every row of 2.2 |
 | `linux-pi/tailscale-serve/serve.json` | Pi card | Pi template: every row of 2.3 |
 | `linux-server/tailscale-serve/.env.example` | server card | The two render keys (3.3), placeholder values only |
@@ -525,9 +544,12 @@ scripts/ts-serve-apply.sh <template> [--services all|none|svc:a[,svc:b]] [--dry-
 ```
 
 `--services` picks which Services from the template this run owns
-(default `all`). The migration uses `none` first and then adds one Service at
-a time (section 4), because a Service's name must be free before it is
-defined (D3). Services not picked are left exactly as they are.
+(default `none`; `all` must be asked for). Each name must match
+`^svc:[a-z0-9-]+$`, be in the template and be listed once; names are separated
+by commas, and anything else stops the run. The migration uses `none` first
+and then adds one Service at a time (section 4), because a Service's name must
+be free before it is defined (D3). Services not picked are left exactly as
+they are.
 
 1. Preconditions: `jq` present; `tailscale version` is at or above the floor
    (1.102.3, the verified version); `BackendState` is `Running`. If the picked
@@ -548,16 +570,25 @@ defined (D3). Services not picked are left exactly as they are.
    would reject the change anyway ("cannot change the serve type in use by a
    port", `validateServeConfigUpdate`), and the script must never silently
    replace an unrelated listener. The user removes that listener by hand.
-5. If the merged config equals the current config (`jq -S` compare), print
-   `up to date` and exit 0 without writing.
-6. Otherwise write it: `tailscale serve set-raw < merged.json`. Then run
-   `tailscale serve advertise svc:X` for each picked Service (it is a no-op if
-   the Service is already advertised).
+   Funnel check: if `AllowFunnel` is `true` for an owned `Web` key (node level
+   or a picked Service), stop and name the port. Preserving it would put every
+   handler of that listener on the public internet. Funnel on a listener the
+   run does not own, or set to `false`, is kept.
+5. Advertise state: if Services are picked, read `tailscale debug prefs` and
+   note each picked Service missing from `.AdvertiseServices`. If the merged
+   config equals the current config (`jq -S` compare) and none is missing,
+   print `up to date` and exit 0 without writing.
+6. Otherwise write: `tailscale serve set-raw < merged.json` if the config
+   differs, then `tailscale serve advertise svc:X` for each missing Service.
+   A run whose advertise failed after `set-raw` is fixed by running it again:
+   the config already matches, so only the advertise is retried.
 7. Read back: `tailscale serve status --json` must contain the owned keys
-   exactly as rendered. If not, exit non-zero.
+   exactly as rendered, and `tailscale debug prefs` must list every picked
+   Service in `.AdvertiseServices`. If not, exit non-zero.
 
 `--dry-run` runs only the read-only commands (`tailscale version`,
-`tailscale status --json`, `tailscale serve status --json`). It prints the
+`tailscale status --json`, `tailscale serve status --json`, and
+`tailscale debug prefs` when Services are picked). It prints the
 rendered template, the owned keys, a `diff` of current vs merged, the
 preserved keys, and the write commands it would run. It writes nothing. On a
 workstation, run it only with a stub `tailscale` on `PATH` and placeholder
@@ -614,7 +645,9 @@ Rules for every step:
    them, change it to that host node's tailnet IP now, before any sidecar is
    removed.
 2. Access controls: add `tag:server` and `tag:pi` to `tagOwners` (D8). Leave
-   `tag:container` in place until 4.7. Service entries come later (4.3).
+   `tag:container` in place until 4.7. Unless the policy allows all traffic
+   from `*`, add the tag-to-tag grants from D8 ("Tagged hosts as sources") and
+   preview each tag as a source. Service entries come later (4.3).
 3. Machines page: apply `tag:server` to the server's host node. This does not
    re-authenticate the node, so its IP and device ID stay the same (the
    tailscale-proxy `TAILSCALE_DEVICE_ID` keeps working). Then disable key
@@ -623,15 +656,20 @@ Rules for every step:
 
 ### 4.2 Server: pre-flight and backups
 
-1. `git -C <repo> rev-parse HEAD`: record the pre-migration commit.
+1. `git -C <repo> rev-parse HEAD`: record the pre-migration commit. It must
+   still have the sidecars (`git cat-file -e <commit>:linux-server/portainer/ts-serve.json`
+   succeeds), or every rollback in 4.6 restores the new files.
 2. `tailscale version` is 1.102.3 or later; `tailscale status --json` shows
    `BackendState` `Running`.
 3. `tailscale serve status --json`: record it. Expected empty; if not, every
-   listener in it must survive the migration unchanged.
+   listener in it must survive the migration unchanged, except that no
+   `AllowFunnel` entry may be `true` and no handler may sit on a port the
+   template owns unless the template has the same handler (the apply replaces
+   that whole listener; 2.1).
 4. Every backend port in 2.2 is either free or held by the service that 2.2
    says owns it (`ss -ltnpH 'sport = :<port>'`). In particular the new ports
    2222, 3300 and 8100–8105 print nothing. No host listener on the tailnet
-   registry ports (8443–8449).
+   registry ports (8443–8450, 9443).
 5. On the Pi: `getent hosts <server>.<tailnet>.ts.net` resolves, on the host
    and inside the adguardhome-sync container
    (`docker exec adguardhome-sync nslookup <server>.<tailnet>.ts.net`). The
@@ -764,14 +802,19 @@ longer in the compose file. Then verify (4.5).
    `linux-pi/backup/.env` to the 2.3 value. Pushes to the old sidecar name
    fail from the uptime-kuma cutover until this step.
 7. The three Services, one at a time, in this order: ntfy, immich, forgejo.
-   For each `svc:X` (D3):
+   Before the first one, confirm the rollback credential (HUMAN): the
+   `TS_AUTHKEY` in those stacks' `.env` is an OAuth client secret whose client
+   still has the Auth Keys scope and may create `tag:container` nodes, or an
+   unexpired reusable key. Step 2 below cannot be undone, and 4.6 re-creates
+   the sidecar with that key. For each `svc:X` (D3):
    1. `docker compose up -d --remove-orphans` in its stack. The old node goes
       offline; the outage starts.
    2. HUMAN: Machines page, delete the old `X` machine.
    3. HUMAN: Services page, Define a Service named `X`, with endpoint
       `tcp:443` (forgejo: `tcp:443` and `tcp:22`). Access controls: add
       `autoApprovers.services["svc:X"] = ["tag:server"]` and a grant from
-      `autogroup:member` to `svc:X` on the same ports (D8).
+      `autogroup:member` (plus the tags of hosts that consume it, D8) to
+      `svc:X` on the same ports.
    4. `scripts/ts-serve-apply.sh linux-server/tailscale-serve/serve.json --services svc:X --dry-run`,
       then without `--dry-run`.
    5. HUMAN: approve the host on the Services page if `autoApprovers` did not.
@@ -783,8 +826,9 @@ longer in the compose file. Then verify (4.5).
    `FORGEJO_RUNNER_API_URL` override from 4.2 step 7 (the script's default is
    loopback).
 8. Reboot the server. NPM must come back with `NPM_BIND_IP` bound (D7), and
-   serve and Services must come back from the state file. Repeat the 4.5
-   checks.
+   serve and Services must come back from the state file: the apply script
+   with `--dry-run` and `--services` naming the Services applied so far prints
+   `up to date`. Repeat the 4.5 checks.
 
 ### 4.4 Pi: pre-flight, host node and cutover
 
@@ -816,13 +860,16 @@ longer in the compose file. Then verify (4.5).
    if [[ "$(jq length "$B/serve-before.json")" == 0 ]]; then printf "empty\n"; else printf "config\n"; fi > "$B/serve-before.state"
    rc=0; tailscale serve get-config --all "$B/serve-services-before.json" || rc=$?
    printf "%s\n" "$rc" > "$B/serve-services-before.rc"
+   cp -a /etc/cups/cupsd.conf "$B/cupsd.conf"
    : > "$B/capture-complete"' _ <backup-dir> <repo>
    ```
 
    Then the same check as 4.2 step 6, with `pi-backup.service` and
-   `ts-state-pi.tgz`, and without the `cockpit.conf` and
-   `tailscale-web.service` lines. Do not continue unless it prints
-   `backup-ok`.
+   `ts-state-pi.tgz`, `[[ -s "$B/cupsd.conf" ]]` in place of the
+   `cockpit.conf` and `tailscale-web.service` lines. Do not continue unless it
+   prints `backup-ok`. `cupsd.conf` is copied under a fixed name because the
+   cups stack rollback needs the old policy, which still allows the sidecar
+   subnet (4.6).
 4. `git checkout <migration-branch>`. Create
    `linux-pi/tailscale-serve/.env` as in 4.2 step 8. Then
    `scripts/ts-serve-apply.sh linux-pi/tailscale-serve/serve.json --dry-run`,
@@ -863,7 +910,8 @@ longer in the compose file. Then verify (4.5).
    sync run and backup push succeed. Then set the server homepage's
    `HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN` to the Pi host node's name and restart
    the server homepage.
-8. Reboot the Pi, and repeat the checks.
+8. Reboot the Pi, and repeat the checks (the apply script with `--dry-run`
+   prints `up to date`).
 
 ### 4.5 Verification per service
 
@@ -881,7 +929,7 @@ on the same origin and under the mount.
 | watchtower | `/watchtower/v1/metrics` 401 without token | 200 with `Authorization: Bearer <token>` |
 | cockpit | `/cockpit-ui/` 200 | Browser login and a terminal (UNVERIFIED under a prefix) |
 | filebrowser | `/filebrowser/` 200 | Login; file list loads |
-| portainer | `/portainer/api/system/status` 200 | Login; container console (websocket, UNVERIFIED) |
+| portainer | `:9443/api/system/status` 200 | Login; container console (websocket, UNVERIFIED) |
 | tailscale-web | `/tailscale-web/` 200 | The manage flow (UNVERIFIED) |
 | adguard | `:8443/control/status` 401 or 403 without auth | Login; stats; `dig @<server-ip>` still resolves |
 | uptime-kuma | `:8444/` 200 or 302 to `/dashboard` | Login; push monitors still green |
@@ -911,7 +959,9 @@ whose old node was deleted in step 7):
 `docker compose up -d --remove-orphans`. The sidecar starts from its
 `ts-state/` and gets its old name back. Revert that stack's `.env` from the
 backup. The host serve handler can stay; it returns 502 until the stack is
-migrated again.
+migrated again. For the Pi's cups stack, also restore `cupsd.conf` from
+`<backup-dir>/cupsd.conf` and restart cups: the new policy no longer allows
+the sidecar subnet, so the old sidecar is refused without it.
 
 Per Service, after its old node was deleted:
 `tailscale serve drain svc:X`, `tailscale serve clear svc:X`; HUMAN: delete
@@ -920,8 +970,9 @@ the Service on the Services page, so the name is free; empty the stack's
 as above. The sidecar re-authenticates with `TS_AUTHKEY` (this is why the
 OAuth client keeps its Auth Keys scope until 4.7).
 
-Global, per host: restore Serve from the backup in a root process, chosen by
-`serve-before.state`, never by the size of a file:
+Global, per host: first roll back every Service as above, while its Service
+config still exists. Then restore Serve from the backup in a root process,
+chosen by `serve-before.state`, never by the size of a file:
 
 ```sh
 sudo bash -euo pipefail -c 'B="$1"
@@ -933,7 +984,7 @@ case "$(<"$B/serve-before.state")" in
 esac' _ <backup-dir>
 ```
 
-Then roll back every Service as above, `git checkout <pre-migration-commit>`,
+Then `git checkout <pre-migration-commit>`, restore `cupsd.conf` on the Pi,
 restore `cockpit.conf` (or, if `cockpit.conf.absent` is there, remove the new
 one) and the tailscale-web unit from `<backup-dir>` with `sudo install` (the
 unit back to the user's `~/.config/systemd/user/`, owned by that user),
@@ -1067,7 +1118,7 @@ record the change as a deviation afterwards (5.1).
 | O1 | Services: `svc:forgejo`, `svc:ntfy`, `svc:immich` | forgejo at `/forgejo/` with `ROOT_URL`; ntfy or immich on a registry port | Every clone's remote, the runner URL and the phones change; the Forgejo `/v2` registry needs its own root route | D3, D4, 2.2, 4.3 |
 | O2 | Service names reuse the old node names | New names (e.g. `git`) | No outage window for the delete-then-define step, but every client changes | D3, 4.3 |
 | O3 | Homepage owns `/` on each host | Homepage on a registry port and `/` redirects to it | One more port; root-absolute escapes from other apps land on a redirect instead of a 404 | D2, 2.2, 2.3 |
-| O4 | Tailnet port registry 8443–8449 and its order | Any other free ports | Bookmarks and monitors use these numbers | 2.1 |
+| O4 | Tailnet port registry 8443–8450 plus 9443 for Portainer, and its order | Any other free ports | Bookmarks and monitors use these numbers | 2.1 |
 | O5 | New loopback ports 2222, 3300, 8100–8105 | Any free ports | None outside the host | 2.2 |
 | O6 | Mount names equal the stack directory name; `/cockpit-ui/` for cockpit | Shorter names (`/qbt/`, `/st/`) | App base-path settings must match | 2.2, 2.3 |
 | O7 | NPM bound to `NPM_BIND_IP` (the LAN IP) | A DHCP reservation plus the same bind; an interface-name firewall rule; test the all-interfaces bind live and keep it if self-traffic reaches serve | A DHCP change breaks the bind at boot | D7, 4.3 |
@@ -1081,13 +1132,19 @@ record the change as a deviation afterwards (5.1).
 | O15 | Uptime Kuma monitors are edited in the UI | A SQL update on `kuma.db` once its schema is checked | A bad update corrupts the DB | 4.8 |
 | O16 | Pi host node joins with `--accept-dns=false` if it is new | `--accept-dns=true` | The Pi's resolver depends on tailscaled | 4.4 |
 | O17 | tailscale-web origin from a user env file | A hard-coded origin in the unit on the host only (today's pattern) | The unit in the repo no longer matches the host | 5.1 |
-| O18 | Path-mounted apps share one origin, `https://<server>.<tailnet>.ts.net` | Move a sensitive app to a registry port or a Service | Uses a port or 1 of the 7 Services left | D2, 2.2 |
+| O18 | Path-mounted apps share one origin, `https://<server>.<tailnet>.ts.net`; Portainer is on `9443` | Move another sensitive app (Cockpit, filebrowser, tailscale-web) to a registry port or a Service | Uses a port or 1 of the 7 Services left | D2, 2.2 |
 
-Accepted cost behind O18: a `Path=/` cookie or a localStorage entry from one
-path-mounted app is visible to the others [A]. Registry-port apps are separate
-origins for localStorage, but browsers do not isolate cookies by port, so a
-`Path=/` cookie on the host name reaches them too. Only the three Services
-have their own host name.
+Accepted cost behind O18: the path-mounted apps are one browser origin, so
+the same-origin policy does not separate them. Script running under any one
+mount (an XSS bug in one app, or HTML an app serves) can read the others'
+pages and CSRF tokens and call their APIs with the user's session, and a
+`Path=/` cookie or a localStorage entry is shared too [A]. Cockpit's `Origins`
+check does not help, because the request comes from the allowed origin. A
+registry port is a separate origin for scripts and localStorage, but browsers
+do not isolate cookies by port, so a `Path=/` cookie on the host name reaches
+it too. Only the three Services have their own host name. Portainer (the
+Docker socket) is on `9443` for that reason; Cockpit, filebrowser and
+tailscale-web stay on the shared origin, and moving them is tracked in #105.
 
 UNVERIFIED items and their fallbacks, in one place:
 - A Service claiming a live node's name (fallback: delete the node first; D3).
@@ -1099,6 +1156,10 @@ UNVERIFIED items and their fallbacks, in one place:
   D10).
 - `Services` applied through `set-raw` (fallback: `tailscale serve
   --service=...`; 3.5).
+- `tailscale debug prefs` listing a Service in `.AdvertiseServices` after
+  `tailscale serve advertise` (the script's advertise state and read-back,
+  3.5; fallback: if the read-back fails right after an advertise that
+  succeeded, check the Services page, and record the deviation).
 - The Pi resolving the server's MagicDNS name (fallback: fix before the
   neighbour step; 4.4).
 - The cups Host-rewrite shim on Pi hardware (spiked on amd64 only; the

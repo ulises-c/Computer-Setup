@@ -26,8 +26,8 @@ A service gets one of four front doors:
 | Front door | Used by | Why |
 |---|---|---|
 | `https://<server>.<tailnet>.ts.net/` | homepage | Root-only app; the natural landing page |
-| `https://<server>.<tailnet>.ts.net/<service>/` | glances, openspeedtest, qbittorrent, syncthing, watchtower, cockpit (`/cockpit-ui/`), filebrowser, portainer, tailscale-web | The app works under a path prefix, on its own or with a base-path setting |
-| `https://<server>.<tailnet>.ts.net:<port>` | adguard, uptime-kuma, speedtest-tracker, PeaNUT, the NPM admin UI, atvloadly | Root-only apps; one HTTPS port each from the registry below |
+| `https://<server>.<tailnet>.ts.net/<service>/` | glances, openspeedtest, qbittorrent, syncthing, watchtower, cockpit (`/cockpit-ui/`), filebrowser, tailscale-web | The app works under a path prefix, on its own or with a base-path setting |
+| `https://<server>.<tailnet>.ts.net:<port>` | adguard, uptime-kuma, speedtest-tracker, PeaNUT, the NPM admin UI, atvloadly, llama-telemetry, portainer | Root-only apps; one HTTPS port each from the registry below |
 | `https://<name>.<tailnet>.ts.net` (a Tailscale Service) | forgejo, ntfy, immich | Root-only apps with off-host clients (git remotes, the runner, phones) that keep their old URL |
 
 Serve strips the mount from the request path unless the proxy target repeats
@@ -50,6 +50,8 @@ has a host listener, and none is 5252 (reserved for the Tailscale web client).
 | 8447 | nginx-proxy-manager admin UI |
 | 8448 | atvloadly |
 | 8449 | cups (Pi) |
+| 8450 | llama-telemetry (server) |
+| 9443 | portainer (every host; it ignores `--base-url` for some assets, portainer#12615, and holds the Docker socket, so it stays off the shared `:443` origin) |
 
 ### Server routes
 
@@ -66,7 +68,6 @@ The single source of truth is
 | watchtower | `/watchtower/` | `127.0.0.1:8105` | — (token-only API) |
 | cockpit | `/cockpit-ui/` (prefix kept) | `https+insecure://127.0.0.1:9090` (host service) | `cockpit.conf`: `UrlRoot`, `Origins` |
 | filebrowser | `/filebrowser/` | `127.0.0.1:8102` | `FB_BASE_URL=/filebrowser` |
-| portainer | `/portainer/` | `127.0.0.1:9000` | `--base-url /portainer` |
 | tailscale-web | `/tailscale-web/` | `127.0.0.1:8088` (host user unit) | `--prefix /tailscale-web --origin …` |
 | adguard | `:8443` | `127.0.0.1:8100` | — |
 | uptime-kuma | `:8444` | `127.0.0.1:3001` | — |
@@ -74,6 +75,8 @@ The single source of truth is
 | ups (PeaNUT) | `:8446` | `127.0.0.1:8097` (host network) | — |
 | nginx-proxy-manager | `:8447` | `127.0.0.1:81` | — |
 | atvloadly | `:8448` | `127.0.0.1:8101` | — |
+| llama-telemetry | `:8450` | `127.0.0.1:17483` (host user unit) | `TELEMETRY_ALLOWED_LOGIN` (the app checks the Tailscale identity) |
+| portainer | `:9443` | `127.0.0.1:9000` | — |
 | forgejo | `svc:forgejo`, plus SSH `:22` | `127.0.0.1:3300`, SSH `127.0.0.1:2222` | none (`ROOT_URL`, `SSH_DOMAIN`, `SSH_PORT=22` unchanged) |
 | ntfy | `svc:ntfy` | `127.0.0.1:8103` | none (`NTFY_BASE_URL` unchanged) |
 | immich | `svc:immich` | `127.0.0.1:2283` | none |
@@ -132,8 +135,9 @@ scripts/ts-serve-apply.sh linux-server/tailscale-serve/serve.json
   (`.env.example` shows the format), then `tailscale status` with a warning
   when that `.env` is missing. A value that differs from the live node is
   rejected, so the `.env` can only be right or refused.
-- `--dry-run` runs only `tailscale version`, `tailscale status --json` and
-  `tailscale serve status --json`. It prints the rendered template, the keys
+- `--dry-run` runs only `tailscale version`, `tailscale status --json`,
+  `tailscale serve status --json` and, when Services are picked,
+  `tailscale debug prefs`. It prints the rendered template, the keys
   it owns, a diff against the live config, the keys it keeps, and the write
   commands it would run.
 - The script owns every listener in the template and replaces each one
@@ -141,9 +145,15 @@ scripts/ts-serve-apply.sh linux-server/tailscale-serve/serve.json
   shows it). Every other listener, `Web` host and Service is kept.
 - A listener of a different type already on an owned port (for example an
   HTTP listener on `:8444`) stops the run before any write; remove it by hand.
+  So does Funnel turned on for an owned listener: keeping it would put every
+  mount on that listener on the public internet.
 - `--services all|none|svc:a[,svc:b]` picks which Services this run owns
-  (default `all`). Services not picked are left exactly as they are.
-- Running it twice prints `up to date` and writes nothing.
+  (default `none`). Names are comma-separated and must be in the template.
+  Services not picked are left exactly as they are.
+- Running it twice prints `up to date` and writes nothing. If an advertise
+  failed after the config was written, running it again retries the
+  advertise: the script reads which Services are advertised
+  (`tailscale debug prefs`), not only the config.
 
 The config is stored in tailscaled's state file, so it survives reboots and
 tailscaled restarts. The script does not remove a listener dropped from the
