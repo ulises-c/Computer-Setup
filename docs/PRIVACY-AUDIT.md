@@ -229,8 +229,16 @@ commands, options, or imported code. Hooks/fsmonitor/external diffs/credential
 helpers and non-HTTPS network transports are disabled for tool-issued Git commands.
 Audit ignores allow-markers and test-path exemptions so untrusted public content
 cannot suppress inspection. Conservative findings may need private manual review.
-The audit deliberately passes no owner exemption to the scanner: even public
-repository-owner links can be flagged when the owner matches the private
+The scanner's fixed `PUBLIC_IDENTITIES` exception covers the owner's explicitly
+approved full name and two exact email addresses, including commit metadata and
+audited content. It overrides email and denylist matching only for those complete
+identities (ASCII case-insensitive); lookalikes, partial names, personal paths and
+secrets remain subject to their normal checks. It is separate from allow-markers
+and applies even with `--no-allow`. Installed audit runtimes must be deliberately
+redeployed to pick up this reviewed policy change.
+
+The audit deliberately passes no repository-link owner exemption to the scanner:
+even public repository-owner links can be flagged when the owner matches the private
 denylist. It does not trust a checkout's `origin` to authorize exemptions. A
 future scoped exception would need to derive exclusively from trusted
 `github_repo` configuration; no such exception is currently applied.
