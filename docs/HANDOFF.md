@@ -229,35 +229,41 @@ says `sudo`.
    device, with `T` set to the MagicDNS suffix:
 
    ```sh
-   probe_auth() { while read -r want url; do
-     got=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$url" 2>/dev/null || true)
-     [[ ",$want," == *",$got,"* ]] && r=ok || r=FAIL
-     printf '%-4s %-3s want=%-7s %s\n' "$r" "$got" "$want" "${url/.$T/.<tailnet>}"
-   done; }
-   probe_auth <<EOF
-   401,403 https://qbittorrent.$T/api/v2/app/version
-   401,403 https://syncthing.$T/rest/system/status
-   401 https://watchtower.$T/v1/metrics
-   401,403 https://adguard.$T/control/status
-   401 https://portainer.$T/api/endpoints
-   EOF
-   # Default credentials must be refused. These send only the public
-   # fresh-install defaults from linux-server/README.md.
-   curl -sS -o /dev/null -w 'filebrowser default: %{http_code} (want 403)\n' -X POST \
-     -H 'Content-Type: application/json' -d '{"username":"admin","password":"admin"}' \
-     "https://filebrowser.$T/api/login"
-   curl -sS -o /dev/null -w 'npm default: %{http_code} (want 400/401, never 200)\n' -X POST \
-     -H 'Content-Type: application/json' -d '{"identity":"admin@example.com","secret":"changeme"}' \
-     "https://npm.$T/api/tokens"
-   curl -sS -o /dev/null -w 'portainer admin: %{http_code} (204 = set; 404 = first-run)\n' \
-     "https://portainer.$T/api/users/admin/check"
+   login_gate() { local f=0
+     [[ -n "${T:-}" ]] || { printf 'set T to the MagicDNS suffix first\n' >&2; return 2; }
+     gate() { local want="$1" label="$2" got rc=0; shift 2
+       got=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$@" 2>/dev/null) || rc=$?
+       if (( rc == 0 )) && [[ ",$want," == *",$got,"* ]]; then
+         printf 'ok   %-3s want=%-7s %s\n' "$got" "$want" "$label"
+       else
+         printf 'FAIL %-3s want=%-7s %s (curl exit %s)\n' "${got:-000}" "$want" "$label" "$rc"; f=1
+       fi; }
+     gate 401,403 qbittorrent "https://qbittorrent.$T/api/v2/app/version"
+     gate 401,403 syncthing "https://syncthing.$T/rest/system/status"
+     gate 401 watchtower "https://watchtower.$T/v1/metrics"
+     gate 401,403 adguard "https://adguard.$T/control/status"
+     gate 401 portainer "https://portainer.$T/api/endpoints"
+     gate 403 'filebrowser default login' -X POST -H 'Content-Type: application/json' \
+       -d '{"username":"admin","password":"admin"}' "https://filebrowser.$T/api/login"
+     gate 400,401 'npm default login' -X POST -H 'Content-Type: application/json' \
+       -d '{"identity":"admin@example.com","secret":"changeme"}' "https://npm.$T/api/tokens"
+     gate 204 'portainer admin set' "https://portainer.$T/api/users/admin/check"
+     return "$f"; }
+   login_gate && echo gate-ok
    ```
 
-   HUMAN: confirm the Cockpit, Uptime Kuma, speedtest-tracker and atvloadly
-   logins are set (no first-run or default account). STOP on any `FAIL`, a
-   `200` from a default-credential line, or a Portainer `404`: set that app's
-   password first. Re-run the qbittorrent, syncthing, portainer and
-   filebrowser lines against the new front doors after each stack is cut
+   The two default-login lines send only the public fresh-install defaults
+   from `linux-server/README.md`, which must be refused. `portainer admin set`
+   wants `204`; a `404` means Portainer is still at its first-run admin page.
+   Expected: every line `ok`, then `gate-ok`; `login_gate` returns non-zero
+   on any other result. A line is `FAIL` when curl fails (no response,
+   timeout, TLS or DNS error; `000` and its exit code are printed), and when
+   the status is anything but the listed ones. Output names apps, never
+   hosts. STOP on any `FAIL` and fix that app first (set its password, or
+   finish Portainer's first-run admin). HUMAN: confirm the Cockpit, Uptime
+   Kuma, speedtest-tracker and atvloadly logins are set (no first-run or
+   default account). Re-run the qbittorrent, syncthing, portainer and
+   filebrowser checks against the new front doors after each stack is cut
    over (§4 functional checks).
 
 ### 1.1 Server: backups (design §4.2 step 6)
@@ -609,9 +615,9 @@ Run on the Pi, in its `<repo>`.
    `git checkout feat/86-one-node-per-host` at the approved head. Create
    `linux-pi/tailscale-serve/.env` with the command from §1.2 step 2 (in
    `linux-pi/tailscale-serve`). Login gate first (design D8): on the Pi,
-   `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:80/control/status`
-   must print `401` or `403` (AdGuard), and HUMAN confirms the MotionEye admin
-   password is set. STOP otherwise. CUPS `/admin/` auth is checked in §4.
+   `c=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 http://127.0.0.1:80/control/status) && [[ $c == 401 || $c == 403 ]] && echo gate-ok`
+   must print `gate-ok` (AdGuard refuses without a login), and HUMAN confirms
+   the MotionEye admin password is set. STOP otherwise. CUPS `/admin/` auth is checked in §4.
    Then:
 
    ```sh
@@ -701,12 +707,14 @@ Set `S`, `P` and `T` to the server node name, the Pi node name and the
 MagicDNS suffix, then run only the lines for stacks already cut over:
 
 ```sh
-probe() { while read -r want url; do
-  got=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$url" 2>/dev/null || true)
-  [[ ",$want," == *",$got,"* ]] && r=ok || r=FAIL
-  printf '%-4s %-3s want=%-11s %s\n' "$r" "$got" "$want" "$(sed -E 's#^https://[^/:]+#https://<host>#' <<< "$url")"
-done; }
-probe <<EOF
+probe() { local f=0 want url got rc r
+  while read -r want url; do
+    rc=0; got=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$url" 2>/dev/null) || rc=$?
+    if (( rc == 0 )) && [[ ",$want," == *",$got,"* ]]; then r=ok; else r=FAIL; f=1; fi
+    printf '%-4s %-3s want=%-11s %s\n' "$r" "${got:-000}" "$want" "$(sed -E 's#^https://[^/:]+#https://<host>#' <<< "$url")"
+  done
+  return "$f"; }
+probe <<EOF && echo probe-ok
 200 https://$S/
 200 https://$S/glances/api/4/status
 200 https://$S/openspeedtest/
@@ -734,8 +742,9 @@ probe <<EOF
 EOF
 ```
 
-Expected: every line `ok`. Skip the `:8450` line if llama-telemetry is not
-deployed on the server. The output masks host names. A redirect must stay
+Expected: every line `ok`, then `probe-ok`; any `FAIL` (including a curl
+error, shown as `000`) makes `probe` return non-zero: STOP. Skip the `:8450`
+line if llama-telemetry is not deployed on the server. The output masks host names. A redirect must stay
 on the same origin and under its mount:
 `curl -sS -o /dev/null -w '%{redirect_url}\n' <url>`.
 
