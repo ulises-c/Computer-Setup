@@ -3,7 +3,10 @@ Description=Tailscale Web UI
 After=network-online.target
 
 [Service]
-ExecStart=tailscale web
+# Served at https://<server>.<tailnet>.ts.net/tailscale-web/ by host tailscale
+# serve. The origin lives in the env file so this unit holds no host name.
+EnvironmentFile=%h/.config/tailscale-web.env
+ExecStart=tailscale web --listen 127.0.0.1:8088 --prefix /tailscale-web --origin ${TAILSCALE_WEB_ORIGIN}
 Restart=on-failure
 RestartSec=5
 

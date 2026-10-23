@@ -1,8 +1,11 @@
 # ntfy
 
 Push notifications for the server's own alerting — backups, the Forgejo runner,
-the UPS, and the Dragonwilds game server all publish here. Fronted by a Tailscale
-sidecar at `https://ntfy.<tailnet>.ts.net`; see [../HTTPS.md](../HTTPS.md).
+the UPS, and the Dragonwilds game server all publish here. Served by the
+`svc:ntfy` Tailscale Service at `https://ntfy.<tailnet>.ts.net`, hosted by the
+server's own node; see [../HTTPS.md](../HTTPS.md). The container publishes on
+`127.0.0.1:8103` only, and publishers on the server use that loopback URL as
+their `NTFY_URL`.
 
 ## Topics
 

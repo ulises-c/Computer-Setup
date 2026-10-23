@@ -1,33 +1,7 @@
 services:
-  # Decoupled Tailscale sidecar for the Pi's homepage — HTTPS at
-  # https://homepage-pi.<tailnet>.ts.net, proxying :443 -> the host's homepage on
-  # :3001 via host.docker.internal. Mirrors linux-server/homepage/homepage-ts.
-  homepage-pi-ts:
-    image: tailscale/tailscale:latest
-    container_name: homepage-pi-ts
-    hostname: homepage-pi
-    env_file:
-      - path: ../../server-base/timezone.env
-        required: true
-    environment:
-      - TS_AUTHKEY=${TS_AUTHKEY}
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_SERVE_CONFIG=/config/serve.json
-      - TS_EXTRA_ARGS=--advertise-tags=tag:container
-    volumes:
-      - ./ts-state:/var/lib/tailscale
-      - ./ts-serve.json:/config/serve.json:ro
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    cap_add:
-      - NET_ADMIN
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    dns:
-      - 9.9.9.10
-      - 1.1.1.1
-    restart: unless-stopped
-
+  # Pi dashboard, host-networked on :3001. Host tailscale serve publishes it at
+  # the root of https://<pi-hostname>.<tailnet>.ts.net
+  # (../tailscale-serve/serve.json).
   homepage:
     extends:
       file: ../../server-base/homepage/compose.yml
@@ -41,6 +15,6 @@ services:
       - .env
     environment:
       HOMEPAGE_ALLOWED_HOSTS: "localhost,127.0.0.1,${HOMEPAGE_VAR_PI_HOSTNAME},${HOMEPAGE_VAR_PI_HOSTNAME}.local,${HOMEPAGE_VAR_PI_LAN_IP},${HOMEPAGE_VAR_PI_HOMEPAGE_DOMAIN}"
-      # LAN clients and the sidecar (via host.docker.internal) both reach :3001.
+      # LAN clients reach :3001 directly as well as through serve.
       HOSTNAME: "0.0.0.0"
       PORT: "3001"

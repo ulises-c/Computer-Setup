@@ -7,8 +7,8 @@ no Docker) for repos on the home Forgejo server, reaching it over Tailscale.
 ```
 ┌──────────────────────┐        Tailscale         ┌──────────────────────────────┐
 │  Mac mini (m4-mini)  │  ───────────────────────▶│  Forgejo server              │
-│  forgejo-runner      │   https://forgejo         │  forgejo.<tailnet>.ts.net    │
-│  (LaunchAgent)       │   .<tailnet>.ts.net       │  serve :443 → :3000          │
+│  forgejo-runner      │   https://forgejo         │  svc:forgejo (Tailscale      │
+│  (LaunchAgent)       │   .<tailnet>.ts.net       │  Service) :443 → :3300       │
 └──────────────────────┘                          └──────────────────────────────┘
 ```
 
@@ -116,7 +116,8 @@ failure.** The runner host is fine; the configured instance URL no longer points
 at where Forgejo listens. This is exactly what happened when the server moved
 from `<hostname>:3300` to its own Tailscale node at `https://forgejo.<tailnet>.ts.net`
 (HTTPS via `tailscale serve`) — the runner kept dialing the old `:3300` and
-`KeepAlive` restarted it in a loop.
+`KeepAlive` restarted it in a loop. (That name is now the `svc:forgejo`
+Tailscale Service hosted by the server's node; the URL did not change.)
 
 1. `bash verify.sh` — the instance-reachable check pinpoints it.
 2. Confirm where Forgejo actually answers:

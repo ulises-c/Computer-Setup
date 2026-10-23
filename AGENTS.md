@@ -70,6 +70,13 @@ Claude-Code-only notes on top; keep cross-agent guidance here, not there.
   `<service>/{docker-compose.yml,.env.example}` layout as `linux-server/`) and
   their own `setup.sh` bootstraps, which source `lib/core.sh` with the
   `server-base` tag filter instead of being root `setup.sh` platforms.
+  Each host publishes its web services through its own single Tailscale node.
+  The main server and the Pi use one serve template per host,
+  `<host-dir>/tailscale-serve/serve.json`, applied by
+  `scripts/ts-serve-apply.sh` (see `linux-server/HTTPS.md` and
+  `docs/ONE_NODE_PER_HOST.md`); the game server, the Mac mini and the Pi's base
+  routes use `server-base/serve.sh` (below). There are no per-service Tailscale
+  sidecars.
 - `scripts/dryrun-smoke.sh` — runs `setup.sh --dry-run` for every platform and
   the game server / Pi bootstraps, and asserts they exit clean; also run in CI.
 

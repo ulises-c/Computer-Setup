@@ -36,11 +36,10 @@ assert_count() {
 
 write_env() {
   local aliases="$1"
-  local sidecar="$2"
-  local lan="$3"
+  local lan="$2"
 
-  printf 'CUPS_SERVER_ALIAS="%s"\nCUPS_SIDECAR_SUBNET="%s"\nCUPS_LAN_SUBNET="%s"\n' \
-    "$aliases" "$sidecar" "$lan" > "$work/.env"
+  printf 'CUPS_SERVER_ALIAS="%s"\nCUPS_LAN_SUBNET="%s"\n' \
+    "$aliases" "$lan" > "$work/.env"
   chmod 600 "$work/.env"
 }
 
@@ -138,17 +137,17 @@ write_stub install \
 config="$work/cupsd.conf"
 review="$work/review"
 write_fixture "$config"
-write_env 'printer.family.lan printer printer.local' '172.21.0.0/16' '192.168.50.0/24'
+write_env 'printer.family.lan printer printer.local' '192.168.50.0/24'
 
 output="$(run_setup --dry-run 2>&1)"
 assert_contains "$output" 'validation passed; policy changes are pending'
-for protected_value in printer.family.lan printer.local 172.21.0.0/16 192.168.50.0/24; do
+for protected_value in printer.family.lan printer.local 192.168.50.0/24; do
   assert_not_contains "$output" "$protected_value"
 done
 
 output="$(run_setup --prepare-review 2>&1)"
 assert_contains "$output" 'review artifacts prepared with root-only permissions'
-for protected_value in printer.family.lan printer.local 172.21.0.0/16 192.168.50.0/24; do
+for protected_value in printer.family.lan printer.local 192.168.50.0/24; do
   assert_not_contains "$output" "$protected_value"
 done
 
@@ -166,11 +165,13 @@ print_block="$(awk '/^<Location \/>$/, /^<\/Location>$/' "$candidate")"
 admin_block="$(awk '/^<Location \/admin>$/, /^<\/Location>$/' "$candidate")"
 admin_conf_block="$(awk '/^<Location \/admin\/conf>$/, /^<\/Location>$/' "$candidate")"
 admin_log_block="$(awk '/^<Location \/admin\/log>$/, /^<\/Location>$/' "$candidate")"
-assert_count 3 '^[[:space:]]*Allow[[:space:]]+' <(printf '%s\n' "$print_block")
-assert_count 2 '^[[:space:]]*Allow[[:space:]]+' <(printf '%s\n' "$admin_block")
-assert_count 2 '^[[:space:]]*Allow[[:space:]]+' <(printf '%s\n' "$admin_conf_block")
-assert_count 2 '^[[:space:]]*Allow[[:space:]]+' <(printf '%s\n' "$admin_log_block")
+assert_count 2 '^[[:space:]]*Allow[[:space:]]+' <(printf '%s\n' "$print_block")
+assert_count 1 '^[[:space:]]*Allow[[:space:]]+' <(printf '%s\n' "$admin_block")
+assert_count 1 '^[[:space:]]*Allow[[:space:]]+' <(printf '%s\n' "$admin_conf_block")
+assert_count 1 '^[[:space:]]*Allow[[:space:]]+' <(printf '%s\n' "$admin_log_block")
 assert_contains "$print_block" 'Allow 192.168.50.0/24'
+assert_contains "$print_block" 'Allow localhost'
+assert_contains "$admin_block" 'Allow localhost'
 assert_contains "$admin_block" 'AuthType Default'
 assert_contains "$admin_block" 'Require user @SYSTEM'
 assert_not_contains "$admin_block" '192.168.50.0/24'
@@ -191,7 +192,7 @@ cmp -s "$config" "$expected" || fail 'apply did not install the reviewed candida
 assert_contains "$(<"$systemctl_log")" 'disable --now cups.socket'
 assert_contains "$(<"$systemctl_log")" 'enable cups.service'
 assert_contains "$(<"$systemctl_log")" 'restart cups.service'
-for protected_value in printer.family.lan printer.local 172.21.0.0/16 192.168.50.0/24; do
+for protected_value in printer.family.lan printer.local 192.168.50.0/24; do
   assert_not_contains "$output" "$protected_value"
 done
 
@@ -221,27 +222,24 @@ printf '%s\n' \
   '<Location /printers>' \
   '  Allow from all' \
   '</Location>' >> "$config"
-write_env 'printer.family.lan printer printer.local' '172.21.0.0/16' '192.168.50.0/24'
+write_env 'printer.family.lan printer printer.local' '192.168.50.0/24'
 run_invalid 'open access in an unmanaged specific Location'
 
 write_fixture "$config"
 
-write_env 'printer.family.lan printer printer.local' '172.21.0.0/16' '0.0.0.0/0'
+write_env 'printer.family.lan printer printer.local' '0.0.0.0/0'
 run_invalid 'open LAN network'
 
-write_env 'printer.family.lan printer printer.local' '172.21.0.0/16' '192.168.50.7/24'
+write_env 'printer.family.lan printer printer.local' '192.168.50.7/24'
 run_invalid 'non-canonical LAN network'
 
-write_env 'printer.family.lan printer printer.local' '172.22.0.0/16' '192.168.50.0/24'
-run_invalid 'sidecar network that differs from the Compose pin'
+write_env 'printer.family.lan printer printer.local' '8.8.8.0/24'
+run_invalid 'public LAN network'
 
-write_env 'printer.family.lan printer printer.local' '172.21.0.0/16' '172.21.4.0/24'
-run_invalid 'LAN network that overlaps the sidecar network'
-
-write_env 'Printer.family.lan printer printer.local' '172.21.0.0/16' '192.168.50.0/24'
+write_env 'Printer.family.lan printer printer.local' '192.168.50.0/24'
 run_invalid 'non-canonical hostname'
 
-write_env $'printer.family.lan\nAllow all' '172.21.0.0/16' '192.168.50.0/24'
+write_env $'printer.family.lan\nAllow all' '192.168.50.0/24'
 run_invalid 'hostname newline injection'
 
 printf 'PASS: CUPS policy renderer, privacy, review/apply, rollback, idempotency, and validation\n'

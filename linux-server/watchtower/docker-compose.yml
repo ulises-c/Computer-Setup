@@ -1,38 +1,13 @@
 services:
-  # Tailscale sidecar — joins the tailnet as `watchtower`, terminating HTTPS for
-  # https://watchtower.<tailnet>.ts.net. Watchtower has no human UI; this fronts
-  # only its token-gated /v1/metrics API so Uptime Kuma can health-check it.
-  # See ../HTTPS.md.
-  watchtower-ts:
-    image: tailscale/tailscale:latest
-    container_name: watchtower-ts
-    hostname: watchtower
-    env_file:
-      - path: ../../server-base/timezone.env
-        required: true
-    environment:
-      - TS_AUTHKEY=${TS_AUTHKEY}
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_SERVE_CONFIG=/config/serve.json
-      # Requires TS_AUTHKEY to be allowed to apply tag:container (OAuth client, or
-      # a tag-scoped auth key). Drop this line if using an untagged personal key.
-      - TS_EXTRA_ARGS=--advertise-tags=tag:container
-    volumes:
-      - ./ts-state:/var/lib/tailscale
-      - ./ts-serve.json:/config/serve.json:ro
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    cap_add:
-      - NET_ADMIN
-    restart: unless-stopped
-
+  # Watchtower has no human UI. https://<server>.<tailnet>.ts.net/watchtower/
+  # (host tailscale serve, ../tailscale-serve/serve.json) fronts only its
+  # token-gated /v1/metrics API, so Uptime Kuma can health-check it.
   watchtower:
     extends:
       file: ../../server-base/watchtower/compose.yml
       service: watchtower
-    network_mode: service:watchtower-ts
-    depends_on:
-      - watchtower-ts
+    ports:
+      - "127.0.0.1:8105:8080"
     environment:
       # Metrics only (NOT the update endpoint), so the schedule keeps running —
       # only the update API disables periodic polls. GET /v1/metrics on :8080.

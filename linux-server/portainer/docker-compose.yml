@@ -1,37 +1,15 @@
 services:
-  # Tailscale sidecar — joins the tailnet as `portainer`, terminating HTTPS for
-  # https://portainer.<tailnet>.ts.net. See ../HTTPS.md for the full pattern.
-  portainer-ts:
-    image: tailscale/tailscale:latest
-    container_name: portainer-ts
-    hostname: portainer
-    env_file:
-      - path: ../../server-base/timezone.env
-        required: true
-    environment:
-      - TS_AUTHKEY=${TS_AUTHKEY}
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_SERVE_CONFIG=/config/serve.json
-      # Requires TS_AUTHKEY to be allowed to apply tag:container (OAuth client, or
-      # a tag-scoped auth key). Drop this line if using an untagged personal key.
-      - TS_EXTRA_ARGS=--advertise-tags=tag:container
-    volumes:
-      - ./ts-state:/var/lib/tailscale
-      - ./ts-serve.json:/config/serve.json:ro
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    cap_add:
-      - NET_ADMIN
-    restart: unless-stopped
-
+  # https://<server>.<tailnet>.ts.net:9443 through host tailscale serve
+  # (../tailscale-serve/serve.json), the same port as on the other hosts.
+  # Portainer ignores --base-url for some assets (portainer#12615), and a port
+  # keeps its Docker-socket UI off the origin the path-mounted apps share.
+  # 9000 is the plaintext UI; serve terminates TLS.
   portainer:
     extends:
       file: ../../server-base/portainer/compose.yml
       service: portainer
-    # Sidecar netns: serve proxies :443 to the plaintext UI on 127.0.0.1:9000.
-    network_mode: service:portainer-ts
-    depends_on:
-      - portainer-ts
+    ports:
+      - "127.0.0.1:9000:9000"
 
 volumes:
   portainer_data:

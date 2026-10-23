@@ -17,7 +17,7 @@ LOG="$HOME/Library/Logs/forgejo-runner.log"
 LABEL="net.forgejo.runner"
 
 # Default Forgejo instance the runner talks to (Tailscale MagicDNS over HTTPS,
-# terminated by the server's `tailscale serve` sidecar — no port).
+# served by the svc:forgejo Tailscale Service on the server — no port).
 # Set FORGEJO_INSTANCE_URL in .env (or the environment); the placeholder below
 # is only a prompt hint. Discover your tailnet with:
 #   tailscale status --json | jq -r '.MagicDNSSuffix'

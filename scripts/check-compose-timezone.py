@@ -47,7 +47,8 @@ def main():
     env = dict(os.environ)
     for rel in compose_files:
         for name in REQUIRED_VAR_RE.findall((repo / rel).read_text()):
-            env[name] = "/dummy"
+            # Host-port bind addresses must parse as an IP (TEST-NET-1, never real).
+            env[name] = "192.0.2.1" if name.endswith("_IP") else "/dummy"
 
     failures = []
     with tempfile.TemporaryDirectory() as tmp:

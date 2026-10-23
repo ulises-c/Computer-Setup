@@ -1,13 +1,19 @@
-# Cockpit host config for running behind the Tailscale sidecar proxy.
-# Cockpit rejects proxied requests/websockets from an unrecognized Origin (its
-# version of a host-check), so the proxied hostname must be allow-listed.
+# Cockpit host config for running behind host tailscale serve at
+# https://<server>.<tailnet>.ts.net/cockpit-ui/ (../tailscale-serve/serve.json).
+#
+# - UrlRoot: serve keeps the /cockpit-ui/ prefix on the way in, and Cockpit
+#   builds its links from it. The mount cannot be /cockpit/, which Cockpit
+#   reserves for its own resources. The LAN URL needs the prefix too:
+#   https://<server-ip>:9090/cockpit-ui/
+# - Origins: Cockpit rejects requests and websockets from an unlisted Origin
+#   (its version of a host check); its own origin is always allowed, so the
+#   LAN URL needs no entry.
 #
 # Deploy on the SERVER (not via this repo — Cockpit is a host service):
-#   sudo cp cockpit.conf.example /etc/cockpit/cockpit.conf   # edit <tailnet> first
+#   sudo cp cockpit.conf.example /etc/cockpit/cockpit.conf   # replace the <...> placeholders first
 #   sudo systemctl restart cockpit
-#
-# Replace <tailnet> with your tailnet name (the label before .ts.net).
 
 [WebService]
-Origins = https://cockpit.<tailnet>.ts.net wss://cockpit.<tailnet>.ts.net
+UrlRoot = /cockpit-ui
+Origins = https://<server>.<tailnet>.ts.net wss://<server>.<tailnet>.ts.net
 ProtocolHeader = X-Forwarded-Proto

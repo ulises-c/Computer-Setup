@@ -1,18 +1,36 @@
 # cups/ — Pi print server + HTTPS front door
 
 The Pi hosts a USB printer through host CUPS on port 631. Family devices print
-directly over the home LAN/WLAN, while the `cups-ts` sidecar provides the
-operator's remote HTTPS route over Tailscale.
+directly over the home LAN/WLAN. The operator's remote route is
+`https://<pi-hostname>.<tailnet>.ts.net:8449`, published by host tailscale
+serve (`../tailscale-serve/serve.json`) through a small loopback nginx shim:
+
+```
+tailnet :8449 -> serve -> 127.0.0.1:8631 (cups-proxy) -> 127.0.0.1:631 (cupsd)
+```
+
+## Why the shim
+
+cupsd checks the `Host` header. On a loopback connection it accepts only
+`localhost`, `localhost.`, `127.0.0.1` or `[::1]` and ignores `ServerAlias`
+([`valid_host()` in scheduler/client.c](https://github.com/OpenPrinting/cups/blob/v2.4.2/scheduler/client.c)).
+Serve always connects from loopback and passes the client's `Host`
+(`<pi-hostname>.<tailnet>.ts.net:8449`) through unchanged, so cupsd answers
+`400 Bad Request` to every request that comes straight from serve. The
+`cups-proxy` container (`docker-compose.yml`, host network, `nginx.conf`)
+listens on `127.0.0.1:8631`, sets `Host: localhost`, and forwards to `:631`.
+CUPS then sees a local request, so the `localhost` rules below apply and the
+admin pages still require a system user's password.
 
 ## Access policy
 
 `setup.sh` renders three exact access blocks in `/etc/cups/cupsd.conf`:
 
-- `<Location />` permits `localhost`, the pinned sidecar subnet, and the home
-  LAN/WLAN subnet. This supports family printing and the HTTPS sidecar.
+- `<Location />` permits `localhost` and the home LAN/WLAN subnet. This
+  supports family printing and the tailnet front door (through the shim).
 - `<Location /admin>` and every descendant admin location permit only
-  `localhost` and the sidecar subnet. Each is normalized to `AuthType Default`
-  with `Require user @SYSTEM`.
+  `localhost`. Each is normalized to `AuthType Default` with
+  `Require user @SYSTEM`.
 - Sources outside those ranges are denied. The renderer rejects wildcard
   aliases, open networks, non-private networks, non-canonical CIDRs, malformed
   hostnames, duplicate aliases, and control-character injection.
@@ -28,18 +46,18 @@ internet-wide CIDRs are never accepted.
 Copy `.env.example` to the gitignored `.env` and set:
 
 - `CUPS_SERVER_ALIAS`: lowercase canonical hostnames separated by single
-  spaces, including the exact Tailscale name and the LAN/Bonjour names.
-- `CUPS_SIDECAR_SUBNET`: the bridge CIDR pinned in `docker-compose.yml`. The
-  setup script requires the exact pin.
+  spaces: the LAN/Bonjour names. The tailnet name is not needed, because the
+  shim sends `Host: localhost`.
 - `CUPS_LAN_SUBNET`: the canonical private CIDR used by family LAN/WLAN
   clients. It is allowed for printing but not administration.
 
 Set `.env` to mode `0600`; the installer refuses to source a more broadly
-readable file because it also contains the sidecar credential.
+readable file.
 
-If upgrading from the old policy, replace `CUPS_ALLOW_FROM` with the two subnet
-variables above. No private hostname, tailnet name, or LAN address belongs in a
-tracked file or LLM transcript.
+If upgrading from the sidecar policy, delete `CUPS_SIDECAR_SUBNET` and
+`TS_AUTHKEY` from `.env` (`setup.sh` ignores them) and drop the old sidecar
+name from `CUPS_SERVER_ALIAS`. No private hostname, tailnet name, or LAN
+address belongs in a tracked file or LLM transcript.
 
 ## Reviewed deployment
 
@@ -68,10 +86,9 @@ sudo less /var/lib/cups-policy-review/pending.diff
 sudo less /var/lib/cups-policy-review/candidate.conf
 ```
 
-Confirm that the print block contains localhost, the exact pinned sidecar
-subnet, and the exact family LAN/WLAN subnet; every admin block must contain
-only localhost and the sidecar subnet plus the exact system-user authentication
-policy. Confirm that no broad access rule survives.
+Confirm that the print block contains localhost and the exact family LAN/WLAN
+subnet; every admin block must contain only localhost plus the exact
+system-user authentication policy. Confirm that no broad access rule survives.
 
 Apply exactly what was reviewed by passing both hashes printed by the prepare
 step:
@@ -87,21 +104,27 @@ socket, restart, or probe failure restores the previous configuration. Review
 artifacts use root ownership with directory mode `0700` and file mode `0600`;
 they are removed after a successful apply.
 
+Then start the shim:
+
+```bash
+docker compose up -d
+```
+
 ## Live verification
 
 After applying, verify without printing private values into an LLM transcript:
 
 1. `cups.service` is enabled and active, and `cups.socket` is disabled.
 2. A family device on LAN/WLAN can discover and print a test page.
-3. An HTTP request from the `cups-ts` container to the host CUPS service works.
-4. The sidecar HTTPS endpoint works from an authorized tailnet client.
+3. On the Pi, the shim answers and only on loopback:
+   `curl -sS -o /dev/null -w '%{http_code}\n' -H 'Host: <pi-hostname>.<tailnet>.ts.net:8449' http://127.0.0.1:8631/`
+   prints `200`, and `ss -ltnH 'sport = :8631'` shows only `127.0.0.1:8631`.
+4. `https://<pi-hostname>.<tailnet>.ts.net:8449/` returns `200` from an
+   authorized tailnet client, and `/admin/` returns `401` until a system
+   user logs in.
 5. A client outside both approved networks is denied.
 6. Administrative routes require authentication and are unavailable to an
    ordinary LAN-only client.
-
-The sidecar bridge subnet is pinned in `docker-compose.yml`. If that pin ever
-changes, update `.env`, prepare a new review, and apply the newly reviewed
-candidate.
 
 ### macOS “Hold for authentication”
 
