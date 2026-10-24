@@ -22,7 +22,9 @@ card and game client stay unchanged. The portal offers:
 - **Scraped Wiki** (`/rs-sdk/wiki/scraped`): searches only canonical visible
   OSRS/RS3 context, stored in a separate `scraped-wiki.sqlite` snapshot.
   Articles show attribution and original links; raw modern documents never ship.
-- **Live map** (`/rs-sdk/live-map`): every bot account on the game's own world
+- **Live map** (`/rs-sdk/live-map`): everyone online in the game world (fleet
+  bots flagged when they are in the world with no SDK controller, other players
+  by name only) and every bot account on the game's own world
   map, with HP, combat level, skills/XP, inventory, equipment and current activity,
   refreshed every 5 game ticks (~3 s; `?ticks=N` changes it). See [Live map](#live-map).
 - **Play**, **HiScores**, **Grand Exchange**, and a link back to Homepage.
@@ -273,7 +275,8 @@ auto-refresh; reload for new data.
 ```
 bot workstation                                   game server
 live_publish.py --host <alias> ──ssh stdin──▶ live.py receive ─▶ ~/.local/share/rs-sdk-portal/live/live.json
-  GET gateway /status            (allowlist re-shape,                  │ (read-only mount /live)
+  GET game web /playerpositions  (allowlist re-shape,                  │ (read-only mount /live)
+  GET gateway /status
   GET gateway /state/<bot>        server-clock stamp,                  ▼
   ps (routines), fleet-state      atomic replace)        portal: /rs-sdk/api/live, /rs-sdk/live-map
   bot_journal/activity/*.json
@@ -287,6 +290,29 @@ live_publish.py --host <alias> ──ssh stdin──▶ live.py receive ─▶ ~
   request per bot per 3 s, plain HTTP reads, no WebSocket session, observer,
   controller or action, so it can't pre-empt or block a fleet run. Credentials
   are used only in request headers; snapshots never contain them.
+- **Presence.** The gateway only knows bots with a connected SDK client, but a
+  bot can stay in the world after its client dies. So each period the publisher
+  also reads the game web server's unauthenticated `GET /playerpositions`
+  (`https://` + `SERVER` from `bot.env`, or `--world URL`; one request, the list
+  of every player in the world) and matches names to accounts (`bot_moondrop` ↔
+  `Bot Moondrop`: case, spaces and underscores ignored; the state's display name
+  is preferred). Each account gets `presence`:
+  - `controlled` — SDK client connected and in game;
+  - `ghost` — **in the world with no controller** (gateway dead/absent). The page
+    shows a red banner with the count and names, an amber pulsing marker and an
+    amber badge. Its position is live (from the world list); skills, HP,
+    inventory and equipment are the last controlled snapshot's, marked
+    last-known with their age (kept in
+    `~/Library/Caches/computer-setup/rs-sdk-portal-live.json`, allowlisted, so
+    they survive publisher restarts);
+  - `offline` — not in the world;
+  - `unknown` — no client, and the world list was unreachable: the page says
+    ghosts can't be detected right now instead of calling them offline.
+  Other players in the world (humans) are shown as neutral markers and a list,
+  name and position only. The status line reads `Online in world: N` (the length
+  of `/playerpositions`, i.e. `/playercount`). Accounts in `accounts.sqlite` that
+  the publisher has no credentials for but that are in the world are shown as
+  ghosts too.
 - **What is published** (allowlist in `live.shape_bot`, applied by the publisher's
   reduction, again by the receiver and again by the portal): position/plane, HP,
   combat level, run energy, animation, combat target name, skills (level, base,

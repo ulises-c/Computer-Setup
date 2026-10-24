@@ -14,6 +14,7 @@
     let meta = { width: 1920, height: 3328, originX: 1792, labels: [] };
     let scale = 2; // screen pixels per tile
     let bots = [];
+    let others = []; // non-fleet players in the world: name + position only
     let selected = null;
     let centred = false;
     const markers = new Map();
@@ -33,6 +34,8 @@
         if (s < 5400) return `${Math.round(s / 60)}m`;
         return `${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m`;
     };
+    const PRESENCE_LABEL = { controlled: 'controlled', ghost: 'in world — no controller', offline: 'offline', unknown: 'presence unknown' };
+    const inWorld = bot => bot.presence === 'controlled' || bot.presence === 'ghost';
     const words = key => key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ').toLowerCase();
 
     function layout() {
@@ -44,10 +47,12 @@
             node.hidden = scale < (label.size === 2 ? 0.5 : label.size === 1 ? 1 : 2.5);
         }
         for (const [name, node] of markers) {
-            const bot = bots.find(b => b.username === name);
-            if (bot && bot.player && bot.player.map) {
-                node.style.left = `${(bot.player.map[0] + 0.5) * scale}px`;
-                node.style.top = `${(bot.player.map[1] + 0.5) * scale}px`;
+            const where = name.startsWith('world:')
+                ? others.find(p => `world:${p.name}` === name)
+                : (bots.find(b => b.username === name) || {}).player;
+            if (where && where.map) {
+                node.style.left = `${(where.map[0] + 0.5) * scale}px`;
+                node.style.top = `${(where.map[1] + 0.5) * scale}px`;
             }
         }
     }
@@ -100,7 +105,22 @@
             node.title = `${bot.displayName || bot.username}: ${bot.activity.label}`;
             node.classList.toggle('selected', selected === bot.username);
             node.classList.toggle('fighting', !!bot.player.inCombat);
-            node.classList.toggle('offline', bot.status !== 'active');
+            node.classList.toggle('offline', !inWorld(bot));
+            node.classList.toggle('ghost', bot.presence === 'ghost');
+            if (bot.presence === 'ghost') node.title = `${bot.displayName || bot.username}: IN WORLD WITH NO CONTROLLER`;
+        }
+        for (const p of others) {
+            if (!p.map) continue;
+            const key = `world:${p.name}`;
+            live.add(key);
+            let node = markers.get(key);
+            if (!node) {
+                node = el('span', 'live-marker other');
+                node.append(el('span', 'dot'), el('span', 'tag', p.name));
+                canvas.append(node);
+                markers.set(key, node);
+            }
+            node.title = `${p.name} (other player, not in the fleet) · (${p.x}, ${p.z})`;
         }
         for (const [name, node] of markers) {
             if (!live.has(name)) { node.remove(); markers.delete(name); }
@@ -185,23 +205,33 @@
         const node = el('article', 'live-bot');
         node.dataset.bot = bot.username;
         node.classList.toggle('selected', selected === bot.username);
-        node.classList.toggle('is-offline', bot.status !== 'active');
+        node.classList.toggle('is-offline', !inWorld(bot));
+        node.classList.toggle('is-ghost', bot.presence === 'ghost');
         const head = el('header');
-        head.append(el('b', null, bot.displayName || bot.username), el('span', `badge ${bot.status}`, bot.status));
-        if (p) head.append(el('span', 'muted', `Combat ${fmt(p.combatLevel)}`));
+        const presence = bot.presence || 'unknown';
+        head.append(el('b', null, bot.displayName || bot.username), el('span', `badge ${presence}`, PRESENCE_LABEL[presence] || presence));
+        if (presence === 'controlled' && bot.status !== 'active') head.append(el('span', `badge ${bot.status}`, bot.status));
+        if (p && p.combatLevel !== null && p.combatLevel !== undefined) head.append(el('span', 'muted', `Combat ${fmt(p.combatLevel)}`));
         node.append(head, el('p', 'activity', bot.activity.label));
+        if (presence === 'ghost') {
+            node.append(el('p', 'ghost-note', bot.lastKnownAt
+                ? `Position is live (world list); stats, HP and items are last-known from ${ago(bot.lastKnownAt)} ago.`
+                : 'Position is live (world list); no stats known since this publisher started.'));
+        }
         const detail = activityDetail(bot);
         if (detail) node.append(detail);
         if (p) {
             const hp = el('div', 'hp');
+            if (p.hp === null || p.hp === undefined) hp.hidden = true;
             const bar = el('span');
             bar.style.width = `${Math.max(0, Math.min(100, p.maxHp ? (100 * p.hp) / p.maxHp : 0))}%`;
             hp.append(bar, el('em', null, `HP ${fmt(p.hp)} / ${fmt(p.maxHp)}`));
-            const where = [`(${p.x}, ${p.z})`, p.level ? `plane ${p.level}` : null, region(bot), `run ${fmt(p.runEnergy)}%`].filter(Boolean).join(' · ');
+            const run = p.runEnergy === null || p.runEnergy === undefined ? null : `run ${fmt(p.runEnergy)}%`;
+            const where = [`(${p.x}, ${p.z})`, p.level ? `plane ${p.level}` : null, region(bot), run].filter(Boolean).join(' · ');
             node.append(hp, el('p', 'where', where));
         }
         const details = el('details');
-        details.open = selected === bot.username || (bot.status === 'active' && bots.filter(b => b.status === 'active').length <= 3);
+        details.open = selected === bot.username || (bot.presence === 'controlled' && bots.filter(b => b.presence === 'controlled').length <= 3);
         details.append(el('summary', null, 'Stats, inventory & equipment'));
         if (bot.skills.length) {
             const skills = el('div', 'live-skills');
@@ -214,8 +244,9 @@
             }
             details.append(el('h3', null, `Skills · total ${total}`), skills);
         }
-        details.append(el('h3', null, `Inventory · ${bot.inventory.length}/28`), itemGrid(bot.inventory, true, bot.player ? 'Empty' : 'Not known while offline'));
-        details.append(el('h3', null, 'Equipment'), itemGrid(bot.equipment, false, bot.player ? 'Nothing worn' : 'Not known while offline'));
+        const known = bot.presence === 'controlled' || (bot.presence === 'ghost' && bot.lastKnownAt);
+        details.append(el('h3', null, `Inventory · ${bot.inventory.length}/28${bot.presence === 'ghost' ? ' (last known)' : ''}`), itemGrid(bot.inventory, true, known ? 'Empty' : 'Not known without a controller'));
+        details.append(el('h3', null, `Equipment${bot.presence === 'ghost' ? ' (last known)' : ''}`), itemGrid(bot.equipment, false, known ? 'Nothing worn' : 'Not known without a controller'));
         if (bot.messages.length) {
             const log = el('ul', 'messages');
             for (const m of bot.messages) log.append(el('li', null, m));
@@ -228,15 +259,42 @@
         return node;
     }
 
+    function othersCard() {
+        const node = el('article', 'live-bot live-others');
+        const head = el('header');
+        head.append(el('b', null, 'Other players in the world'), el('span', 'badge other', `${others.length}`));
+        node.append(head, el('p', 'muted', 'Not fleet accounts: name and position only.'));
+        const names = el('ul', 'others');
+        for (const p of others) {
+            const item = el('li', null, p.name);
+            item.append(el('span', 'muted', ` (${p.x}, ${p.z})${p.level ? ` plane ${p.level}` : ''}`));
+            if (p.map) item.addEventListener('click', () => centreOn(p.map[0], p.map[1]));
+            names.append(item);
+        }
+        node.append(names);
+        return node;
+    }
+
     function renderList(payload) {
         const open = new Set([...list.querySelectorAll('article')].filter(a => a.querySelector('details')?.open).map(a => a.dataset.bot));
-        list.replaceChildren(...bots.map(bot => {
+        const cards = bots.map(bot => {
             const node = card(bot);
             if (open.has(bot.username)) node.querySelector('details').open = true;
             return node;
-        }));
-        const online = bots.filter(b => b.status === 'active').length;
-        const parts = [`${online} online of ${bots.length} accounts`];
+        });
+        if (others.length) cards.push(othersCard());
+        list.replaceChildren(...cards);
+        const world = payload.world || {};
+        const controlled = bots.filter(b => b.presence === 'controlled').length;
+        const ghosts = bots.filter(b => b.presence === 'ghost');
+        const parts = [];
+        if (world.ok) {
+            parts.push(`Online in world: ${world.count}`);
+            parts.push(`fleet ${controlled} controlled, ${ghosts.length} without controller, ${bots.length - controlled - ghosts.length} offline`);
+            if (others.length) parts.push(`${others.length} other player${others.length === 1 ? '' : 's'}`);
+        } else {
+            parts.push(`${controlled} controlled of ${bots.length} accounts`, 'world player list unavailable');
+        }
         if (payload.ageMs !== null && payload.ageMs !== undefined) parts.push(`snapshot ${(payload.ageMs / 1000).toFixed(1)} s old`);
         if (payload.fleet) parts.push(payload.fleet.running ? 'fleet supervisor running' : 'fleet supervisor idle');
         if (payload.fleet && payload.fleet.focus) parts.push(`event focus: ${payload.fleet.focus}`);
@@ -244,8 +302,21 @@
         statusLine.textContent = parts.join(' · ');
         statusLine.classList.toggle('stale', !!payload.stale);
         const warning = document.getElementById('live-warning');
-        warning.textContent = payload.error || '';
-        warning.hidden = !payload.error;
+        const problems = [payload.error, payload.available && !world.ok
+            ? `Cannot read the game's player list (${world.error || 'unavailable'}): bots in the world without a controller cannot be detected right now.`
+            : null].filter(Boolean);
+        warning.textContent = problems.join(' ');
+        warning.hidden = !problems.length;
+        let banner = document.getElementById('live-ghosts');
+        if (!banner) {
+            banner = el('p', 'note live-ghosts');
+            banner.id = 'live-ghosts';
+            statusLine.before(banner);
+        }
+        banner.textContent = ghosts.length
+            ? `⚠ ${ghosts.length} bot${ghosts.length === 1 ? ' is' : 's are'} in the world with NO controller (SDK client disconnected): ${ghosts.map(b => b.displayName || b.username).join(', ')}`
+            : '';
+        banner.hidden = !ghosts.length;
     }
 
     async function poll() {
@@ -254,6 +325,7 @@
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const payload = await response.json();
             bots = payload.bots || [];
+            others = (payload.world && payload.world.others) || [];
             renderMarkers();
             renderList(payload);
             if (!centred) {

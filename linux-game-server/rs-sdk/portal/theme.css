@@ -146,6 +146,13 @@ footer { margin-top: 32px; padding-top: 18px; border-top: 1px solid #68563866; c
 .live-marker.offline .dot { background: #8a8a8a; box-shadow: none; }
 .live-marker.selected .dot { outline: 2px solid #fff; outline-offset: 2px; }
 .live-marker.selected { z-index: 3; }
+.live-marker.ghost .dot { background: #ff9d1c; border-color: #5a0d00; box-shadow: 0 0 0 3px #e2412b99, 0 0 12px #ff9d1c; animation: ghost-pulse 1.2s ease-in-out infinite; }
+.live-marker.ghost .tag { color: #ffb44d; border: 1px solid #e2412b; }
+.live-marker.other { cursor: default; z-index: 1; }
+.live-marker.other .dot { width: 9px; height: 9px; background: #d9e6f2; box-shadow: 0 0 0 2px #d9e6f244; }
+.live-marker.other .tag { color: #d9e6f2; font-weight: normal; }
+@keyframes ghost-pulse { 50% { box-shadow: 0 0 0 6px #e2412b33, 0 0 16px #ff9d1c; } }
+.live-ghosts { border-color: #e2412b; background: #3a1208e6; color: #ffcf8a; font-weight: bold; }
 .live-zoom { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 4px; }
 .live-zoom button { width: 32px; height: 32px; font: bold 18px Arial, sans-serif; color: #f0dba4; background: #090a07dd; border: 1px solid #685638; cursor: pointer; }
 .live-bots { display: grid; align-items: start; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 14px; margin-bottom: 20px; }
@@ -157,6 +164,13 @@ footer { margin-top: 32px; padding-top: 18px; border-top: 1px solid #68563866; c
 .live-bot .badge { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; padding: 1px 6px; border: 1px solid #685638; color: #c5b99a; }
 .live-bot .badge.active { color: #bbd779; border-color: #6c7d43; }
 .live-bot .badge.stale { color: #f0b9a0; border-color: #a3452d; }
+.live-bot .badge.controlled { color: #bbd779; border-color: #6c7d43; }
+.live-bot .badge.ghost { color: #1a0a00; background: #ff9d1c; border-color: #e2412b; font-weight: bold; }
+.live-bot .badge.unknown { color: #f0d08a; border-color: #8a6a2d; }
+.live-bot.is-ghost { border-color: #e2412b; box-shadow: 0 0 0 1px #ff9d1c88; }
+.live-bot .ghost-note { font-size: 12px; color: #ffcf8a; margin: 4px 0 8px; }
+.live-others .others { margin: 6px 0 0; padding-left: 18px; font-size: 12px; color: #d9e6f2; }
+.live-others .others li { cursor: pointer; }
 .live-bot .activity { color: #eee5cb; margin: 8px 0; }
 .live-bot .where { font-size: 12px; margin: 6px 0 0; }
 .live-activity { display: grid; grid-template-columns: max-content 1fr; gap: 2px 10px; margin: 0 0 10px; font-size: 12px; }
