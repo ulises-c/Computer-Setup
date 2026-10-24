@@ -23,11 +23,12 @@ import time
 from player_anims import anim_info
 
 TICK_MS = 600
-DEFAULT_TICKS = 10
+DEFAULT_TICKS = 5
 MAX_TICKS = 1000
 MAX_LINE = 2 * 1024 * 1024
 MAX_BOTS = 200
-STALE_FLOOR_MS = 20_000
+# Stale after 3 publish periods, but never sooner than 12 s (4 default periods) to ride out SSH hiccups.
+STALE_FLOOR_MS = 12_000
 NAME = re.compile(r'^[A-Za-z0-9_ -]{1,12}$')
 TOKEN = re.compile(r'^[A-Za-z0-9_.:+-]{1,40}$')
 STATUSES = {'active', 'stale', 'dead', 'offline', 'unknown'}

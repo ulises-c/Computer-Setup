@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Publish the bot fleet's live state to the portal's live map (runs on the bot workstation).
 
-Every N game ticks (default 10 = ~6 s; never faster, to keep the gateway at no
-more than one request per bot per 6 s) this:
+Every N game ticks (default 5 = ~3 s; never faster, to keep the gateway at no
+more than one request per bot per 3 s) this:
 
 1. asks the gateway's unauthenticated GET /status which bots are connected;
 2. for each connected bot, reads GET /state/<bot> with that bot's own SDK
@@ -34,8 +34,8 @@ import urllib.parse
 import urllib.request
 
 TICK_MS = 600
-MIN_TICKS = 10
-DEFAULT_TICKS = 10
+MIN_TICKS = 5
+DEFAULT_TICKS = 5
 ROUTINE = re.compile(r'--env-file=\S*/bots/([A-Za-z0-9_-]{1,12})/bot\.env\s+\S*/routines/([A-Za-z0-9_.-]{1,40})\.ts\b(.*)')
 RUNNER = re.compile(r'src/lite/runner\.ts\s+([A-Za-z0-9_-]{1,12})\b')
 TOKEN = re.compile(r'^[A-Za-z0-9_.:+-]{1,40}$')

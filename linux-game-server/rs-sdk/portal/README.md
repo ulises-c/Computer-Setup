@@ -24,7 +24,7 @@ card and game client stay unchanged. The portal offers:
   Articles show attribution and original links; raw modern documents never ship.
 - **Live map** (`/rs-sdk/live-map`): every bot account on the game's own world
   map, with HP, combat level, skills/XP, inventory, equipment and current activity,
-  refreshed every 10 game ticks (~6 s; `?ticks=N` changes it). See [Live map](#live-map).
+  refreshed every 5 game ticks (~3 s; `?ticks=N` changes it). See [Live map](#live-map).
 - **Play**, **HiScores**, **Grand Exchange**, and a link back to Homepage.
 
 `/rs-sdk/wiki` is a collection chooser, not a combined search. Each collection's
@@ -284,7 +284,7 @@ live_publish.py --host <alias> ──ssh stdin──▶ live.py receive ─▶ ~
   exist only on the bot workstation (`<rs-sdk>/bots/<bot>/bot.env`). So the
   publisher runs there: per period it reads the unauthenticated `/status` once,
   then `GET /state/<bot>` (Bearer header) only for connected bots — at most one
-  request per bot per 6 s, plain HTTP reads, no WebSocket session, observer,
+  request per bot per 3 s, plain HTTP reads, no WebSocket session, observer,
   controller or action, so it can't pre-empt or block a fleet run. Credentials
   are used only in request headers; snapshots never contain them.
 - **What is published** (allowlist in `live.shape_bot`, applied by the publisher's
@@ -317,11 +317,11 @@ live_publish.py --host <alias> ──ssh stdin──▶ live.py receive ─▶ ~
   animation action, walking/running/teleported) unless the phase already says
   it, XP rate, else idle.
 - **Freshness.** The receiver stamps snapshots with the server clock; the API
-  marks data stale after 3 publish periods (min 20 s) and the page says so.
+  marks data stale after 3 publish periods (min 12 s) and the page says so.
   Offline accounts from `accounts.sqlite` (not retired) are listed too.
 - **Refresh rate.** The page polls `/rs-sdk/api/live?ticks=N` every N × 600 ms
-  (default 10, `?ticks=N` on `/rs-sdk/live-map`, 1–1000). The publisher's own
-  period is `install-live-publisher.sh <alias> [TICKS]` (minimum and default 10);
+  (default 5, `?ticks=N` on `/rs-sdk/live-map`, 1–1000). The publisher's own
+  period is `install-live-publisher.sh <alias> [TICKS]` (minimum and default 5);
   polling faster than the publisher only re-reads the same snapshot.
 - **Map.** `install.sh` renders `assets/worldmap.png` (2 px/tile) and
   `assets/worldmap.json` (labels) from the game server's own `/worldmap.jag` with

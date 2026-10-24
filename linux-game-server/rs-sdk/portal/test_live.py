@@ -45,7 +45,7 @@ class LiveShapingTests(unittest.TestCase):
                          (live.ORIGIN_X, live.ORIGIN_Z, live.MAP_WIDTH, live.MAP_HEIGHT))
 
     def test_ticks_param(self):
-        self.assertEqual(live.ticks_param({}), 10)
+        self.assertEqual(live.ticks_param({}), 5)
         self.assertEqual(live.ticks_param({'ticks': ['25']}), 25)
         for bad in ('0', '-1', 'x', '1001', '1e3'):
             with self.assertRaises(ValueError):
@@ -263,7 +263,9 @@ class LiveHTTPTests(unittest.TestCase):
         with urlopen(base + '/rs-sdk/api/live') as response:
             payload = json.loads(response.read())
             self.assertEqual(response.headers['Content-Type'], 'application/json')
-        self.assertEqual(payload['ticks'], 10)
+        self.assertEqual((payload['ticks'], payload['refreshMs']), (5, 3000))
+        with urlopen(base + '/rs-sdk/live-map') as response:
+            self.assertIn('data-refresh-ms="3000"', response.read().decode())
         self.assertEqual(payload['bots'][0]['username'], 'bot_a')
         with urlopen(base + '/rs-sdk/live-map.js') as response:
             self.assertIn('text/javascript', response.headers['Content-Type'])
