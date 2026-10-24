@@ -27,6 +27,9 @@ card and game client stay unchanged. The portal offers:
   by name only) and every bot account on the game's own world
   map, with HP, combat level, skills/XP, inventory, equipment and current activity,
   refreshed every 5 game ticks (~3 s; `?ticks=N` changes it). See [Live map](#live-map).
+- **Bot controller** (`/rs-sdk/bot-controller/`): the only page that changes
+  anything. The owner assigns a registry routine per bot (or Stop / Hold), and the
+  workstation's no-LLM controller daemon applies it. See [Bot controller](#bot-controller).
 - **Play**, **HiScores**, **Grand Exchange**, and a link back to Homepage.
 
 `/rs-sdk/wiki` is a collection chooser, not a combined search. Each collection's
@@ -373,6 +376,62 @@ KeepAlive LaunchAgent; logs in `~/Library/Logs/computer-setup/rs-sdk-portal-live
 bash linux-game-server/rs-sdk/portal/install-live-publisher.sh <game-server-ssh-alias> [TICKS]
 python3 linux-game-server/rs-sdk/portal/live_publish.py --once   # one snapshot to stdout
 ```
+
+## Bot controller
+
+`/rs-sdk/bot-controller/` lists every bot account, with:
+
+- presence and activity, from the live snapshot;
+- the controller daemon's per-bot state and message, its job, last result, gates
+  (fleet pause / per-bot latch / local stop: read-only here) and any other controller
+  driving the bot;
+- the owner's current request.
+
+Per bot, or in bulk for the selected bots, the owner can:
+
+- **Start** a routine from the registry, with dropdowns for enum args and bounded
+  numbers for ints;
+- **Stop** it (a real in-game logout, verified on `/playerpositions`);
+- **Hold** it (hands off);
+- **Clear** the request.
+
+Cards collapse/expand like the live map and keep their form values across refreshes.
+
+Data flow: the portal writes only desired state. The daemon on the bot
+workstation (`2004Scape-Botting/tools/bot-controller.ts`, launchd
+`net.computer-setup.rs-sdk-bot-controller`; docs in that repo's
+`docs/bot-controller.md`) does the work. Every ~5 s it runs
+`ssh <game-server> python3 …/portal/controller.py exchange`. That call:
+
+- stores the daemon's status, allowlisted, as `$PORTAL_LIVE_DIR/controller-status.json`
+  (read-only in the container);
+- prints `$PORTAL_CONTROLLER_DIR/desired.json` back to the daemon.
+
+The daemon's report includes the routine registry. The portal validates requests
+against it, and the daemon validates them again against its own copy. The daemon also
+applies every safety gate itself. The heartbeat on the page goes red after 30 s
+without a report.
+
+Writes (`POST /rs-sdk/api/controller/desired`) require all of these:
+
+- the owner's Tailscale identity. `tailscale serve` sets `Tailscale-User-Login` and
+  overrides a client-supplied value; tagged devices get none. The allowed login is
+  `PORTAL_OWNER_LOGIN` in `.env`: `install.sh` keeps it, or pass
+  `PORTAL_OWNER_LOGIN=… install.sh` once; empty means read-only;
+- an `Origin` of `https://$PORTAL_GAME_DOMAIN`;
+- a JSON body;
+- an HMAC CSRF token, issued only to the owner's GET.
+
+Requests are validated against the registry and the known accounts, rate-limited to
+30 changes per minute, and audited in `$PORTAL_CONTROLLER_DIR/audit.jsonl`.
+`bot_tester` is never launchable. There are no free-form commands. Residual risk:
+local access to the game server (loopback port, or the controller directory), and
+any process on the owner's own untagged devices.
+
+The page has the same CSP exception as the live map
+(`script-src 'self'; connect-src 'self'`); every other route is unchanged. Tests:
+`test_controller.py` covers registry and run validation, status shaping, auth/CSRF,
+the store, the HTTP routes and the JS logic.
 
 ## Install
 

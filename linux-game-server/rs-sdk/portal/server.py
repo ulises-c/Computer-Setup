@@ -16,12 +16,14 @@ import time
 from typing import cast
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
 
+import controller
 import live
 from snapshot_policy import read_policy
 
 BASE = '/rs-sdk'
 STYLE = Path(__file__).with_name('theme.css').read_text()
 LIVE_SCRIPT = Path(__file__).with_name('live_map.js').read_bytes()
+CONTROLLER_SCRIPT = Path(__file__).with_name('bot_controller.js').read_bytes()
 WIKIS = {
     '2004scape': ('2004Scape Wiki', '2004scape-wiki.sqlite', 'This game, one page per thing: server data, bot observations and wiki context selected by the deployment policy at publication time.'),
     'rs-sdk': ('RS-SDK Wiki', 'rs-sdk-wiki.sqlite', 'Server-specific knowledge generated from RS-SDK. Search only the local game wiki.'),
@@ -33,11 +35,11 @@ def esc(value):
     return escape(str(value) if value is not None else '—', quote=True)
 
 
-def layout(title, body, wiki=False, footer='Read-only companion · no account controls, database downloads or background polling.'):
+def layout(title, body, wiki=False, footer='Companion · no database downloads or background polling; bots are controlled only from the owner-only Bot controller page.'):
     theme = 'wiki-page' if wiki else 'game-page'
     menu_title = 'Wiki navigation' if wiki else 'Game tools'
     note = 'Read-only article cache' if wiki else 'Account state is not live presence.'
-    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)} · RS-SDK</title><style>{STYLE}</style></head><body class="{theme}"><div class="world"><header><nav><a class="brand" href="{BASE}/">RS-SDK / companion</a><a href="{BASE}/live-map">Live map</a><a href="{BASE}/accounts">Accounts</a><a href="{BASE}/benchmarks">Benchmarks</a><a href="{BASE}/wiki">Wikis</a></nav></header><div class="page-layout"><aside class="tool-menu"><h2>{menu_title}</h2><a href="{BASE}/">Companion home</a><a href="{BASE}/live-map">Live map</a><a href="{BASE}/accounts">Account Database</a><a href="{BASE}/benchmarks">Benchmarks</a><a href="{BASE}/wiki/2004scape">2004Scape Wiki</a><a href="{BASE}/wiki/rs-sdk">RS-SDK Wiki</a><a href="{BASE}/wiki/scraped">Scraped Wiki</a><p>{note}</p></aside><main>{body}<footer>{footer}</footer></main></div></div></body></html>'''
+    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)} · RS-SDK</title><style>{STYLE}</style></head><body class="{theme}"><div class="world"><header><nav><a class="brand" href="{BASE}/">RS-SDK / companion</a><a href="{BASE}/live-map">Live map</a><a href="{BASE}/bot-controller/">Bot controller</a><a href="{BASE}/accounts">Accounts</a><a href="{BASE}/benchmarks">Benchmarks</a><a href="{BASE}/wiki">Wikis</a></nav></header><div class="page-layout"><aside class="tool-menu"><h2>{menu_title}</h2><a href="{BASE}/">Companion home</a><a href="{BASE}/live-map">Live map</a><a href="{BASE}/bot-controller/">Bot controller</a><a href="{BASE}/accounts">Account Database</a><a href="{BASE}/benchmarks">Benchmarks</a><a href="{BASE}/wiki/2004scape">2004Scape Wiki</a><a href="{BASE}/wiki/rs-sdk">RS-SDK Wiki</a><a href="{BASE}/wiki/scraped">Scraped Wiki</a><p>{note}</p></aside><main>{body}<footer>{footer}</footer></main></div></div></body></html>'''
 
 
 @contextmanager
@@ -208,9 +210,14 @@ def split_route(path, prefix):
 
 
 class Portal:
-    def __init__(self, root, game_url, homepage_url, wanted=None, live_path=None):
+    def __init__(self, root, game_url, homepage_url, wanted=None, live_path=None, controller_dir=None, owner_login=None, public_origin=None):
         self.root = root
         self.live_path = live_path
+        # Bot controller: desired state lives in its own writable mount; the daemon's status
+        # arrives beside live.json (read-only mount, written on the host by controller.py exchange).
+        self.controller = controller.Store(controller_dir)
+        self.controller_status_path = live_path.with_name('controller-status.json') if live_path else None
+        self.auth = controller.Auth(owner_login, public_origin)
         self.game_url = game_url.rstrip('/')
         self.homepage_url = homepage_url.rstrip('/')
         self.wanted = Wanted(wanted)
@@ -312,7 +319,49 @@ class Portal:
 <div id="live-bots" class="live-bots"></div><p id="live-empty" class="note" hidden></p></div>
 <p class="note">Positions and state come from the SDK gateway’s latest frame for each bot, read by the bot workstation with HTTP state requests and published here; who is in the world (including bots whose SDK client has disconnected, and other players by name only) comes from the game server’s public player list; nothing on this page can control, log in or message a bot. Activity combines the running routine, combat, dialogs and skills gaining XP. Underground areas appear in the map’s folded dungeon bands, as in the game’s own world map.</p>
 <script src="{BASE}/live-map.js" defer></script>'''
-        return layout('Live map', body, footer='Read-only companion · live map polls a read-only JSON snapshot; no account controls.')
+        return layout('Live map', body, footer='Companion · the live map polls a read-only JSON snapshot; it has no controls.')
+
+    def controller_status(self):
+        return controller.read_status(self.controller_status_path)
+
+    def controller_json(self, headers):
+        allowed, reason = self.auth.can_write(headers)
+        login = self.auth.login(headers)
+        auth = {'login': login, 'canWrite': allowed and self.controller.dir is not None,
+                'reason': reason if not allowed else (None if self.controller.dir is not None else 'Writes are not configured on this portal.'),
+                'csrf': self.auth.token(login) if allowed else None}
+        return controller.view(self.live_accounts(), live.read_live(self.live_path, accounts=self.live_accounts()),
+                               self.controller_status(), self.controller.read(), auth)
+
+    def controller_write(self, headers, body):
+        error = self.auth.check_write(headers)
+        if error:
+            return 403, {'error': error}
+        try:
+            request = json.loads(body)
+        except ValueError:
+            return 400, {'error': 'Body is not JSON.'}
+        status = self.controller_status()
+        # Known bots: the accounts snapshot plus the bot folders the daemon reports from the workstation.
+        known = set(self.live_accounts()) | set(status.get('bots', {}))
+        return self.controller.apply(request, status.get('registry'), known, self.auth.login(headers))
+
+    def controller_page(self):
+        api = f'{BASE}/api/controller'
+        body = f'''<div class="eyebrow">RS-SDK / Fleet control</div><h1>Bot controller</h1>
+<p>Assign a routine from the registry to each bot, or stop (in-game logout) or hold it. The workstation’s controller daemon applies these requests within a few seconds, re-checks them, and never starts a bot that has a fleet pause, a per-bot latch or a local stop, or one that another agent is controlling. No AI model is involved.</p>
+<div id="ctl" class="ctl" data-api="{api}" data-post="{api}/desired" data-refresh-ms="{live.DEFAULT_TICKS * live.TICK_MS}">
+<p id="ctl-daemon" class="note live-status">Loading controller state…</p>
+<p id="ctl-auth" class="note"></p>
+<p id="ctl-pause" class="note live-ghosts" hidden></p>
+<p id="ctl-flash" class="note ctl-flash" role="status" hidden></p>
+<div class="live-toolbar"><div id="ctl-filter" class="live-filter" role="group" aria-label="Show"><button type="button" data-show="all" aria-pressed="true">All <span class="n"></span></button><button type="button" data-show="active" aria-pressed="false">Assigned / online <span class="n"></span></button></div>
+<div class="live-bulk"><button id="ctl-expand-all" type="button">Expand all</button><button id="ctl-collapse-all" type="button">Collapse all</button><button id="ctl-select-none" type="button">Clear selection</button></div></div>
+<details id="ctl-bulk" class="ctl-bulk"><summary>Bulk action on <span id="ctl-selected">0</span> selected bots</summary><div id="ctl-bulk-form" class="ctl-form"></div></details>
+<div id="ctl-bots" class="live-bots ctl-bots"></div><p id="ctl-empty" class="note" hidden></p></div>
+<p class="note">Presence and activity come from the live map’s snapshot; controller state from the daemon’s last report. Stop is always a real in-game logout verified against the game’s player list. Latches and local stops are shown here but can only be cleared by the owner on the workstation. Writes need the owner’s Tailscale identity; every change is audited.</p>
+<script src="{BASE}/bot-controller.js" defer></script>'''
+        return layout('Bot controller', body, footer='Companion · bot controller: requests are re-validated by the workstation daemon; no free-form commands.')
 
     def render(self, path, params):
         try:
@@ -338,14 +387,15 @@ class Portal:
         if path in ('/', BASE, BASE + '/'):
             cards = [
                 ('01 / LIVE', 'Live map', BASE + '/live-map', 'Where every bot is right now, with stats, inventory, equipment and current activity.'),
-                ('02 / ACCOUNTS', 'Account Database', BASE + '/accounts', 'Account status, purpose, logins and recorded deaths. Credentials stay private.'),
-                ('03 / PERFORMANCE', 'Benchmarks', BASE + '/benchmarks', 'Compare full runs, timings and routine versions. Inspect individual steps.'),
-                ('04 / THIS GAME', '2004Scape Wiki', BASE + '/wiki/2004scape', WIKIS['2004scape'][2]),
-                ('05 / SERVER KNOWLEDGE', 'RS-SDK Wiki', BASE + '/wiki/rs-sdk', WIKIS['rs-sdk'][2]),
-                ('06 / EXTERNAL KNOWLEDGE', 'Scraped Wiki', BASE + '/wiki/scraped', WIKIS['scraped'][2]),
-                ('07 / GAME', 'Play', self.game_url + '/', 'Open the browser client. Your human and bot accounts share this SDK world.'),
-                ('08 / RANKINGS', 'HiScores', self.game_url + '/hiscores', 'Browse the game server’s player rankings.'),
-                ('09 / TRADING', 'Grand Exchange', self.game_url + '/market.html', 'Open the server’s market and trading page.'),
+                ('02 / CONTROL', 'Bot controller', BASE + '/bot-controller/', 'Start, stop or hold registry routines per bot; the workstation daemon applies them safely.'),
+                ('03 / ACCOUNTS', 'Account Database', BASE + '/accounts', 'Account status, purpose, logins and recorded deaths. Credentials stay private.'),
+                ('04 / PERFORMANCE', 'Benchmarks', BASE + '/benchmarks', 'Compare full runs, timings and routine versions. Inspect individual steps.'),
+                ('05 / THIS GAME', '2004Scape Wiki', BASE + '/wiki/2004scape', WIKIS['2004scape'][2]),
+                ('06 / SERVER KNOWLEDGE', 'RS-SDK Wiki', BASE + '/wiki/rs-sdk', WIKIS['rs-sdk'][2]),
+                ('07 / EXTERNAL KNOWLEDGE', 'Scraped Wiki', BASE + '/wiki/scraped', WIKIS['scraped'][2]),
+                ('08 / GAME', 'Play', self.game_url + '/', 'Open the browser client. Your human and bot accounts share this SDK world.'),
+                ('09 / RANKINGS', 'HiScores', self.game_url + '/hiscores', 'Browse the game server’s player rankings.'),
+                ('10 / TRADING', 'Grand Exchange', self.game_url + '/market.html', 'Open the server’s market and trading page.'),
             ]
             body = '<div class="eyebrow">2004SCAPE / RS-SDK WORLD</div><h1>RS-SDK Companion</h1><p>Play, inspect your accounts, compare runs and explore what the bots know.</p><div class="grid">'
             body += ''.join(f'<a class="card" href="{esc(url)}"><small>{tag}</small><b>{title} ↗</b><p>{description}</p></a>' for tag, title, url, description in cards)
@@ -353,6 +403,10 @@ class Portal:
             return 200, layout('Companion', body)
         if path == BASE + '/live-map':
             return 200, self.live_page(params)
+        if path == BASE + '/bot-controller':
+            raise Redirect(BASE + '/bot-controller/')
+        if path == BASE + '/bot-controller/':
+            return 200, self.controller_page()
         if path == BASE + '/accounts':
             q = params.get('q', [''])[0][:200]
             page = int(params.get('page', ['1'])[0])
@@ -612,6 +666,13 @@ class Handler(BaseHTTPRequestHandler):
                 data, status = b'{"error":"ticks must be an integer from 1 to 1000"}', 400
             self.send_plain(status, data, 'application/json', 'no-store', "default-src 'none'; frame-ancestors 'none'; sandbox")
             return
+        if path == BASE + '/api/controller':
+            data = json.dumps(portal.controller_json(self.headers), separators=(',', ':')).encode('utf-8')
+            self.send_plain(200, data, 'application/json', 'no-store', "default-src 'none'; frame-ancestors 'none'; sandbox")
+            return
+        if path == BASE + '/bot-controller.js':
+            self.send_plain(200, CONTROLLER_SCRIPT, 'text/javascript; charset=utf-8', 'no-cache', "default-src 'none'")
+            return
         if path == BASE + '/live-map.js':
             self.send_plain(200, LIVE_SCRIPT, 'text/javascript; charset=utf-8', 'no-cache', "default-src 'none'")
             return
@@ -654,12 +715,35 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Referrer-Policy', 'no-referrer')
         frame_policy = "; frame-src 'self'" if path == BASE + '/wiki/scraped/article' or path.startswith(BASE + '/wiki/scraped/w/') else ''
-        if path == BASE + '/live-map':
-            # The only scripted page: its own static script and same-origin JSON polling.
+        if path in (BASE + '/live-map', BASE + '/bot-controller/'):
+            # The only scripted pages: their own static script and same-origin JSON requests.
             frame_policy = "; script-src 'self'; connect-src 'self'"
         self.send_header('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" + frame_policy)
         self.end_headers()
         self.wfile.write(data)
+
+    def do_POST(self):
+        url = urlsplit(self.path)
+        path = url.path if url.path == BASE or url.path.startswith(BASE + '/') else BASE + url.path
+        portal = cast(PortalHTTPServer, self.server).portal
+        if path != BASE + '/api/controller/desired':
+            # Everything else stays read-only, as before the controller existed.
+            self.send_error(501, 'Unsupported method')
+            return
+        try:
+            length = int(self.headers.get('Content-Length', ''))
+        except ValueError:
+            length = -1
+        if not 0 < length <= controller.MAX_BODY:
+            self.send_plain(413 if length > controller.MAX_BODY else 411, b'{"error":"body length"}', 'application/json', 'no-store', "default-src 'none'")
+            return
+        body = self.rfile.read(length)
+        try:
+            status, payload = portal.controller_write(self.headers, body)
+        except OSError:
+            status, payload = 503, {'error': 'Could not record the request (storage unavailable).'}
+        self.send_plain(status, json.dumps(payload, separators=(',', ':')).encode('utf-8'), 'application/json', 'no-store',
+                        "default-src 'none'; frame-ancestors 'none'; sandbox")
 
     def send_plain(self, status, data, mime, cache, csp):
         self.send_response(status)
@@ -685,11 +769,15 @@ def main():
     parser.add_argument('--host', default='127.0.0.1')
     parser.add_argument('--wanted', type=Path, help='Writable SQLite file for requested pages and images (omit to record nothing)')
     parser.add_argument('--live', type=Path, help='Live fleet snapshot written by live.py receive (omit for no live data)')
+    parser.add_argument('--controller', type=Path, help='Writable directory for the bot controller desired state (omit: read-only controller page)')
+    parser.add_argument('--owner-login', default=os.environ.get('PORTAL_OWNER_LOGIN', ''), help='Tailscale login allowed to change controller state')
+    parser.add_argument('--public-origin', default=os.environ.get('PORTAL_PUBLIC_ORIGIN', ''), help='https://host of the portal as browsers see it (Origin check)')
     args = parser.parse_args()
     server = PortalHTTPServer((args.host, args.port), Handler)
     server.portal = Portal(args.root.expanduser().resolve(), args.game_url, args.homepage_url,
                            args.wanted.expanduser() if args.wanted else None,
-                           args.live.expanduser() if args.live else None)
+                           args.live.expanduser() if args.live else None,
+                           args.controller.expanduser() if args.controller else None, args.owner_login, args.public_origin)
     server.serve_forever()
 
 

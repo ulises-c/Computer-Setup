@@ -1,0 +1,513 @@
+#!/usr/bin/env python3
+"""Bot controller (no LLM): the portal's desired-state store, registry validation, owner
+auth for writes, and the host-side exchange with the workstation's controller daemon.
+
+    bot workstation: bun tools/bot-controller.ts daemon         (2004Scape-Botting repo)
+      every few seconds:  status JSON | ssh game-server python3 controller.py exchange
+                          <- desired JSON on stdout
+
+The owner edits DESIRED state on /rs-sdk/bot-controller/ (run a registry routine, stop,
+hold). The portal only ever writes CONTROLLER_DIR/desired.json (+ audit.jsonl), validated
+against the routine registry the daemon last pushed. The daemon re-validates everything
+against its own registry copy, maps requests to fixed argv, honours latches/stops and
+reports per-bot results; `exchange` (run on the host, outside the container) stores that
+report allowlisted as LIVE_DIR/controller-status.json, which the container mounts
+read-only, so the portal can never forge daemon status. Threat model: README.md.
+"""
+import argparse
+from collections import deque
+import hashlib
+import hmac
+import json
+import os
+from pathlib import Path
+import re
+import secrets
+import sys
+import tempfile
+import threading
+import time
+
+BOT = re.compile(r'^bot_[a-z][a-z0-9]{0,7}$')
+VALUE = re.compile(r'^[a-z0-9][a-z0-9-]{0,39}$')
+ROUTINE_ID = re.compile(r'^[a-z][a-z0-9-]{0,31}$')
+ARG_NAME = re.compile(r'^[a-z][A-Za-z0-9]{0,23}$')
+TEXT = re.compile(r'^[\x20-\x7e]*$')
+RUNNERS = ('session', 'chickens-247', 'pioneer', 'onboard')
+ACTIONS = ('run', 'stop', 'hold', 'clear')
+ALWAYS_EXCLUDED = ('bot_tester',)
+PIONEER = 'bot_pioneer'
+MAX_STATUS = 1024 * 1024
+MAX_BODY = 16 * 1024
+MAX_BULK = 60
+# The daemon pushes every ~5 s; older than this means it is offline.
+HEARTBEAT_STALE_MS = 30_000
+STATES = {'idle', 'held', 'rejected', 'pending', 'blocked', 'foreign', 'starting', 'running', 'stopping', 'stopped',
+          'switching', 'finished', 'failed', 'done', 'expired', 'unknown', 'error'}
+
+
+def _text(value, limit):
+    return isinstance(value, str) and len(value) <= limit and bool(TEXT.match(value))
+
+
+def _clean(value, limit=160):
+    if not isinstance(value, str):
+        return None
+    value = ''.join(ch if 0x20 <= ord(ch) < 0x7f else ' ' for ch in value).strip()[:limit]
+    return value or None
+
+
+def _int(value, low=0, high=1 << 53):
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if low <= value <= high else None
+
+
+def _bots(value, where):
+    if not isinstance(value, list) or len(value) > 200 or not all(isinstance(b, str) and BOT.match(b) for b in value):
+        raise ValueError(f'{where}: bot names')
+    return list(value)
+
+
+def parse_registry(raw):
+    """Strictly validated routine registry (mirror of tools/lib/bot-controller.ts parseRegistry); ValueError on any problem."""
+    if not isinstance(raw, dict) or raw.get('version') != 1 or not isinstance(raw.get('routines'), list):
+        raise ValueError('registry: version 1 with routines[]')
+    excluded = _bots(raw.get('excludedBots', []), 'excludedBots')
+    for bot in ALWAYS_EXCLUDED:
+        if bot not in excluded:
+            raise ValueError(f'registry: {bot} must be excluded')
+    if len(raw['routines']) > 50:
+        raise ValueError('registry: too many routines')
+    routines, seen = [], set()
+    for index, r in enumerate(raw['routines']):
+        if not isinstance(r, dict) or not isinstance(r.get('id'), str) or not ROUTINE_ID.match(r['id']) or r['id'] in seen:
+            raise ValueError(f'routines[{index}]: id')
+        rid = r['id']
+        seen.add(rid)
+        if not _text(r.get('label'), 60) or not r['label']:
+            raise ValueError(f'{rid}: label')
+        if r.get('description') is not None and not _text(r.get('description'), 400):
+            raise ValueError(f'{rid}: description')
+        if r.get('runner') not in RUNNERS:
+            raise ValueError(f'{rid}: runner')
+        if r['runner'] == 'session' and not (isinstance(r.get('routine'), str) and ROUTINE_ID.match(r['routine'])):
+            raise ValueError(f'{rid}: routine')
+        allow = None if r.get('allowBots') is None else _bots(r['allowBots'], f'{rid}.allowBots')
+        deny = _bots(r.get('denyBots', []), f'{rid}.denyBots')
+        if r['runner'] == 'pioneer' and allow != [PIONEER]:
+            raise ValueError(f'{rid}: pioneer runner must allow exactly {PIONEER}')
+        if r['runner'] != 'pioneer' and PIONEER not in deny:
+            raise ValueError(f'{rid}: must deny {PIONEER}')
+        fixed = r.get('fixedArgs', [])
+        if not isinstance(fixed, list) or len(fixed) > 4 or not all(isinstance(a, str) and VALUE.match(a) for a in fixed):
+            raise ValueError(f'{rid}: fixedArgs')
+        if not isinstance(r.get('args'), list) or len(r['args']) > 6:
+            raise ValueError(f'{rid}: args')
+        args, names = [], set()
+        for a in r['args']:
+            if not isinstance(a, dict) or not isinstance(a.get('name'), str) or not ARG_NAME.match(a['name']) or a['name'] in names:
+                raise ValueError(f'{rid}: arg name')
+            names.add(a['name'])
+            label = a['label'] if _text(a.get('label'), 40) and a.get('label') else a['name']
+            if a.get('type') == 'enum':
+                values = a.get('values')
+                if not isinstance(values, list) or not values or len(values) > 30 or len(set(values)) != len(values) \
+                        or not all(isinstance(v, str) and VALUE.match(v) for v in values):
+                    raise ValueError(f'{rid}.{a["name"]}: enum values')
+                if a.get('default') is not None and a['default'] not in values:
+                    raise ValueError(f'{rid}.{a["name"]}: default')
+                args.append({'name': a['name'], 'label': label, 'type': 'enum', 'values': list(values), 'default': a.get('default')})
+            elif a.get('type') == 'int':
+                low, high = _int(a.get('min'), 0, 1_000_000), _int(a.get('max'), 0, 1_000_000)
+                if low is None or high is None or low > high:
+                    raise ValueError(f'{rid}.{a["name"]}: int bounds')
+                default = a.get('default')
+                if default is not None and (_int(default, low, high) is None):
+                    raise ValueError(f'{rid}.{a["name"]}: default')
+                args.append({'name': a['name'], 'label': label, 'type': 'int', 'min': low, 'max': high, 'default': default})
+            else:
+                raise ValueError(f'{rid}.{a.get("name")}: type')
+        entry = {'id': rid, 'label': r['label'], 'description': r.get('description') or '', 'runner': r['runner'],
+                 'safeStart': r.get('safeStart') is True, 'enabled': r.get('enabled') is not False, 'allowBots': allow,
+                 'denyBots': deny, 'fixedArgs': list(fixed), 'args': args}
+        if r['runner'] == 'session':
+            entry['routine'] = r['routine']
+        routines.append(entry)
+    return {'version': 1, 'excludedBots': excluded, 'routines': routines}
+
+
+def bot_denied(registry, routine, bot):
+    """Why `bot` may not run `routine` (registry policy), or None."""
+    if not isinstance(bot, str) or not BOT.match(bot):
+        return 'bad bot name'
+    if bot in ALWAYS_EXCLUDED or bot in registry['excludedBots']:
+        return f'{bot} is not launchable from the controller'
+    if routine['allowBots'] is not None and bot not in routine['allowBots']:
+        return f'{routine["id"]} is only for {", ".join(routine["allowBots"])}'
+    if bot in routine['denyBots']:
+        return f'{routine["id"]} is not allowed for {bot}'
+    return None
+
+
+def validate_run(registry, bot, routine_id, args):
+    """Normalised {name: value} args for a run request; ValueError with a user-facing reason."""
+    routine = next((r for r in registry['routines'] if r['id'] == routine_id), None)
+    if routine is None:
+        raise ValueError('unknown routine')
+    if not routine['enabled']:
+        raise ValueError(f'{routine["id"]} is disabled in the registry')
+    denied = bot_denied(registry, routine, bot)
+    if denied:
+        raise ValueError(denied)
+    if args is None:
+        args = {}
+    if not isinstance(args, dict):
+        raise ValueError('args must be an object')
+    extra = [k for k in args if not any(a['name'] == k for a in routine['args'])]
+    if extra:
+        raise ValueError('unknown args: ' + ', '.join(str(k)[:24] for k in extra[:3]))
+    out = {}
+    for spec in routine['args']:
+        value = args.get(spec['name'], spec['default'])
+        if spec['type'] == 'enum':
+            if not isinstance(value, str) or value not in spec['values']:
+                raise ValueError(f'{spec["name"]}: one of {", ".join(spec["values"])}')
+        elif _int(value, spec['min'], spec['max']) is None:
+            raise ValueError(f'{spec["name"]}: integer {spec["min"]}..{spec["max"]}')
+        out[spec['name']] = value
+    return out
+
+
+def empty_desired():
+    return {'version': 1, 'seq': 0, 'updatedAt': 0, 'bots': {}}
+
+
+def parse_desired(raw):
+    """Shape check of desired.json (the daemon re-validates every entry against its registry)."""
+    if not isinstance(raw, dict) or raw.get('version') != 1 or not isinstance(raw.get('bots'), dict):
+        raise ValueError('not a desired-state document')
+    bots = {}
+    for bot, entry in list(raw['bots'].items())[:500]:
+        if not BOT.match(bot) or not isinstance(entry, dict) or entry.get('action') not in ('run', 'stop', 'hold') \
+                or _int(entry.get('rev'), 1) is None or _int(entry.get('at')) is None:
+            continue
+        shaped = {'action': entry['action'], 'rev': entry['rev'], 'at': entry['at'], 'by': entry.get('by') if _text(entry.get('by'), 80) else None}
+        if entry['action'] == 'run':
+            if not (isinstance(entry.get('routine'), str) and ROUTINE_ID.match(entry['routine'])) or not isinstance(entry.get('args'), dict):
+                continue
+            shaped['routine'] = entry['routine']
+            shaped['args'] = {k: v for k, v in list(entry['args'].items())[:6]
+                              if isinstance(k, str) and ARG_NAME.match(k) and (isinstance(v, str) and VALUE.match(v) or _int(v, 0, 1_000_000) is not None)}
+        bots[bot] = shaped
+    return {'version': 1, 'seq': _int(raw.get('seq')) or 0, 'updatedAt': _int(raw.get('updatedAt')) or 0, 'bots': bots}
+
+
+def _shape_result(raw):
+    if not isinstance(raw, dict) or raw.get('kind') not in ('run', 'stop'):
+        return None
+    rc = raw.get('rc')
+    return {'rev': _int(raw.get('rev')), 'kind': raw['kind'], 'rc': rc if rc is None else _int(rc, 0, 255),
+            'endedAt': _int(raw.get('endedAt')), 'note': _clean(raw.get('note'), 40)}
+
+
+def _shape_list(value, limit=8, width=160):
+    return [t for t in (_clean(v, width) for v in (value if isinstance(value, list) else [])[:limit]) if t]
+
+
+def shape_status(raw, received_at):
+    """Allowlisted daemon report; ValueError if it is not one."""
+    if not isinstance(raw, dict) or raw.get('version') != 1 or not isinstance(raw.get('bots'), dict):
+        raise ValueError('not a controller status')
+    daemon = raw.get('daemon') if isinstance(raw.get('daemon'), dict) else {}
+    try:
+        registry = parse_registry(raw.get('registry'))
+        registry_error = None
+    except ValueError as exc:
+        registry, registry_error = None, str(exc)[:120]
+    bots = {}
+    for bot, entry in list(raw['bots'].items())[:300]:
+        if not isinstance(bot, str) or not BOT.match(bot) or not isinstance(entry, dict):
+            continue
+        job = entry.get('job') if isinstance(entry.get('job'), dict) else None
+        bots[bot] = {
+            'state': entry.get('state') if entry.get('state') in STATES else 'unknown',
+            'message': _clean(entry.get('message'), 240), 'rev': _int(entry.get('rev')),
+            'action': entry.get('action') if entry.get('action') in ('run', 'stop', 'hold') else None,
+            'job': None if job is None else {
+                'kind': job.get('kind') if job.get('kind') in ('run', 'stop') else None,
+                'routine': job.get('routine') if isinstance(job.get('routine'), str) and ROUTINE_ID.match(job['routine']) else None,
+                'args': [a for a in (job.get('args') if isinstance(job.get('args'), list) else [])[:6] if isinstance(a, str) and VALUE.match(a)],
+                'pid': _int(job.get('pid'), 1, 1 << 31), 'startedAt': _int(job.get('startedAt')), 'stopping': job.get('stopping') is True},
+            'gates': _shape_list(entry.get('gates')), 'foreign': _shape_list(entry.get('foreign')),
+            'lastResult': _shape_result(entry.get('lastResult')), 'updatedAt': _int(entry.get('updatedAt')),
+        }
+    commit = daemon.get('commit')
+    return {
+        'version': 1, 'receivedAt': received_at, 'updatedAt': _int(raw.get('updatedAt')),
+        'daemon': {'pid': _int(daemon.get('pid'), 1, 1 << 31), 'host': _clean(daemon.get('host'), 40),
+                   'startedAt': _int(daemon.get('startedAt')), 'intervalMs': _int(daemon.get('intervalMs'), 1000, 600_000),
+                   'dryRun': daemon.get('dryRun') is True, 'portalOk': daemon.get('portalOk') is True,
+                   'commit': commit if isinstance(commit, str) and re.match(r'^[0-9a-f]{4,40}$', commit) else None,
+                   'error': _clean(daemon.get('error'), 200)},
+        'registry': registry, 'registryError': registry_error,
+        'fleet': {'pause': (raw.get('fleet') or {}).get('pause') is True if isinstance(raw.get('fleet'), dict) else False},
+        'bots': bots,
+    }
+
+
+def write_atomic(path, data, mode=0o600):
+    path = Path(path)
+    fd, tmp = tempfile.mkstemp(prefix=f'.{path.name}-', dir=path.parent)
+    try:
+        with os.fdopen(fd, 'w') as stream:
+            json.dump(data, stream, separators=(',', ':'))
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def read_json(path, limit=MAX_STATUS):
+    with open(path, 'rb') as stream:
+        data = stream.read(limit + 1)
+    if len(data) > limit:
+        raise ValueError('too large')
+    return json.loads(data)
+
+
+def read_status(path, now_ms=None):
+    """Last daemon report (re-shaped) plus heartbeat age, or a 'never connected' placeholder."""
+    now_ms = int(time.time() * 1000) if now_ms is None else now_ms
+    try:
+        if path is None:
+            raise FileNotFoundError
+        raw = read_json(path)
+        status = shape_status(raw, _int(raw.get('receivedAt')) or 0)
+    except FileNotFoundError:
+        return {'available': False, 'error': 'The controller daemon has not connected yet.', 'registry': None, 'bots': {},
+                'daemon': None, 'fleet': {'pause': False}, 'ageMs': None, 'online': False}
+    except (OSError, ValueError) as exc:
+        return {'available': False, 'error': f'Controller status unreadable: {exc.__class__.__name__}', 'registry': None, 'bots': {},
+                'daemon': None, 'fleet': {'pause': False}, 'ageMs': None, 'online': False}
+    age = max(0, now_ms - (status['receivedAt'] or 0))
+    status.update({'available': True, 'ageMs': age, 'online': age <= HEARTBEAT_STALE_MS,
+                   'error': None if age <= HEARTBEAT_STALE_MS else f'No controller heartbeat for {age // 1000} s: the daemon on the workstation may be stopped.'})
+    return status
+
+
+class RateLimit:
+    def __init__(self, limit=30, window_s=60, clock=time.monotonic):
+        self.limit, self.window, self.clock, self.hits = limit, window_s, clock, deque()
+
+    def allow(self):
+        now = self.clock()
+        while self.hits and now - self.hits[0] > self.window:
+            self.hits.popleft()
+        if len(self.hits) >= self.limit:
+            return False
+        self.hits.append(now)
+        return True
+
+
+class Store:
+    """desired.json (+ audit.jsonl) in the portal's controller directory, the only state it writes here."""
+    AUDIT_LIMIT = 1024 * 1024
+
+    def __init__(self, directory, clock=time.time):
+        self.dir = Path(directory) if directory else None
+        self.clock = clock
+        self.lock = threading.Lock()
+        self.rate = RateLimit()
+
+    def read(self):
+        if self.dir is None:
+            return empty_desired()
+        try:
+            return parse_desired(read_json(self.dir / 'desired.json'))
+        except FileNotFoundError:
+            return empty_desired()
+        except (OSError, ValueError):
+            return empty_desired()
+
+    def apply(self, request, registry, accounts, login):
+        """Validate a UI request and record it. Returns (status, body)."""
+        if self.dir is None:
+            return 503, {'error': 'Controller writes are not configured on this portal.'}
+        if not isinstance(request, dict):
+            return 400, {'error': 'Expected a JSON object.'}
+        action, bots = request.get('action'), request.get('bots')
+        if action not in ACTIONS:
+            return 400, {'error': 'action must be run, stop, hold or clear'}
+        if not isinstance(bots, list) or not 1 <= len(bots) <= MAX_BULK or not all(isinstance(b, str) for b in bots) or len(set(bots)) != len(bots):
+            return 400, {'error': f'bots: 1..{MAX_BULK} distinct account names'}
+        if registry is None:
+            return 409, {'error': 'No routine registry yet: the controller daemon has not reported.'}
+        known = set(accounts)
+        errors = {}
+        args_by_bot = {}
+        for bot in bots:
+            if not BOT.match(bot) or bot not in known:
+                errors[bot[:20]] = 'not a known bot account'
+            elif bot in ALWAYS_EXCLUDED or bot in registry['excludedBots']:
+                errors[bot] = f'{bot} is not launchable from the controller'
+            elif action == 'run':
+                try:
+                    args_by_bot[bot] = validate_run(registry, bot, request.get('routine'), request.get('args'))
+                except ValueError as exc:
+                    errors[bot] = str(exc)
+        if errors:
+            return 400, {'error': 'Request rejected; nothing was changed.', 'bots': errors}
+        if not self.rate.allow():
+            return 429, {'error': 'Too many changes; wait a minute.'}
+        with self.lock:
+            desired = self.read()
+            now = int(self.clock() * 1000)
+            changed = {}
+            for bot in bots:
+                if action == 'clear':
+                    desired['bots'].pop(bot, None)
+                    changed[bot] = None
+                    continue
+                desired['seq'] += 1
+                entry = {'action': action, 'rev': desired['seq'], 'at': now, 'by': login}
+                if action == 'run':
+                    entry.update(routine=request['routine'], args=args_by_bot[bot])
+                desired['bots'][bot] = entry
+                changed[bot] = entry
+            desired['updatedAt'] = now
+            self.dir.mkdir(parents=True, exist_ok=True)
+            write_atomic(self.dir / 'desired.json', desired)
+            self.audit({'at': now, 'by': login, 'action': action, 'routine': request.get('routine') if action == 'run' else None,
+                        'args': request.get('args') if action == 'run' else None, 'bots': bots})
+        return 200, {'ok': True, 'changed': changed}
+
+    def audit(self, row):
+        path = self.dir / 'audit.jsonl'
+        try:
+            if path.exists() and path.stat().st_size > self.AUDIT_LIMIT:
+                os.replace(path, self.dir / 'audit.1.jsonl')
+            with open(path, 'a') as stream:
+                stream.write(json.dumps(row, separators=(',', ':')) + '\n')
+        except OSError:
+            pass
+
+
+class Auth:
+    """Writes need: the owner's Tailscale identity (Tailscale-User-Login, set by `tailscale serve`
+    for requests from the owner's untagged devices), the portal's own origin, a JSON body
+    (cross-site forms can't send one without a CORS preflight, which is never granted) and a
+    CSRF token bound to the login. GETs stay open to the tailnet as before."""
+
+    def __init__(self, owner, origin, secret=None):
+        self.owner = (owner or '').strip().lower() or None
+        self.origin = (origin or '').rstrip('/') or None
+        self.secret = secret or secrets.token_bytes(32)
+
+    @staticmethod
+    def login(headers):
+        value = headers.get('Tailscale-User-Login')
+        return value.strip().lower() if isinstance(value, str) and _text(value.strip(), 120) and value.strip() else None
+
+    def can_write(self, headers):
+        """(allowed, reason) for this identity, before CSRF/origin checks."""
+        login = self.login(headers)
+        if not self.owner:
+            return False, 'Writes are disabled: no owner login is configured on the portal.'
+        if not login:
+            return False, 'Read-only: no Tailscale identity on this request (tagged device or direct access).'
+        if not hmac.compare_digest(login, self.owner):
+            return False, f'Read-only: signed in as {login}, not the owner.'
+        return True, None
+
+    def token(self, login):
+        return hmac.new(self.secret, b'csrf:' + login.encode(), hashlib.sha256).hexdigest()
+
+    def check_write(self, headers):
+        """None if this request may write, else an error message."""
+        allowed, reason = self.can_write(headers)
+        if not allowed:
+            return reason
+        login = self.login(headers)
+        if not self.origin or headers.get('Origin', '').rstrip('/') != self.origin:
+            return 'Cross-origin request refused.'
+        site = headers.get('Sec-Fetch-Site')
+        if site is not None and site != 'same-origin':
+            return 'Cross-site request refused.'
+        if not (headers.get('Content-Type') or '').split(';')[0].strip().lower() == 'application/json':
+            return 'Expected application/json.'
+        token = headers.get('X-CSRF-Token') or ''
+        if not hmac.compare_digest(token, self.token(login)):
+            return 'Missing or stale CSRF token; reload the page.'
+        return None
+
+
+def view(accounts, live, status, desired, auth_info):
+    """The page's JSON: one row per bot account plus daemon/registry/auth context."""
+    registry = status.get('registry')
+    live_bots = {b['username']: b for b in (live.get('bots') or []) if isinstance(b, dict) and isinstance(b.get('username'), str)}
+    names = sorted({*(a for a in accounts if BOT.match(a)), *(n for n in live_bots if BOT.match(n)),
+                    *status.get('bots', {}).keys(), *desired['bots'].keys()})
+    excluded = set(ALWAYS_EXCLUDED) | set((registry or {}).get('excludedBots', []))
+    rows = []
+    for name in names:
+        lb = live_bots.get(name) or {}
+        activity = lb.get('activity') or {}
+        routine_status = activity.get('status') or {}
+        eligible = [] if registry is None or name in excluded else [
+            r['id'] for r in registry['routines'] if r['enabled'] and bot_denied(registry, r, name) is None]
+        rows.append({
+            'username': name, 'presence': lb.get('presence') or 'unknown', 'activity': activity.get('label'),
+            'routine': routine_status.get('routine') or activity.get('routine'),
+            'phase': routine_status.get('phase') if routine_status.get('state') == 'running' else None,
+            'routineState': routine_status.get('state'),
+            'desired': desired['bots'].get(name), 'controller': status.get('bots', {}).get(name),
+            'launchable': name not in excluded, 'eligible': eligible,
+        })
+    daemon = status.get('daemon')
+    return {'version': 1, 'now': int(time.time() * 1000), 'auth': auth_info,
+            'daemon': daemon, 'online': status.get('online', False), 'ageMs': status.get('ageMs'), 'error': status.get('error'),
+            'registry': registry, 'registryError': status.get('registryError'), 'fleet': status.get('fleet') or {'pause': False},
+            'liveAvailable': bool(live.get('available')), 'liveStale': bool(live.get('stale')), 'bots': rows}
+
+
+def exchange(stream_in, stream_out, desired_dir, status_dir, clock=time.time):
+    """Host side of the daemon's ssh call: store its status, answer with the desired state."""
+    data = stream_in.read(MAX_STATUS + 1)
+    if data.strip():
+        if len(data) > MAX_STATUS:
+            print('controller exchange: oversized status dropped', file=sys.stderr)
+        else:
+            try:
+                status = shape_status(json.loads(data), int(clock() * 1000))
+            except ValueError as exc:
+                print(f'controller exchange: rejected status ({exc.__class__.__name__})', file=sys.stderr)
+            else:
+                Path(status_dir).mkdir(parents=True, exist_ok=True)
+                write_atomic(Path(status_dir) / 'controller-status.json', status)
+    try:
+        desired = parse_desired(read_json(Path(desired_dir) / 'desired.json'))
+    except FileNotFoundError:
+        desired = empty_desired()
+    stream_out.write(json.dumps(desired, separators=(',', ':')) + '\n')
+    stream_out.flush()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest='command', required=True)
+    ex = sub.add_parser('exchange', help='Store the daemon status from stdin; print the desired state')
+    base = Path.home() / '.local/share/rs-sdk-portal'
+    ex.add_argument('--desired-dir', type=Path, default=base / 'controller')
+    ex.add_argument('--status-dir', type=Path, default=base / 'live')
+    args = parser.parse_args()
+    if args.command == 'exchange':
+        exchange(sys.stdin.buffer, sys.stdout, args.desired_dir, args.status_dir)
+
+
+if __name__ == '__main__':
+    main()
