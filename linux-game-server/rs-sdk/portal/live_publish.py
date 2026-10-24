@@ -10,7 +10,9 @@ more than one request per bot per 6 s) this:
    HTTP read - no WebSocket session, no observer/controller, no actions);
 3. reduces each frame to an allowlist (position, HP, skills, inventory,
    equipment, combat, a few system messages), adds activity from local routine
-   processes and the fleet supervisor's state, and
+   processes, the routines' own status files (bot_journal/activity/<bot>.json,
+   written by routines/lib/activity-status.ts), the fleet supervisor's state, and
+   what successive frames show (recent animation, movement, XP rates), and
 4. writes one JSON line to stdout, or (with --host) streams it over one
    persistent SSH connection into the portal receiver (live.py receive).
 
@@ -33,11 +35,20 @@ import urllib.request
 
 TICK_MS = 600
 MIN_TICKS = 10
+DEFAULT_TICKS = 10
 ROUTINE = re.compile(r'--env-file=\S*/bots/([A-Za-z0-9_-]{1,12})/bot\.env\s+\S*/routines/([A-Za-z0-9_.-]{1,40})\.ts\b(.*)')
 RUNNER = re.compile(r'src/lite/runner\.ts\s+([A-Za-z0-9_-]{1,12})\b')
 TOKEN = re.compile(r'^[A-Za-z0-9_.:+-]{1,40}$')
 OBSERVERS = {'watch', 'listen'}
 XP_WINDOW_S = 60.0
+XP_RATE_WINDOW_S = 300.0
+XP_RATE_MIN_SPAN_S = 30.0
+ANIM_MEMORY_S = 15.0
+STATUS_MAX_AGE_S = 24 * 3600
+STATUS_MAX_BYTES = 65536
+STATUS_STATES = {'running', 'finished', 'failed'}
+COUNT_KEY = re.compile(r'^[A-Za-z][A-Za-z0-9_]{0,23}$')
+LEVEL_UP = re.compile(r'^(?:@\w{3}@)?Congratulations, you just advanced (?:a|an) ([a-z]+(?: [a-z]+)?) level\.$')
 
 
 def read_env(path):
@@ -121,27 +132,169 @@ def fleet_state(botting):
 
 
 class XpTracker:
-    """XP gained per skill over the last minute, from successive frames."""
-    def __init__(self, window=XP_WINDOW_S):
-        self.window = window
+    """Per-skill XP gained in the last minute, and XP/hour over the last five minutes."""
+    def __init__(self, window=XP_WINDOW_S, rate_window=XP_RATE_WINDOW_S):
+        self.window, self.rate_window = window, rate_window
         self.history = {}
 
     def update(self, bot, skills, now):
         current = {s.get('name'): s.get('experience') for s in skills
                    if isinstance(s, dict) and isinstance(s.get('experience'), (int, float))}
-        samples = [entry for entry in self.history.get(bot, []) if now - entry[0] <= self.window]
+        samples = [entry for entry in self.history.get(bot, []) if now - entry[0] <= self.rate_window]
         samples.append((now, current))
         self.history[bot] = samples
-        oldest = samples[0][1]
+        oldest = next(values for at, values in samples if now - at <= self.window)
         return {name: int(xp - oldest[name]) for name, xp in current.items()
                 if name in oldest and xp > oldest[name]}
 
+    def rates(self, bot, now):
+        """{skill: XP per hour} over the rate window, once it spans at least 30 s."""
+        samples = self.history.get(bot) or []
+        if len(samples) < 2 or now - samples[0][0] < XP_RATE_MIN_SPAN_S:
+            return {}
+        (start, oldest), (_, current) = samples[0], samples[-1]
+        span = max(now - start, XP_RATE_MIN_SPAN_S)
+        return {name: int(round((xp - oldest[name]) * 3600 / span)) for name, xp in current.items()
+                if name in oldest and xp > oldest[name]}
 
-def reduce_state(username, state, meta, local, xp, now, focus=None):
+
+class Motion:
+    """Movement between successive frames: still / walking / running / teleported, plus recent animation."""
+    def __init__(self):
+        self.last = {}
+        self.anims = {}
+
+    def update(self, bot, x, z, level, now):
+        prev = self.last.get(bot)
+        self.last[bot] = (x, z, level, now)
+        if prev is None or not all(isinstance(v, int) for v in (x, z, prev[0], prev[1])):
+            return None
+        ticks = max(1.0, (now - prev[3]) / (TICK_MS / 1000.0))
+        tiles = max(abs(x - prev[0]), abs(z - prev[1]))
+        if level != prev[2] or tiles > 2 * ticks + 3:
+            state = 'teleported'
+        elif tiles == 0:
+            state = 'still'
+        else:
+            state = 'running' if tiles / ticks > 1.3 else 'walking'
+        return {'state': state, 'tiles': tiles}
+
+    def anim(self, bot, anim_id, now):
+        """The current animation, or the last one seen within ANIM_MEMORY_S (with its age)."""
+        if isinstance(anim_id, int) and not isinstance(anim_id, bool) and anim_id >= 0:
+            self.anims[bot] = (anim_id, now)
+        seen = self.anims.get(bot)
+        if seen and now - seen[1] <= ANIM_MEMORY_S:
+            return {'id': seen[0], 'ageMs': int((now - seen[1]) * 1000)}
+        return None
+
+
+def _clean(value, limit):
+    if not isinstance(value, str):
+        return None
+    text = re.sub(r'\s+', ' ', ''.join(ch if ch.isprintable() else ' ' for ch in value)).strip()[:limit]
+    return text or None
+
+
+def _ms(value):
+    return int(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value < 1 << 53 else None
+
+
+def _pid_alive(pid):
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 1:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+
+
+def _read_json(path):
+    try:
+        with open(path, 'rb') as stream:
+            data = stream.read(STATUS_MAX_BYTES + 1)
+        if len(data) > STATUS_MAX_BYTES:
+            return None
+        value = json.loads(data)
+        return value if isinstance(value, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def routine_status(botting, username, now, local=None, alive=_pid_alive):
+    """Allowlisted copy of the routine's own status file, or None (missing, foreign or too old).
+
+    A 'running' status whose process is gone (or whose bot has no routine process
+    left) is reported as state 'ended'."""
+    raw = _read_json(botting / 'bot_journal/activity' / f'{username}.json')
+    if not raw or raw.get('version') != 1 or raw.get('bot') != username:
+        return None
+    updated = _ms(raw.get('updatedAt'))
+    if updated is None or now * 1000 - updated > STATUS_MAX_AGE_S * 1000:
+        return None
+    state = raw.get('state') if raw.get('state') in STATUS_STATES else None
+    if state is None:
+        return None
+    if state == 'running' and (not alive(raw.get('pid')) or not (local or {}).get('routine')):
+        state = 'ended'
+    counts = {}
+    if isinstance(raw.get('counts'), dict):
+        for key, value in list(raw['counts'].items())[:12]:
+            if isinstance(key, str) and COUNT_KEY.match(key) and isinstance(value, (int, float)) and not isinstance(value, bool):
+                counts[key] = value
+    event = raw.get('lastEvent') if isinstance(raw.get('lastEvent'), dict) else {}
+    args = raw.get('args') if isinstance(raw.get('args'), list) else []
+    return {
+        'routine': raw.get('routine') if isinstance(raw.get('routine'), str) and TOKEN.match(raw['routine']) else None,
+        'args': [a for a in args if isinstance(a, str) and TOKEN.match(a)][:6],
+        'state': state, 'phase': _clean(raw.get('phase'), 60), 'detail': _clean(raw.get('detail'), 80),
+        'phaseSince': _ms(raw.get('phaseSince')), 'startedAt': _ms(raw.get('startedAt')), 'updatedAt': updated,
+        'counts': counts, 'stopReason': _clean(raw.get('stopReason'), 80),
+        'lastEvent': {'kind': _clean(event.get('kind'), 40), 'at': _ms(event.get('at'))} if _clean(event.get('kind'), 40) else None,
+    }
+
+
+def fleet_task(botting, username, now, fleet_running):
+    """The fleet supervisor's lifecycle phase for this bot, while a supervisor holds the lock."""
+    if not fleet_running:
+        return None
+    raw = _read_json(botting / 'bot_journal/activity' / f'{username}.fleet.json')
+    if not raw or raw.get('version') != 1 or raw.get('bot') != username or raw.get('source') != 'fleet':
+        return None
+    updated = _ms(raw.get('updatedAt'))
+    if updated is None or now * 1000 - updated > STATUS_MAX_AGE_S * 1000 or not _clean(raw.get('phase'), 60):
+        return None
+    routine = raw.get('routine')
+    return {'phase': _clean(raw.get('phase'), 60), 'detail': _clean(raw.get('detail'), 80), 'updatedAt': updated,
+            'routine': routine if isinstance(routine, str) and TOKEN.match(routine) else None}
+
+
+def level_up_skill(state):
+    """Skill named by an open level-up dialog ('Mining'), checked against the frame's skills; else None."""
+    dialog = state.get('dialog') if isinstance(state.get('dialog'), dict) else {}
+    if dialog.get('isOpen') is not True:
+        return None
+    texts = [c.get('text') for c in dialog.get('allComponents') or [] if isinstance(c, dict)]
+    texts += dialog.get('text') if isinstance(dialog.get('text'), list) else [dialog.get('text')]
+    names = {s.get('name').lower(): s.get('name') for s in state.get('skills') or []
+             if isinstance(s, dict) and isinstance(s.get('name'), str)}
+    for text in texts:
+        match = LEVEL_UP.match(text.strip()) if isinstance(text, str) else None
+        if match and match.group(1) in names:
+            return names[match.group(1)]
+    return None
+
+
+def reduce_state(username, state, meta, local, xp, now, focus=None, motion=None, status=None, fleet_task=None):
     """The allowlisted bot entry the portal accepts (see live.shape_bot)."""
     entry = {'username': username, 'status': meta.get('botStatus') or 'unknown',
              'stateAge': meta.get('stateAge'), 'activity': dict(local or {})}
     entry['activity']['focus'] = focus == username
+    entry['activity']['status'] = status
+    entry['activity']['fleetTask'] = fleet_task
     if not isinstance(state, dict):
         return entry
     player = state.get('player') if isinstance(state.get('player'), dict) else {}
@@ -163,7 +316,11 @@ def reduce_state(username, state, meta, local, xp, now, focus=None):
         'inventory': [{k: i.get(k) for k in ('slot', 'id', 'name', 'count')} for i in state.get('inventory') or [] if isinstance(i, dict)],
         'equipment': [{k: i.get(k) for k in ('slot', 'id', 'name', 'count')} for i in state.get('equipment') or [] if isinstance(i, dict)],
         'recentXp': xp.update(username, state.get('skills') or [], now),
+        'xpRate': xp.rates(username, now),
     })
+    motion = motion or Motion()
+    entry['activity']['motion'] = motion.update(username, player.get('worldX'), player.get('worldZ'), player.get('level'), now)
+    entry['activity']['anim'] = motion.anim(username, player.get('animId'), now)
     tick = state.get('tick') if isinstance(state.get('tick'), int) else 0
     # system messages only (type 0, no sender): never relay other players' chat
     entry['messages'] = [m.get('text') for m in (state.get('gameMessages') or [])
@@ -172,6 +329,7 @@ def reduce_state(username, state, meta, local, xp, now, focus=None):
     dialog = state.get('dialog') if isinstance(state.get('dialog'), dict) else {}
     entry['activity']['dialog'] = dialog.get('isOpen') is True
     entry['activity']['modal'] = state.get('modalOpen') is True
+    entry['activity']['levelUp'] = level_up_skill(state)
     return entry
 
 
@@ -180,6 +338,7 @@ class Publisher:
         self.sdk, self.botting, self.ticks = sdk, botting, ticks
         self.gateway = gateway
         self.xp = XpTracker()
+        self.motion = Motion()
 
     def bots(self):
         found = {}
@@ -223,7 +382,9 @@ class Publisher:
                     meta['botStatus'] = 'unknown'
             if meta['botStatus'] == 'dead':
                 meta['botStatus'] = 'offline'
-            entries.append(reduce_state(username, state, meta, local.get(username), self.xp, now, fleet['focus']))
+            entries.append(reduce_state(username, state, meta, local.get(username), self.xp, now, fleet['focus'], self.motion,
+                                        routine_status(self.botting, username, now, local.get(username)),
+                                        fleet_task(self.botting, username, now, fleet['running'])))
         return {'version': 1, 'publishedAt': int(now * 1000), 'intervalMs': self.ticks * TICK_MS,
                 'gatewayOk': gateway_ok, 'fleet': fleet, 'bots': entries}
 
@@ -259,7 +420,8 @@ def ssh_sink_factory(host, receiver):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--ticks', type=int, default=10, help='Publish period in game ticks (600 ms each; minimum 10)')
+    parser.add_argument('--ticks', type=int, default=DEFAULT_TICKS,
+                        help=f'Publish period in game ticks (600 ms each; default and minimum {MIN_TICKS})')
     parser.add_argument('--sdk', type=Path, default=Path.home() / 'github/rs-sdk-fork')
     parser.add_argument('--botting', type=Path, default=Path.home() / 'forgejo/2004Scape-Botting')
     parser.add_argument('--gateway', help='Gateway HTTP base URL (default: GATEWAY_URL from the bots\' bot.env)')
@@ -268,7 +430,7 @@ def main():
     parser.add_argument('--once', action='store_true', help='Publish one snapshot and exit')
     args = parser.parse_args()
     if args.ticks < MIN_TICKS:
-        parser.error(f'--ticks must be at least {MIN_TICKS} (one gateway request per bot per 6 s at most)')
+        parser.error(f'--ticks must be at least {MIN_TICKS} (one gateway request per bot per {MIN_TICKS * TICK_MS / 1000:g} s at most)')
     publisher = Publisher(args.sdk.expanduser(), args.botting.expanduser(), args.ticks,
                           http_base(args.gateway) if args.gateway else None)
     if not args.host:

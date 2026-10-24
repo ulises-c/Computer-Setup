@@ -26,6 +26,14 @@
         return node;
     };
     const fmt = n => (n === null || n === undefined) ? '—' : Number(n).toLocaleString();
+    const ago = ms => {
+        if (!ms && ms !== 0) return null;
+        const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+        if (s < 90) return `${s}s`;
+        if (s < 5400) return `${Math.round(s / 60)}m`;
+        return `${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m`;
+    };
+    const words = key => key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ').toLowerCase();
 
     function layout() {
         canvas.style.width = `${meta.width * scale}px`;
@@ -123,6 +131,55 @@
         return grid;
     }
 
+    // Structured "what is it doing" block: routine status, frame observations, XP flow.
+    function activityDetail(bot) {
+        const a = bot.activity || {};
+        const s = a.status;
+        const rows = [];
+        const row = (label, ...content) => {
+            const dd = el('dd');
+            for (const c of content) if (c !== null && c !== undefined && c !== '') dd.append(typeof c === 'string' ? document.createTextNode(c) : c);
+            if (dd.childNodes.length) rows.push(el('dt', null, label), dd);
+        };
+        if (s) {
+            const head = [s.routine, ...(s.args || [])].filter(Boolean).join(' ');
+            row('Routine', el('b', null, head || 'routine'), ' ', el('span', `state ${s.state}`, s.state),
+                s.startedAt ? ` · started ${ago(s.startedAt)} ago` : '',
+                s.state !== 'running' && s.updatedAt ? ` · last update ${ago(s.updatedAt)} ago` : '');
+            if (s.state === 'running') {
+                row('Phase', el('b', null, s.phase), s.phaseSince ? ` for ${ago(s.phaseSince)}` : '', s.detail ? ` · ${s.detail}` : '');
+            } else if (s.stopReason) {
+                row('Stopped', s.stopReason);
+            }
+            const counts = Object.entries(s.counts || {});
+            if (counts.length) {
+                const list = el('span', 'counts');
+                for (const [k, v] of counts) list.append(el('span', 'count', `${words(k)} ${fmt(v)}`));
+                row('Counts', list);
+            }
+            if (s.lastEvent) row('Last event', `${s.lastEvent.kind}${s.lastEvent.at ? ` (${ago(s.lastEvent.at)} ago)` : ''}`);
+        } else if (a.routine) {
+            row('Routine', el('b', null, [a.routine, ...(a.args || [])].join(' ')), ' (no status published)');
+        }
+        if (a.fleetTask) row('Fleet', `${a.fleetTask.phase}${a.fleetTask.detail ? ` · ${a.fleetTask.detail}` : ''}${a.fleetTask.updatedAt ? ` (${ago(a.fleetTask.updatedAt)} ago)` : ''}`);
+        if (a.levelUp) row('Dialog', `Level-up: ${a.levelUp}`);
+        const seen = [];
+        if (bot.player && bot.player.inCombat) seen.push(`fighting ${bot.player.target || 'something'}`);
+        if (a.anim) {
+            const tag = el('span', 'anim', a.anim.action);
+            tag.title = `${a.anim.name || 'unknown animation'} (#${a.anim.id})${a.anim.ageMs ? `, ${(a.anim.ageMs / 1000).toFixed(0)} s ago` : ''}`;
+            seen.push(tag);
+        }
+        if (a.motion && a.motion.state !== 'still') seen.push(`${a.motion.state}${a.motion.tiles ? ` (${a.motion.tiles} tiles)` : ''}`);
+        if (seen.length) row('Seen', ...seen.flatMap((item, i) => (i ? [' · ', item] : [item])));
+        const rates = Object.entries(bot.xpRate || {}).sort((x, y) => y[1] - x[1]);
+        if (rates.length) row('XP/hour', rates.slice(0, 4).map(([k, v]) => `${k} ${fmt(v)}`).join(' · '));
+        if (!rows.length) return null;
+        const dl = el('dl', 'live-activity');
+        dl.append(...rows);
+        return dl;
+    }
+
     function card(bot) {
         const p = bot.player;
         const node = el('article', 'live-bot');
@@ -133,6 +190,8 @@
         head.append(el('b', null, bot.displayName || bot.username), el('span', `badge ${bot.status}`, bot.status));
         if (p) head.append(el('span', 'muted', `Combat ${fmt(p.combatLevel)}`));
         node.append(head, el('p', 'activity', bot.activity.label));
+        const detail = activityDetail(bot);
+        if (detail) node.append(detail);
         if (p) {
             const hp = el('div', 'hp');
             const bar = el('span');

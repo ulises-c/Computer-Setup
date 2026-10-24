@@ -276,6 +276,7 @@ live_publish.py --host <alias> ──ssh stdin──▶ live.py receive ─▶ ~
   GET gateway /status            (allowlist re-shape,                  │ (read-only mount /live)
   GET gateway /state/<bot>        server-clock stamp,                  ▼
   ps (routines), fleet-state      atomic replace)        portal: /rs-sdk/api/live, /rs-sdk/live-map
+  bot_journal/activity/*.json
 ```
 
 - **Data source.** The gateway already holds every connected bot's latest
@@ -290,12 +291,31 @@ live_publish.py --host <alias> ──ssh stdin──▶ live.py receive ─▶ ~
   reduction, again by the receiver and again by the portal): position/plane, HP,
   combat level, run energy, animation, combat target name, skills (level, base,
   XP), inventory and equipment (id, name, count), the last few *system* game
-  messages (never other players' chat), XP gained per skill in the last minute,
-  the local routine name and plain arguments (`eval` snippets are dropped), and
-  the fleet supervisor's lock/focus latch.
-- **Activity** is inferred, in order: offline/dead, fleet event focus, running
-  routine, in combat (with NPC name), dialog/interface open, skills gaining XP,
-  animation id, else idle.
+  messages (never other players' chat), XP gained per skill in the last minute
+  and XP/hour over the last five minutes, the local routine name and plain
+  arguments (`eval` snippets are dropped), the routine's own status, the fleet
+  supervisor's lock/focus latch and per-bot lifecycle phase, recent animation and
+  movement, and whether a level-up dialog is open (skill name only).
+- **Activity** combines three sources into `activity.label` plus structured
+  fields the page shows under each bot:
+  1. *Routine status* — routines publish `bot_journal/activity/<bot>.json` through
+     `routines/lib/activity-status.ts` in 2004Scape-Botting (routine, phase such
+     as `walking to bank` / `mining tin` / `banking`, detail, counts like trips
+     and ores banked, start and phase times, last random event, stop reason); the
+     supervisor adds `<bot>.fleet.json`. A `running` status whose process is gone
+     is shown as `ended`.
+  2. *Animation* — `player_anims.py` maps the player's animation id to a named
+     action (Mining, Woodcutting, Fishing, Cooking, Smithing, Firemaking,
+     Attacking, Casting a spell, Eating…), from the game's `seq.pack`
+     (`gen_player_anims.py` regenerates it). The SDK only reports the primary
+     animation, so walking/running come from movement between frames, and the
+     last animation is remembered for 15 s.
+  3. *XP flow* — per-skill XP/hour over up to five minutes (shown once a skill
+     gained XP in the last minute).
+  Order: offline/dead, fleet focus, level-up/dialog, routine phase (or the bare
+  routine process, or the supervisor phase), what the frames show (combat,
+  animation action, walking/running/teleported) unless the phase already says
+  it, XP rate, else idle.
 - **Freshness.** The receiver stamps snapshots with the server clock; the API
   marks data stale after 3 publish periods (min 20 s) and the page says so.
   Offline accounts from `accounts.sqlite` (not retired) are listed too.

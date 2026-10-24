@@ -9,6 +9,7 @@ from urllib.request import urlopen
 
 import live
 import live_publish
+import player_anims
 import worldmap
 
 SECRET = 'hunter2-SECRET'
@@ -51,14 +52,17 @@ class LiveShapingTests(unittest.TestCase):
                 live.ticks_param({'ticks': [bad]})
 
     def test_publisher_reduction_is_allowlisted_and_never_carries_credentials(self):
-        xp = live_publish.XpTracker()
+        xp, motion = live_publish.XpTracker(), live_publish.Motion()
         entry = live_publish.reduce_state('bot_hoofs', frame(), {'botStatus': 'active', 'stateAge': 120},
-                                          {'routine': 'mining', 'args': ['copper-tin-sw-varrock', '180'], 'client': True}, xp, 0.0)
+                                          {'routine': 'mining', 'args': ['copper-tin-sw-varrock', '180'], 'client': True}, xp, 0.0,
+                                          motion=motion)
         later = frame()
         later['skills'][0]['experience'] = 435
         entry = live_publish.reduce_state('bot_hoofs', later, {'botStatus': 'active', 'stateAge': 120},
-                                          {'routine': 'mining', 'args': ['copper-tin-sw-varrock'], 'client': True}, xp, 30.0)
+                                          {'routine': 'mining', 'args': ['copper-tin-sw-varrock'], 'client': True}, xp, 30.0,
+                                          motion=motion)
         self.assertEqual(entry['recentXp'], {'Mining': 35})
+        self.assertEqual(entry['xpRate'], {'Mining': 4200})
         self.assertEqual(entry['player']['target'], 'Goblin')
         self.assertEqual(entry['messages'], ['You swing your pick at the rock.'])
         shaped = live.shape_snapshot({'version': 1, 'publishedAt': 1, 'intervalMs': 6000, 'bots': [entry]}, received_at=5)
@@ -67,7 +71,9 @@ class LiveShapingTests(unittest.TestCase):
         self.assertNotIn('optionsWithIndex', text)
         bot = shaped['bots'][0]
         self.assertEqual(bot['player']['map'], list(live.map_point(3222, 3218)))
-        self.assertEqual(bot['activity']['label'], 'mining copper-tin-sw-varrock · In combat with Goblin · Training Mining')
+        self.assertEqual(bot['activity']['label'], 'mining copper-tin-sw-varrock · Fighting Goblin · Mining 4,200 XP/h')
+        self.assertEqual(bot['activity']['anim']['action'], 'Mining')
+        self.assertEqual(bot['activity']['motion'], {'state': 'still', 'tiles': 0})
 
     def test_shape_rejects_foreign_fields_names_and_tokens(self):
         raw = {'version': 1, 'password': SECRET, 'bots': [
@@ -94,9 +100,98 @@ class LiveShapingTests(unittest.TestCase):
         self.assertEqual(dead['activity']['label'], 'Dead (respawning)')
         anim = live.shape_bot({'username': 'bot_a', 'status': 'active', 'inGame': True, 'player': {'x': 1, 'z': 1, 'animId': 879},
                                'activity': {'dialog': True, 'focus': True}})
-        self.assertEqual(anim['activity']['label'], 'Fleet focus: random-event investigation · Dialog open')
+        self.assertEqual(anim['activity']['label'], 'Fleet focus: random-event investigation · Dialog open · Woodcutting')
         idle = live.shape_bot({'username': 'bot_a', 'status': 'active', 'inGame': True, 'player': {'x': 1, 'z': 1, 'animId': -1}})
         self.assertEqual(idle['activity']['label'], 'Idle')
+
+    def test_routine_status_drives_the_label_and_detail(self):
+        status = {'routine': 'mining', 'args': ['copper-tin-sw-varrock'], 'state': 'running', 'phase': 'mining tin',
+                  'detail': '12 ore carried', 'phaseSince': 1, 'startedAt': 1, 'updatedAt': 2, 'password': SECRET,
+                  'counts': {'trips': 3, 'oresBanked': 84, 'bad key': 1, 'x': SECRET}, 'lastEvent': {'kind': 'genie', 'at': 2}}
+        bot = live.shape_bot({'username': 'bot_a', 'status': 'active', 'inGame': True, 'recentXp': {'Mining': 17},
+                              'xpRate': {'Mining': 3100}, 'player': {'x': 1, 'z': 1, 'animId': -1},
+                              'activity': {'routine': 'mining', 'status': status, 'anim': {'id': 625, 'ageMs': 2400},
+                                           'motion': {'state': 'still', 'tiles': 0}}})
+        self.assertNotIn(SECRET, json.dumps(bot))
+        self.assertEqual(bot['activity']['status']['counts'], {'trips': 3, 'oresBanked': 84})
+        self.assertEqual(bot['activity']['label'], 'mining: mining tin · Mining 3,100 XP/h')
+        walking = live.shape_bot({'username': 'bot_a', 'status': 'active', 'inGame': True, 'player': {'x': 1, 'z': 1},
+                                  'activity': {'status': dict(status, phase='walking to bank'), 'motion': {'state': 'running', 'tiles': 9},
+                                               'levelUp': 'Mining', 'dialog': True}})
+        self.assertEqual(walking['activity']['label'], 'Dismissing level-up (Mining) · mining: walking to bank · Running')
+        ended = live.shape_bot({'username': 'bot_a', 'status': 'active', 'inGame': True, 'player': {'x': 1, 'z': 1},
+                                'activity': {'status': dict(status, state='ended'), 'fleetTask': {'phase': 'starting client'}}})
+        self.assertEqual(ended['activity']['label'], 'Fleet: starting client')
+        bogus = live.shape_bot({'username': 'bot_a', 'status': 'active', 'inGame': True,
+                                'activity': {'status': dict(status, state='hacked'), 'motion': {'state': 'flying'}}})
+        self.assertIsNone(bogus['activity']['status'])
+        self.assertIsNone(bogus['activity']['motion'])
+
+    def test_publisher_reads_status_files_allowlisted_and_detects_dead_routines(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            botting = Path(tmp)
+            folder = botting / 'bot_journal/activity'
+            folder.mkdir(parents=True)
+            record = {'version': 1, 'source': 'routine', 'bot': 'bot_a', 'routine': 'mining', 'args': ['spot', '$(x)'],
+                      'pid': 4242, 'state': 'running', 'phase': 'banking\n', 'detail': 'x' * 300, 'phaseSince': 999_000,
+                      'startedAt': 900_000, 'updatedAt': 999_000, 'counts': {'trips': 2, 'nested': {'a': 1}},
+                      'lastEvent': None, 'stopReason': None, 'token': SECRET}
+            (folder / 'bot_a.json').write_text(json.dumps(record))
+            local = {'routine': 'mining'}
+            got = live_publish.routine_status(botting, 'bot_a', 1000.0, local, alive=lambda pid: pid == 4242)
+            self.assertEqual((got['state'], got['phase'], got['args'], got['counts']), ('running', 'banking', ['spot'], {'trips': 2}))
+            self.assertEqual(len(got['detail']), 80)
+            self.assertNotIn(SECRET, json.dumps(got))
+            self.assertEqual(live_publish.routine_status(botting, 'bot_a', 1000.0, local, alive=lambda pid: False)['state'], 'ended')
+            self.assertEqual(live_publish.routine_status(botting, 'bot_a', 1000.0, {}, alive=lambda pid: True)['state'], 'ended')
+            self.assertIsNone(live_publish.routine_status(botting, 'bot_b', 1000.0))
+            self.assertIsNone(live_publish.routine_status(botting, 'bot_a', 1000.0 + 2 * 86400))
+            (folder / 'bot_c.json').write_text(json.dumps(dict(record, bot='bot_a')))
+            self.assertIsNone(live_publish.routine_status(botting, 'bot_c', 1000.0))
+            (folder / 'bot_a.fleet.json').write_text(json.dumps({'version': 1, 'source': 'fleet', 'bot': 'bot_a',
+                                                                 'phase': 'routine running', 'routine': 'mining', 'updatedAt': 999_000}))
+            self.assertEqual(live_publish.fleet_task(botting, 'bot_a', 1000.0, True)['phase'], 'routine running')
+            self.assertIsNone(live_publish.fleet_task(botting, 'bot_a', 1000.0, False))
+
+    def test_motion_anim_memory_level_up_and_xp_rates(self):
+        motion = live_publish.Motion()
+        self.assertIsNone(motion.update('b', 3200, 3200, 0, 0.0))
+        self.assertEqual(motion.update('b', 3203, 3201, 0, 3.0), {'state': 'walking', 'tiles': 3})
+        self.assertEqual(motion.update('b', 3213, 3201, 0, 6.0), {'state': 'running', 'tiles': 10})
+        self.assertEqual(motion.update('b', 3213, 3201, 0, 9.0)['state'], 'still')
+        self.assertEqual(motion.update('b', 2964, 3378, 0, 12.0)['state'], 'teleported')
+        self.assertEqual(motion.anim('b', 625, 0.0), {'id': 625, 'ageMs': 0})
+        self.assertEqual(motion.anim('b', -1, 3.0), {'id': 625, 'ageMs': 3000})
+        self.assertIsNone(motion.anim('b', -1, 20.0))
+        state = {'skills': [{'name': 'Mining', 'baseLevel': 21}], 'dialog': {'isOpen': True, 'text': [], 'allComponents': [
+            {'text': ''}, {'text': '@dbl@Congratulations, you just advanced a mining level.'}, {'text': 'Your mining level is now 21.'}]}}
+        self.assertEqual(live_publish.level_up_skill(state), 'Mining')
+        state['dialog']['allComponents'][1]['text'] = 'Congratulations, you just advanced a cheating level.'
+        self.assertIsNone(live_publish.level_up_skill(state))
+        xp = live_publish.XpTracker()
+        skills = lambda n: [{'name': 'Mining', 'experience': n}]
+        xp.update('b', skills(100), 0.0)
+        xp.update('b', skills(110), 10.0)
+        self.assertEqual(xp.rates('b', 10.0), {})          # under 30 s of history: no rate yet
+        xp.update('b', skills(110), 70.0)
+        self.assertEqual(xp.update('b', skills(160), 120.0), {'Mining': 50})
+        self.assertEqual(xp.rates('b', 120.0), {'Mining': 1800})
+
+    def test_player_animation_names(self):
+        info = player_anims.anim_info
+        self.assertEqual(info(625)['action'], 'Mining')
+        self.assertEqual(info(879)['action'], 'Woodcutting')
+        self.assertEqual(info(621)['action'], 'Fishing')
+        self.assertEqual(info(897)['action'], 'Cooking')
+        self.assertEqual(info(898)['action'], 'Smithing')
+        self.assertEqual(info(733)['action'], 'Firemaking')
+        self.assertEqual(info(422)['action'], 'Attacking')
+        self.assertEqual(info(424)['action'], 'Blocking')
+        self.assertEqual(info(714)['action'], 'Teleporting')
+        self.assertEqual(info(824)['action'], 'Running')
+        self.assertEqual(info(4000), {'id': 4000, 'name': None, 'action': 'Animation #4000', 'skill': None})
+        self.assertIsNone(info(-1))
+        self.assertIsNone(info(True))
 
     def test_receive_writes_shaped_snapshots_and_read_live_reports_staleness(self):
         with tempfile.TemporaryDirectory() as tmp:

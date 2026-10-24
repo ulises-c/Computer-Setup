@@ -20,6 +20,8 @@ import sys
 import tempfile
 import time
 
+from player_anims import anim_info
+
 TICK_MS = 600
 DEFAULT_TICKS = 10
 MAX_TICKS = 1000
@@ -29,6 +31,12 @@ STALE_FLOOR_MS = 20_000
 NAME = re.compile(r'^[A-Za-z0-9_ -]{1,12}$')
 TOKEN = re.compile(r'^[A-Za-z0-9_.:+-]{1,40}$')
 STATUSES = {'active', 'stale', 'dead', 'offline', 'unknown'}
+ROUTINE_STATES = {'running', 'finished', 'failed', 'ended'}
+MOTIONS = {'still', 'walking', 'running', 'teleported'}
+COUNT_KEY = re.compile(r'^[A-Za-z][A-Za-z0-9_]{0,23}$')
+EPOCH_MS = (0, 1 << 53)
+# Anim actions that say nothing on their own (the routine phase or motion is better).
+QUIET_ACTIONS = {'Standing', 'Walking', 'Running'}
 # MapView.ts unified canvas (must match worldmap.py).
 ORIGIN_X, ORIGIN_Z, MAP_WIDTH, MAP_HEIGHT = 28 << 6, 41 << 6, 30 << 6, 52 << 6
 MAP_BANDS = ((42, 62, 0), (142, 161, -79), (69, 77, 14))
@@ -85,6 +93,56 @@ def _items(values, limit):
     return out
 
 
+def _token(value):
+    return value if isinstance(value, str) and TOKEN.match(value) else None
+
+
+def _counts(value):
+    out = {}
+    for key, count in (list(value.items())[:12] if isinstance(value, dict) else []):
+        if isinstance(key, str) and COUNT_KEY.match(key) and isinstance(count, (int, float)) and not isinstance(count, bool) \
+                and abs(count) < 1 << 40:
+            out[key] = round(count, 2) if isinstance(count, float) and not count.is_integer() else int(count)
+    return out
+
+
+def _shape_status(raw):
+    """A routine's own published status (routines/lib/activity-status.ts), allowlisted."""
+    if not isinstance(raw, dict) or raw.get('state') not in ROUTINE_STATES or not _text(raw.get('phase'), 60):
+        return None
+    args = raw.get('args') if isinstance(raw.get('args'), list) else []
+    event = raw.get('lastEvent') if isinstance(raw.get('lastEvent'), dict) else None
+    return {
+        'routine': _token(raw.get('routine')), 'args': [a for a in args if _token(a)][:6], 'state': raw['state'],
+        'phase': _text(raw.get('phase'), 60), 'detail': _text(raw.get('detail'), 80),
+        'phaseSince': _int(raw.get('phaseSince'), *EPOCH_MS), 'startedAt': _int(raw.get('startedAt'), *EPOCH_MS),
+        'updatedAt': _int(raw.get('updatedAt'), *EPOCH_MS), 'counts': _counts(raw.get('counts')),
+        'stopReason': _text(raw.get('stopReason'), 80),
+        'lastEvent': ({'kind': _text(event.get('kind'), 40), 'at': _int(event.get('at'), *EPOCH_MS)}
+                      if event and _text(event.get('kind'), 40) else None),
+    }
+
+
+def _shape_fleet_task(raw):
+    if not isinstance(raw, dict) or not _text(raw.get('phase'), 60):
+        return None
+    return {'phase': _text(raw.get('phase'), 60), 'detail': _text(raw.get('detail'), 80),
+            'routine': _token(raw.get('routine')), 'updatedAt': _int(raw.get('updatedAt'), *EPOCH_MS)}
+
+
+def _shape_anim(raw, current):
+    """Named action for the current (or recently seen) player animation."""
+    seen = raw if isinstance(raw, dict) else {}
+    anim_id = _int(seen.get('id'), 0, 65535)
+    age = _int(seen.get('ageMs'), 0, 3_600_000)
+    if anim_id is None and current is not None and current >= 0:
+        anim_id, age = current, 0
+    info = anim_info(anim_id) if anim_id is not None else None
+    if not info:
+        return None
+    return dict(info, ageMs=age or 0)
+
+
 def shape_bot(bot):
     """Allowlisted, size-bounded copy of one bot entry, or None if it has no valid username."""
     if not isinstance(bot, dict):
@@ -96,7 +154,7 @@ def shape_bot(bot):
     out = {'username': username, 'displayName': _text(bot.get('displayName'), 12), 'status': status,
            'inGame': bot.get('inGame') is True, 'stateAge': _int(bot.get('stateAge'), 0),
            'tick': _int(bot.get('tick'), 0), 'player': None, 'skills': [], 'inventory': [], 'equipment': [],
-           'recentXp': {}, 'messages': [], 'activity': {}}
+           'recentXp': {}, 'xpRate': {}, 'messages': [], 'activity': {}}
     player = bot.get('player')
     if isinstance(player, dict):
         x, z = _int(player.get('x'), 0, 16383), _int(player.get('z'), 0, 16383)
@@ -118,6 +176,10 @@ def shape_bot(bot):
     if isinstance(recent, dict):
         out['recentXp'] = {name: gained for name, gained in ((_text(k, 20), _int(v, 0)) for k, v in list(recent.items())[:30])
                            if name and gained}
+    rate = bot.get('xpRate')
+    if isinstance(rate, dict):
+        out['xpRate'] = {name: per_hour for name, per_hour in ((_text(k, 20), _int(v, 0, 10_000_000)) for k, v in list(rate.items())[:30])
+                         if name and per_hour}
     for message in (bot.get('messages') if isinstance(bot.get('messages'), list) else [])[-5:]:
         if _text(message, 160):
             out['messages'].append(_text(message, 160))
@@ -129,35 +191,76 @@ def shape_bot(bot):
         'client': activity.get('client') is True, 'watcher': activity.get('watcher') is True,
         'dialog': activity.get('dialog') is True, 'modal': activity.get('modal') is True,
         'focus': activity.get('focus') is True,
+        'levelUp': _text(activity.get('levelUp'), 20),
+        'status': _shape_status(activity.get('status')),
+        'fleetTask': _shape_fleet_task(activity.get('fleetTask')),
+        'anim': _shape_anim(activity.get('anim'), (out['player'] or {}).get('animId')),
+        'motion': None,
     }
+    motion = activity.get('motion')
+    if isinstance(motion, dict) and motion.get('state') in MOTIONS:
+        out['activity']['motion'] = {'state': motion['state'], 'tiles': _int(motion.get('tiles'), 0, 16383)}
     out['activity']['label'] = activity_label(out)
     return out
 
 
+def _rate_text(per_hour):
+    return f'{per_hour / 1000:.1f}k' if per_hour >= 10_000 else f'{per_hour:,}'
+
+
+def observed_action(bot):
+    """What the frames themselves show: combat, a named animation, or movement (None if nothing)."""
+    player = bot.get('player') or {}
+    activity = bot.get('activity') or {}
+    if player.get('inCombat'):
+        return 'Fighting' + (f' {player["target"]}' if player.get('target') else '')
+    anim = activity.get('anim')
+    if anim and anim.get('action') not in QUIET_ACTIONS and (anim.get('ageMs') or 0) <= 10_000:
+        return anim['action']
+    motion = (activity.get('motion') or {}).get('state')
+    if motion in ('walking', 'running'):
+        return motion.capitalize()
+    if motion == 'teleported':
+        return 'Teleported'
+    return None
+
+
 def activity_label(bot):
-    """Best human summary of what a bot is doing, from routine, state and XP flow."""
+    """One-line summary: routine phase (published by the routine) + what the frames show + XP flow."""
     player = bot.get('player') or {}
     activity = bot.get('activity') or {}
     if bot.get('status') in ('dead', 'offline') or not bot.get('inGame'):
         return 'Offline' if not activity.get('client') else 'Client running, not in game'
-    parts = []
     if player.get('isDead'):
         return 'Dead (respawning)'
+    parts = []
     if activity.get('focus'):
         parts.append('Fleet focus: random-event investigation')
-    if activity.get('routine'):
-        parts.append(' '.join([activity['routine']] + activity.get('args', [])[:3]))
-    if player.get('inCombat'):
-        parts.append('In combat' + (f' with {player["target"]}' if player.get('target') else ''))
-    if activity.get('dialog'):
+    if activity.get('levelUp'):
+        parts.append(f'Dismissing level-up ({activity["levelUp"]})')
+    elif activity.get('dialog'):
         parts.append('Dialog open')
     elif activity.get('modal'):
         parts.append('Interface open')
-    gained = sorted(bot.get('recentXp', {}).items(), key=lambda item: -item[1])
-    if gained:
+    status = activity.get('status') or {}
+    phase = None
+    if status.get('state') == 'running':
+        phase = status.get('phase')
+        parts.append(f'{status.get("routine") or activity.get("routine") or "routine"}: {phase}')
+    elif activity.get('routine'):
+        parts.append(' '.join([activity['routine']] + activity.get('args', [])[:2]))
+    elif activity.get('fleetTask'):
+        parts.append(f'Fleet: {activity["fleetTask"]["phase"]}')
+    observed = observed_action(bot)
+    # Skip the observation when the phase already says it ("mining tin" + "Mining", "walking to bank" + "Walking").
+    if observed and not (phase and observed.split()[0].lower() in phase.lower()):
+        parts.append(observed)
+    rates = sorted((bot.get('xpRate') or {}).items(), key=lambda item: -item[1])
+    gained = sorted((bot.get('recentXp') or {}).items(), key=lambda item: -item[1])
+    if rates and gained:
+        parts.append(' · '.join(f'{name} {_rate_text(rate)} XP/h' for name, rate in rates[:2]))
+    elif gained:
         parts.append('Training ' + ', '.join(name for name, _ in gained[:2]))
-    elif not parts and player.get('animId') not in (None, -1):
-        parts.append(f'Animating (#{player["animId"]})')
     if not parts:
         parts.append('Gateway frames stalled' if bot.get('status') == 'stale' else 'Idle')
     return ' · '.join(parts)
