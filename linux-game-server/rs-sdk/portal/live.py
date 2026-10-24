@@ -6,6 +6,11 @@ each bot's own credentials and streams one JSON snapshot per line over SSH:
 
     live_publish.py | ssh game-server python3 live.py receive --target DIR
 
+Presence comes from two sources: the gateway (is an SDK client connected?) and
+the game web server's /playerpositions (who is in the world). A bot in the world
+without a connected client is a 'ghost' and is flagged as a warning; other
+players in the world are listed by name and position only.
+
 `receive` re-shapes every line through `shape_snapshot` (an allowlist, so a
 publisher bug can never put a credential or raw gateway frame on disk), stamps
 it with the server clock and atomically replaces DIR/live.json. The portal
@@ -32,6 +37,10 @@ STALE_FLOOR_MS = 12_000
 NAME = re.compile(r'^[A-Za-z0-9_ -]{1,12}$')
 TOKEN = re.compile(r'^[A-Za-z0-9_.:+-]{1,40}$')
 STATUSES = {'active', 'stale', 'dead', 'offline', 'unknown'}
+# controlled: in the world with an SDK client; ghost: in the world, no client; unknown: world list unreachable.
+PRESENCES = {'controlled', 'ghost', 'offline', 'unknown'}
+PRESENCE_ORDER = {'ghost': 0, 'controlled': 1, 'unknown': 2, 'offline': 3}
+MAX_WORLD_PLAYERS = 2000
 ROUTINE_STATES = {'running', 'finished', 'failed', 'ended'}
 MOTIONS = {'still', 'walking', 'running', 'teleported'}
 COUNT_KEY = re.compile(r'^[A-Za-z][A-Za-z0-9_]{0,23}$')
@@ -144,6 +153,39 @@ def _shape_anim(raw, current):
     return dict(info, ageMs=age or 0)
 
 
+def norm_name(name):
+    """Account/display name key: 'bot_moondrop' and 'Bot Moondrop' match."""
+    return re.sub(r'[\s_]+', ' ', name).strip().lower() if isinstance(name, str) else ''
+
+
+def _shape_position(raw):
+    x, z = _int(raw.get('x'), 0, 16383), _int(raw.get('z'), 0, 16383)
+    point = map_point(x, z) if x is not None and z is not None else None
+    return {'x': x, 'z': z, 'level': _int(raw.get('level'), 0, 3), 'map': list(point) if point else None}
+
+
+def _presence(bot, status):
+    if bot.get('presence') in PRESENCES:
+        return bot['presence']
+    # Snapshots from before presence existed: only the gateway's view is known.
+    return 'controlled' if status in ('active', 'stale') and bot.get('inGame') is True else 'offline'
+
+
+def shape_world(raw):
+    """The world player list summary: reachable?, count, and non-fleet players (name + position only)."""
+    if not isinstance(raw, dict):
+        return {'ok': False, 'error': 'World player list not published', 'count': None, 'others': []}
+    others = []
+    for item in raw.get('others') if isinstance(raw.get('others'), list) else []:
+        if isinstance(item, dict) and isinstance(item.get('name'), str) and NAME.match(item['name']):
+            others.append(dict(_shape_position(item), name=item['name']))
+        if len(others) >= MAX_WORLD_PLAYERS:
+            break
+    ok = raw.get('ok') is True
+    return {'ok': ok, 'error': None if ok else (_text(raw.get('error'), 120) or 'World player list unavailable'),
+            'count': _int(raw.get('count'), 0, 100_000) if ok else None, 'others': others}
+
+
 def shape_bot(bot):
     """Allowlisted, size-bounded copy of one bot entry, or None if it has no valid username."""
     if not isinstance(bot, dict):
@@ -153,6 +195,7 @@ def shape_bot(bot):
         return None
     status = bot.get('status') if bot.get('status') in STATUSES else 'unknown'
     out = {'username': username, 'displayName': _text(bot.get('displayName'), 12), 'status': status,
+           'presence': _presence(bot, status), 'lastKnownAt': _int(bot.get('lastKnownAt'), *EPOCH_MS),
            'inGame': bot.get('inGame') is True, 'stateAge': _int(bot.get('stateAge'), 0),
            'tick': _int(bot.get('tick'), 0), 'player': None, 'skills': [], 'inventory': [], 'equipment': [],
            'recentXp': {}, 'xpRate': {}, 'messages': [], 'activity': {}}
@@ -230,6 +273,10 @@ def activity_label(bot):
     """One-line summary: routine phase (published by the routine) + what the frames show + XP flow."""
     player = bot.get('player') or {}
     activity = bot.get('activity') or {}
+    if bot.get('presence') == 'ghost':
+        return 'In world with NO controller (SDK client disconnected)'
+    if bot.get('presence') == 'unknown' and bot.get('status') in ('dead', 'offline', 'unknown'):
+        return 'No controller · world presence unknown (player list unreachable)'
     if bot.get('status') in ('dead', 'offline') or not bot.get('inGame'):
         return 'Offline' if not activity.get('client') else 'Client running, not in game'
     if player.get('isDead'):
@@ -282,7 +329,8 @@ def shape_snapshot(raw, received_at=None):
         'fleet': {'running': fleet.get('running') is True,
                   'focus': focus if isinstance(focus, str) and NAME.match(focus) else None},
         'gatewayOk': raw.get('gatewayOk') is True,
-        'bots': sorted(bots, key=lambda bot: (bot['status'] in ('dead', 'offline'), bot['username'])),
+        'world': shape_world(raw.get('world')),
+        'bots': sorted(bots, key=lambda bot: (PRESENCE_ORDER[bot['presence']], bot['username'])),
     }
 
 
@@ -293,7 +341,8 @@ def read_live(path, now_ms=None, ticks=DEFAULT_TICKS, accounts=()):
     publisher has never reported, so every account is listed."""
     now_ms = int(time.time() * 1000) if now_ms is None else now_ms
     payload = {'version': 1, 'now': now_ms, 'refreshMs': ticks * TICK_MS, 'ticks': ticks,
-               'available': False, 'stale': True, 'ageMs': None, 'error': None, 'fleet': None, 'bots': []}
+               'available': False, 'stale': True, 'ageMs': None, 'error': None, 'fleet': None,
+               'world': shape_world(None), 'bots': []}
     try:
         if path is None:
             raise FileNotFoundError
@@ -311,13 +360,25 @@ def read_live(path, now_ms=None, ticks=DEFAULT_TICKS, accounts=()):
         payload.update({'available': True, 'ageMs': age, 'publishedAt': snapshot['publishedAt'],
                         'receivedAt': snapshot['receivedAt'], 'publishIntervalMs': snapshot['intervalMs'],
                         'stale': age > max(3 * snapshot['intervalMs'], STALE_FLOOR_MS),
-                        'gatewayOk': snapshot['gatewayOk'], 'fleet': snapshot['fleet'], 'bots': snapshot['bots']})
+                        'gatewayOk': snapshot['gatewayOk'], 'fleet': snapshot['fleet'], 'world': snapshot['world'],
+                        'bots': snapshot['bots']})
         if payload['stale']:
             payload['error'] = f'Snapshot is {age // 1000}s old: the workstation publisher may be offline.'
     known = {bot['username'] for bot in payload['bots']}
+    world = payload['world']
     for username in accounts:
         if username not in known and NAME.match(username):
-            payload['bots'].append(shape_bot({'username': username, 'status': 'offline'}))
+            # An account the publisher has no credentials for, yet in the world: a ghost too.
+            seen = next((p for p in world['others'] if norm_name(p['name']) == norm_name(username)), None)
+            if seen:
+                world['others'].remove(seen)
+                payload['bots'].append(shape_bot({'username': username, 'status': 'offline', 'presence': 'ghost',
+                                                  'displayName': seen['name'], 'inGame': True, 'player': seen}))
+            else:
+                presence = 'offline' if world['ok'] else 'unknown'
+                payload['bots'].append(shape_bot({'username': username, 'status': 'offline', 'presence': presence}))
+    payload['bots'].sort(key=lambda bot: (PRESENCE_ORDER[bot['presence']], bot['username']))
+    payload['ghosts'] = [bot['username'] for bot in payload['bots'] if bot['presence'] == 'ghost']
     if payload['available'] and payload['stale']:
         for bot in payload['bots']:
             bot['activity']['label'] = 'Unknown (stale snapshot) · last: ' + bot['activity']['label']

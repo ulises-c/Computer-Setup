@@ -4,7 +4,9 @@
 Every N game ticks (default 5 = ~3 s; never faster, to keep the gateway at no
 more than one request per bot per 3 s) this:
 
-1. asks the gateway's unauthenticated GET /status which bots are connected;
+1. asks the gateway's unauthenticated GET /status which bots are connected, and
+   the game web server's unauthenticated GET /playerpositions who is actually in
+   the world (one request each per period);
 2. for each connected bot, reads GET /state/<bot> with that bot's own SDK
    credentials from <sdk>/bots/<bot>/bot.env (sent as a Bearer header; a plain
    HTTP read - no WebSocket session, no observer/controller, no actions);
@@ -13,7 +15,13 @@ more than one request per bot per 3 s) this:
    processes, the routines' own status files (bot_journal/activity/<bot>.json,
    written by routines/lib/activity-status.ts), the fleet supervisor's state, and
    what successive frames show (recent animation, movement, XP rates), and
-4. writes one JSON line to stdout, or (with --host) streams it over one
+4. classifies every account's presence: 'controlled' (in the world with an SDK
+   client connected), 'ghost' (in the world but no SDK client: the gateway says
+   dead/absent - shown with its live world position and the last controlled
+   snapshot's stats, marked last-known), 'offline', or 'unknown' (the world list
+   was unreachable, so a disconnected bot may or may not be in the world);
+   other players in the world (humans) are published by name and position only;
+5. writes one JSON line to stdout, or (with --host) streams it over one
    persistent SSH connection into the portal receiver (live.py receive).
 
 Credentials never leave this machine: they are only used in the request
@@ -48,6 +56,9 @@ STATUS_MAX_AGE_S = 24 * 3600
 STATUS_MAX_BYTES = 65536
 STATUS_STATES = {'running', 'finished', 'failed'}
 COUNT_KEY = re.compile(r'^[A-Za-z][A-Za-z0-9_]{0,23}$')
+WORLD_NAME = re.compile(r'^[A-Za-z0-9_ -]{1,12}$')
+MAX_WORLD_PLAYERS = 2000
+LAST_GOOD_KEYS = ('displayName', 'tick', 'player', 'skills', 'inventory', 'equipment')
 LEVEL_UP = re.compile(r'^(?:@\w{3}@)?Congratulations, you just advanced (?:a|an) ([a-z]+(?: [a-z]+)?) level\.$')
 
 
@@ -75,6 +86,38 @@ def get_json(url, headers=None, timeout=5.0):
             return exc.code, json.loads(exc.read(65536))
         except ValueError:
             return exc.code, None
+
+
+def norm_name(name):
+    """Account/display name key: 'bot_moondrop', 'Bot Moondrop' and 'bot  moondrop' all match."""
+    return re.sub(r'[\s_]+', ' ', name).strip().lower() if isinstance(name, str) else ''
+
+
+def world_url(bots, override=None):
+    """The game web server's base URL (SERVER=host:port from the bots' bot.env, served over HTTPS)."""
+    if override:
+        return override.rstrip('/')
+    server = next((env['SERVER'] for env in bots.values() if env.get('SERVER')), None)
+    if not server:
+        return None
+    return server.rstrip('/') if re.match(r'^https?://', server) else 'https://' + server.rstrip('/')
+
+
+def world_players(base, fetch=None):
+    """(players, error): everyone in the game world from GET /playerpositions, or (None, reason)."""
+    if not base:
+        return None, 'no game web server configured (SERVER= in bot.env or --world)'
+    try:
+        code, body = (fetch or get_json)(base + '/playerpositions')
+    except (OSError, ValueError) as exc:
+        return None, f'/playerpositions unreachable ({exc.__class__.__name__})'
+    if code != 200 or not isinstance(body, list):
+        return None, f'/playerpositions answered HTTP {code}'
+    players = []
+    for item in body[:MAX_WORLD_PLAYERS]:
+        if isinstance(item, dict) and isinstance(item.get('name'), str) and WORLD_NAME.match(item['name']):
+            players.append({'name': item['name'], 'x': item.get('x'), 'z': item.get('z'), 'level': item.get('level')})
+    return players, None
 
 
 def processes():
@@ -334,11 +377,42 @@ def reduce_state(username, state, meta, local, xp, now, focus=None, motion=None,
 
 
 class Publisher:
-    def __init__(self, sdk, botting, ticks, gateway=None):
+    def __init__(self, sdk, botting, ticks, gateway=None, world=None, cache=None, fetch=None):
         self.sdk, self.botting, self.ticks = sdk, botting, ticks
-        self.gateway = gateway
+        self.gateway, self.world = gateway, world
+        self.fetch = fetch or get_json
         self.xp = XpTracker()
         self.motion = Motion()
+        # Last controlled snapshot per bot (allowlisted fields only, never credentials),
+        # persisted so a ghost still shows its last-known stats after a publisher restart.
+        self.cache = cache
+        self.last_good = self._load_cache()
+        self.cache_saved = 0.0
+
+    def _load_cache(self):
+        if not self.cache:
+            return {}
+        try:
+            data = json.loads(self.cache.read_text()) if self.cache.stat().st_size < 4 * 1024 * 1024 else None
+        except (OSError, ValueError):
+            data = None
+        if not isinstance(data, dict) or data.get('version') != 1 or not isinstance(data.get('bots'), dict):
+            return {}
+        return {name: entry for name, entry in data['bots'].items()
+                if isinstance(entry, dict) and isinstance(entry.get('at'), (int, float))}
+
+    def _save_cache(self, now):
+        if not self.cache or now - self.cache_saved < 60:
+            return
+        self.cache_saved = now
+        try:
+            self.cache.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.cache.with_suffix('.tmp')
+            tmp.write_text(json.dumps({'version': 1, 'bots': self.last_good}, separators=(',', ':')))
+            os.chmod(tmp, 0o600)
+            os.replace(tmp, self.cache)
+        except OSError:
+            pass
 
     def bots(self):
         found = {}
@@ -357,10 +431,12 @@ class Publisher:
         now = time.time()
         bots = self.bots()
         gateway = self.gateway or next((http_base(env['GATEWAY_URL']) for env in bots.values() if env.get('GATEWAY_URL')), None)
+        players, world_error = world_players(world_url(bots, self.world), self.fetch)
+        in_world = {norm_name(p['name']): p for p in players or []}
         statuses, gateway_ok = {}, False
         if gateway:
             try:
-                code, body = get_json(gateway + '/status')
+                code, body = self.fetch(gateway + '/status')
                 if code == 200 and isinstance(body, dict) and isinstance(body.get('bots'), dict):
                     statuses, gateway_ok = body['bots'], True
             except (OSError, ValueError):
@@ -373,7 +449,7 @@ class Publisher:
             meta, state = {'botStatus': status or ('offline' if gateway_ok else 'unknown')}, None
             if gateway_ok and status and status != 'dead':
                 try:
-                    code, body = get_json(gateway + '/state/' + urllib.parse.quote(username),
+                    code, body = self.fetch(gateway + '/state/' + urllib.parse.quote(username),
                                           {'Authorization': 'Bearer ' + env['PASSWORD']})
                     if code == 200 and isinstance(body, dict):
                         meta = {'botStatus': body.get('botStatus') or status, 'stateAge': body.get('stateAge')}
@@ -382,11 +458,56 @@ class Publisher:
                     meta['botStatus'] = 'unknown'
             if meta['botStatus'] == 'dead':
                 meta['botStatus'] = 'offline'
-            entries.append(reduce_state(username, state, meta, local.get(username), self.xp, now, fleet['focus'], self.motion,
-                                        routine_status(self.botting, username, now, local.get(username)),
-                                        fleet_task(self.botting, username, now, fleet['running'])))
+            entry = reduce_state(username, state, meta, local.get(username), self.xp, now, fleet['focus'], self.motion,
+                                 routine_status(self.botting, username, now, local.get(username)),
+                                 fleet_task(self.botting, username, now, fleet['running']))
+            entries.append(self.classify(entry, in_world, players is not None, now))
+        claimed = {norm_name(name) for entry in entries for name in (entry['username'], entry.get('displayName'))}
+        others = [p for p in players or [] if norm_name(p['name']) not in claimed]
+        self._save_cache(now)
         return {'version': 1, 'publishedAt': int(now * 1000), 'intervalMs': self.ticks * TICK_MS,
-                'gatewayOk': gateway_ok, 'fleet': fleet, 'bots': entries}
+                'gatewayOk': gateway_ok, 'fleet': fleet, 'bots': entries,
+                'world': {'ok': players is not None, 'error': world_error,
+                          'count': len(players) if players is not None else None, 'others': others}}
+
+    def classify(self, entry, in_world, world_ok, now):
+        """Set entry['presence'] from the world list + gateway; ghosts get world position + last-known stats."""
+        username = entry['username']
+        client = entry['status'] in ('active', 'stale')
+        known = self.last_good.get(username)
+        names = [username, entry.get('displayName'), (known or {}).get('displayName')]
+        seen = next((in_world[norm_name(n)] for n in names if n and norm_name(n) in in_world), None)
+        if client and not entry.get('inGame') and not (seen and world_ok):
+            entry['presence'] = 'offline'   # client running, not (yet) in game
+            return entry
+        if client:
+            entry['presence'] = 'controlled'
+            if entry.get('inGame'):
+                self.last_good[username] = dict({k: entry.get(k) for k in LAST_GOOD_KEYS}, at=int(now * 1000))
+            if seen and (entry.get('player') or {}).get('x') is None:
+                entry['player'] = dict(entry.get('player') or {}, x=seen['x'], z=seen['z'], level=seen['level'])
+            return entry
+        if not world_ok:
+            entry['presence'] = 'unknown'
+            return entry
+        if not seen:
+            entry['presence'] = 'offline'
+            return entry
+        entry['presence'] = 'ghost'
+        entry['inGame'] = True
+        if known:
+            for key in ('displayName', 'skills', 'inventory', 'equipment'):
+                if not entry.get(key):
+                    entry[key] = known.get(key)
+            entry['lastKnownAt'] = known['at']
+        player = dict((known or {}).get('player') or {})
+        # Live data for a ghost is only its position; everything else is last-known.
+        for key in ('animId', 'inCombat', 'target', 'runEnergy'):
+            player.pop(key, None)
+        player.update(x=seen['x'], z=seen['z'], level=seen['level'])
+        entry['player'] = player
+        entry['displayName'] = entry.get('displayName') or seen['name']
+        return entry
 
     def run(self, sink, once=False):
         period = self.ticks * TICK_MS / 1000.0
@@ -425,6 +546,9 @@ def main():
     parser.add_argument('--sdk', type=Path, default=Path.home() / 'github/rs-sdk-fork')
     parser.add_argument('--botting', type=Path, default=Path.home() / 'forgejo/2004Scape-Botting')
     parser.add_argument('--gateway', help='Gateway HTTP base URL (default: GATEWAY_URL from the bots\' bot.env)')
+    parser.add_argument('--world', help='Game web server base URL for /playerpositions (default: https:// + SERVER from the bots\' bot.env)')
+    parser.add_argument('--cache', type=Path, default=Path.home() / 'Library/Caches/computer-setup/rs-sdk-portal-live.json',
+                        help='Last controlled snapshot per bot (allowlisted, no credentials), so ghosts keep last-known stats')
     parser.add_argument('--host', help='SSH alias of the game server; omit to print snapshots to stdout')
     parser.add_argument('--receiver', default='github/Computer-Setup/linux-game-server/rs-sdk/portal/live.py')
     parser.add_argument('--once', action='store_true', help='Publish one snapshot and exit')
@@ -432,7 +556,8 @@ def main():
     if args.ticks < MIN_TICKS:
         parser.error(f'--ticks must be at least {MIN_TICKS} (one gateway request per bot per {MIN_TICKS * TICK_MS / 1000:g} s at most)')
     publisher = Publisher(args.sdk.expanduser(), args.botting.expanduser(), args.ticks,
-                          http_base(args.gateway) if args.gateway else None)
+                          http_base(args.gateway) if args.gateway else None, args.world,
+                          args.cache.expanduser() if args.cache else None)
     if not args.host:
         publisher.run(lambda line: (sys.stdout.write(line), sys.stdout.flush()), once=args.once)
         return

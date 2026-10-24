@@ -197,7 +197,7 @@ class LiveShapingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp)
             lines = b'not json\n' + json.dumps({'version': 1, 'intervalMs': 6000, 'password': SECRET,
-                                                'bots': [{'username': 'bot_a', 'status': 'active'}]}).encode() + b'\n'
+                                                'bots': [{'username': 'bot_a', 'status': 'active', 'inGame': True}]}).encode() + b'\n'
             self.assertEqual(live.receive(io.BytesIO(lines), target, clock=lambda: 1000.0), 1)
             data = (target / 'live.json').read_text()
             self.assertNotIn(SECRET, data)
@@ -207,6 +207,7 @@ class LiveShapingTests(unittest.TestCase):
             self.assertEqual(fresh['ageMs'], 5000)
             self.assertEqual([b['username'] for b in fresh['bots']], ['bot_a', 'bot_b'])
             self.assertEqual(fresh['bots'][1]['status'], 'offline')
+            self.assertEqual([b['presence'] for b in fresh['bots']], ['controlled', 'unknown'])   # no world list published
             old = live.read_live(target / 'live.json', now_ms=1_060_000, ticks=20)
             self.assertTrue(old['stale'])
             self.assertEqual(old['refreshMs'], 12000)
@@ -214,7 +215,8 @@ class LiveShapingTests(unittest.TestCase):
             self.assertTrue(old['bots'][0]['activity']['label'].startswith('Unknown (stale snapshot)'))
             missing = live.read_live(target / 'nothing.json', accounts=['bot_a'])
             self.assertFalse(missing['available'])
-            self.assertEqual(missing['bots'][0]['activity']['label'], 'Offline')
+            self.assertEqual(missing['bots'][0]['presence'], 'unknown')
+            self.assertIn('world presence unknown', missing['bots'][0]['activity']['label'])
 
     def test_process_parsing_keeps_routines_and_drops_private_args(self):
         ps = '\n'.join([
@@ -226,6 +228,123 @@ class LiveShapingTests(unittest.TestCase):
         found = live_publish.parse_processes(ps)
         self.assertEqual(found['bot_hoofs'], {'routine': 'mining', 'args': ['copper-tin-sw-varrock', '180'], 'watcher': True, 'client': True})
         self.assertEqual(found['bot_reface'], {'routine': 'eval', 'args': []})
+
+
+class WorldPresenceTests(unittest.TestCase):
+    """Fleet: bot_tester (controlled), bot_moondrop (ghost: in world, gateway dead),
+    bot_faitour (offline); plus a human ('Cant Pvm') in the world."""
+
+    WORLD = [{'x': 3218, 'z': 3223, 'level': 0, 'name': 'Bot Tester'},
+             {'x': 3231, 'z': 3295, 'level': 0, 'name': 'Cant Pvm'},
+             {'x': 3185, 'z': 3436, 'level': 0, 'name': 'Bot Moondrop'},
+             {'x': 1, 'z': 2, 'level': 0, 'name': '<img src=x>'}]
+
+    def make_publisher(self, tmp, world=True, moondrop_connected=False):
+        sdk = Path(tmp) / 'sdk'
+        for bot in ('bot_tester', 'bot_moondrop', 'bot_faitour'):
+            (sdk / 'bots' / bot).mkdir(parents=True)
+            (sdk / 'bots' / bot / 'bot.env').write_text(
+                f'BOT_USERNAME={bot}\nPASSWORD={SECRET}\nSERVER=game.example:9445\nGATEWAY_URL=wss://game.example:9446\n')
+        calls = []
+        state = {'moondrop': moondrop_connected}
+
+        def fetch(url, headers=None):
+            calls.append(url)
+            if url == 'https://game.example:9445/playerpositions':
+                if not world:
+                    raise OSError('connection refused')
+                return 200, self.WORLD
+            if url == 'https://game.example:9446/status':
+                return 200, {'bots': {'bot_tester': {'status': 'active'},
+                                      'bot_moondrop': {'status': 'active' if state['moondrop'] else 'dead'}}}
+            name = url.rsplit('/', 1)[1]
+            body = frame(name=name.replace('_', ' ').title().replace('Bot ', 'Bot '))
+            return 200, {'botStatus': 'active', 'stateAge': 50, 'state': body}
+
+        publisher = live_publish.Publisher(sdk, Path(tmp) / 'botting', 5, fetch=fetch, cache=Path(tmp) / 'cache.json')
+        return publisher, calls, state
+
+    def test_name_matching(self):
+        self.assertEqual(live_publish.norm_name('bot_moondrop'), live_publish.norm_name('Bot  Moondrop'))
+        self.assertEqual(live.norm_name('BOT_TESTER'), 'bot tester')
+        self.assertEqual(live_publish.world_url({'a': {'SERVER': 'game.example:9445'}}), 'https://game.example:9445')
+        self.assertEqual(live_publish.world_url({}, 'http://x:1/'), 'http://x:1')
+
+    def test_publisher_flags_ghosts_lists_humans_and_keeps_last_known_stats(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            publisher, calls, state = self.make_publisher(tmp, moondrop_connected=True)
+            publisher.snapshot()                                  # moondrop controlled: remembered as last good
+            publisher.cache_saved = 0.0
+            state['moondrop'] = False                             # client gone, player still in the world
+            calls.clear()
+            raw = publisher.snapshot()
+            self.assertEqual(sum(url.endswith('/playerpositions') for url in calls), 1)
+            self.assertNotIn('/state/bot_moondrop', ' '.join(calls))
+            by = {b['username']: b for b in raw['bots']}
+            self.assertEqual({k: b['presence'] for k, b in by.items()},
+                             {'bot_tester': 'controlled', 'bot_moondrop': 'ghost', 'bot_faitour': 'offline'})
+            ghost = by['bot_moondrop']
+            self.assertEqual((ghost['player']['x'], ghost['player']['z']), (3185, 3436))
+            self.assertEqual(ghost['skills'][0]['name'], 'Mining')
+            self.assertIsInstance(ghost['lastKnownAt'], int)
+            self.assertEqual([p['name'] for p in raw['world']['others']], ['Cant Pvm'])
+            self.assertEqual(raw['world']['count'], 3)
+            self.assertTrue((Path(tmp) / 'cache.json').exists())
+            self.assertNotIn(SECRET, (Path(tmp) / 'cache.json').read_text())
+            # The receiver keeps all of it, flags the ghost and lists the human by name/position only.
+            shaped = live.shape_snapshot(raw, received_at=1)
+            text = json.dumps(shaped)
+            self.assertNotIn(SECRET, text)
+            self.assertNotIn('<img', text)
+            self.assertEqual([b['username'] for b in shaped['bots']], ['bot_moondrop', 'bot_tester', 'bot_faitour'])
+            bot = shaped['bots'][0]
+            self.assertEqual(bot['presence'], 'ghost')
+            self.assertEqual(bot['player']['map'], list(live.map_point(3185, 3436)))
+            self.assertIn('NO controller', bot['activity']['label'])
+            self.assertEqual(shaped['world']['others'],
+                             [{'name': 'Cant Pvm', 'x': 3231, 'z': 3295, 'level': 0, 'map': list(live.map_point(3231, 3295))}])
+            # A restarted publisher still has the last-known stats from its cache.
+            again = live_publish.Publisher(Path(tmp) / 'sdk', Path(tmp) / 'botting', 5, fetch=publisher.fetch,
+                                           cache=Path(tmp) / 'cache.json')
+            ghost = {b['username']: b for b in again.snapshot()['bots']}['bot_moondrop']
+            self.assertEqual((ghost['presence'], ghost['skills'][0]['name']), ('ghost', 'Mining'))
+
+    def test_ghost_without_history_and_unreachable_world_degrade_gracefully(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            publisher, _, _ = self.make_publisher(tmp)
+            ghost = {b['username']: b for b in publisher.snapshot()['bots']}['bot_moondrop']
+            self.assertEqual((ghost['presence'], ghost['displayName'], ghost['player']), ('ghost', 'Bot Moondrop',
+                             {'x': 3185, 'z': 3436, 'level': 0}))
+            self.assertNotIn('lastKnownAt', ghost)
+        with tempfile.TemporaryDirectory() as tmp:
+            publisher, _, _ = self.make_publisher(tmp, world=False)
+            raw = publisher.snapshot()
+            self.assertFalse(raw['world']['ok'])
+            self.assertIn('unreachable', raw['world']['error'])
+            by = {b['username']: b['presence'] for b in raw['bots']}
+            self.assertEqual(by, {'bot_tester': 'controlled', 'bot_moondrop': 'unknown', 'bot_faitour': 'unknown'})
+            shaped = live.shape_snapshot(raw, received_at=1)
+            self.assertEqual((shaped['world']['ok'], shaped['world']['count']), (False, None))
+            unknown = next(b for b in shaped['bots'] if b['username'] == 'bot_moondrop')
+            self.assertIn('world presence unknown', unknown['activity']['label'])
+
+    def test_read_live_turns_account_only_players_into_ghosts_and_counts_ghosts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            raw = {'version': 1, 'bots': [{'username': 'bot_tester', 'status': 'active', 'inGame': True, 'presence': 'controlled'},
+                                          {'username': 'bot_hoofs', 'status': 'offline', 'presence': 'ghost',
+                                           'player': {'x': 3185, 'z': 3436, 'level': 0}}],
+                   'world': {'ok': True, 'count': 4, 'others': [{'name': 'Cant Pvm', 'x': 3231, 'z': 3295, 'level': 0},
+                                                                 {'name': 'Bot Secreto', 'x': 3200, 'z': 3200, 'level': 0}]}}
+            live.write_atomic(target, live.shape_snapshot(raw, received_at=1_000_000))
+            payload = live.read_live(target / 'live.json', now_ms=1_001_000, accounts=['bot_tester', 'bot_secreto', 'bot_wormlike'])
+            self.assertEqual([(b['username'], b['presence']) for b in payload['bots']],
+                             [('bot_hoofs', 'ghost'), ('bot_secreto', 'ghost'), ('bot_tester', 'controlled'), ('bot_wormlike', 'offline')])
+            self.assertEqual(payload['ghosts'], ['bot_hoofs', 'bot_secreto'])
+            self.assertEqual([p['name'] for p in payload['world']['others']], ['Cant Pvm'])
+            self.assertEqual(payload['world']['count'], 4)
+            legacy = live.shape_bot({'username': 'bot_a', 'status': 'active', 'inGame': True})
+            self.assertEqual(legacy['presence'], 'controlled')
 
 
 class LiveHTTPTests(unittest.TestCase):
