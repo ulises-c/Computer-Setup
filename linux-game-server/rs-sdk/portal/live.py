@@ -52,6 +52,15 @@ ORIGIN_X, ORIGIN_Z, MAP_WIDTH, MAP_HEIGHT = 28 << 6, 41 << 6, 30 << 6, 52 << 6
 MAP_BANDS = ((42, 62, 0), (142, 161, -79), (69, 77, 14))
 
 
+SHOW_CHOICES = ('all', 'bots', 'players')
+
+
+def show_param(params):
+    """Live-map filter from ?show=all|bots|players, or None when absent/unknown (the page then uses the saved choice)."""
+    raw = params.get('show', [''])[0]
+    return raw if raw in SHOW_CHOICES else None
+
+
 def ticks_param(params):
     """Refresh period in game ticks from ?ticks=N (default 10 = ~6 s); ValueError if invalid."""
     raw = params.get('ticks', [str(DEFAULT_TICKS)])[0]

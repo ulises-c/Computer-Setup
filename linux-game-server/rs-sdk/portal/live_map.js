@@ -1,7 +1,37 @@
 // Live fleet map for /rs-sdk/live-map. Read-only: polls /rs-sdk/api/live and renders.
 // Served as a static file so the page CSP can stay `script-src 'self'` (no inline JS).
+
+// Pure view-state rules (filter choice, counts, expanded set), kept DOM-free so
+// test_live.py can exercise them with node.
+const LiveLogic = (() => {
+    'use strict';
+    const SHOWS = ['all', 'bots', 'players'];
+    const validShow = value => (SHOWS.includes(value) ? value : null);
+    // ?show= wins over the remembered choice; default All.
+    const initialShow = (search, stored) => validShow(new URLSearchParams(search || '').get('show')) || validShow(stored) || 'all';
+    // Query string with show set, keeping every other parameter (e.g. ?ticks=N).
+    const withShow = (search, show) => {
+        const params = new URLSearchParams(search || '');
+        params.set('show', show);
+        return `?${params}`;
+    };
+    const visible = (kind, show) => show === 'all' || (show === 'bots' && kind === 'bot') || (show === 'players' && kind === 'player');
+    const counts = (bots, others) => ({ all: bots.length + others.length, bots: bots.length, players: others.length });
+    const parseExpanded = raw => {
+        try {
+            const value = JSON.parse(raw || '[]');
+            return new Set(Array.isArray(value) ? value.filter(v => typeof v === 'string') : []);
+        } catch {
+            return new Set();
+        }
+    };
+    return { SHOWS, validShow, initialShow, withShow, visible, counts, parseExpanded };
+})();
+if (typeof module !== 'undefined' && module.exports) module.exports = LiveLogic;
+
 (() => {
     'use strict';
+    if (typeof document === 'undefined') return;
     const root = document.getElementById('live');
     if (!root) return;
     const api = root.dataset.api;
@@ -11,14 +41,30 @@
     const image = document.getElementById('live-image');
     const statusLine = document.getElementById('live-status');
     const list = document.getElementById('live-bots');
+    const empty = document.getElementById('live-empty');
+    const filterButtons = [...document.querySelectorAll('#live-filter [data-show]')];
+    const SHOW_KEY = 'rs-sdk-live-show';
+    const EXPANDED_KEY = 'rs-sdk-live-expanded';
     let meta = { width: 1920, height: 3328, originX: 1792, labels: [] };
     let scale = 2; // screen pixels per tile
     let bots = [];
     let others = []; // non-fleet players in the world: name + position only
     let selected = null;
     let centred = false;
+    let loaded = false; // first payload rendered
     const markers = new Map();
     const labelNodes = [];
+    const cards = new Map(); // card key -> { node, summary, toggle, detail, kind }
+    let cardSeq = 0;
+
+    const storage = kind => {
+        try { return window[kind]; } catch { return null; }
+    };
+    const remember = (kind, key, value) => {
+        try { storage(kind)?.setItem(key, value); } catch { /* private mode / quota: keep in memory only */ }
+    };
+    let show = LiveLogic.initialShow(location.search, storage('localStorage')?.getItem(SHOW_KEY));
+    const expanded = LiveLogic.parseExpanded(storage('sessionStorage')?.getItem(EXPANDED_KEY));
 
     const el = (tag, cls, text) => {
         const node = document.createElement(tag);
@@ -34,9 +80,11 @@
         if (s < 5400) return `${Math.round(s / 60)}m`;
         return `${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m`;
     };
-    const PRESENCE_LABEL = { controlled: 'controlled', ghost: 'in world — no controller', offline: 'offline', unknown: 'presence unknown' };
+    const PRESENCE_LABEL = { controlled: 'controlled', ghost: 'no controller', offline: 'offline', unknown: 'presence unknown' };
+    const PRESENCE_TITLE = { controlled: 'In the world, driven by an SDK client', ghost: 'In the world with NO controller (SDK client disconnected)', offline: 'Not in the world', unknown: 'World player list unavailable' };
     const inWorld = bot => bot.presence === 'controlled' || bot.presence === 'ghost';
     const words = key => key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ').toLowerCase();
+    const nameOf = bot => bot.displayName || bot.username;
 
     function layout() {
         canvas.style.width = `${meta.width * scale}px`;
@@ -75,9 +123,9 @@
         viewport.scrollTop = (row + 0.5) * scale - viewport.clientHeight / 2;
     }
 
-    function region(bot) {
-        if (!bot.player || !bot.player.map) return null;
-        const [col, row] = bot.player.map;
+    function nearest(map) {
+        if (!map) return null;
+        const [col, row] = map;
         let best = null;
         for (const label of meta.labels) {
             if (label.size > 1) continue;
@@ -101,13 +149,14 @@
                 canvas.append(node);
                 markers.set(bot.username, node);
             }
-            node.querySelector('.tag').textContent = bot.displayName || bot.username;
-            node.title = `${bot.displayName || bot.username}: ${bot.activity.label}`;
+            node.querySelector('.tag').textContent = nameOf(bot);
+            node.title = `${nameOf(bot)}: ${bot.activity.label}`;
             node.classList.toggle('selected', selected === bot.username);
             node.classList.toggle('fighting', !!bot.player.inCombat);
             node.classList.toggle('offline', !inWorld(bot));
             node.classList.toggle('ghost', bot.presence === 'ghost');
-            if (bot.presence === 'ghost') node.title = `${bot.displayName || bot.username}: IN WORLD WITH NO CONTROLLER`;
+            if (bot.presence === 'ghost') node.title = `${nameOf(bot)}: IN WORLD WITH NO CONTROLLER`;
+            node.hidden = !LiveLogic.visible('bot', show);
         }
         for (const p of others) {
             if (!p.map) continue;
@@ -121,6 +170,7 @@
                 markers.set(key, node);
             }
             node.title = `${p.name} (other player, not in the fleet) · (${p.x}, ${p.z})`;
+            node.hidden = !LiveLogic.visible('player', show);
         }
         for (const [name, node] of markers) {
             if (!live.has(name)) { node.remove(); markers.delete(name); }
@@ -132,17 +182,17 @@
         selected = name;
         const bot = bots.find(b => b.username === name);
         if (bot && bot.player && bot.player.map) centreOn(bot.player.map[0], bot.player.map[1]);
-        for (const card of list.children) card.classList.toggle('selected', card.dataset.bot === name);
+        for (const card of list.children) card.classList.toggle('selected', !!card.dataset.bot && card.dataset.bot === name);
         if (scroll) {
             const card = list.querySelector(`[data-bot="${CSS.escape(name)}"]`);
-            if (card) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            if (card && !card.hidden) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         }
         renderMarkers();
     }
 
-    function itemGrid(items, slots, empty) {
+    function itemGrid(items, slots, emptyText) {
         const grid = el('div', slots ? 'live-items inventory' : 'live-items');
-        if (!items.length) grid.append(el('span', 'muted', empty));
+        if (!items.length) grid.append(el('span', 'muted', emptyText));
         for (const item of items) {
             const cell = el('span', 'item', item.name || `#${item.id}`);
             if (item.count > 1) cell.append(el('b', null, ` ×${fmt(item.count)}`));
@@ -171,11 +221,11 @@
             } else if (s.stopReason) {
                 row('Stopped', s.stopReason);
             }
-            const counts = Object.entries(s.counts || {});
-            if (counts.length) {
-                const list = el('span', 'counts');
-                for (const [k, v] of counts) list.append(el('span', 'count', `${words(k)} ${fmt(v)}`));
-                row('Counts', list);
+            const counted = Object.entries(s.counts || {});
+            if (counted.length) {
+                const tally = el('span', 'counts');
+                for (const [k, v] of counted) tally.append(el('span', 'count', `${words(k)} ${fmt(v)}`));
+                row('Counts', tally);
             }
             if (s.lastEvent) row('Last event', `${s.lastEvent.kind}${s.lastEvent.at ? ` (${ago(s.lastEvent.at)} ago)` : ''}`);
         } else if (a.routine) {
@@ -200,39 +250,66 @@
         return dl;
     }
 
-    function card(bot) {
+    // One-line text that truncates with an ellipsis; the title keeps the full text.
+    const line = (cls, text) => {
+        const node = el('p', `line ${cls}`, text);
+        node.title = text;
+        return node;
+    };
+
+    function hpBar(p) {
+        const hp = el('div', 'hp');
+        if (!p || p.hp === null || p.hp === undefined) {
+            hp.classList.add('unknown');
+            hp.append(el('em', null, 'HP unknown'));
+            return hp;
+        }
+        const bar = el('span');
+        bar.style.width = `${Math.max(0, Math.min(100, p.maxHp ? (100 * p.hp) / p.maxHp : 0))}%`;
+        hp.append(bar, el('em', null, `HP ${fmt(p.hp)} / ${fmt(p.maxHp)}`));
+        return hp;
+    }
+
+    // Fixed-height collapsed view: name, status, combat, HP, activity, position / nearest town.
+    function botSummary(bot) {
         const p = bot.player;
-        const node = el('article', 'live-bot');
-        node.dataset.bot = bot.username;
-        node.classList.toggle('selected', selected === bot.username);
-        node.classList.toggle('is-offline', !inWorld(bot));
-        node.classList.toggle('is-ghost', bot.presence === 'ghost');
-        const head = el('header');
         const presence = bot.presence || 'unknown';
-        head.append(el('b', null, bot.displayName || bot.username), el('span', `badge ${presence}`, PRESENCE_LABEL[presence] || presence));
+        const head = el('header');
+        const name = el('b', null, nameOf(bot));
+        name.title = nameOf(bot);
+        head.append(name);
+        if (p && p.combatLevel !== null && p.combatLevel !== undefined) head.append(el('span', 'combat', `Cb ${fmt(p.combatLevel)}`));
+        const badge = el('span', `badge ${presence}`, PRESENCE_LABEL[presence] || presence);
+        badge.title = PRESENCE_TITLE[presence] || presence;
+        head.append(badge);
         if (presence === 'controlled' && bot.status !== 'active') head.append(el('span', `badge ${bot.status}`, bot.status));
-        if (p && p.combatLevel !== null && p.combatLevel !== undefined) head.append(el('span', 'muted', `Combat ${fmt(p.combatLevel)}`));
-        node.append(head, el('p', 'activity', bot.activity.label));
-        if (presence === 'ghost') {
-            node.append(el('p', 'ghost-note', bot.lastKnownAt
+        const where = p
+            ? [nearest(p.map), `(${p.x}, ${p.z})`, p.level ? `plane ${p.level}` : null,
+                p.runEnergy === null || p.runEnergy === undefined ? null : `run ${fmt(p.runEnergy)}%`].filter(Boolean).join(' · ')
+            : 'Position unknown';
+        return [head, hpBar(p), line('activity', bot.activity.label), line('where', where)];
+    }
+
+    function playerSummary(p) {
+        const head = el('header');
+        const name = el('b', null, p.name);
+        name.title = p.name;
+        const badge = el('span', 'badge other', 'player');
+        badge.title = 'A real player, not a fleet account';
+        head.append(name, badge);
+        const where = [nearest(p.map), `(${p.x}, ${p.z})`, p.level ? `plane ${p.level}` : null].filter(Boolean).join(' · ');
+        return [head, el('div', 'hp placeholder'), line('activity muted', 'Not in the fleet: name and position only'), line('where', where)];
+    }
+
+    function botDetail(bot) {
+        const parts = [];
+        if (bot.presence === 'ghost') {
+            parts.push(el('p', 'ghost-note', bot.lastKnownAt
                 ? `Position is live (world list); stats, HP and items are last-known from ${ago(bot.lastKnownAt)} ago.`
                 : 'Position is live (world list); no stats known since this publisher started.'));
         }
-        const detail = activityDetail(bot);
-        if (detail) node.append(detail);
-        if (p) {
-            const hp = el('div', 'hp');
-            if (p.hp === null || p.hp === undefined) hp.hidden = true;
-            const bar = el('span');
-            bar.style.width = `${Math.max(0, Math.min(100, p.maxHp ? (100 * p.hp) / p.maxHp : 0))}%`;
-            hp.append(bar, el('em', null, `HP ${fmt(p.hp)} / ${fmt(p.maxHp)}`));
-            const run = p.runEnergy === null || p.runEnergy === undefined ? null : `run ${fmt(p.runEnergy)}%`;
-            const where = [`(${p.x}, ${p.z})`, p.level ? `plane ${p.level}` : null, region(bot), run].filter(Boolean).join(' · ');
-            node.append(hp, el('p', 'where', where));
-        }
-        const details = el('details');
-        details.open = selected === bot.username || (bot.presence === 'controlled' && bots.filter(b => b.presence === 'controlled').length <= 3);
-        details.append(el('summary', null, 'Stats, inventory & equipment'));
+        const activity = activityDetail(bot);
+        if (activity) parts.push(activity);
         if (bot.skills.length) {
             const skills = el('div', 'live-skills');
             const total = bot.skills.reduce((sum, s) => sum + (s.baseLevel || 0), 0);
@@ -242,48 +319,145 @@
                 cell.append(el('small', null, s.name), el('b', null, s.level === s.baseLevel ? s.level : `${s.level}/${s.baseLevel}`), el('em', null, fmt(s.experience)));
                 skills.append(cell);
             }
-            details.append(el('h3', null, `Skills · total ${total}`), skills);
+            parts.push(el('h3', null, `Skills · total ${total}`), skills);
         }
         const known = bot.presence === 'controlled' || (bot.presence === 'ghost' && bot.lastKnownAt);
-        details.append(el('h3', null, `Inventory · ${bot.inventory.length}/28${bot.presence === 'ghost' ? ' (last known)' : ''}`), itemGrid(bot.inventory, true, known ? 'Empty' : 'Not known without a controller'));
-        details.append(el('h3', null, `Equipment${bot.presence === 'ghost' ? ' (last known)' : ''}`), itemGrid(bot.equipment, false, known ? 'Nothing worn' : 'Not known without a controller'));
+        parts.push(el('h3', null, `Inventory · ${bot.inventory.length}/28${bot.presence === 'ghost' ? ' (last known)' : ''}`), itemGrid(bot.inventory, true, known ? 'Empty' : 'Not known without a controller'));
+        parts.push(el('h3', null, `Equipment${bot.presence === 'ghost' ? ' (last known)' : ''}`), itemGrid(bot.equipment, false, known ? 'Nothing worn' : 'Not known without a controller'));
         if (bot.messages.length) {
             const log = el('ul', 'messages');
             for (const m of bot.messages) log.append(el('li', null, m));
-            details.append(el('h3', null, 'Recent game messages'), log);
+            parts.push(el('h3', null, 'Recent game messages'), log);
         }
-        node.append(details);
-        node.addEventListener('click', event => {
-            if (!event.target.closest('details')) select(bot.username, false);
-        });
-        return node;
+        return parts;
     }
 
-    function othersCard() {
-        const node = el('article', 'live-bot live-others');
-        const head = el('header');
-        head.append(el('b', null, 'Other players in the world'), el('span', 'badge other', `${others.length}`));
-        node.append(head, el('p', 'muted', 'Not fleet accounts: name and position only.'));
-        const names = el('ul', 'others');
-        for (const p of others) {
-            const item = el('li', null, p.name);
-            item.append(el('span', 'muted', ` (${p.x}, ${p.z})${p.level ? ` plane ${p.level}` : ''}`));
-            if (p.map) item.addEventListener('click', () => centreOn(p.map[0], p.map[1]));
-            names.append(item);
+    // Cards are created once per key and updated in place on every refresh, so the
+    // expand buttons keep focus and the page keeps its scroll position.
+    function makeCard(key, kind) {
+        const node = el('article', `live-bot ${kind === 'player' ? 'live-player' : ''}`.trim());
+        node.dataset.key = key;
+        const summary = el('div', 'live-summary');
+        const actions = el('div', 'live-card-actions');
+        const locate = el('button', 'live-locate', 'Show on map');
+        locate.type = 'button';
+        actions.append(locate);
+        const card = { node, summary, kind, locate, toggle: null, detail: null, map: null };
+        locate.addEventListener('click', () => {
+            if (kind === 'bot') select(node.dataset.bot, false);
+            else if (card.map) centreOn(card.map[0], card.map[1]);
+        });
+        node.append(summary, actions);
+        if (kind === 'bot') {
+            const id = `live-detail-${++cardSeq}`;
+            const toggle = el('button', 'live-toggle');
+            toggle.type = 'button';
+            toggle.setAttribute('aria-controls', id);
+            const detail = el('div', 'live-detail');
+            detail.id = id;
+            toggle.addEventListener('click', () => setExpanded(node.dataset.bot, !expanded.has(node.dataset.bot)));
+            actions.prepend(toggle);
+            node.append(detail);
+            card.toggle = toggle;
+            card.detail = detail;
+            node.addEventListener('click', event => {
+                if (!event.target.closest('button, .live-detail')) select(node.dataset.bot, false);
+            });
+        } else {
+            node.addEventListener('click', event => {
+                if (!event.target.closest('button') && card.map) centreOn(card.map[0], card.map[1]);
+            });
         }
-        node.append(names);
-        return node;
+        return card;
+    }
+
+    function fillDetail(card, bot) {
+        const open = expanded.has(bot.username);
+        card.node.classList.toggle('expanded', open);
+        card.toggle.setAttribute('aria-expanded', String(open));
+        card.toggle.textContent = open ? 'Hide details' : 'Details';
+        card.toggle.setAttribute('aria-label', `${open ? 'Hide' : 'Show'} stats, inventory and equipment for ${nameOf(bot)}`);
+        card.detail.hidden = !open;
+        // Collapsed cards skip building the (large) detail DOM entirely.
+        if (open) card.detail.replaceChildren(...botDetail(bot));
+        else card.detail.replaceChildren();
+    }
+
+    function setExpanded(username, open) {
+        if (open) expanded.add(username); else expanded.delete(username);
+        remember('sessionStorage', EXPANDED_KEY, JSON.stringify([...expanded]));
+        const card = cards.get(`bot:${username}`);
+        const bot = bots.find(b => b.username === username);
+        if (card && bot) fillDetail(card, bot);
+    }
+
+    function applyFilter() {
+        const tally = LiveLogic.counts(bots, others);
+        for (const button of filterButtons) {
+            const value = button.dataset.show;
+            button.setAttribute('aria-pressed', String(value === show));
+            const count = button.querySelector('.n');
+            if (count) count.textContent = String(tally[value]);
+        }
+        let shown = 0;
+        for (const { node, kind } of cards.values()) {
+            node.hidden = !LiveLogic.visible(kind, show);
+            if (!node.hidden) shown += 1;
+        }
+        for (const [name, node] of markers) node.hidden = !LiveLogic.visible(name.startsWith('world:') ? 'player' : 'bot', show);
+        if (empty) {
+            empty.textContent = show === 'players' ? 'No other players are in the world right now.' : show === 'bots' ? 'No fleet accounts are published.' : 'Nobody to show yet.';
+            empty.hidden = shown > 0 || !loaded;
+        }
+    }
+
+    function setShow(next, persist) {
+        show = LiveLogic.validShow(next) || 'all';
+        if (persist) remember('localStorage', SHOW_KEY, show);
+        const query = LiveLogic.withShow(location.search, show);
+        if (query !== location.search) history.replaceState(history.state, '', `${location.pathname}${query}${location.hash}`);
+        applyFilter();
     }
 
     function renderList(payload) {
-        const open = new Set([...list.querySelectorAll('article')].filter(a => a.querySelector('details')?.open).map(a => a.dataset.bot));
-        const cards = bots.map(bot => {
-            const node = card(bot);
-            if (open.has(bot.username)) node.querySelector('details').open = true;
-            return node;
+        loaded = true;
+        const wanted = [];
+        for (const bot of bots) {
+            const key = `bot:${bot.username}`;
+            const card = cards.get(key) || makeCard(key, 'bot');
+            cards.set(key, card);
+            const { node } = card;
+            node.dataset.bot = bot.username;
+            node.classList.toggle('selected', selected === bot.username);
+            node.classList.toggle('is-offline', !inWorld(bot));
+            node.classList.toggle('is-ghost', bot.presence === 'ghost');
+            card.summary.replaceChildren(...botSummary(bot));
+            card.map = bot.player && bot.player.map;
+            card.locate.disabled = !card.map;
+            card.locate.setAttribute('aria-label', `Show ${nameOf(bot)} on the map`);
+            fillDetail(card, bot);
+            wanted.push(node);
+        }
+        for (const p of [...others].sort((x, y) => x.name.localeCompare(y.name))) {
+            const key = `player:${p.name}`;
+            const card = cards.get(key) || makeCard(key, 'player');
+            cards.set(key, card);
+            card.summary.replaceChildren(...playerSummary(p));
+            card.map = p.map;
+            card.locate.disabled = !card.map;
+            card.locate.setAttribute('aria-label', `Show ${p.name} on the map`);
+            wanted.push(card.node);
+        }
+        const keep = new Set(wanted);
+        for (const [key, card] of cards) {
+            if (!keep.has(card.node)) { card.node.remove(); cards.delete(key); }
+        }
+        // Reorder by moving only misplaced nodes, so unchanged cards (and focus) stay put.
+        wanted.forEach((node, i) => {
+            if (list.children[i] !== node) list.insertBefore(node, list.children[i] || null);
         });
-        if (others.length) cards.push(othersCard());
-        list.replaceChildren(...cards);
+        applyFilter();
+
         const world = payload.world || {};
         const controlled = bots.filter(b => b.presence === 'controlled').length;
         const ghosts = bots.filter(b => b.presence === 'ghost');
@@ -307,6 +481,7 @@
             : null].filter(Boolean);
         warning.textContent = problems.join(' ');
         warning.hidden = !problems.length;
+        // The ghost banner ignores the filter: a bot without a controller always needs attention.
         let banner = document.getElementById('live-ghosts');
         if (!banner) {
             banner = el('p', 'note live-ghosts');
@@ -314,10 +489,23 @@
             statusLine.before(banner);
         }
         banner.textContent = ghosts.length
-            ? `⚠ ${ghosts.length} bot${ghosts.length === 1 ? ' is' : 's are'} in the world with NO controller (SDK client disconnected): ${ghosts.map(b => b.displayName || b.username).join(', ')}`
+            ? `⚠ ${ghosts.length} bot${ghosts.length === 1 ? ' is' : 's are'} in the world with NO controller (SDK client disconnected): ${ghosts.map(nameOf).join(', ')}`
             : '';
         banner.hidden = !ghosts.length;
     }
+
+    for (const button of filterButtons) button.addEventListener('click', () => setShow(button.dataset.show, true));
+    document.getElementById('expand-all')?.addEventListener('click', () => {
+        for (const bot of bots) if (LiveLogic.visible('bot', show)) expanded.add(bot.username);
+        remember('sessionStorage', EXPANDED_KEY, JSON.stringify([...expanded]));
+        for (const bot of bots) { const card = cards.get(`bot:${bot.username}`); if (card) fillDetail(card, bot); }
+    });
+    document.getElementById('collapse-all')?.addEventListener('click', () => {
+        expanded.clear();
+        remember('sessionStorage', EXPANDED_KEY, '[]');
+        for (const bot of bots) { const card = cards.get(`bot:${bot.username}`); if (card) fillDetail(card, bot); }
+    });
+    setShow(show, false);
 
     async function poll() {
         try {

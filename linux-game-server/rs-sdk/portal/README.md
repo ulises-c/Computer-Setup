@@ -308,8 +308,8 @@ live_publish.py --host <alias> ──ssh stdin──▶ live.py receive ─▶ ~
   - `offline` — not in the world;
   - `unknown` — no client, and the world list was unreachable: the page says
     ghosts can't be detected right now instead of calling them offline.
-  Other players in the world (humans) are shown as neutral markers and a list,
-  name and position only. The status line reads `Online in world: N` (the length
+  Other players in the world (humans) are shown as neutral markers and cards,
+  name, position and nearest town only. The status line reads `Online in world: N` (the length
   of `/playerpositions`, i.e. `/playercount`). Accounts in `accounts.sqlite` that
   the publisher has no credentials for but that are in the world are shown as
   ghosts too.
@@ -342,6 +342,15 @@ live_publish.py --host <alias> ──ssh stdin──▶ live.py receive ─▶ ~
   routine process, or the supervisor phase), what the frames show (combat,
   animation action, walking/running/teleported) unless the phase already says
   it, XP rate, else idle.
+- **Filter and cards.** A segmented `All / Bots / Players` control (with counts)
+  filters both the cards and the map markers; the ghost banner always shows. The
+  choice is kept in `localStorage` and in the URL (`?show=all|bots|players`);
+  the URL wins, so filtered links work. Cards are collapsed by default to a
+  uniform summary (name, presence, combat level, HP, activity, nearest town and
+  position); each bot card has a *Details* button (`aria-expanded`) for the
+  routine detail, skills, inventory, equipment and messages, plus *Expand all /
+  Collapse all*. The expanded set lives in `sessionStorage`, and cards are
+  updated in place on every refresh so expansion, focus and scroll survive it.
 - **Freshness.** The receiver stamps snapshots with the server clock; the API
   marks data stale after 3 publish periods (min 12 s) and the page says so.
   Offline accounts from `accounts.sqlite` (not retired) are listed too.

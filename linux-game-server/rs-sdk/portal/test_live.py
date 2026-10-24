@@ -1,6 +1,8 @@
 import io
 import json
 from pathlib import Path
+import shutil
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -347,6 +349,44 @@ class WorldPresenceTests(unittest.TestCase):
             self.assertEqual(legacy['presence'], 'controlled')
 
 
+class LiveMapViewTests(unittest.TestCase):
+    def test_show_param_accepts_only_known_filters(self):
+        self.assertEqual(live.show_param({'show': ['bots']}), 'bots')
+        self.assertEqual(live.show_param({'show': ['players']}), 'players')
+        self.assertIsNone(live.show_param({}))
+        self.assertIsNone(live.show_param({'show': ['BOTS']}))
+
+    @unittest.skipUnless(shutil.which('node'), 'node not installed')
+    def test_view_logic_in_live_map_js(self):
+        script = Path(__file__).with_name('live_map.js')
+        probe = """
+const L = require(process.argv[1]);
+const out = {
+  urlWins: L.initialShow('?show=players&ticks=5', 'bots'),
+  stored: L.initialShow('?ticks=5', 'bots'),
+  badUrl: L.initialShow('?show=nope', 'players'),
+  fallback: L.initialShow('', 'garbage'),
+  withShow: L.withShow('?ticks=5', 'bots'),
+  replace: L.withShow('?show=all&ticks=5', 'players'),
+  visible: [L.visible('bot', 'all'), L.visible('player', 'all'), L.visible('bot', 'bots'),
+            L.visible('player', 'bots'), L.visible('bot', 'players'), L.visible('player', 'players')],
+  counts: L.counts([1, 2, 3], [4]),
+  expanded: [...L.parseExpanded('["bot_a", 3, "bot_b"]')],
+  brokenExpanded: [...L.parseExpanded('{nope')],
+};
+console.log(JSON.stringify(out));
+"""
+        result = subprocess.run(['node', '-e', probe, str(script)], capture_output=True, text=True, timeout=20, check=True)
+        got = json.loads(result.stdout)
+        self.assertEqual((got['urlWins'], got['stored'], got['badUrl'], got['fallback']), ('players', 'bots', 'players', 'all'))
+        self.assertEqual(got['withShow'], '?ticks=5&show=bots')
+        self.assertEqual(got['replace'], '?show=players&ticks=5')
+        self.assertEqual(got['visible'], [True, True, True, False, False, True])
+        self.assertEqual(got['counts'], {'all': 4, 'bots': 3, 'players': 1})
+        self.assertEqual(got['expanded'], ['bot_a', 'bot_b'])
+        self.assertEqual(got['brokenExpanded'], [])
+
+
 class LiveHTTPTests(unittest.TestCase):
     def test_live_routes_and_csp(self):
         import server
@@ -370,6 +410,18 @@ class LiveHTTPTests(unittest.TestCase):
         self.assertIn('data-refresh-ms="12000"', body)
         self.assertIn('src="/rs-sdk/live-map.js"', body)
         self.assertNotIn('<script>', body)
+        self.assertIn('id="live-filter" class="live-filter" role="group"', body)
+        for value in ('all', 'bots', 'players'):
+            self.assertIn(f'data-show="{value}" aria-pressed="{str(value == "all").lower()}"', body)
+        self.assertIn('id="expand-all" type="button"', body)
+        self.assertIn('id="collapse-all" type="button"', body)
+        self.assertIn('id="live-empty"', body)
+        with urlopen(base + '/rs-sdk/live-map?show=players') as response:
+            filtered = response.read().decode()
+        self.assertIn('data-show="players" aria-pressed="true"', filtered)
+        self.assertIn('data-show="all" aria-pressed="false"', filtered)
+        with urlopen(base + '/rs-sdk/live-map?show=%3Cx%3E') as response:
+            self.assertIn('data-show="all" aria-pressed="true"', response.read().decode())
         for path in ('/rs-sdk/', '/rs-sdk/benchmarks'):
             try:
                 response = urlopen(base + path)

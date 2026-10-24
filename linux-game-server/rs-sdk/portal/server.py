@@ -295,15 +295,21 @@ class Portal:
     def live_page(self, params):
         ticks = live.ticks_param(params)
         api = f'{BASE}/api/live?' + urlencode({'ticks': ticks})
+        show = live.show_param(params) or 'all'
+        filters = ''.join(
+            f'<button type="button" data-show="{value}" aria-pressed="{str(value == show).lower()}">{label} <span class="n"></span></button>'
+            for value, label in (('all', 'All'), ('bots', 'Bots'), ('players', 'Players')))
         body = f'''<div class="eyebrow">RS-SDK / Live fleet</div><h1>Live map</h1>
-<p>Everyone online in the game world, and every bot account’s position, stats, inventory, equipment and current activity, refreshed every {ticks} game ticks ({ticks * live.TICK_MS / 1000:g} s). Change it with <code>?ticks=N</code>.</p>
+<p>Everyone online in the game world, and every bot account’s position, stats, inventory, equipment and current activity, refreshed every {ticks} game ticks ({ticks * live.TICK_MS / 1000:g} s). Change it with <code>?ticks=N</code>; <code>?show=bots</code> or <code>?show=players</code> links straight to a filtered view.</p>
 <div id="live" class="live" data-api="{esc(api)}" data-refresh-ms="{ticks * live.TICK_MS}" data-meta="{BASE}/assets/worldmap.json">
 <p id="live-ghosts" class="note live-ghosts" hidden></p>
 <p id="live-status" class="note live-status">Loading live data…</p>
 <p id="live-warning" class="note live-warning" hidden></p>
+<div class="live-toolbar"><div id="live-filter" class="live-filter" role="group" aria-label="Show on the map and in the list">{filters}</div>
+<div class="live-bulk"><button id="expand-all" type="button">Expand all</button><button id="collapse-all" type="button">Collapse all</button></div></div>
 <div class="live-map-frame"><div id="live-map" class="live-map"><div id="live-canvas" class="live-canvas"><img id="live-image" src="{BASE}/assets/worldmap.png" alt="2004Scape world map" draggable="false"></div></div>
 <div class="live-zoom"><button id="zoom-in" type="button" aria-label="Zoom in">+</button><button id="zoom-out" type="button" aria-label="Zoom out">−</button></div></div>
-<div id="live-bots" class="live-bots"></div></div>
+<div id="live-bots" class="live-bots"></div><p id="live-empty" class="note" hidden></p></div>
 <p class="note">Positions and state come from the SDK gateway’s latest frame for each bot, read by the bot workstation with HTTP state requests and published here; who is in the world (including bots whose SDK client has disconnected, and other players by name only) comes from the game server’s public player list; nothing on this page can control, log in or message a bot. Activity combines the running routine, combat, dialogs and skills gaining XP. Underground areas appear in the map’s folded dungeon bands, as in the game’s own world map.</p>
 <script src="{BASE}/live-map.js" defer></script>'''
         return layout('Live map', body, footer='Read-only companion · live map polls a read-only JSON snapshot; no account controls.')

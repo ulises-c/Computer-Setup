@@ -155,13 +155,36 @@ footer { margin-top: 32px; padding-top: 18px; border-top: 1px solid #68563866; c
 .live-ghosts { border-color: #e2412b; background: #3a1208e6; color: #ffcf8a; font-weight: bold; }
 .live-zoom { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 4px; }
 .live-zoom button { width: 32px; height: 32px; font: bold 18px Arial, sans-serif; color: #f0dba4; background: #090a07dd; border: 1px solid #685638; cursor: pointer; }
-.live-bots { display: grid; align-items: start; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 14px; margin-bottom: 20px; }
-.live-bot { padding: 14px 16px; border: 1px solid #685638; background: #17170fe6; cursor: pointer; }
+.live-toolbar { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: space-between; margin: 14px 0 0; }
+.live-filter { display: inline-flex; border: 1px solid #685638; background: #090a07dd; }
+.live-filter button, .live-bulk button, .live-card-actions button { font: bold 12px Arial, sans-serif; color: #c5b99a; background: #090a07dd; border: 1px solid #685638; padding: 6px 12px; cursor: pointer; }
+.live-filter button { border: 0; border-left: 1px solid #685638; padding: 7px 16px; letter-spacing: .5px; }
+.live-filter button:first-child { border-left: 0; }
+.live-filter button:hover, .live-bulk button:hover, .live-card-actions button:hover:not(:disabled) { color: #ffe139; background: #29251b; }
+.live-filter button[aria-pressed="true"] { color: #1a1205; background: var(--gold); }
+.live-filter .n { display: inline-block; min-width: 1.6em; margin-left: 4px; padding: 0 5px; font-weight: normal; border-radius: 8px; background: #0006; color: inherit; }
+.live-filter button[aria-pressed="true"] .n { background: #1a120526; }
+.live-bulk { display: inline-flex; gap: 6px; }
+.live-marker[hidden], .live-bot[hidden] { display: none; }
+.live-bots { display: grid; align-items: start; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 14px; margin-bottom: 20px; }
+.live-bot { padding: 12px 14px; border: 1px solid #685638; background: #17170fe6; cursor: pointer; }
+.live-bot.expanded { border-color: #8d7444; }
+.live-summary { display: grid; grid-template-rows: 26px 18px 20px 20px; gap: 6px; height: 102px; overflow: hidden; }
+.live-summary .line { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 20px; }
+.live-summary .combat { font-size: 12px; color: #a8987a; white-space: nowrap; flex: none; }
+.live-card-actions { display: flex; gap: 6px; height: 24px; margin-top: 10px; }
+.live-card-actions button { height: 24px; padding: 0 10px; font-size: 11px; line-height: 22px; }
+.live-card-actions .live-toggle { color: var(--gold); }
+.live-card-actions .live-toggle::after { content: ' ▾'; }
+.live-card-actions .live-toggle[aria-expanded="true"]::after { content: ' ▴'; }
+.live-card-actions button:disabled { opacity: .45; cursor: default; }
+.live-detail { margin-top: 10px; padding-top: 8px; border-top: 1px solid #68563880; cursor: auto; }
 .live-bot.selected { border-color: #ffe139; box-shadow: 0 0 0 1px #ffe13966; }
 .live-bot.is-offline { opacity: .72; }
-.live-bot header { display: flex; gap: 10px; align-items: baseline; border: 0; }
-.live-bot header b { font: normal 19px Georgia, serif; color: #f0dba4; margin-right: auto; }
-.live-bot .badge { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; padding: 1px 6px; border: 1px solid #685638; color: #c5b99a; }
+.live-bot header { display: flex; gap: 8px; align-items: baseline; border: 0; min-width: 0; }
+.live-bot header b { font: normal 19px/26px Georgia, serif; color: #f0dba4; margin-right: auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.live-bot .badge { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; padding: 1px 6px; border: 1px solid #685638; color: #c5b99a; white-space: nowrap; flex: none; }
+.live-bot .badge.other { color: #d9e6f2; border-color: #5c7286; }
 .live-bot .badge.active { color: #bbd779; border-color: #6c7d43; }
 .live-bot .badge.stale { color: #f0b9a0; border-color: #a3452d; }
 .live-bot .badge.controlled { color: #bbd779; border-color: #6c7d43; }
@@ -169,10 +192,9 @@ footer { margin-top: 32px; padding-top: 18px; border-top: 1px solid #68563866; c
 .live-bot .badge.unknown { color: #f0d08a; border-color: #8a6a2d; }
 .live-bot.is-ghost { border-color: #e2412b; box-shadow: 0 0 0 1px #ff9d1c88; }
 .live-bot .ghost-note { font-size: 12px; color: #ffcf8a; margin: 4px 0 8px; }
-.live-others .others { margin: 6px 0 0; padding-left: 18px; font-size: 12px; color: #d9e6f2; }
-.live-others .others li { cursor: pointer; }
-.live-bot .activity { color: #eee5cb; margin: 8px 0; }
-.live-bot .where { font-size: 12px; margin: 6px 0 0; }
+.live-bot .activity { color: #eee5cb; }
+.live-bot .activity.muted { color: #8d8167; font-size: 12px; }
+.live-bot .where { font-size: 12px; color: #c5b99a; }
 .live-activity { display: grid; grid-template-columns: max-content 1fr; gap: 2px 10px; margin: 0 0 10px; font-size: 12px; }
 .live-activity dt { color: #a8987a; text-transform: uppercase; letter-spacing: 1px; font-size: 10px; line-height: 18px; }
 .live-activity dd { margin: 0; color: #d8cdb0; line-height: 18px; }
@@ -186,9 +208,9 @@ footer { margin-top: 32px; padding-top: 18px; border-top: 1px solid #68563866; c
 .live-bot .muted { color: #8d8167; font-size: 12px; }
 .live-bot .hp { position: relative; height: 16px; background: #5a1a12; border: 1px solid #000; }
 .live-bot .hp span { position: absolute; inset: 0 auto 0 0; background: #2f8d2a; }
+.live-bot .hp.unknown { background: #2a261c; }
+.live-bot .hp.placeholder { visibility: hidden; }
 .live-bot .hp em { position: relative; font: bold 11px/16px Arial, sans-serif; padding-left: 6px; color: #fff; font-style: normal; text-shadow: 1px 1px 0 #000; }
-.live-bot details { margin-top: 10px; cursor: auto; }
-.live-bot summary { cursor: pointer; color: var(--gold); font-size: 12px; }
 .live-bot h3 { font: bold 11px Arial, sans-serif; text-transform: uppercase; letter-spacing: 1px; color: #a8987a; margin: 12px 0 6px; }
 .live-skills { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; }
 .live-skills .skill { display: grid; grid-template-columns: 1fr auto; padding: 2px 6px; background: #0c0d09; border: 1px solid #2c271b; font-size: 12px; }
