@@ -22,6 +22,9 @@ card and game client stay unchanged. The portal offers:
 - **Scraped Wiki** (`/rs-sdk/wiki/scraped`): searches only canonical visible
   OSRS/RS3 context, stored in a separate `scraped-wiki.sqlite` snapshot.
   Articles show attribution and original links; raw modern documents never ship.
+- **Live map** (`/rs-sdk/live-map`): every bot account on the game's own world
+  map, with HP, combat level, skills/XP, inventory, equipment and current activity,
+  refreshed every 10 game ticks (~6 s; `?ticks=N` changes it). See [Live map](#live-map).
 - **Play**, **HiScores**, **Grand Exchange**, and a link back to Homepage.
 
 `/rs-sdk/wiki` is a collection chooser, not a combined search. Each collection's
@@ -264,6 +267,57 @@ source goes offline; automatic wiki snapshots instead become unavailable at thei
 embedded policy expiry. A LaunchAgent requires a logged-in source user. Sync has
 a 90-second SSH timeout; failures never renew prior wiki policy. The view has no
 auto-refresh; reload for new data.
+
+## Live map
+
+```
+bot workstation                                   game server
+live_publish.py --host <alias> ──ssh stdin──▶ live.py receive ─▶ ~/.local/share/rs-sdk-portal/live/live.json
+  GET gateway /status            (allowlist re-shape,                  │ (read-only mount /live)
+  GET gateway /state/<bot>        server-clock stamp,                  ▼
+  ps (routines), fleet-state      atomic replace)        portal: /rs-sdk/api/live, /rs-sdk/live-map
+```
+
+- **Data source.** The gateway already holds every connected bot's latest
+  `BotWorldState`, but `/state/<bot>` needs that bot's SDK password, and those
+  exist only on the bot workstation (`<rs-sdk>/bots/<bot>/bot.env`). So the
+  publisher runs there: per period it reads the unauthenticated `/status` once,
+  then `GET /state/<bot>` (Bearer header) only for connected bots — at most one
+  request per bot per 6 s, plain HTTP reads, no WebSocket session, observer,
+  controller or action, so it can't pre-empt or block a fleet run. Credentials
+  are used only in request headers; snapshots never contain them.
+- **What is published** (allowlist in `live.shape_bot`, applied by the publisher's
+  reduction, again by the receiver and again by the portal): position/plane, HP,
+  combat level, run energy, animation, combat target name, skills (level, base,
+  XP), inventory and equipment (id, name, count), the last few *system* game
+  messages (never other players' chat), XP gained per skill in the last minute,
+  the local routine name and plain arguments (`eval` snippets are dropped), and
+  the fleet supervisor's lock/focus latch.
+- **Activity** is inferred, in order: offline/dead, fleet event focus, running
+  routine, in combat (with NPC name), dialog/interface open, skills gaining XP,
+  animation id, else idle.
+- **Freshness.** The receiver stamps snapshots with the server clock; the API
+  marks data stale after 3 publish periods (min 20 s) and the page says so.
+  Offline accounts from `accounts.sqlite` (not retired) are listed too.
+- **Refresh rate.** The page polls `/rs-sdk/api/live?ticks=N` every N × 600 ms
+  (default 10, `?ticks=N` on `/rs-sdk/live-map`, 1–1000). The publisher's own
+  period is `install-live-publisher.sh <alias> [TICKS]` (minimum and default 10);
+  polling faster than the publisher only re-reads the same snapshot.
+- **Map.** `install.sh` renders `assets/worldmap.png` (2 px/tile) and
+  `assets/worldmap.json` (labels) from the game server's own `/worldmap.jag` with
+  `worldmap.py`, a port of the web client's MapView ground layer on the same
+  unified canvas (dungeon bands folded in); delete both files to re-render.
+- **CSP.** `/rs-sdk/live-map` is the only page allowed `script-src 'self';
+  connect-src 'self'`; its script is the static `/rs-sdk/live-map.js`.
+
+Install the publisher on the bot workstation (copies `live_publish.py` to
+`~/Library/Application Support/computer-setup/rs-sdk-portal/` and loads a
+KeepAlive LaunchAgent; logs in `~/Library/Logs/computer-setup/rs-sdk-portal-live.log`):
+
+```sh
+bash linux-game-server/rs-sdk/portal/install-live-publisher.sh <game-server-ssh-alias> [TICKS]
+python3 linux-game-server/rs-sdk/portal/live_publish.py --once   # one snapshot to stdout
+```
 
 ## Install
 

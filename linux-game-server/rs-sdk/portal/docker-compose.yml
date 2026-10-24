@@ -19,6 +19,8 @@ services:
       - /data
       - --wanted
       - /wanted/wanted.sqlite
+      - --live
+      - /live/live.json
       - --game-url
       - "https://${PORTAL_GAME_DOMAIN:?Run portal/install.sh}:9445"
       - --homepage-url
@@ -36,6 +38,13 @@ services:
       - type: bind
         source: ${PORTAL_DATA_DIR:?Run portal/install.sh}
         target: /data
+        read_only: true
+        bind:
+          create_host_path: false
+      # Live fleet snapshot, written on the host by `live.py receive` (fed by live_publish.py).
+      - type: bind
+        source: ${PORTAL_LIVE_DIR:?Run portal/install.sh}
+        target: /live
         read_only: true
         bind:
           create_host_path: false

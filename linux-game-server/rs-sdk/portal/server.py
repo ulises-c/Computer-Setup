@@ -16,10 +16,12 @@ import time
 from typing import cast
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
 
+import live
 from snapshot_policy import read_policy
 
 BASE = '/rs-sdk'
 STYLE = Path(__file__).with_name('theme.css').read_text()
+LIVE_SCRIPT = Path(__file__).with_name('live_map.js').read_bytes()
 WIKIS = {
     '2004scape': ('2004Scape Wiki', '2004scape-wiki.sqlite', 'This game, one page per thing: server data, bot observations and wiki context selected by the deployment policy at publication time.'),
     'rs-sdk': ('RS-SDK Wiki', 'rs-sdk-wiki.sqlite', 'Server-specific knowledge generated from RS-SDK. Search only the local game wiki.'),
@@ -31,11 +33,11 @@ def esc(value):
     return escape(str(value) if value is not None else '—', quote=True)
 
 
-def layout(title, body, wiki=False):
+def layout(title, body, wiki=False, footer='Read-only companion · no account controls, database downloads or background polling.'):
     theme = 'wiki-page' if wiki else 'game-page'
     menu_title = 'Wiki navigation' if wiki else 'Game tools'
     note = 'Read-only article cache' if wiki else 'Account state is not live presence.'
-    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)} · RS-SDK</title><style>{STYLE}</style></head><body class="{theme}"><div class="world"><header><nav><a class="brand" href="{BASE}/">RS-SDK / companion</a><a href="{BASE}/accounts">Accounts</a><a href="{BASE}/benchmarks">Benchmarks</a><a href="{BASE}/wiki">Wikis</a></nav></header><div class="page-layout"><aside class="tool-menu"><h2>{menu_title}</h2><a href="{BASE}/">Companion home</a><a href="{BASE}/accounts">Account Database</a><a href="{BASE}/benchmarks">Benchmarks</a><a href="{BASE}/wiki/2004scape">2004Scape Wiki</a><a href="{BASE}/wiki/rs-sdk">RS-SDK Wiki</a><a href="{BASE}/wiki/scraped">Scraped Wiki</a><p>{note}</p></aside><main>{body}<footer>Read-only companion · no account controls, database downloads or background polling.</footer></main></div></div></body></html>'''
+    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)} · RS-SDK</title><style>{STYLE}</style></head><body class="{theme}"><div class="world"><header><nav><a class="brand" href="{BASE}/">RS-SDK / companion</a><a href="{BASE}/live-map">Live map</a><a href="{BASE}/accounts">Accounts</a><a href="{BASE}/benchmarks">Benchmarks</a><a href="{BASE}/wiki">Wikis</a></nav></header><div class="page-layout"><aside class="tool-menu"><h2>{menu_title}</h2><a href="{BASE}/">Companion home</a><a href="{BASE}/live-map">Live map</a><a href="{BASE}/accounts">Account Database</a><a href="{BASE}/benchmarks">Benchmarks</a><a href="{BASE}/wiki/2004scape">2004Scape Wiki</a><a href="{BASE}/wiki/rs-sdk">RS-SDK Wiki</a><a href="{BASE}/wiki/scraped">Scraped Wiki</a><p>{note}</p></aside><main>{body}<footer>{footer}</footer></main></div></div></body></html>'''
 
 
 @contextmanager
@@ -206,8 +208,9 @@ def split_route(path, prefix):
 
 
 class Portal:
-    def __init__(self, root, game_url, homepage_url, wanted=None):
+    def __init__(self, root, game_url, homepage_url, wanted=None, live_path=None):
         self.root = root
+        self.live_path = live_path
         self.game_url = game_url.rstrip('/')
         self.homepage_url = homepage_url.rstrip('/')
         self.wanted = Wanted(wanted)
@@ -277,6 +280,33 @@ class Portal:
                                  lambda digest: self.asset(digest, by_hash.get(digest))[0])
         return body.replace('<div class="mw-body-content">', '<div class="mw-body-content">' + note, 1)
 
+    def live_accounts(self):
+        """Usernames from the accounts snapshot (not retired), so offline bots still get a row."""
+        try:
+            with read_db(self.root / 'accounts.sqlite') as db:
+                return [row[0] for row in db.execute("SELECT username FROM accounts WHERE status != 'retired' ORDER BY username")]
+        except (OSError, sqlite3.Error):
+            return []
+
+    def live_json(self, params):
+        ticks = live.ticks_param(params)
+        return live.read_live(self.live_path, ticks=ticks, accounts=self.live_accounts())
+
+    def live_page(self, params):
+        ticks = live.ticks_param(params)
+        api = f'{BASE}/api/live?' + urlencode({'ticks': ticks})
+        body = f'''<div class="eyebrow">RS-SDK / Live fleet</div><h1>Live map</h1>
+<p>Every bot account’s position, stats, inventory, equipment and current activity, refreshed every {ticks} game ticks ({ticks * live.TICK_MS / 1000:g} s). Change it with <code>?ticks=N</code>.</p>
+<div id="live" class="live" data-api="{esc(api)}" data-refresh-ms="{ticks * live.TICK_MS}" data-meta="{BASE}/assets/worldmap.json">
+<p id="live-status" class="note live-status">Loading live data…</p>
+<p id="live-warning" class="note live-warning" hidden></p>
+<div class="live-map-frame"><div id="live-map" class="live-map"><div id="live-canvas" class="live-canvas"><img id="live-image" src="{BASE}/assets/worldmap.png" alt="2004Scape world map" draggable="false"></div></div>
+<div class="live-zoom"><button id="zoom-in" type="button" aria-label="Zoom in">+</button><button id="zoom-out" type="button" aria-label="Zoom out">−</button></div></div>
+<div id="live-bots" class="live-bots"></div></div>
+<p class="note">Positions and state come from the SDK gateway’s latest frame for each bot, read by the bot workstation with HTTP state requests and published here; nothing on this page can control, log in or message a bot. Activity combines the running routine, combat, dialogs and skills gaining XP. Underground areas appear in the map’s folded dungeon bands, as in the game’s own world map.</p>
+<script src="{BASE}/live-map.js" defer></script>'''
+        return layout('Live map', body, footer='Read-only companion · live map polls a read-only JSON snapshot; no account controls.')
+
     def render(self, path, params):
         try:
             status, body = self._render(path, params)
@@ -300,19 +330,22 @@ class Portal:
     def _render(self, path, params):
         if path in ('/', BASE, BASE + '/'):
             cards = [
-                ('01 / ACCOUNTS', 'Account Database', BASE + '/accounts', 'Account status, purpose, logins and recorded deaths. Credentials stay private.'),
-                ('02 / PERFORMANCE', 'Benchmarks', BASE + '/benchmarks', 'Compare full runs, timings and routine versions. Inspect individual steps.'),
-                ('03 / THIS GAME', '2004Scape Wiki', BASE + '/wiki/2004scape', WIKIS['2004scape'][2]),
-                ('04 / SERVER KNOWLEDGE', 'RS-SDK Wiki', BASE + '/wiki/rs-sdk', WIKIS['rs-sdk'][2]),
-                ('05 / EXTERNAL KNOWLEDGE', 'Scraped Wiki', BASE + '/wiki/scraped', WIKIS['scraped'][2]),
-                ('06 / GAME', 'Play', self.game_url + '/', 'Open the browser client. Your human and bot accounts share this SDK world.'),
-                ('07 / RANKINGS', 'HiScores', self.game_url + '/hiscores', 'Browse the game server’s player rankings.'),
-                ('08 / TRADING', 'Grand Exchange', self.game_url + '/market.html', 'Open the server’s market and trading page.'),
+                ('01 / LIVE', 'Live map', BASE + '/live-map', 'Where every bot is right now, with stats, inventory, equipment and current activity.'),
+                ('02 / ACCOUNTS', 'Account Database', BASE + '/accounts', 'Account status, purpose, logins and recorded deaths. Credentials stay private.'),
+                ('03 / PERFORMANCE', 'Benchmarks', BASE + '/benchmarks', 'Compare full runs, timings and routine versions. Inspect individual steps.'),
+                ('04 / THIS GAME', '2004Scape Wiki', BASE + '/wiki/2004scape', WIKIS['2004scape'][2]),
+                ('05 / SERVER KNOWLEDGE', 'RS-SDK Wiki', BASE + '/wiki/rs-sdk', WIKIS['rs-sdk'][2]),
+                ('06 / EXTERNAL KNOWLEDGE', 'Scraped Wiki', BASE + '/wiki/scraped', WIKIS['scraped'][2]),
+                ('07 / GAME', 'Play', self.game_url + '/', 'Open the browser client. Your human and bot accounts share this SDK world.'),
+                ('08 / RANKINGS', 'HiScores', self.game_url + '/hiscores', 'Browse the game server’s player rankings.'),
+                ('09 / TRADING', 'Grand Exchange', self.game_url + '/market.html', 'Open the server’s market and trading page.'),
             ]
             body = '<div class="eyebrow">2004SCAPE / RS-SDK WORLD</div><h1>RS-SDK Companion</h1><p>Play, inspect your accounts, compare runs and explore what the bots know.</p><div class="grid">'
             body += ''.join(f'<a class="card" href="{esc(url)}"><small>{tag}</small><b>{title} ↗</b><p>{description}</p></a>' for tag, title, url, description in cards)
             body += f'</div><p class="note">Read-only snapshots from the bot workstation, refreshed every two minutes while it is online. Browsing never starts bots, refreshes the wiki or changes game state.</p><a href="{esc(self.homepage_url)}/">← Back to Homepage</a>'
             return 200, layout('Companion', body)
+        if path == BASE + '/live-map':
+            return 200, self.live_page(params)
         if path == BASE + '/accounts':
             q = params.get('q', [''])[0][:200]
             page = int(params.get('page', ['1'])[0])
@@ -564,6 +597,26 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
             return
+        if path == BASE + '/api/live':
+            try:
+                data = json.dumps(portal.live_json(parse_qs(url.query)), separators=(',', ':')).encode('utf-8')
+                status = 200
+            except ValueError:
+                data, status = b'{"error":"ticks must be an integer from 1 to 1000"}', 400
+            self.send_plain(status, data, 'application/json', 'no-store', "default-src 'none'; frame-ancestors 'none'; sandbox")
+            return
+        if path == BASE + '/live-map.js':
+            self.send_plain(200, LIVE_SCRIPT, 'text/javascript; charset=utf-8', 'no-cache', "default-src 'none'")
+            return
+        if path in (BASE + '/assets/worldmap.png', BASE + '/assets/worldmap.json'):
+            name = path.rsplit('/', 1)[-1]
+            asset = cast(PortalHTTPServer, self.server).assets_dir / name
+            if not asset.is_file():
+                self.send_error(404)
+                return
+            mime = 'image/png' if name.endswith('.png') else 'application/json'
+            self.send_plain(200, asset.read_bytes(), mime, 'public, max-age=3600', "default-src 'none'; sandbox")
+            return
         if path == BASE + '/assets/background2.jpg':
             asset = cast(PortalHTTPServer, self.server).assets_dir / 'background2.jpg'
             if not asset.is_file():
@@ -594,7 +647,21 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Referrer-Policy', 'no-referrer')
         frame_policy = "; frame-src 'self'" if path == BASE + '/wiki/scraped/article' or path.startswith(BASE + '/wiki/scraped/w/') else ''
+        if path == BASE + '/live-map':
+            # The only scripted page: its own static script and same-origin JSON polling.
+            frame_policy = "; script-src 'self'; connect-src 'self'"
         self.send_header('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" + frame_policy)
+        self.end_headers()
+        self.wfile.write(data)
+
+    def send_plain(self, status, data, mime, cache, csp):
+        self.send_response(status)
+        self.send_header('Content-Type', mime)
+        self.send_header('Content-Length', str(len(data)))
+        self.send_header('Cache-Control', cache)
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('Referrer-Policy', 'no-referrer')
+        self.send_header('Content-Security-Policy', csp)
         self.end_headers()
         self.wfile.write(data)
 
@@ -610,10 +677,12 @@ def main():
     parser.add_argument('--port', type=int, default=8098)
     parser.add_argument('--host', default='127.0.0.1')
     parser.add_argument('--wanted', type=Path, help='Writable SQLite file for requested pages and images (omit to record nothing)')
+    parser.add_argument('--live', type=Path, help='Live fleet snapshot written by live.py receive (omit for no live data)')
     args = parser.parse_args()
     server = PortalHTTPServer((args.host, args.port), Handler)
     server.portal = Portal(args.root.expanduser().resolve(), args.game_url, args.homepage_url,
-                           args.wanted.expanduser() if args.wanted else None)
+                           args.wanted.expanduser() if args.wanted else None,
+                           args.live.expanduser() if args.live else None)
     server.serve_forever()
 
 
