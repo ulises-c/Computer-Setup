@@ -22,6 +22,9 @@ keeps scraped data and its queue on the server; clients request pages over SSH.
 The Mac separately publishes read-only, credential-free account/benchmark views.
 Vanilla Lost City remains separate.
 
+The [fleet service](fleet-service/README.md) (`rs-fleet-service`, tailnet port 9447) is the bot fleet's
+shared gate, pins, accounts and datasets. It runs in its own container; bots never run on this host.
+
 - LAN web client: `http://<server-ip>:8080/`
 - Tailscale web client: `https://<game-host>.<tailnet>.ts.net:9445/`
 - LAN game TCP: `<server-ip>:43595`
