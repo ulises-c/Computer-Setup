@@ -6,7 +6,8 @@ more than one request per bot per 3 s) this:
 
 1. asks the gateway's unauthenticated GET /status which bots are connected, and
    the game web server's unauthenticated GET /playerpositions who is actually in
-   the world (one request each per period);
+   the world (one request each per period), and the fleet service which activity
+   cards the other bot hosts pushed (read-only token, at most every 5 s);
 2. for each connected bot, reads GET /state/<bot> with that bot's own SDK
    credentials from <sdk>/bots/<bot>/bot.env (sent as a Bearer header; a plain
    HTTP read - no WebSocket session, no observer/controller, no actions);
@@ -59,6 +60,9 @@ COUNT_KEY = re.compile(r'^[A-Za-z][A-Za-z0-9_]{0,23}$')
 WORLD_NAME = re.compile(r'^[A-Za-z0-9_ -]{1,12}$')
 MAX_WORLD_PLAYERS = 2000
 LAST_GOOD_KEYS = ('displayName', 'tick', 'player', 'skills', 'inventory', 'equipment')
+FLEET_URL = 'https://<game-server>.<tailnet>.ts.net:9447'
+REMOTE_POLL_S = 5.0
+REMOTE_MAX_AGE_S = 60.0
 LEVEL_UP = re.compile(r'^(?:@\w{3}@)?Congratulations, you just advanced (?:a|an) ([a-z]+(?: [a-z]+)?) level\.$')
 
 
@@ -273,7 +277,16 @@ def routine_status(botting, username, now, local=None, alive=_pid_alive):
     A 'running' status whose process is gone (or whose bot has no routine process
     left) is reported as state 'ended'."""
     raw = _read_json(botting / 'bot_journal/activity' / f'{username}.json')
-    if not raw or raw.get('version') != 1 or raw.get('bot') != username:
+    if not raw:
+        return None
+    return status_from_raw(raw, username, now, lambda: alive(raw.get('pid')) and bool((local or {}).get('routine')))
+
+
+def status_from_raw(raw, username, now, running_alive):
+    """Allowlisted status from a routine status record (local file or a card pushed by another host).
+
+    running_alive() says whether a 'running' routine still runs; if not the state is 'ended'."""
+    if not isinstance(raw, dict) or raw.get('version') != 1 or raw.get('bot') != username:
         return None
     updated = _ms(raw.get('updatedAt'))
     if updated is None or now * 1000 - updated > STATUS_MAX_AGE_S * 1000:
@@ -281,7 +294,7 @@ def routine_status(botting, username, now, local=None, alive=_pid_alive):
     state = raw.get('state') if raw.get('state') in STATUS_STATES else None
     if state is None:
         return None
-    if state == 'running' and (not alive(raw.get('pid')) or not (local or {}).get('routine')):
+    if state == 'running' and not running_alive():
         state = 'ended'
     counts = {}
     if isinstance(raw.get('counts'), dict):
@@ -298,6 +311,47 @@ def routine_status(botting, username, now, local=None, alive=_pid_alive):
         'counts': counts, 'stopReason': _clean(raw.get('stopReason'), 80),
         'lastEvent': {'kind': _clean(event.get('kind'), 40), 'at': _ms(event.get('at'))} if _clean(event.get('kind'), 40) else None,
     }
+
+
+class RemoteCards:
+    """Activity cards that the other bot hosts push to the fleet service (cutover step 8).
+
+    The other bot hosts run `bun tools/fleet-service.ts activity-push`, which stores each routine's
+    status record as the doc activity/<bot>: {card, host, pushedAt (ms), alive}. Read with the
+    portal's read-only token (GET /v1/docs/activity), at most once per poll period; the token is
+    only sent in the request header, never published."""
+
+    def __init__(self, url, token, fetch=None, poll_s=REMOTE_POLL_S):
+        self.url, self.token, self.fetch, self.poll_s = url.rstrip('/'), token, fetch or get_json, poll_s
+        self.cached, self.at = {}, None
+
+    def cards(self, now):
+        if self.at is not None and now - self.at < self.poll_s:
+            return self.cached
+        self.at = now
+        try:
+            code, body = self.fetch(self.url + '/v1/docs/activity', {'Authorization': 'Bearer ' + self.token})
+        except (OSError, ValueError):
+            return self.cached   # pushedAt ages out on its own
+        if code == 200 and isinstance(body, dict) and isinstance(body.get('docs'), list):
+            self.cached = {d['name']: d['body'] for d in body['docs'][:500]
+                           if isinstance(d, dict) and isinstance(d.get('name'), str) and isinstance(d.get('body'), dict)}
+        return self.cached
+
+
+def remote_status(pushed, username, now):
+    """(status, processes) from a card pushed by another host, or (None, {}).
+
+    The card's routine counts as running only while that host keeps pushing (REMOTE_MAX_AGE_S)
+    and says its process is alive."""
+    pushed_at = _ms(pushed.get('pushedAt')) if isinstance(pushed, dict) else None
+    if pushed_at is None:
+        return None, {}
+    alive = now * 1000 - pushed_at <= REMOTE_MAX_AGE_S * 1000 and pushed.get('alive') is True
+    status = status_from_raw(pushed.get('card'), username, now, lambda: alive)
+    if not status:
+        return None, {}
+    return status, ({'routine': status['routine'], 'args': status['args']} if alive and status['routine'] else {})
 
 
 def fleet_task(botting, username, now, fleet_running):
@@ -377,8 +431,9 @@ def reduce_state(username, state, meta, local, xp, now, focus=None, motion=None,
 
 
 class Publisher:
-    def __init__(self, sdk, botting, ticks, gateway=None, world=None, cache=None, fetch=None):
+    def __init__(self, sdk, botting, ticks, gateway=None, world=None, cache=None, fetch=None, remote=None):
         self.sdk, self.botting, self.ticks = sdk, botting, ticks
+        self.remote = remote
         self.gateway, self.world = gateway, world
         self.fetch = fetch or get_json
         self.xp = XpTracker()
@@ -443,6 +498,7 @@ class Publisher:
                 pass
         local = processes()
         fleet = fleet_state(self.botting)
+        remote_cards = self.remote.cards(now) if self.remote else {}
         entries = []
         for username, env in bots.items():
             status = (statuses.get(username) or {}).get('status')
@@ -458,8 +514,15 @@ class Publisher:
                     meta['botStatus'] = 'unknown'
             if meta['botStatus'] == 'dead':
                 meta['botStatus'] = 'offline'
-            entry = reduce_state(username, state, meta, local.get(username), self.xp, now, fleet['focus'], self.motion,
-                                 routine_status(self.botting, username, now, local.get(username)),
+            procs = local.get(username)
+            status = routine_status(self.botting, username, now, procs)
+            pushed = remote_cards.get(username)
+            if pushed:
+                # A bot run by another host: its card wins when it is newer than this host's file.
+                r_status, r_procs = remote_status(pushed, username, now)
+                if r_status and (status is None or (r_status['updatedAt'] or 0) > (status['updatedAt'] or 0)):
+                    status, procs = r_status, dict(procs or {}, **r_procs)
+            entry = reduce_state(username, state, meta, procs, self.xp, now, fleet['focus'], self.motion, status,
                                  fleet_task(self.botting, username, now, fleet['running']))
             entries.append(self.classify(entry, in_world, players is not None, now))
         claimed = {norm_name(name) for entry in entries for name in (entry['username'], entry.get('displayName'))}
@@ -552,12 +615,21 @@ def main():
     parser.add_argument('--host', help='SSH alias of the game server; omit to print snapshots to stdout')
     parser.add_argument('--receiver', default='github/Computer-Setup/linux-game-server/rs-sdk/portal/live.py')
     parser.add_argument('--once', action='store_true', help='Publish one snapshot and exit')
+    parser.add_argument('--fleet-url', default=FLEET_URL, help='Fleet service base URL (activity cards pushed by other bot hosts)')
+    parser.add_argument('--fleet-token-file', type=Path, default=Path.home() / '.config/rs-fleet/portal-token',
+                        help='Read-only fleet service token (portal:ro); missing = no cards from other hosts')
     args = parser.parse_args()
     if args.ticks < MIN_TICKS:
         parser.error(f'--ticks must be at least {MIN_TICKS} (one gateway request per bot per {MIN_TICKS * TICK_MS / 1000:g} s at most)')
+    remote = None
+    try:
+        token = args.fleet_token_file.expanduser().read_text().strip()
+        remote = RemoteCards(args.fleet_url, token) if token else None
+    except OSError:
+        pass
     publisher = Publisher(args.sdk.expanduser(), args.botting.expanduser(), args.ticks,
                           http_base(args.gateway) if args.gateway else None, args.world,
-                          args.cache.expanduser() if args.cache else None)
+                          args.cache.expanduser() if args.cache else None, remote=remote)
     if not args.host:
         publisher.run(lambda line: (sys.stdout.write(line), sys.stdout.flush()), once=args.once)
         return

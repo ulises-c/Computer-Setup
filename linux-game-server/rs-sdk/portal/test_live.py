@@ -311,6 +311,49 @@ class WorldPresenceTests(unittest.TestCase):
             ghost = {b['username']: b for b in again.snapshot()['bots']}['bot_moondrop']
             self.assertEqual((ghost['presence'], ghost['skills'][0]['name']), ('ghost', 'Mining'))
 
+    def test_cards_pushed_by_other_hosts_drive_the_activity_of_their_bots(self):
+        """Step 8: bot_tester runs on another host (no local status file, no local routine process)."""
+        import time as _time
+        with tempfile.TemporaryDirectory() as tmp:
+            publisher, calls, _ = self.make_publisher(tmp)
+            now_ms = int(_time.time() * 1000)
+            card = {'version': 1, 'source': 'routine', 'bot': 'bot_tester', 'routine': 'chickens', 'args': ['fred-farm', '$(x)'],
+                    'pid': 4242, 'state': 'running', 'phase': 'fighting', 'detail': 'Chicken', 'phaseSince': now_ms - 5000,
+                    'startedAt': now_ms - 60000, 'updatedAt': now_ms - 2000, 'counts': {'kills': 7}, 'lastEvent': None,
+                    'stopReason': None, 'token': SECRET}
+            docs = {'docs': [{'name': 'bot_tester', 'body': {'card': card, 'host': 'bot-host-2', 'pushedAt': now_ms - 1000, 'alive': True}},
+                             {'name': '<bad>', 'body': 'x'}]}
+            seen = []
+
+            def fleet_fetch(url, headers=None):
+                seen.append((url, headers))
+                return 200, docs
+            publisher.remote = live_publish.RemoteCards('https://fleet.example:9447/', 'ro-' + SECRET, fetch=fleet_fetch)
+            tester = {b['username']: b for b in publisher.snapshot()['bots']}['bot_tester']
+            self.assertEqual(seen[0], ('https://fleet.example:9447/v1/docs/activity', {'Authorization': 'Bearer ro-' + SECRET}))
+            status = tester['activity']['status']
+            self.assertEqual((status['state'], status['phase'], status['args'], status['counts']), ('running', 'fighting', ['fred-farm'], {'kills': 7}))
+            self.assertEqual(tester['activity']['routine'], 'chickens')
+            shaped = live.shape_snapshot(publisher.snapshot(), received_at=1)
+            self.assertNotIn(SECRET, json.dumps(shaped))
+            self.assertEqual(len(seen), 1)    # polled at most every 5 s
+            # The host stopped pushing (or says the process is gone): the card reads as ended.
+            publisher.remote.at = None
+            docs['docs'][0]['body'] = dict(docs['docs'][0]['body'], pushedAt=now_ms - 120_000)
+            tester = {b['username']: b for b in publisher.snapshot()['bots']}['bot_tester']
+            self.assertEqual(tester['activity']['status']['state'], 'ended')
+            self.assertNotIn('routine', tester['activity'])
+            # A newer local status file wins over an older pushed card.
+            folder = Path(tmp) / 'botting/bot_journal/activity'
+            folder.mkdir(parents=True)
+            (folder / 'bot_tester.json').write_text(json.dumps(dict(card, phase='banking', updatedAt=now_ms, pid=1)))
+            tester = {b['username']: b for b in publisher.snapshot()['bots']}['bot_tester']
+            self.assertEqual(tester['activity']['status']['phase'], 'banking')
+            # Service unreachable: the last cards are kept and age out by pushedAt.
+            publisher.remote.at = None
+            publisher.remote.fetch = lambda url, headers=None: (_ for _ in ()).throw(OSError('refused'))
+            self.assertIn('bot_tester', publisher.remote.cards(_time.time()))
+
     def test_ghost_without_history_and_unreachable_world_degrade_gracefully(self):
         with tempfile.TemporaryDirectory() as tmp:
             publisher, _, _ = self.make_publisher(tmp)
