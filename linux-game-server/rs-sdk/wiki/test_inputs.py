@@ -373,6 +373,164 @@ class InputsTest(unittest.TestCase):
         self.assertEqual(sum(path.stat().st_size for path in
                              (self.target / "current/learnings").glob("*.md")), 64 * 1024 * 1024)
 
+    EXTRA_PATHS = ["observations/npc-risk.md", "routines/lib/npc-ranges.ts",
+                   "data/atlas/banks.tsv", "data/atlas/spots.tsv", "data/atlas/nodes.tsv",
+                   "data/atlas/routes.tsv", "data/atlas/hazards.tsv",
+                   "bot_journal/pen-survey.jsonl", "bot_journal/scavenge.jsonl"]
+
+    def test_extra_fleet_inputs_roundtrip_exact_paths_only(self):
+        module = self.module()
+        self.assertEqual(sorted(module.EXTRAS), sorted(self.EXTRA_PATHS))
+        for name in self.EXTRA_PATHS:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(name + "\n")
+        for name in ["data/accounts.sqlite", "data/npc-aggression.sqlite", "data/game-build.json",
+                     "data/atlas/measurements.tsv", "data/atlas/banks.tsv.bak", "routines/x.ts",
+                     "routines/lib/other.ts", "bot_journal/random-events.jsonl",
+                     "observations/npc-risk.txt", "bot_journal/fleet-state/token"]:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("SENTINEL")
+        stream = self.snapshot(module)
+        self.assertNotIn(b"SENTINEL", stream.getvalue())
+        module.receive(stream, self.target)
+        current = self.target / "current"
+        for name in self.EXTRA_PATHS:
+            with self.subTest(name=name):
+                self.assertEqual((current / name).read_text(), name + "\n")
+                self.assertEqual((current / name).stat().st_mode & 0o777, 0o600)
+        files = sorted(str(p.relative_to(current)) for p in current.rglob("*") if p.is_file())
+        self.assertEqual(files, sorted(self.EXTRA_PATHS))
+        dirs = sorted(str(p.relative_to(current)) for p in current.rglob("*") if p.is_dir())
+        self.assertEqual(dirs, sorted(["observations", "learnings", "routines", "routines/lib",
+                                       "data", "data/atlas", "bot_journal"]))
+
+    def test_extra_inputs_are_optional_and_add_no_empty_dirs(self):
+        module = self.module()
+        (self.root / "data/atlas").mkdir(parents=True)
+        (self.root / "data/atlas/banks.tsv").write_text("bank\n")
+        (self.root / "routines").mkdir()
+        module.receive(self.snapshot(module), self.target)
+        current = self.target / "current"
+        self.assertEqual((current / "data/atlas/banks.tsv").read_text(), "bank\n")
+        self.assertFalse((current / "routines").exists())
+        self.assertFalse((current / "bot_journal").exists())
+
+    def test_receiver_accepts_each_extra_path(self):
+        module = self.module()
+        for name in self.EXTRA_PATHS:
+            with self.subTest(name=name):
+                module.receive(self.malicious(name), self.target)
+                self.assertEqual((self.target / "current" / name).read_text(), "x")
+        for name in sorted(module.EXTRA_DIRS):
+            with self.subTest(name=name):
+                module.receive(self.malicious(name, tarfile.DIRTYPE), self.target)
+                self.assertTrue((self.target / "current" / name).is_dir())
+
+    def test_receiver_rejects_extra_near_misses(self):
+        module = self.module()
+        module.receive(self.snapshot(module), self.target)
+        prior = (self.target / "current").readlink()
+        cases = [("data/npc-aggression.sqlite", tarfile.REGTYPE),
+                 ("data/accounts.sqlite", tarfile.REGTYPE),
+                 ("data/game-build.json", tarfile.REGTYPE),
+                 ("data/atlas/measurements.tsv", tarfile.REGTYPE),
+                 ("data/atlas/banks.tsv.bak", tarfile.REGTYPE),
+                 ("data/atlas/banks", tarfile.REGTYPE),
+                 ("data/atlas/nested/banks.tsv", tarfile.REGTYPE),
+                 ("data/banks.tsv", tarfile.REGTYPE),
+                 ("Data/atlas/banks.tsv", tarfile.REGTYPE),
+                 ("data/atlas/../atlas/banks.tsv", tarfile.REGTYPE),
+                 ("./data/atlas/banks.tsv", tarfile.REGTYPE),
+                 ("/data/atlas/banks.tsv", tarfile.REGTYPE),
+                 ("data//atlas/banks.tsv", tarfile.REGTYPE),
+                 ("routines/npc-ranges.ts", tarfile.REGTYPE),
+                 ("routines/lib/npc-ranges.js", tarfile.REGTYPE),
+                 ("routines/lib/other.ts", tarfile.REGTYPE),
+                 ("bot_journal/random-events.jsonl", tarfile.REGTYPE),
+                 ("bot_journal/pen-survey.json", tarfile.REGTYPE),
+                 ("bot_journal/fleet-state", tarfile.DIRTYPE),
+                 ("observations/npc-risk.txt", tarfile.REGTYPE),
+                 ("data/other", tarfile.DIRTYPE),
+                 ("data/atlas", tarfile.REGTYPE),
+                 ("bot_journal", tarfile.REGTYPE),
+                 ("data/atlas/banks.tsv", tarfile.DIRTYPE),
+                 ("data/atlas/banks.tsv", tarfile.SYMTYPE),
+                 ("data/atlas/banks.tsv", tarfile.LNKTYPE),
+                 ("bot_journal/scavenge.jsonl", tarfile.SYMTYPE),
+                 ("routines/lib/npc-ranges.ts", tarfile.FIFOTYPE),
+                 ("data/atlas", tarfile.SYMTYPE)]
+        for name, kind in cases:
+            with self.subTest(name=name, kind=kind):
+                with self.assertRaises((ValueError, OSError, tarfile.TarError)):
+                    module.receive(self.malicious(name, kind), self.target)
+                self.assertEqual((self.target / "current").readlink(), prior)
+                self.assertFalse(list(self.target.glob(".stage-*")))
+
+    def test_journals_send_bounded_tail_of_whole_records(self):
+        module = self.module()
+        module.MAX_JOURNAL = 64
+        journal = self.root / "bot_journal/scavenge.jsonl"
+        journal.parent.mkdir()
+        lines = [b'{"n":%d,"pad":"%s"}\n' % (i, b"x" * 8) for i in range(10)]
+        journal.write_bytes(b"".join(lines) + b'{"n":10,"partial')
+        survey = self.root / "bot_journal/pen-survey.jsonl"
+        survey.write_bytes(lines[0] + lines[1])
+        module.receive(self.snapshot(module), self.target)
+        sent = (self.target / "current/bot_journal/scavenge.jsonl").read_bytes()
+        self.assertLessEqual(len(sent), 64)
+        self.assertTrue(sent.endswith(lines[-1]))
+        self.assertTrue(b"".join(lines).endswith(sent))
+        self.assertTrue(any(sent.startswith(line) for line in lines), sent)
+        self.assertEqual((self.target / "current/bot_journal/pen-survey.jsonl").read_bytes(),
+                         lines[0] + lines[1])
+        # A cut exactly at a record boundary keeps that record.
+        journal.write_bytes(b"a" * 9 + b"\n" + b"b" * 63 + b"\n")
+        with journal.open("rb") as source:
+            self.assertEqual(module.journal_tail(source, 74), b"b" * 63 + b"\n")
+        journal.write_bytes(b"z" * 100)
+        with journal.open("rb") as source:
+            self.assertEqual(module.journal_tail(source, 100), b"")
+
+    def test_receiver_bounds_journal_members(self):
+        module = self.module()
+        module.receive(self.snapshot(module), self.target)
+        module.receive(self.malicious("bot_journal/pen-survey.jsonl", size=module.MAX_JOURNAL), self.target)
+        prior = (self.target / "current").readlink()
+        with self.assertRaises(ValueError):
+            module.receive(self.malicious("bot_journal/scavenge.jsonl", size=module.MAX_JOURNAL + 1),
+                           self.target)
+        self.assertEqual((self.target / "current").readlink(), prior)
+
+    def test_source_rejects_symlinked_extra_files_and_parents(self):
+        module = self.module()
+        outside = self.base / "outside"
+        (outside / "atlas").mkdir(parents=True)
+        (outside / "atlas/banks.tsv").write_text("SENTINEL")
+        (outside / "risk.md").write_text("SENTINEL")
+        cases = [("data", outside), ("data/atlas", outside / "atlas"),
+                 ("data/atlas/banks.tsv", outside / "atlas/banks.tsv"),
+                 ("observations/npc-risk.md", outside / "risk.md"),
+                 ("bot_journal", outside), ("routines/lib", outside),
+                 ("bot_journal/scavenge.jsonl", outside / "risk.md")]
+        for name, target in cases:
+            with self.subTest(name=name):
+                link = self.root / name
+                link.parent.mkdir(parents=True, exist_ok=True)
+                link.symlink_to(target, target_is_directory=target.is_dir())
+                try:
+                    with self.assertRaises((ValueError, OSError)):
+                        self.snapshot(module)
+                finally:
+                    link.unlink()
+        import os
+        fifo = self.root / "data/atlas/routes.tsv"
+        fifo.parent.mkdir(parents=True, exist_ok=True)
+        os.mkfifo(fifo)
+        with self.assertRaises((ValueError, OSError)):
+            self.snapshot(module)
+
 
 if __name__ == "__main__":
     unittest.main()

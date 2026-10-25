@@ -189,7 +189,20 @@ python3 linux-game-server/rs-sdk/wiki/inputs.py push --host <game-server-ssh-ali
 ```
 
 The helper allowlists `observations/{items,locs,npcs,ground-items,shops}.tsv`
-when present and recursive `learnings/*.md`. It excludes account databases,
+when present and recursive `learnings/*.md`. For the wiki's fleet pages (NPC
+aggression and wander boxes, bank/spot pages, censuses, drops; see the wiki's
+`src/fleet.ts`) it also sends these exact paths when present, with only their
+parent directories: `observations/npc-risk.md`, `routines/lib/npc-ranges.ts`,
+`data/atlas/{banks,spots,nodes,routes,hazards}.tsv` and
+`bot_journal/{pen-survey,scavenge}.jsonl`. The two append-only journals are sent
+as a tail of whole records of at most 4 MiB each (`MAX_JOURNAL`; a trailing
+partial record is dropped), and the receiver rejects larger journal members, so
+their growth cannot break the upload; other files keep the 8 MiB per-file and
+64 MiB total limits. `data/npc-aggression.sqlite` is not sent: `npc-risk.md`
+holds the same records. Update the sender (the Mac's clone, run by the
+LaunchAgent below) and the receiver (this server clone) together; deploy the
+receiver first, since it also accepts the older, smaller snapshot. The helper
+excludes account databases,
 credentials and other bot files, rejects symlinks/special files, and publishes
 an atomic private generation at `~/.local/share/rs-sdk-wiki/inputs/current`.
 Point `~/forgejo/2004Scape-Botting` at that symlink, or configure `BOTTING_DIR`.

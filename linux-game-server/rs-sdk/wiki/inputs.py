@@ -5,6 +5,7 @@ import argparse
 from contextlib import contextmanager
 import fcntl
 import hashlib
+import io
 import os
 from pathlib import Path
 import re
@@ -19,6 +20,14 @@ import tempfile
 
 OBSERVATIONS = {f"observations/{name}.tsv" for name in
                 ("items", "locs", "npcs", "ground-items", "shops")}
+# Exact extra paths read by the wiki's fleet pages (2004Scape-Wiki src/fleet.ts):
+# aggression, wander boxes, atlas banks/spots/nodes/routes/hazards, censuses and
+# drops. Each is optional; no other file under these directories is uploaded.
+JOURNALS = frozenset({"bot_journal/pen-survey.jsonl", "bot_journal/scavenge.jsonl"})
+EXTRAS = frozenset({"observations/npc-risk.md", "routines/lib/npc-ranges.ts"}
+                   | {f"data/atlas/{name}.tsv" for name in ("banks", "spots", "nodes", "routes", "hazards")}
+                   | JOURNALS)
+EXTRA_DIRS = frozenset({"routines", "routines/lib", "data", "data/atlas", "bot_journal"})
 
 
 @contextmanager
@@ -66,12 +75,17 @@ def pack(root, output):
             metadata = os.fstat(source.fileno())
             if not stat.S_ISREG(metadata.st_mode):
                 raise ValueError("source is not a regular file")
-            if metadata.st_size > MAX_FILE:
-                raise ValueError("source file size limit exceeded")
             info = tarfile.TarInfo(relative)
-            info.size = metadata.st_size
             info.mtime = metadata.st_mtime
             info.mode = 0o600
+            if relative in JOURNALS:
+                data = journal_tail(source, metadata.st_size)
+                info.size = len(data)
+                add(archive, info, io.BytesIO(data))
+                return
+            if metadata.st_size > MAX_FILE:
+                raise ValueError("source file size limit exceeded")
+            info.size = metadata.st_size
             add(archive, info, source)
 
     def walk(archive, fd, prefix):
@@ -106,13 +120,68 @@ def pack(root, output):
                             continue
                         add_file(archive, observations, leaf, name)
                     walk(archive, learnings, "learnings")
+                    added = {"observations"}
+                    for relative in sorted(EXTRAS):
+                        *parents, leaf = relative.split("/")
+                        fd = open_parents(root_fd, parents)
+                        if fd is None:
+                            continue
+                        try:
+                            try:
+                                os.stat(leaf, dir_fd=fd, follow_symlinks=False)
+                            except FileNotFoundError:
+                                continue
+                            for index in range(len(parents)):
+                                parent = "/".join(parents[:index + 1])
+                                if parent not in added:
+                                    added.add(parent)
+                                    add_directory(archive, parent)
+                            add_file(archive, fd, leaf, relative)
+                        finally:
+                            os.close(fd)
             finally:
                 os.close(learnings)
         finally:
             os.close(observations)
 
 
+def open_parents(root_fd, parents):
+    """Open root/parents... without following symlinks; None if any part is absent."""
+    fd = os.dup(root_fd)
+    try:
+        for part in parents:
+            try:
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            except FileNotFoundError:
+                os.close(fd)
+                return None
+            os.close(fd)
+            fd = child
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def journal_tail(source, size):
+    """Whole JSONL lines from the last MAX_JOURNAL bytes of an append-only journal.
+
+    Journals grow while bots play; a bounded tail of complete records keeps the
+    upload size fixed instead of failing the whole sync once a journal outgrows
+    a cap. A trailing partial line (a record being appended) is dropped."""
+    start = max(0, size - MAX_JOURNAL)
+    offset = start - 1 if start else 0
+    source.seek(offset)
+    data = source.read(size - offset)
+    if len(data) != size - offset:
+        raise ValueError("journal changed while reading")
+    if start:
+        data = data[data.find(b"\n") + 1:] if b"\n" in data else b""
+    return data[:data.rfind(b"\n") + 1]
+
+
 MAX_FILE = 8 * 1024 * 1024
+MAX_JOURNAL = 4 * 1024 * 1024
 MAX_TOTAL = 64 * 1024 * 1024
 MAX_COUNT = 10000
 MAX_ARCHIVE = 96 * 1024 * 1024
@@ -130,12 +199,14 @@ def extract(stream, stage):
             if name in seen or len(seen) >= MAX_COUNT:
                 raise ValueError("duplicate member or too many members")
             seen.add(name)
-            allowed_dir = name in ("observations", "learnings") or name.startswith("learnings/")
-            allowed_file = name in OBSERVATIONS or name == "manifest.json" or (
+            allowed_dir = (name in ("observations", "learnings") or name in EXTRA_DIRS
+                           or name.startswith("learnings/"))
+            allowed_file = name in OBSERVATIONS or name in EXTRAS or name == "manifest.json" or (
                 name.startswith("learnings/") and name.endswith(".md"))
             if not ((member.isdir() and allowed_dir) or (member.isreg() and allowed_file)):
                 raise ValueError("member is not allowlisted")
-            if member.size < 0 or member.size > MAX_FILE or member.sparse is not None:
+            limit = MAX_JOURNAL if name in JOURNALS else MAX_FILE
+            if member.size < 0 or member.size > limit or member.sparse is not None:
                 raise ValueError("invalid member size or sparse member")
             total += member.size
             if total > MAX_TOTAL or (member.isdir() and member.size):
