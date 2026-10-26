@@ -19,7 +19,7 @@ ORIGIN = 'https://portal.example'
 REGISTRY = {
     'version': 1, 'excludedBots': ['bot_tester'],
     'routines': [
-        {'id': 'mining', 'label': 'Mining', 'runner': 'session', 'routine': 'mining', 'safeStart': True, 'denyBots': ['bot_pioneer'],
+        {'id': 'mining', 'label': 'Mining', 'runner': 'session', 'routine': 'mining', 'safeStart': True, 'denyBots': ['bot_pioneer'], 'allowPlayers': True,
          'args': [{'name': 'spot', 'label': 'Spot', 'type': 'enum', 'values': ['tin-barbarian-village', 'coal-barbarian-village'], 'default': 'tin-barbarian-village'},
                   {'name': 'seconds', 'label': 'Seconds', 'type': 'int', 'min': 60, 'max': 21600, 'default': 600}],
          'spotLimit': {'arg': 'spot', 'limits': {'tin-barbarian-village': 2}}},
@@ -29,9 +29,13 @@ REGISTRY = {
         {'id': 'pioneer-fish', 'label': 'Pioneer', 'runner': 'pioneer', 'allowBots': ['bot_pioneer'], 'fixedArgs': ['fish-bank'],
          'args': [{'name': 'seconds', 'type': 'int', 'min': 60, 'max': 3600, 'default': 120}]},
         {'id': 'onboard', 'label': 'Onboard', 'runner': 'onboard', 'enabled': False, 'denyBots': ['bot_pioneer'], 'args': []},
+        {'id': 'scavenge', 'label': 'Scavenger 24/7', 'runner': 'scavenge-247', 'allowBots': ['bot_magpie'], 'denyBots': ['bot_pioneer'],
+         'args': [{'name': 'pen', 'type': 'enum', 'values': ['lumbridge-east'], 'default': 'lumbridge-east'}]},
     ],
 }
 ACCOUNTS = ['bot_pioneer', 'bot_tester', 'bot_wormlike', 'bot_apehood']
+PLAYER = 'player_cantpvm'
+FLEET_PASSWORD = 'Fleet-Secret-77'
 
 
 def status_doc(**extra):
@@ -47,7 +51,8 @@ def status_doc(**extra):
 class RegistryTests(unittest.TestCase):
     def test_registry_parses_and_rejects_unsafe_entries(self):
         reg = controller.parse_registry(REGISTRY)
-        self.assertEqual([r['id'] for r in reg['routines']], ['mining', 'chickens', 'pioneer-fish', 'onboard'])
+        self.assertEqual([r['id'] for r in reg['routines']], ['mining', 'chickens', 'pioneer-fish', 'onboard', 'scavenge'])
+        self.assertEqual([r['id'] for r in reg['routines'] if r['allowPlayers']], ['mining'])
         self.assertFalse(reg['routines'][3]['enabled'])
 
         def bad(mutate):
@@ -65,6 +70,10 @@ class RegistryTests(unittest.TestCase):
         bad(lambda r: r['routines'][0]['args'][1].update(min=10, max=5))
         bad(lambda r: r['routines'][0]['args'][1].update(default=5))
         bad(lambda r: r['routines'][1].update(id='mining'))
+        # allowPlayers: explicit boolean, session routines only, never with a fleet allowlist.
+        bad(lambda r: r['routines'][1].update(allowPlayers=True))
+        bad(lambda r: r['routines'][4].update(allowPlayers=True))
+        bad(lambda r: r['routines'][0].update(allowPlayers='yes'))
 
     @unittest.skipUnless(Path.home().joinpath('forgejo/2004Scape-Botting/routines/registry.json').exists(), 'bot repo not on this machine')
     def test_the_bot_repo_registry_is_accepted(self):
@@ -90,6 +99,21 @@ class RegistryTests(unittest.TestCase):
                 controller.validate_run(reg, bot, routine, args)
             self.assertIn(reason, str(caught.exception), (bot, routine, args))
 
+    def test_regular_accounts_and_modes(self):
+        reg = controller.parse_registry(REGISTRY)
+        self.assertEqual(controller.account_type('bot_wormlike'), 'bot')
+        self.assertEqual(controller.account_type(PLAYER), 'player')
+        for bad in ('player_', 'player_Cant', 'Cant Pvm', 'player_cant pvm', 'player_abcdefghijklm'):
+            self.assertIsNone(controller.account_type(bad), bad)
+        self.assertEqual(controller.validate_run(reg, PLAYER, 'mining', {}, 'browser'), {'spot': 'tin-barbarian-village', 'seconds': 600})
+        for bot, routine, mode, reason in [
+            (PLAYER, 'chickens', 'headless', 'fleet routine'), (PLAYER, 'scavenge', 'headless', 'fleet routine'),
+            ('bot_wormlike', 'chickens', 'browser', 'browser view'), ('bot_wormlike', 'mining', 'popup', 'mode'),
+        ]:
+            with self.assertRaises(ValueError) as caught:
+                controller.validate_run(reg, bot, routine, {}, mode)
+            self.assertIn(reason, str(caught.exception), (bot, routine, mode))
+
 
 class StatusTests(unittest.TestCase):
     def test_status_is_allowlisted_and_a_bad_registry_is_dropped(self):
@@ -114,6 +138,33 @@ class StatusTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             controller.shape_status({'version': 2}, 1)
 
+    def test_status_carries_account_types_sanitized_logs_and_never_a_password(self):
+        raw = status_doc()
+        raw['bots']['bot_wormlike'].update(type='player', presence='present', client='headless', log=[
+            'start: mining', 'GET /state/bot_wormlike?password=hunter2&x=1', 'PASSWORD=s3cret', 'Authorization: Bearer tok.en.value',
+            '{"token":"abc999"}', 'x' * 500, 7, 'esc \x1b[31mred'] + ['line'] * 60)
+        raw['bots'][PLAYER] = {'type': 'player', 'displayName': 'Cant Pvm', 'presence': 'present', 'client': 'frame', 'state': 'running', 'mode': 'browser',
+                               'job': {'kind': 'run', 'routine': 'mining', 'args': [], 'mode': 'browser', 'pid': 7, 'startedAt': 1}}
+        raw['bots']['player_evil'] = {'displayName': 'Evil<script>', 'state': 'idle'}
+        raw['frames'] = {'bot_wormlike': FLEET_PASSWORD}
+        shaped = controller.shape_status(raw, 1)
+        text = json.dumps(shaped)
+        for secret in (FLEET_PASSWORD, 'hunter2', 's3cret', 'tok.en.value', 'abc999'):
+            self.assertNotIn(secret, text)
+        self.assertNotIn('frames', shaped)
+        worm, player = shaped['bots']['bot_wormlike'], shaped['bots'][PLAYER]
+        self.assertEqual((worm['type'], worm['presence'], worm['client']), ('bot', 'present', 'headless'))  # type comes from the name
+        self.assertLessEqual(len(worm['log']), 40)
+        self.assertTrue(all(isinstance(l, str) and len(l) <= 200 and '\x1b' not in l for l in worm['log']))
+        self.assertEqual((player['type'], player['displayName'], player['client'], player['mode'], player['job']['mode']), ('player', 'Cant Pvm', 'frame', 'browser', 'browser'))
+        self.assertIsNone(shaped['bots']['player_evil']['displayName'])
+
+    def test_sanitize_log_redacts_credentials(self):
+        lines = controller.sanitize_log(['password=hunter2', 'my_PASSWORD=x1y2', 'url?password=p%40ss&b=1', "'secret': 'zzz'", 'Bearer abc.def', 'ok line'])
+        self.assertEqual(lines[-1], 'ok line')
+        for secret in ('hunter2', 'x1y2', 'p%40ss', 'zzz', 'abc.def'):
+            self.assertNotIn(secret, ' '.join(lines))
+
     def test_exchange_stores_status_and_answers_desired(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -131,6 +182,21 @@ class StatusTests(unittest.TestCase):
         self.assertEqual(list(json.loads(out.getvalue())['bots']), ['bot_wormlike'])
         # A rejected status line leaves the previous report in place.
         self.assertEqual(json.loads((status_dir / 'controller-status.json').read_text())['receivedAt'], 1_000_000)
+
+    def test_exchange_keeps_frame_logins_out_of_the_status(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        desired_dir, status_dir = Path(tmp.name) / 'controller', Path(tmp.name) / 'live'
+        doc = status_doc(frames={'bot_wormlike': FLEET_PASSWORD, 'player_cantpvm': 'never', 'bot_x;y': 'bad', 'bot_apehood': 'x' * 65})
+        controller.exchange(io.BytesIO(json.dumps(doc).encode()), io.StringIO(), desired_dir, status_dir, clock=lambda: 1000)
+        self.assertNotIn(FLEET_PASSWORD, (status_dir / 'controller-status.json').read_text())
+        frames = status_dir / 'controller-frames.json'
+        self.assertEqual(frames.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(controller.read_frames(frames), {'bot_wormlike': FLEET_PASSWORD})
+        # The next report without frames clears them.
+        controller.exchange(io.BytesIO(json.dumps(status_doc()).encode()), io.StringIO(), desired_dir, status_dir, clock=lambda: 1001)
+        self.assertEqual(controller.read_frames(frames), {})
+        self.assertEqual(controller.read_frames(Path(tmp.name) / 'missing.json'), {})
 
     def test_read_status_reports_heartbeat(self):
         tmp = tempfile.TemporaryDirectory()
@@ -194,7 +260,7 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(status, 200, body)
         entry = self.store.read()['bots']['bot_wormlike']
         self.assertEqual(entry, {'action': 'run', 'rev': 1, 'at': 1_000_000, 'by': OWNER, 'routine': 'mining',
-                                 'args': {'spot': 'tin-barbarian-village', 'seconds': 120}})
+                                 'args': {'spot': 'tin-barbarian-village', 'seconds': 120}, 'mode': 'headless'})
         self.assertEqual(self.apply({'action': 'stop', 'bots': ['bot_wormlike', 'bot_apehood']})[0], 200)
         bots = self.store.read()['bots']
         self.assertEqual((bots['bot_wormlike']['rev'], bots['bot_apehood']['rev']), (2, 3))
@@ -215,12 +281,22 @@ class StoreTests(unittest.TestCase):
             {'action': 'exec', 'bots': ['bot_wormlike']},
             {'action': 'stop', 'bots': []}, {'action': 'stop', 'bots': ['bot_wormlike', 'bot_wormlike']},
             {'action': 'stop', 'bots': 'bot_wormlike'}, ['stop'],
+            {'action': 'run', 'bots': ['bot_wormlike', 'bot_apehood'], 'routine': 'mining', 'args': {}, 'mode': 'browser'},
+            {'action': 'run', 'bots': ['bot_wormlike'], 'routine': 'mining', 'args': {}, 'mode': 'popup'},
+            {'action': 'run', 'bots': [PLAYER], 'routine': 'chickens', 'args': {}},
         ]:
             status, _ = self.apply(request)
             self.assertEqual(status, 400, request)
         self.assertFalse((self.dir / 'desired.json').exists())
         self.assertEqual(self.store.apply({'action': 'stop', 'bots': ['bot_wormlike']}, None, ACCOUNTS, OWNER)[0], 409)
         self.assertEqual(controller.Store(None).apply({'action': 'stop', 'bots': ['bot_wormlike']}, self.reg, ACCOUNTS, OWNER)[0], 503)
+
+    def test_regular_accounts_and_browser_view_requests(self):
+        status, body = self.store.apply({'action': 'run', 'bots': [PLAYER], 'routine': 'mining', 'args': {}, 'mode': 'browser'}, self.reg, ACCOUNTS + [PLAYER], OWNER)
+        self.assertEqual(status, 200, body)
+        self.assertEqual(self.store.read()['bots'][PLAYER]['mode'], 'browser')
+        # A player id the daemon never reported is not a known account.
+        self.assertEqual(self.apply({'action': 'stop', 'bots': ['player_nobody']})[0], 400)
 
     def test_rate_limit(self):
         for _ in range(30):
@@ -242,6 +318,28 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(rows['bot_wormlike']['phase'], 'mining tin')
         self.assertEqual(rows['bot_wormlike']['controller']['state'], 'running')
         self.assertEqual(rows['bot_apehood']['desired']['action'], 'stop')
+        self.assertEqual({r['type'] for r in view['bots']}, {'bot'})
+
+    def test_view_lists_regular_accounts_with_type_and_frame_offers(self):
+        self.apply({'action': 'run', 'bots': ['bot_wormlike'], 'routine': 'mining', 'args': {}, 'mode': 'browser'})
+        raw = status_doc()
+        raw['bots'][PLAYER] = {'type': 'player', 'displayName': 'Cant Pvm', 'presence': 'absent', 'state': 'idle'}
+        raw['bots']['bot_apehood'] = {'state': 'running', 'client': 'headless'}
+        status = controller.shape_status(raw, int(time.time() * 1000))
+        status.update(online=True, ageMs=0, error=None)
+        view = controller.view(ACCOUNTS, {'available': False, 'bots': []}, status, self.store.read(), {'canWrite': True})
+        rows = {r['username']: r for r in view['bots']}
+        self.assertEqual((rows[PLAYER]['type'], rows[PLAYER]['displayName'], rows[PLAYER]['presence']), ('player', 'Cant Pvm', 'offline'))
+        self.assertEqual(rows[PLAYER]['eligible'], ['mining'])
+        self.assertEqual(rows['bot_wormlike']['type'], 'bot')
+        self.assertTrue(rows[PLAYER]['frame']['offered'])
+        self.assertFalse(rows[PLAYER]['frame']['login'])
+        self.assertTrue(rows['bot_wormlike']['frame']['offered'])          # browser-view run requested
+        self.assertTrue(rows['bot_wormlike']['frame']['login'])
+        self.assertFalse(rows['bot_apehood']['frame']['offered'])          # headless client running
+        self.assertIn('headless', rows['bot_apehood']['frame']['reason'])
+        self.assertFalse(rows['bot_tester']['frame']['offered'])
+        self.assertNotIn('password', json.dumps(view).lower())
 
 
 class ControllerHTTPTests(unittest.TestCase):
@@ -253,11 +351,16 @@ class ControllerHTTPTests(unittest.TestCase):
         (root / 'live').mkdir()
         (root / 'controller').mkdir()
         live.write_atomic(root / 'live', live.shape_snapshot({'version': 1, 'bots': [{'username': 'bot_wormlike', 'status': 'active'}]}, received_at=1))
-        controller.write_atomic(root / 'live' / 'controller-status.json', controller.shape_status(status_doc(), int(time.time() * 1000)))
+        raw = status_doc()
+        raw['bots'][PLAYER] = {'type': 'player', 'displayName': 'Cant Pvm', 'presence': 'absent', 'state': 'idle'}
+        raw['bots']['bot_apehood'] = {'state': 'running', 'client': 'headless'}
+        controller.write_atomic(root / 'live' / 'controller-status.json', controller.shape_status(raw, int(time.time() * 1000)))
+        controller.write_atomic(root / 'live' / 'controller-frames.json', {'bot_wormlike': FLEET_PASSWORD, 'bot_apehood': FLEET_PASSWORD})
         http = server.PortalHTTPServer(('127.0.0.1', 0), server.Handler)
         self.addCleanup(http.server_close)
         http.portal = server.Portal(Path('/nonexistent'), 'https://game.example', 'https://home.example', live_path=root / 'live' / 'live.json',
                                     controller_dir=root / 'controller', owner_login=OWNER, public_origin=ORIGIN)
+        self.game = 'https://game.example'
         http.portal.live_accounts = lambda: ACCOUNTS
         threading.Thread(target=http.serve_forever, daemon=True).start()
         self.addCleanup(http.shutdown)
@@ -268,10 +371,10 @@ class ControllerHTTPTests(unittest.TestCase):
         with urlopen(Request(self.base + path, headers=headers or {}), timeout=5) as response:
             return response.status, dict(response.headers), response.read()
 
-    def post(self, body, headers):
+    def post(self, body, headers, path='/rs-sdk/api/controller/desired'):
         data = body if isinstance(body, bytes) else json.dumps(body).encode()
         try:
-            with urlopen(Request(self.base + '/rs-sdk/api/controller/desired', data=data, headers=headers, method='POST'), timeout=5) as response:
+            with urlopen(Request(self.base + path, data=data, headers=headers, method='POST'), timeout=5) as response:
                 return response.status, json.loads(response.read())
         except HTTPError as error:
             with error:
@@ -292,7 +395,7 @@ class ControllerHTTPTests(unittest.TestCase):
         self.assertFalse(view['auth']['canWrite'])
         self.assertIsNone(view['auth']['csrf'])
         self.assertTrue(view['online'])
-        self.assertEqual({r['username'] for r in view['bots']}, set(ACCOUNTS))
+        self.assertEqual({r['username'] for r in view['bots']}, set(ACCOUNTS) | {PLAYER})
         request = {'action': 'run', 'bots': ['bot_wormlike'], 'routine': 'mining', 'args': {'seconds': 120}}
         self.assertEqual(self.post(request, {'Content-Type': 'application/json', 'Origin': ORIGIN})[0], 403)
         # The owner gets a token and may write from the portal's origin.
@@ -321,6 +424,68 @@ class ControllerHTTPTests(unittest.TestCase):
         # Other pages keep the script-free CSP.
         _, headers, _ = self.get('/rs-sdk/')
         self.assertNotIn('script-src', headers['Content-Security-Policy'])
+        self.assertNotIn('frame-src', headers['Content-Security-Policy'])
+
+    def test_page_frames_only_the_game_client_and_has_the_account_filter(self):
+        status, headers, body = self.get('/rs-sdk/bot-controller/?show=regular')
+        csp = headers['Content-Security-Policy']
+        self.assertIn('frame-src https://game.example', csp)
+        self.assertIn("frame-ancestors 'none'", csp)
+        for value, label in (('all', b'All'), ('bots', b'Bots'), ('regular', b'Regular')):
+            self.assertIn(f'data-show="{value}"'.encode(), body)
+            self.assertIn(label, body)
+        self.assertIn(b'data-show-initial="regular"', body)
+        _, _, body = self.get('/rs-sdk/bot-controller/?show=evil')
+        self.assertIn(b'data-show-initial=""', body)
+
+    def test_public_status_lists_both_account_types_without_passwords(self):
+        for headers in ({}, {'Tailscale-User-Login': OWNER}):
+            _, _, body = self.get('/rs-sdk/api/controller', headers)
+            self.assertNotIn(FLEET_PASSWORD.encode(), body)
+            self.assertNotIn(b'password', body.lower())
+            rows = {r['username']: r for r in json.loads(body)['bots']}
+            self.assertEqual(rows[PLAYER]['type'], 'player')
+            self.assertEqual(rows['bot_wormlike']['type'], 'bot')
+
+    def test_frame_url_is_owner_only_and_never_offered_beside_a_headless_client(self):
+        _, _, body = self.get('/rs-sdk/api/controller', {'Tailscale-User-Login': OWNER})
+        token = json.loads(body)['auth']['csrf']
+        owner = {'Tailscale-User-Login': OWNER, 'Origin': ORIGIN, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json', 'X-CSRF-Token': token}
+        frame = lambda account, headers: self.post({'account': account}, headers, '/rs-sdk/api/controller/frame')
+        # Refusals: no identity (tagged device), another user, forged origin, cross-site, missing/forged CSRF, form post.
+        for name, headers in {
+            'anonymous': {'Content-Type': 'application/json', 'Origin': ORIGIN},
+            'other user': dict(owner, **{'Tailscale-User-Login': 'mallory@example.com'}),
+            'forged origin': dict(owner, Origin='https://evil.example'),
+            'cross-site': dict(owner, **{'Sec-Fetch-Site': 'cross-site'}),
+            'no csrf': {k: v for k, v in owner.items() if k != 'X-CSRF-Token'},
+            'bad csrf': dict(owner, **{'X-CSRF-Token': 'f' * 64}),
+            'form post': dict(owner, **{'Content-Type': 'text/plain'}),
+        }.items():
+            status, out = frame('bot_wormlike', headers)
+            self.assertEqual(status, 403, name)
+            self.assertNotIn(FLEET_PASSWORD, json.dumps(out), name)
+        # Regular account: the client's login screen, no password, the stored in-game name verbatim.
+        status, out = frame(PLAYER, owner)
+        self.assertEqual(status, 200, out)
+        self.assertEqual(out['url'], self.game + '/bot?bot=Cant%20Pvm')
+        # Fleet bot: only with a browser-view run requested; then the login is filled in.
+        status, out = frame('bot_wormlike', owner)
+        self.assertEqual(status, 409, out)
+        self.assertNotIn(FLEET_PASSWORD, json.dumps(out))
+        self.assertEqual(self.post({'action': 'run', 'bots': ['bot_wormlike'], 'routine': 'mining', 'args': {}, 'mode': 'browser'}, owner)[0], 200)
+        status, out = frame('bot_wormlike', owner)
+        self.assertEqual(status, 200, out)
+        self.assertEqual(out['url'], self.game + '/bot?bot=bot_wormlike&password=' + FLEET_PASSWORD)
+        # Never next to a headless client, never for unknown or excluded accounts, never logged in the audit.
+        self.assertEqual(self.post({'action': 'run', 'bots': ['bot_apehood'], 'routine': 'mining', 'args': {}, 'mode': 'browser'}, owner)[0], 200)
+        self.assertEqual(frame('bot_apehood', owner)[0], 409)
+        self.assertEqual(frame('bot_tester', owner)[0], 400)
+        self.assertEqual(frame('player_nobody', owner)[0], 400)
+        self.assertEqual(self.post(b'{"account": 5}', owner, '/rs-sdk/api/controller/frame')[0], 400)
+        audit = (self.root / 'controller' / 'audit.jsonl').read_text()
+        self.assertIn('"frame"', audit)
+        self.assertNotIn(FLEET_PASSWORD, audit)
 
 
 class ControllerJSTests(unittest.TestCase):
@@ -343,7 +508,12 @@ const out = {
   desired: [L.desiredText(null), L.desiredText({action: 'run', routine: 'mining', args: {spot: 'tin-barbarian-village', seconds: 120}, rev: 3}), L.desiredText({action: 'stop', rev: 4})],
   offline: L.heartbeat({daemon: {host: 'bot-workstation'}, online: false, ageMs: 90000}),
   online: L.heartbeat({daemon: {host: 'bot-workstation', commit: 'abc', portalOk: true}, online: true, ageMs: 2000}),
-  visible: [L.visible({presence: 'offline'}, 'all'), L.visible({presence: 'offline'}, 'active'), L.visible({presence: 'ghost'}, 'active'), L.visible({presence: 'offline', desired: {}}, 'active')],
+  visible: [L.visible({presence: 'offline'}, 'all'), L.visible({presence: 'offline'}, 'all', true), L.visible({presence: 'ghost'}, 'all', true), L.visible({presence: 'offline', desired: {}}, 'all', true)],
+  byType: [['all', 'bots', 'regular'].map(s => L.visible({type: 'bot'}, s)), ['all', 'bots', 'regular'].map(s => L.visible({type: 'player'}, s))],
+  shows: [L.initialShow('?show=regular', 'bots'), L.initialShow('?show=nope', 'bots'), L.initialShow('', 'junk'), L.withShow('?a=1', 'bots')],
+  frameLines: L.frameNote({type: 'player', displayName: 'Cant Pvm'}),
+  modes: [L.modesFor({runner: 'session'}, 1), L.modesFor({runner: 'session'}, 2), L.modesFor({runner: 'chickens-247'}, 1)],
+  logShown: [L.showLog({controller: {log: ['a']}}), L.showLog({controller: {log: []}}), L.showLog({})],
   set: [...L.parseSet('["bot_a", 1]')], broken: [...L.parseSet('{')],
 };
 console.log(JSON.stringify(out));
@@ -358,11 +528,16 @@ console.log(JSON.stringify(out));
         self.assertFalse(got['none']['ok'])
         self.assertEqual((got['common'], got['commonEmpty']), (['chickens'], []))
         self.assertEqual(got['tones'], ['ok', 'warn', 'bad', 'muted'])
-        self.assertEqual(got['desired'], ['No request', 'Run mining tin-barbarian-village 120 · r3', 'Stop (log out) · r4'])
+        self.assertEqual(got['desired'], ['No request', 'Run mining tin-barbarian-village 120 · r3', 'Stop · r4'])
         self.assertEqual(got['offline']['tone'], 'bad')
         self.assertIn('OFFLINE', got['offline']['text'])
         self.assertEqual(got['online']['tone'], 'ok')
         self.assertEqual(got['visible'], [True, False, True, True])
+        self.assertEqual(got['byType'], [[True, True, False], [True, False, True]])
+        self.assertEqual(got['shows'], ['regular', 'bots', 'all', '?a=1&show=bots'])
+        self.assertIn('only while this page', got['frameLines'])
+        self.assertEqual(got['modes'], [['headless', 'browser'], ['headless'], ['headless']])
+        self.assertEqual(got['logShown'], [True, False, False])
         self.assertEqual((got['set'], got['broken']), (['bot_a'], []))
 
 

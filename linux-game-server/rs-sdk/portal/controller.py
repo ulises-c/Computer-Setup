@@ -27,13 +27,24 @@ import sys
 import tempfile
 import threading
 import time
+from urllib.parse import quote, urlencode
 
 BOT = re.compile(r'^bot_[a-z][a-z0-9]{0,7}$')
+# The owner's regular accounts (2004Scape-Botting scripts/player.sh: bots/player_<slug>/bot.env).
+PLAYER = re.compile(r'^player_[a-z0-9]{1,12}$')
+# Their in-game name as stored (BOT_USERNAME); the gateway matches it exactly, so the frame uses it verbatim.
+DISPLAY = re.compile(r'^[A-Za-z0-9][A-Za-z0-9 _-]{0,11}$')
+MODES = ('headless', 'browser')
+PRESENCES = ('present', 'absent', 'unknown')
+CLIENTS = ('headless', 'frame')
+LOG_LINES = 40
+LOG_WIDTH = 200
+MAX_PASSWORD = 64
 VALUE = re.compile(r'^[a-z0-9][a-z0-9-]{0,39}$')
 ROUTINE_ID = re.compile(r'^[a-z][a-z0-9-]{0,31}$')
 ARG_NAME = re.compile(r'^[a-z][A-Za-z0-9]{0,23}$')
 TEXT = re.compile(r'^[\x20-\x7e]*$')
-RUNNERS = ('session', 'chickens-247', 'pioneer', 'onboard')
+RUNNERS = ('session', 'chickens-247', 'combat-247', 'scavenge-247', 'food-247', 'pioneer', 'onboard')
 ACTIONS = ('run', 'stop', 'hold', 'clear')
 ALWAYS_EXCLUDED = ('bot_tester',)
 PIONEER = 'bot_pioneer'
@@ -44,6 +55,37 @@ MAX_BULK = 60
 HEARTBEAT_STALE_MS = 30_000
 STATES = {'idle', 'held', 'rejected', 'pending', 'blocked', 'foreign', 'starting', 'running', 'stopping', 'stopped',
           'switching', 'finished', 'failed', 'done', 'expired', 'unknown', 'error'}
+
+
+def account_type(name):
+    """'bot' (fleet), 'player' (the owner's regular account) or None."""
+    if not isinstance(name, str):
+        return None
+    return 'bot' if BOT.match(name) else 'player' if PLAYER.match(name) else None
+
+
+_REDACTIONS = (
+    (re.compile(r'\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=%-]+', re.I), r'\1 [redacted]'),
+    (re.compile(r'''("?(?:password|passwd|pwd|token|secret|api[_-]?key|authorization)["']?\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s&"',;]+)''', re.I), r'\1[redacted]'),
+    (re.compile(r'\b([A-Za-z0-9_]*(?:PASSWORD|TOKEN|SECRET)[A-Za-z0-9_]*=)\S+', re.I), r'\1[redacted]'),
+)
+_ANSI = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]')
+
+
+def sanitize_log(lines):
+    """Job-log tail as shown on the page: credential-looking values redacted (again: the daemon already
+    did), control characters stripped, at most LOG_LINES lines of LOG_WIDTH characters."""
+    out = []
+    for line in (lines if isinstance(lines, list) else [])[-LOG_LINES:]:
+        if not isinstance(line, str):
+            continue
+        line = _ANSI.sub('', line)
+        for pattern, sub in _REDACTIONS:
+            line = pattern.sub(sub, line)
+        line = ''.join(ch for ch in line if 0x20 <= ord(ch) < 0x7f).rstrip()
+        if line:
+            out.append(line if len(line) <= LOG_WIDTH else line[:LOG_WIDTH - 3] + '...')
+    return out
 
 
 def _text(value, limit):
@@ -99,6 +141,11 @@ def parse_registry(raw):
             raise ValueError(f'{rid}: pioneer runner must allow exactly {PIONEER}')
         if r['runner'] != 'pioneer' and PIONEER not in deny:
             raise ValueError(f'{rid}: must deny {PIONEER}')
+        players = r.get('allowPlayers', False)
+        if not isinstance(players, bool):
+            raise ValueError(f'{rid}: allowPlayers must be true or false')
+        if players and (r['runner'] != 'session' or allow is not None):
+            raise ValueError(f'{rid}: allowPlayers only for session routines without allowBots')
         fixed = r.get('fixedArgs', [])
         if not isinstance(fixed, list) or len(fixed) > 4 or not all(isinstance(a, str) and VALUE.match(a) for a in fixed):
             raise ValueError(f'{rid}: fixedArgs')
@@ -130,7 +177,7 @@ def parse_registry(raw):
                 raise ValueError(f'{rid}.{a.get("name")}: type')
         entry = {'id': rid, 'label': r['label'], 'description': r.get('description') or '', 'runner': r['runner'],
                  'safeStart': r.get('safeStart') is True, 'enabled': r.get('enabled') is not False, 'allowBots': allow,
-                 'denyBots': deny, 'fixedArgs': list(fixed), 'args': args}
+                 'denyBots': deny, 'allowPlayers': players, 'fixedArgs': list(fixed), 'args': args}
         if r['runner'] == 'session':
             entry['routine'] = r['routine']
         routines.append(entry)
@@ -139,6 +186,8 @@ def parse_registry(raw):
 
 def bot_denied(registry, routine, bot):
     """Why `bot` may not run `routine` (registry policy), or None."""
+    if isinstance(bot, str) and PLAYER.match(bot):
+        return None if routine.get('allowPlayers') else f'{routine["id"]} is a fleet routine (not for regular accounts)'
     if not isinstance(bot, str) or not BOT.match(bot):
         return 'bad bot name'
     if bot in ALWAYS_EXCLUDED or bot in registry['excludedBots']:
@@ -150,7 +199,7 @@ def bot_denied(registry, routine, bot):
     return None
 
 
-def validate_run(registry, bot, routine_id, args):
+def validate_run(registry, bot, routine_id, args, mode='headless'):
     """Normalised {name: value} args for a run request; ValueError with a user-facing reason."""
     routine = next((r for r in registry['routines'] if r['id'] == routine_id), None)
     if routine is None:
@@ -160,6 +209,10 @@ def validate_run(registry, bot, routine_id, args):
     denied = bot_denied(registry, routine, bot)
     if denied:
         raise ValueError(denied)
+    if mode not in MODES:
+        raise ValueError('mode: headless or browser')
+    if mode == 'browser' and routine['runner'] != 'session':
+        raise ValueError(f'{routine["id"]}: the browser view only for session routines (24/7 runners start their own client)')
     if args is None:
         args = {}
     if not isinstance(args, dict):
@@ -189,14 +242,15 @@ def parse_desired(raw):
         raise ValueError('not a desired-state document')
     bots = {}
     for bot, entry in list(raw['bots'].items())[:500]:
-        if not BOT.match(bot) or not isinstance(entry, dict) or entry.get('action') not in ('run', 'stop', 'hold') \
-                or _int(entry.get('rev'), 1) is None or _int(entry.get('at')) is None:
+        if account_type(bot) is None or not isinstance(entry, dict) or entry.get('action') not in ('run', 'stop', 'hold') \
+                or _int(entry.get('rev'), 1) is None or _int(entry.get('at')) is None or entry.get('mode', 'headless') not in MODES:
             continue
         shaped = {'action': entry['action'], 'rev': entry['rev'], 'at': entry['at'], 'by': entry.get('by') if _text(entry.get('by'), 80) else None}
         if entry['action'] == 'run':
             if not (isinstance(entry.get('routine'), str) and ROUTINE_ID.match(entry['routine'])) or not isinstance(entry.get('args'), dict):
                 continue
             shaped['routine'] = entry['routine']
+            shaped['mode'] = entry.get('mode', 'headless')
             shaped['args'] = {k: v for k, v in list(entry['args'].items())[:6]
                               if isinstance(k, str) and ARG_NAME.match(k) and (isinstance(v, str) and VALUE.match(v) or _int(v, 0, 1_000_000) is not None)}
         bots[bot] = shaped
@@ -227,10 +281,17 @@ def shape_status(raw, received_at):
         registry, registry_error = None, str(exc)[:120]
     bots = {}
     for bot, entry in list(raw['bots'].items())[:300]:
-        if not isinstance(bot, str) or not BOT.match(bot) or not isinstance(entry, dict):
+        kind = account_type(bot)
+        if kind is None or not isinstance(entry, dict):
             continue
         job = entry.get('job') if isinstance(entry.get('job'), dict) else None
+        display = entry.get('displayName')
         bots[bot] = {
+            'type': kind, 'displayName': display if kind == 'player' and isinstance(display, str) and DISPLAY.match(display) else None,
+            'presence': entry.get('presence') if entry.get('presence') in PRESENCES else 'unknown',
+            'client': entry.get('client') if entry.get('client') in CLIENTS else None,
+            'mode': entry.get('mode') if entry.get('mode') in MODES else None,
+            'log': sanitize_log(entry.get('log')),
             'state': entry.get('state') if entry.get('state') in STATES else 'unknown',
             'message': _clean(entry.get('message'), 240), 'rev': _int(entry.get('rev')),
             'action': entry.get('action') if entry.get('action') in ('run', 'stop', 'hold') else None,
@@ -238,6 +299,7 @@ def shape_status(raw, received_at):
                 'kind': job.get('kind') if job.get('kind') in ('run', 'stop') else None,
                 'routine': job.get('routine') if isinstance(job.get('routine'), str) and ROUTINE_ID.match(job['routine']) else None,
                 'args': [a for a in (job.get('args') if isinstance(job.get('args'), list) else [])[:6] if isinstance(a, str) and VALUE.match(a)],
+                'mode': job.get('mode') if job.get('mode') in MODES else 'headless',
                 'pid': _int(job.get('pid'), 1, 1 << 31), 'startedAt': _int(job.get('startedAt')), 'stopping': job.get('stopping') is True},
             'gates': _shape_list(entry.get('gates')), 'foreign': _shape_list(entry.get('foreign')),
             'lastResult': _shape_result(entry.get('lastResult')), 'updatedAt': _int(entry.get('updatedAt')),
@@ -254,6 +316,30 @@ def shape_status(raw, received_at):
         'fleet': {'pause': (raw.get('fleet') or {}).get('pause') is True if isinstance(raw.get('fleet'), dict) else False},
         'bots': bots,
     }
+
+
+def shape_frames(raw):
+    """Fleet-bot logins for the owner's browser view ({bot: password}), sent by the daemon only for bots
+    with a browser-view run requested. Regular accounts never have one (the owner types it in the frame)."""
+    if not isinstance(raw, dict):
+        return {}
+    return {bot: pw for bot, pw in list(raw.items())[:300]
+            if isinstance(bot, str) and BOT.match(bot) and isinstance(pw, str) and 0 < len(pw) <= MAX_PASSWORD and TEXT.match(pw)}
+
+
+def read_frames(path):
+    try:
+        return shape_frames(read_json(path, 64 * 1024))
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+def frame_url(game_url, name, password=None):
+    """The real game client for one account (`/bot?bot=NAME[&password=...]` on the game web server)."""
+    query = {'bot': name}
+    if password is not None:
+        query['password'] = password
+    return game_url.rstrip('/') + '/bot?' + urlencode(query, quote_via=quote)
 
 
 def write_atomic(path, data, mode=0o600):
@@ -323,6 +409,7 @@ class Store:
         self.clock = clock
         self.lock = threading.Lock()
         self.rate = RateLimit()
+        self.frame_rate = RateLimit(limit=60)
 
     def read(self):
         if self.dir is None:
@@ -333,6 +420,11 @@ class Store:
             return empty_desired()
         except (OSError, ValueError):
             return empty_desired()
+
+    def audit_frame(self, account, login):
+        if self.dir is not None:
+            self.dir.mkdir(parents=True, exist_ok=True)
+            self.audit({'at': int(self.clock() * 1000), 'by': login, 'action': 'frame', 'bots': [account]})
 
     def apply(self, request, registry, accounts, login):
         """Validate a UI request and record it. Returns (status, body)."""
@@ -350,14 +442,17 @@ class Store:
         known = set(accounts)
         errors = {}
         args_by_bot = {}
+        mode = request.get('mode', 'headless') if action == 'run' else None
+        if action == 'run' and mode == 'browser' and len(bots) > 1:
+            return 400, {'error': 'The browser view opens one account at a time.'}
         for bot in bots:
-            if not BOT.match(bot) or bot not in known:
-                errors[bot[:20]] = 'not a known bot account'
+            if account_type(bot) is None or bot not in known:
+                errors[bot[:20]] = 'not a known account'
             elif bot in ALWAYS_EXCLUDED or bot in registry['excludedBots']:
                 errors[bot] = f'{bot} is not launchable from the controller'
             elif action == 'run':
                 try:
-                    args_by_bot[bot] = validate_run(registry, bot, request.get('routine'), request.get('args'))
+                    args_by_bot[bot] = validate_run(registry, bot, request.get('routine'), request.get('args'), mode)
                 except ValueError as exc:
                     errors[bot] = str(exc)
         if errors:
@@ -376,14 +471,14 @@ class Store:
                 desired['seq'] += 1
                 entry = {'action': action, 'rev': desired['seq'], 'at': now, 'by': login}
                 if action == 'run':
-                    entry.update(routine=request['routine'], args=args_by_bot[bot])
+                    entry.update(routine=request['routine'], args=args_by_bot[bot], mode=mode)
                 desired['bots'][bot] = entry
                 changed[bot] = entry
             desired['updatedAt'] = now
             self.dir.mkdir(parents=True, exist_ok=True)
             write_atomic(self.dir / 'desired.json', desired)
             self.audit({'at': now, 'by': login, 'action': action, 'routine': request.get('routine') if action == 'run' else None,
-                        'args': request.get('args') if action == 'run' else None, 'bots': bots})
+                        'args': request.get('args') if action == 'run' else None, 'mode': mode, 'bots': bots})
         return 200, {'ok': True, 'changed': changed}
 
     def audit(self, row):
@@ -446,27 +541,58 @@ class Auth:
         return None
 
 
+def frame_offer(name, kind, launchable, desired_entry, report):
+    """Whether the page may open the browser view (the real game client) for this account, and why not."""
+    if not launchable:
+        return {'offered': False, 'login': False, 'reason': 'Not launchable from the controller.'}
+    if report and report.get('client') == 'headless':
+        return {'offered': False, 'login': False, 'reason': 'A headless client runs for this account on the workstation: stop it to use the browser view (one client per account).'}
+    if kind == 'player':
+        if not (report and report.get('displayName')):
+            return {'offered': False, 'login': False, 'reason': 'The daemon has not reported this account yet.'}
+        return {'offered': True, 'login': False, 'reason': None}
+    if desired_entry and desired_entry.get('action') == 'run' and desired_entry.get('mode') == 'browser':
+        return {'offered': True, 'login': True, 'reason': None}
+    return {'offered': False, 'login': False, 'reason': 'Start a routine in Browser view mode to open the game for this bot.'}
+
+
 def view(accounts, live, status, desired, auth_info):
-    """The page's JSON: one row per bot account plus daemon/registry/auth context."""
+    """The page's JSON: one row per account (fleet bots and the owner's regular accounts) plus daemon/registry/auth context."""
     registry = status.get('registry')
     live_bots = {b['username']: b for b in (live.get('bots') or []) if isinstance(b, dict) and isinstance(b.get('username'), str)}
+    reports = status.get('bots', {})
+    # Regular accounts exist only while the daemon reports their player.sh profile.
+    players = {n for n, r in reports.items() if PLAYER.match(n) and r.get('displayName')}
     names = sorted({*(a for a in accounts if BOT.match(a)), *(n for n in live_bots if BOT.match(n)),
-                    *status.get('bots', {}).keys(), *desired['bots'].keys()})
+                    *(n for n in reports if BOT.match(n)), *(n for n in desired['bots'] if BOT.match(n)), *players})
     excluded = set(ALWAYS_EXCLUDED) | set((registry or {}).get('excludedBots', []))
     rows = []
     for name in names:
+        kind = account_type(name)
+        report = reports.get(name)
+        if kind == 'player':
+            presence = {'present': 'online', 'absent': 'offline'}.get((report or {}).get('presence'), 'unknown')
+            rows.append({
+                'username': name, 'type': 'player', 'displayName': report['displayName'], 'presence': presence,
+                'activity': None, 'routine': None, 'phase': None, 'routineState': None,
+                'desired': desired['bots'].get(name), 'controller': report, 'launchable': True,
+                'eligible': [] if registry is None else [r['id'] for r in registry['routines'] if r['enabled'] and bot_denied(registry, r, name) is None],
+                'frame': frame_offer(name, kind, True, desired['bots'].get(name), report),
+            })
+            continue
         lb = live_bots.get(name) or {}
         activity = lb.get('activity') or {}
         routine_status = activity.get('status') or {}
         eligible = [] if registry is None or name in excluded else [
             r['id'] for r in registry['routines'] if r['enabled'] and bot_denied(registry, r, name) is None]
         rows.append({
-            'username': name, 'presence': lb.get('presence') or 'unknown', 'activity': activity.get('label'),
+            'username': name, 'type': 'bot', 'displayName': None, 'presence': lb.get('presence') or 'unknown', 'activity': activity.get('label'),
             'routine': routine_status.get('routine') or activity.get('routine'),
             'phase': routine_status.get('phase') if routine_status.get('state') == 'running' else None,
             'routineState': routine_status.get('state'),
-            'desired': desired['bots'].get(name), 'controller': status.get('bots', {}).get(name),
+            'desired': desired['bots'].get(name), 'controller': report,
             'launchable': name not in excluded, 'eligible': eligible,
+            'frame': frame_offer(name, kind, name not in excluded, desired['bots'].get(name), report),
         })
     daemon = status.get('daemon')
     return {'version': 1, 'now': int(time.time() * 1000), 'auth': auth_info,
@@ -483,12 +609,16 @@ def exchange(stream_in, stream_out, desired_dir, status_dir, clock=time.time):
             print('controller exchange: oversized status dropped', file=sys.stderr)
         else:
             try:
-                status = shape_status(json.loads(data), int(clock() * 1000))
+                raw = json.loads(data)
+                status = shape_status(raw, int(clock() * 1000))
             except ValueError as exc:
                 print(f'controller exchange: rejected status ({exc.__class__.__name__})', file=sys.stderr)
             else:
                 Path(status_dir).mkdir(parents=True, exist_ok=True)
                 write_atomic(Path(status_dir) / 'controller-status.json', status)
+                # Browser-view logins go to their own file (mode 600), read only by the portal's
+                # owner-only frame endpoint; shape_status never copies them into the public status.
+                write_atomic(Path(status_dir) / 'controller-frames.json', shape_frames(raw.get('frames')))
     try:
         desired = parse_desired(read_json(Path(desired_dir) / 'desired.json'))
     except FileNotFoundError:

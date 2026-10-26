@@ -217,6 +217,8 @@ class Portal:
         # arrives beside live.json (read-only mount, written on the host by controller.py exchange).
         self.controller = controller.Store(controller_dir)
         self.controller_status_path = live_path.with_name('controller-status.json') if live_path else None
+        # Fleet-bot logins for the owner's browser view (controller.py exchange, mode 600; read-only mount).
+        self.controller_frames_path = live_path.with_name('controller-frames.json') if live_path else None
         self.auth = controller.Auth(owner_login, public_origin)
         self.game_url = game_url.rstrip('/')
         self.homepage_url = homepage_url.rstrip('/')
@@ -346,20 +348,61 @@ class Portal:
         known = set(self.live_accounts()) | set(status.get('bots', {}))
         return self.controller.apply(request, status.get('registry'), known, self.auth.login(headers))
 
-    def controller_page(self):
+    def frame_origin(self):
+        """Origin of the game web server (the only thing the bot-controller page may frame)."""
+        parts = urlsplit(self.game_url)
+        return f'{parts.scheme}://{parts.netloc}'
+
+    def controller_frame(self, headers, body):
+        """Owner-only: the real game client's URL for one account's browser view. Fleet bots get their
+        login filled in (owner decision); regular accounts get the login screen. Never logged."""
+        error = self.auth.check_write(headers)
+        if error:
+            return 403, {'error': error}
+        try:
+            request = json.loads(body)
+        except ValueError:
+            return 400, {'error': 'Body is not JSON.'}
+        account = request.get('account') if isinstance(request, dict) else None
+        if not self.controller.frame_rate.allow():
+            return 429, {'error': 'Too many requests; wait a minute.'}
+        rows = {r['username']: r for r in self.controller_json(headers)['bots']}
+        row = rows.get(account) if isinstance(account, str) else None
+        if row is None or not row['launchable']:
+            return 400, {'error': 'Not a known, launchable account.'}
+        offer = row['frame']
+        if not offer['offered']:
+            return 409, {'error': offer['reason'] or 'The browser view is not available for this account.'}
+        if row['type'] == 'player':
+            url = controller.frame_url(self.game_url, row['displayName'])
+        else:
+            password = controller.read_frames(self.controller_frames_path).get(account) if self.controller_frames_path else None
+            if not password:
+                return 409, {'error': 'The workstation has not sent this bot\u2019s login yet; it does within a few seconds of a Browser view start.', 'retry': True}
+            url = controller.frame_url(self.game_url, account, password)
+        self.controller.audit_frame(account, self.auth.login(headers))
+        return 200, {'ok': True, 'account': account, 'url': url}
+
+    def controller_page(self, params=None):
         api = f'{BASE}/api/controller'
+        show = (params or {}).get('show', [''])[0]
+        show = show if show in ('all', 'bots', 'regular') else ''
+        filters = ''.join(
+            f'<button type="button" data-show="{value}" aria-pressed="{str(value == (show or "all")).lower()}">{label} <span class="n"></span></button>'
+            for value, label in (('all', 'All'), ('bots', 'Bots'), ('regular', 'Regular')))
         body = f'''<div class="eyebrow">RS-SDK / Fleet control</div><h1>Bot controller</h1>
-<p>Assign a routine from the registry to each bot, or stop (in-game logout) or hold it. The workstation’s controller daemon applies these requests within a few seconds, re-checks them, and never starts a bot that has a fleet pause, a per-bot latch or a local stop, or one that another agent is controlling. No AI model is involved.</p>
-<div id="ctl" class="ctl" data-api="{api}" data-post="{api}/desired" data-refresh-ms="{live.DEFAULT_TICKS * live.TICK_MS}">
+<p>Assign a routine from the registry to each account, or stop (in-game logout) or hold it. <b>Bots</b> are the fleet; <b>Regular</b> are your own accounts stored with <code>scripts/player.sh setup</code> on the workstation, which may run the non-fleet routines only. The workstation’s controller daemon applies these requests within a few seconds, re-checks them, and never starts a bot that has a fleet pause, a per-bot latch or a local stop, or one that another agent is controlling. No AI model is involved.</p>
+<p class="note"><b>Headless</b> runs start a client on the workstation and always log out at the end; the card shows the job’s live log. <b>Browser view</b> runs use the real game client embedded in this page as the account’s only client: the routine attaches to it and nothing logs it out. That session lives only while this page and its game view stay open. <code>?show=bots</code> or <code>?show=regular</code> links straight to a filtered list.</p>
+<div id="ctl" class="ctl" data-api="{api}" data-post="{api}/desired" data-frame="{api}/frame" data-show-initial="{show}" data-refresh-ms="{live.DEFAULT_TICKS * live.TICK_MS}">
 <p id="ctl-daemon" class="note live-status">Loading controller state…</p>
 <p id="ctl-auth" class="note"></p>
 <p id="ctl-pause" class="note live-ghosts" hidden></p>
 <p id="ctl-flash" class="note ctl-flash" role="status" hidden></p>
-<div class="live-toolbar"><div id="ctl-filter" class="live-filter" role="group" aria-label="Show"><button type="button" data-show="all" aria-pressed="true">All <span class="n"></span></button><button type="button" data-show="active" aria-pressed="false">Assigned / online <span class="n"></span></button></div>
-<div class="live-bulk"><button id="ctl-expand-all" type="button">Expand all</button><button id="ctl-collapse-all" type="button">Collapse all</button><button id="ctl-select-none" type="button">Clear selection</button></div></div>
-<details id="ctl-bulk" class="ctl-bulk"><summary>Bulk action on <span id="ctl-selected">0</span> selected bots</summary><div id="ctl-bulk-form" class="ctl-form"></div></details>
+<div class="live-toolbar"><div id="ctl-filter" class="live-filter" role="group" aria-label="Show accounts">{filters}</div>
+<div class="live-bulk"><button id="ctl-active" type="button" aria-pressed="false">Assigned / online only</button><button id="ctl-expand-all" type="button">Expand all</button><button id="ctl-collapse-all" type="button">Collapse all</button><button id="ctl-select-none" type="button">Clear selection</button></div></div>
+<details id="ctl-bulk" class="ctl-bulk"><summary>Bulk action on <span id="ctl-selected">0</span> selected accounts (headless only)</summary><div id="ctl-bulk-form" class="ctl-form"></div></details>
 <div id="ctl-bots" class="live-bots ctl-bots"></div><p id="ctl-empty" class="note" hidden></p></div>
-<p class="note">Presence and activity come from the live map’s snapshot; controller state from the daemon’s last report. Stop is always a real in-game logout verified against the game’s player list. Latches and local stops are shown here but can only be cleared by the owner on the workstation. Writes need the owner’s Tailscale identity; every change is audited.</p>
+<p class="note">Presence and activity come from the live map’s snapshot; controller state from the daemon’s last report. Stop ends our job: a headless job logs out in-game (verified against the game’s player list); a browser-view job only stops the routine and leaves the session to the game view. Latches and local stops are shown here but can only be cleared by the owner on the workstation. Writes and the game view need the owner’s Tailscale identity; every change is audited.</p>
 <script src="{BASE}/bot-controller.js" defer></script>'''
         return layout('Bot controller', body, footer='Companion · bot controller: requests are re-validated by the workstation daemon; no free-form commands.')
 
@@ -406,7 +449,7 @@ class Portal:
         if path == BASE + '/bot-controller':
             raise Redirect(BASE + '/bot-controller/')
         if path == BASE + '/bot-controller/':
-            return 200, self.controller_page()
+            return 200, self.controller_page(params)
         if path == BASE + '/accounts':
             q = params.get('q', [''])[0][:200]
             page = int(params.get('page', ['1'])[0])
@@ -718,6 +761,9 @@ class Handler(BaseHTTPRequestHandler):
         if path in (BASE + '/live-map', BASE + '/bot-controller/'):
             # The only scripted pages: their own static script and same-origin JSON requests.
             frame_policy = "; script-src 'self'; connect-src 'self'"
+        if path == BASE + '/bot-controller/':
+            # The browser view: the real game client from the game web server, nothing else.
+            frame_policy += '; frame-src ' + cast(PortalHTTPServer, self.server).portal.frame_origin()
         self.send_header('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" + frame_policy)
         self.end_headers()
         self.wfile.write(data)
@@ -726,7 +772,7 @@ class Handler(BaseHTTPRequestHandler):
         url = urlsplit(self.path)
         path = url.path if url.path == BASE or url.path.startswith(BASE + '/') else BASE + url.path
         portal = cast(PortalHTTPServer, self.server).portal
-        if path != BASE + '/api/controller/desired':
+        if path not in (BASE + '/api/controller/desired', BASE + '/api/controller/frame'):
             # Everything else stays read-only, as before the controller existed.
             self.send_error(501, 'Unsupported method')
             return
@@ -739,7 +785,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         body = self.rfile.read(length)
         try:
-            status, payload = portal.controller_write(self.headers, body)
+            if path == BASE + '/api/controller/frame':
+                status, payload = portal.controller_frame(self.headers, body)
+            else:
+                status, payload = portal.controller_write(self.headers, body)
         except OSError:
             status, payload = 503, {'error': 'Could not record the request (storage unavailable).'}
         self.send_plain(status, json.dumps(payload, separators=(',', ':')).encode('utf-8'), 'application/json', 'no-store',

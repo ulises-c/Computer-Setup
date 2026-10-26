@@ -379,19 +379,27 @@ python3 linux-game-server/rs-sdk/portal/live_publish.py --once   # one snapshot 
 
 ## Bot controller
 
-`/rs-sdk/bot-controller/` lists every bot account, with:
+`/rs-sdk/bot-controller/` lists every fleet bot and the owner's regular accounts (the
+`player.sh` profiles the daemon reports, by in-game name only), filtered All / Bots /
+Regular (`?show=bots|regular`, remembered), each with:
 
 - presence and activity, from the live snapshot;
 - the controller daemon's per-bot state and message, its job, last result, gates
   (fleet pause / per-bot latch / local stop: read-only here) and any other controller
   driving the bot;
-- the owner's current request.
+- the owner's current request;
+- the live, sanitized tail of the job log (headless runs);
+- the **game view** (browser-view runs): the real game client from
+  `https://$PORTAL_GAME_DOMAIN:9445/bot?bot=NAME[&password=…]` in an iframe. It is the
+  account's only client; the session lives only while the page stays open.
 
-Per bot, or in bulk for the selected bots, the owner can:
+Per account, or in bulk (headless only) for the selected accounts, the owner can:
 
 - **Start** a routine from the registry, with dropdowns for enum args and bounded
-  numbers for ints;
-- **Stop** it (a real in-game logout, verified on `/playerpositions`);
+  numbers for ints, headless or in the browser view (session routines, one account);
+  regular accounts get only the registry's `allowPlayers` routines;
+- **Stop** it (headless: a real in-game logout, verified on `/playerpositions`;
+  browser view: the routine stops, the game view keeps the session);
 - **Hold** it (hands off);
 - **Clear** the request.
 
@@ -405,6 +413,9 @@ workstation (`2004Scape-Botting/tools/bot-controller.ts`, launchd
 
 - stores the daemon's status, allowlisted, as `$PORTAL_LIVE_DIR/controller-status.json`
   (read-only in the container);
+- writes the fleet-bot logins the daemon sends for browser-view requests (`frames`) to
+  `$PORTAL_LIVE_DIR/controller-frames.json` (mode 600, read-only in the container), never into
+  the status;
 - prints `$PORTAL_CONTROLLER_DIR/desired.json` back to the daemon.
 
 The daemon's report includes the routine registry. The portal validates requests
@@ -422,6 +433,12 @@ Writes (`POST /rs-sdk/api/controller/desired`) require all of these:
 - a JSON body;
 - an HMAC CSRF token, issued only to the owner's GET.
 
+The game-view URL (`POST /rs-sdk/api/controller/frame`, `{account}` -> `{url}`) needs the
+same five checks. Fleet bots get their login filled in (owner decision) only while a
+browser-view run is requested; regular accounts get the client's login screen. It is
+refused while the daemon reports a headless client for the account, never logged (the
+audit records `frame` + account), and the public JSON never carries a password.
+
 Requests are validated against the registry and the known accounts, rate-limited to
 30 changes per minute, and audited in `$PORTAL_CONTROLLER_DIR/audit.jsonl`.
 `bot_tester` is never launchable. There are no free-form commands. Residual risk:
@@ -429,7 +446,8 @@ local access to the game server (loopback port, or the controller directory), an
 any process on the owner's own untagged devices.
 
 The page has the same CSP exception as the live map
-(`script-src 'self'; connect-src 'self'`); every other route is unchanged. Tests:
+(`script-src 'self'; connect-src 'self'`) plus `frame-src https://$PORTAL_GAME_DOMAIN:9445`
+(the game client only); every other route is unchanged. Tests:
 `test_controller.py` covers registry and run validation, status shaping, auth/CSRF,
 the store, the HTTP routes and the JS logic.
 

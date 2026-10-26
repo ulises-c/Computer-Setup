@@ -1,6 +1,8 @@
 // Bot controller page (/rs-sdk/bot-controller/): polls /rs-sdk/api/controller and lets the
-// owner set per-bot desired state (run a registry routine, stop, hold, clear). Served as a
-// static file so the page CSP stays `script-src 'self'` (no inline JS).
+// owner set per-account desired state (run a registry routine headless or in the browser view,
+// stop, hold, clear) for fleet bots and his regular accounts. Headless runs show the job's live
+// (sanitized) log; the browser view embeds the real game client (owner-only frame URL). Served
+// as a static file so the page CSP stays `script-src 'self'` (no inline JS).
 
 // Pure rules (arg validation, eligibility, labels, filters), DOM-free so test_controller.py
 // can exercise them with node.
@@ -39,7 +41,7 @@ const ControllerLogic = (() => {
     const tone = state => TONES[state] || 'muted';
     const desiredText = d => {
         if (!d) return 'No request';
-        const what = d.action === 'run' ? `Run ${d.routine} ${Object.values(d.args || {}).join(' ')}`.trim() : d.action === 'stop' ? 'Stop (log out)' : 'Hold (hands off)';
+        const what = d.action === 'run' ? `Run ${d.routine} ${Object.values(d.args || {}).join(' ')}${d.mode === 'browser' ? ' (browser view)' : ''}`.trim() : d.action === 'stop' ? 'Stop' : 'Hold (hands off)';
         return `${what} · r${d.rev}`;
     };
     const ago = ms => {
@@ -57,9 +59,28 @@ const ControllerLogic = (() => {
         if (d.error) bits.push(d.error);
         return { tone: !p.online ? 'bad' : d.dryRun || d.error ? 'warn' : 'ok', text: bits.join(' · ') };
     };
-    const SHOWS = ['all', 'active'];
+    // Account filter (All / Bots / Regular), persisted like the live map's ?show=; plus an
+    // independent "assigned / online only" toggle.
+    const SHOWS = ['all', 'bots', 'regular'];
     const validShow = v => (SHOWS.includes(v) ? v : null);
-    const visible = (row, show) => show !== 'active' || !!(row.desired || row.presence === 'controlled' || row.presence === 'ghost' || (row.controller && row.controller.job));
+    const initialShow = (search, stored) => validShow(new URLSearchParams(search || '').get('show')) || validShow(stored) || 'all';
+    const withShow = (search, show) => {
+        const params = new URLSearchParams(search || '');
+        params.set('show', show);
+        return `?${params.toString()}`;
+    };
+    const isActive = row => !!(row.desired || row.presence === 'controlled' || row.presence === 'ghost' || row.presence === 'online' || (row.controller && row.controller.job));
+    const visible = (row, show, activeOnly) => {
+        const type = row.type === 'player' ? 'regular' : 'bots';
+        if (show && show !== 'all' && show !== type) return false;
+        return !activeOnly || isActive(row);
+    };
+    const label = row => (row.type === 'player' && row.displayName ? `${row.displayName}` : row.username);
+    // Headless always; the browser view only for session routines and one account at a time.
+    const modesFor = (spec, count) => (spec && spec.runner === 'session' && count === 1 ? ['headless', 'browser'] : ['headless']);
+    const showLog = row => !!(row && row.controller && Array.isArray(row.controller.log) && row.controller.log.length);
+    const frameNote = row => `${row.type === 'player' ? `Log in as ${row.displayName || row.username} in the game view below (your password never touches the portal).` : 'The game view logs this bot in by itself.'} `
+        + 'This game client is the account\u2019s only client and lives only while this page and its game view stay open: log out in the game before closing it, or the server keeps the player in the world for a few minutes.';
     const parseSet = raw => {
         try {
             const value = JSON.parse(raw || '[]');
@@ -68,7 +89,7 @@ const ControllerLogic = (() => {
             return new Set();
         }
     };
-    return { routineById, defaults, validateArgs, commonEligible, tone, desiredText, ago, heartbeat, validShow, visible, parseSet };
+    return { routineById, defaults, validateArgs, commonEligible, tone, desiredText, ago, heartbeat, validShow, initialShow, withShow, visible, isActive, label, modesFor, showLog, frameNote, parseSet };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = ControllerLogic;
 
@@ -80,6 +101,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
     const L = ControllerLogic;
     const api = root.dataset.api;
     const postUrl = root.dataset.post;
+    const frameUrl = root.dataset.frame;
     const refreshMs = Math.max(1000, Number(root.dataset.refreshMs) || 3000);
     const list = document.getElementById('ctl-bots');
     const daemonLine = document.getElementById('ctl-daemon');
@@ -92,10 +114,12 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
     const selectedCount = document.getElementById('ctl-selected');
     const filterButtons = [...document.querySelectorAll('#ctl-filter [data-show]')];
     const store = kind => { try { return window[kind]; } catch { return null; } };
-    const EXPANDED_KEY = 'rs-sdk-ctl-expanded', SELECTED_KEY = 'rs-sdk-ctl-selected', SHOW_KEY = 'rs-sdk-ctl-show';
+    const activeButton = document.getElementById('ctl-active');
+    const EXPANDED_KEY = 'rs-sdk-ctl-expanded', SELECTED_KEY = 'rs-sdk-ctl-selected', SHOW_KEY = 'rs-sdk-ctl-show-type', ACTIVE_KEY = 'rs-sdk-ctl-active';
     const expanded = L.parseSet(store('sessionStorage')?.getItem(EXPANDED_KEY));
     const selected = L.parseSet(store('sessionStorage')?.getItem(SELECTED_KEY));
-    let show = L.validShow(store('localStorage')?.getItem(SHOW_KEY)) || 'all';
+    let show = L.initialShow(location.search, store('localStorage')?.getItem(SHOW_KEY));
+    let activeOnly = store('localStorage')?.getItem(ACTIVE_KEY) === '1';
     const cards = new Map();
     let payload = null;
     let registrySig = '';
@@ -114,12 +138,12 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         flash.classList.toggle('bad', !!bad);
     }
 
-    async function send(bots, action, routine, args) {
+    async function send(bots, action, routine, args, mode) {
         if (!canWrite() || busy) return false;
         busy = true;
         try {
             const body = { bots, action };
-            if (action === 'run') Object.assign(body, { routine, args });
+            if (action === 'run') Object.assign(body, { routine, args, mode: mode || 'headless' });
             const res = await fetch(postUrl, {
                 method: 'POST', credentials: 'same-origin', cache: 'no-store',
                 headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': payload.auth.csrf }, body: JSON.stringify(body),
@@ -130,8 +154,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
                 say(`${out.error || `Request failed (HTTP ${res.status})`}${detail}`, true);
                 return false;
             }
-            say(`${action === 'run' ? `Start ${routine}` : action[0].toUpperCase() + action.slice(1)} recorded for ${bots.join(', ')}; the daemon applies it within a few seconds.`);
-            poll();
+            say(`${action === 'run' ? `Start ${routine}${mode === 'browser' ? ' (browser view)' : ''}` : action[0].toUpperCase() + action.slice(1)} recorded for ${bots.join(', ')}; the daemon applies it within a few seconds.`);
+            await poll();
+            if (action === 'run' && mode === 'browser' && bots.length === 1) openFrame(bots[0], 15);
             return true;
         } catch (err) {
             say(`Request failed: ${err.message || err}`, true);
@@ -157,6 +182,11 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
             pick.append(o);
         }
         const fields = el('div', 'ctl-fields');
+        const modeLabel = el('label', 'ctl-field ctl-mode');
+        modeLabel.append(el('span', '', 'Client'));
+        const modePick = el('select');
+        modePick.name = 'mode';
+        modeLabel.append(modePick);
         const desc = el('p', 'ctl-desc');
         const errors = el('p', 'ctl-errors');
         const inputs = {};
@@ -166,6 +196,11 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
             const spec = L.routineById(registry, pick.value);
             desc.textContent = spec ? spec.description : '';
             const values = L.defaults(spec);
+            const modes = L.modesFor(spec, opts.single ? 1 : 2);
+            const keep = modePick.value;
+            modePick.replaceChildren(...modes.map(m => { const o = el('option', '', m === 'browser' ? 'Browser view (game in this page)' : 'Headless (workstation client, logs out at the end)'); o.value = m; return o; }));
+            modePick.value = modes.includes(keep) ? keep : 'headless';
+            modeLabel.hidden = modes.length < 2;
             for (const a of spec ? spec.args : []) {
                 const label = el('label', 'ctl-field');
                 label.append(el('span', '', a.label));
@@ -200,9 +235,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
                     const raw = Object.fromEntries(Object.entries(inputs).map(([k, i]) => [k, i.value]));
                     const v = L.validateArgs(spec, raw);
                     if (!v.ok) { errors.textContent = Object.entries(v.errors).map(([k, e]) => `${k}: ${e}`).join('; '); return; }
-                    await send(bots, 'run', spec.id, v.args);
+                    await send(bots, 'run', spec.id, v.args, modeLabel.hidden ? 'headless' : modePick.value);
                 } else {
-                    if (action === 'stop' && bots.length > 1 && !window.confirm(`Log out ${bots.length} bots?`)) return;
+                    if (action === 'stop' && bots.length > 1 && !window.confirm(`Stop ${bots.length} accounts?`)) return;
                     await send(bots, action);
                 }
             });
@@ -210,7 +245,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         };
         const buttons = el('div', 'ctl-buttons');
         if (eligible.length) {
-            form.append(pick, fields, desc);
+            form.append(pick, fields, modeLabel, desc);
             buttons.append(button('Start', 'run', 'ctl-start'));
         } else {
             form.append(el('p', 'ctl-desc', opts.noneText || 'No registry routine is launchable for this bot.'));
@@ -237,10 +272,12 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         check.setAttribute('aria-label', `Select ${row.username}`);
         check.addEventListener('click', ev => ev.stopPropagation());
         check.addEventListener('change', () => { if (check.checked) selected.add(row.username); else selected.delete(row.username); save(); renderBulk(); });
-        const name = el('b', 'ctl-name', row.username);
+        const name = el('b', 'ctl-name', L.label(row));
+        if (row.type === 'player') name.title = row.username;
+        const kind = el('span', `ctl-badge ctl-type-${row.type === 'player' ? 'regular' : 'bot'}`, row.type === 'player' ? 'regular' : 'bot');
         const presence = el('span', 'ctl-badge');
         const state = el('span', 'ctl-badge');
-        head.append(check, name, presence, state);
+        head.append(check, name, kind, presence, state);
         const activity = el('p', 'line ctl-activity');
         const desired = el('p', 'line ctl-desired');
         const message = el('p', 'line ctl-message');
@@ -248,14 +285,87 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         const detail = el('div', 'ctl-detail');
         const info = el('dl', 'ctl-info');
         const formBox = el('div', 'ctl-form');
-        detail.append(info, formBox);
+        const logBox = el('div', 'ctl-log');
+        logBox.append(el('h3', '', 'Job log (live, passwords redacted)'));
+        const logPre = el('pre', 'ctl-log-lines');
+        logBox.append(logPre);
+        logBox.hidden = true;
+        const frameBox = el('div', 'ctl-frame');
+        const frameHead = el('div', 'ctl-frame-head');
+        const frameButton = el('button', 'ctl-frame-open', 'Open game view');
+        frameButton.type = 'button';
+        const frameWhy = el('p', 'ctl-desc');
+        frameHead.append(frameButton, frameWhy);
+        const frameNote = el('p', 'note ctl-frame-note');
+        frameNote.hidden = true;
+        const frameSlot = el('div', 'ctl-frame-slot');
+        frameBox.append(frameHead, frameNote, frameSlot);
+        frameButton.addEventListener('click', ev => {
+            ev.stopPropagation();
+            if (frameSlot.firstChild) closeFrame(row.username); else openFrame(row.username, 0);
+        });
+        detail.append(info, formBox, frameBox, logBox);
         node.append(summary, detail);
         summary.addEventListener('click', () => setExpanded(row.username, !expanded.has(row.username)));
         detail.addEventListener('click', ev => ev.stopPropagation());
-        const card = { node, check, presence, state, activity, desired, message, info, formBox, detail, formSig: '' };
+        const card = { node, check, presence, state, activity, desired, message, info, formBox, detail, formSig: '', logBox, logPre, logSig: '',
+            frameBox, frameButton, frameWhy, frameNote, frameSlot, row };
         cards.set(row.username, card);
         return card;
     }
+
+    // ---- browser view (the real game client in an iframe; URL from the owner-only endpoint) ----
+    async function openFrame(name, retries) {
+        const card = cards.get(name);
+        if (!card || !canWrite()) return;
+        setExpanded(name, true);
+        card.frameButton.disabled = true;
+        card.frameButton.dataset.busy = '1';
+        card.frameWhy.textContent = 'Opening the game view…';
+        try {
+            for (let attempt = 0; ; attempt++) {
+                const res = await fetch(frameUrl, {
+                    method: 'POST', credentials: 'same-origin', cache: 'no-store',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': payload.auth.csrf }, body: JSON.stringify({ account: name }),
+                });
+                const out = await res.json().catch(() => ({}));
+                if (res.ok && typeof out.url === 'string') {
+                    const frame = el('iframe', 'ctl-game');
+                    frame.title = `Game client: ${L.label(card.row)}`;
+                    frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-pointer-lock');
+                    frame.referrerPolicy = 'no-referrer';
+                    frame.src = out.url;
+                    card.frameSlot.replaceChildren(frame);
+                    card.frameNote.textContent = L.frameNote(card.row);
+                    card.frameNote.hidden = false;
+                    card.node.classList.add('has-frame');
+                    card.frameWhy.textContent = '';
+                    return;
+                }
+                if (out.retry && attempt < retries) { await new Promise(r => setTimeout(r, 2000)); continue; }
+                card.frameWhy.textContent = out.error || `Game view unavailable (HTTP ${res.status})`;
+                return;
+            }
+        } catch (err) {
+            card.frameWhy.textContent = `Game view unavailable: ${err.message || err}`;
+        } finally {
+            card.frameButton.dataset.busy = '';
+            card.frameButton.disabled = !canWrite();
+            card.frameButton.textContent = card.frameSlot.firstChild ? 'Close game view' : 'Open game view';
+        }
+    }
+    function closeFrame(name) {
+        const card = cards.get(name);
+        if (!card || !card.frameSlot.firstChild) return;
+        if (!window.confirm('Close the game view? Log out in the game first, or the server keeps the account in the world for a few minutes.')) return;
+        card.frameSlot.replaceChildren();
+        card.frameNote.hidden = true;
+        card.node.classList.remove('has-frame');
+        card.frameButton.textContent = 'Open game view';
+    }
+    window.addEventListener('beforeunload', ev => {
+        if ([...cards.values()].some(c => c.frameSlot.firstChild)) { ev.preventDefault(); ev.returnValue = ''; }
+    });
 
     function setExpanded(name, open) {
         if (open) expanded.add(name); else expanded.delete(name);
@@ -267,8 +377,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
     function infoRows(row) {
         const c = row.controller || {};
         const rows = [];
-        if (c.job) rows.push(['Job', `${c.job.kind === 'stop' ? 'logout' : `${c.job.routine} ${c.job.args.join(' ')}`} · pid ${c.job.pid} · ${L.ago(Date.now() - c.job.startedAt)}${c.job.stopping ? ' · stopping' : ''}`]);
-        rows.push(['Gates', c.gates && c.gates.length ? c.gates.join('; ') : 'none (read-only; cleared only on the workstation)']);
+        if (row.type === 'player') rows.push(['Account', `${row.displayName} (regular account, profile ${row.username})`]);
+        if (c.job) rows.push(['Job', `${c.job.kind === 'stop' ? 'logout' : `${c.job.routine} ${c.job.args.join(' ')}`}${c.job.mode === 'browser' ? ' · browser view' : ' · headless'} · pid ${c.job.pid} · ${L.ago(Date.now() - c.job.startedAt)}${c.job.stopping ? ' · stopping' : ''}`]);
+        if (c.client) rows.push(['Client', c.client === 'headless' ? 'headless, on the workstation' : 'browser view (this page)']);
+        if (row.type !== 'player') rows.push(['Gates', c.gates && c.gates.length ? c.gates.join('; ') : 'none (read-only; cleared only on the workstation)']);
         if (c.foreign && c.foreign.length) rows.push(['Other controllers', c.foreign.join('; ')]);
         if (c.lastResult) rows.push(['Last job', `${c.lastResult.kind} r${c.lastResult.rev}: ${c.lastResult.rc === 0 ? 'exit 0' : c.lastResult.rc === null ? 'no result' : `exit ${c.lastResult.rc}`} · ${L.ago(Date.now() - c.lastResult.endedAt)} ago`]);
         if (row.desired) rows.push(['Requested', `${L.desiredText(row.desired)} · by ${row.desired.by || '?'} · ${L.ago(Date.now() - row.desired.at)} ago`]);
@@ -278,6 +390,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
 
     function fillCard(card, row) {
         const c = row.controller;
+        card.row = row;
         card.check.checked = selected.has(row.username);
         card.check.disabled = !row.launchable;
         card.presence.textContent = row.presence;
@@ -293,14 +406,31 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         const sig = `${registrySig}|${row.launchable}|${row.eligible.join(',')}`;
         if (sig !== card.formSig) {
             card.formSig = sig;
-            if (row.launchable) buildForm(card.formBox, row.eligible, () => [row.username]);
+            if (row.launchable) buildForm(card.formBox, row.eligible, () => [row.username], { single: true });
             else card.formBox.replaceChildren(el('p', 'ctl-desc', 'This account is not launchable from the controller (registry exclusion).'));
         }
         setDisabled(card.formBox);
+        // Live job log (headless runs, and the waiting/attached browser-view job).
+        card.logBox.hidden = !L.showLog(row);
+        const logSig = L.showLog(row) ? row.controller.log.join('\n') : '';
+        if (logSig !== card.logSig) {
+            const atBottom = card.logPre.scrollHeight - card.logPre.scrollTop - card.logPre.clientHeight < 24;
+            card.logSig = logSig;
+            card.logPre.textContent = logSig;
+            if (atBottom) card.logPre.scrollTop = card.logPre.scrollHeight;
+        }
+        // Game view: offered per the portal's rules; an open frame is never torn down by a refresh.
+        const frame = row.frame || { offered: false, reason: 'Not available.' };
+        const isOpen = !!card.frameSlot.firstChild;
+        card.frameBox.hidden = !row.launchable && !isOpen;
+        card.frameButton.hidden = !frame.offered && !isOpen;
+        card.frameButton.disabled = !canWrite();
+        card.frameButton.textContent = isOpen ? 'Close game view' : 'Open game view';
+        if (!isOpen && card.frameButton.dataset.busy !== '1') card.frameWhy.textContent = frame.offered ? (canWrite() ? '' : 'The game view needs the owner identity.') : (frame.reason || '');
         const open = expanded.has(row.username);
         card.node.classList.toggle('expanded', open);
         card.detail.hidden = !open;
-        card.node.hidden = !L.visible(row, show);
+        card.node.hidden = !L.visible(row, show, activeOnly);
     }
 
     let bulkSig = '';
@@ -313,7 +443,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         if (sig !== bulkSig) {
             bulkSig = sig;
             buildForm(bulkForm, eligible, () => payload.bots.filter(r => selected.has(r.username) && r.launchable).map(r => r.username),
-                { noneText: rows.length ? 'No routine is launchable for every selected bot.' : 'Select bots with the checkboxes.' });
+                { noneText: rows.length ? 'No routine is launchable for every selected account.' : 'Select accounts with the checkboxes.' });
         }
         setDisabled(bulkForm);
     }
@@ -341,12 +471,14 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         });
         for (const [name, card] of cards) if (!seen.has(name)) { card.node.remove(); cards.delete(name); }
         empty.hidden = shown > 0;
-        empty.textContent = payload.bots.length ? 'No bot matches this filter.' : 'No bot accounts known yet.';
-        const counts = { all: payload.bots.length, active: payload.bots.filter(r => L.visible(r, 'active')).length };
+        empty.textContent = payload.bots.length ? (show === 'regular' && !payload.bots.some(r => r.type === 'player')
+            ? 'No regular accounts yet: on the workstation run scripts/player.sh setup \'Your Name\' (it asks for the password there).' : 'No account matches this filter.') : 'No accounts known yet.';
+        const counts = Object.fromEntries(['all', 'bots', 'regular'].map(v => [v, payload.bots.filter(r => L.visible(r, v, activeOnly)).length]));
         for (const b of filterButtons) {
             b.setAttribute('aria-pressed', String(b.dataset.show === show));
             b.querySelector('.n').textContent = String(counts[b.dataset.show]);
         }
+        activeButton.setAttribute('aria-pressed', String(activeOnly));
         renderBulk();
     }
 
@@ -362,11 +494,19 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         }
     }
 
-    for (const b of filterButtons) b.addEventListener('click', () => { show = L.validShow(b.dataset.show) || 'all'; store('localStorage')?.setItem(SHOW_KEY, show); if (payload) render(); });
-    document.getElementById('ctl-expand-all').addEventListener('click', () => { if (payload) for (const r of payload.bots) if (L.visible(r, show)) setExpanded(r.username, true); });
+    const setShow = (next, persist) => {
+        show = L.validShow(next) || 'all';
+        if (persist) store('localStorage')?.setItem(SHOW_KEY, show);
+        try { history.replaceState(null, '', L.withShow(location.search, show) + location.hash); } catch { /* ignore */ }
+        if (payload) render();
+    };
+    for (const b of filterButtons) b.addEventListener('click', () => setShow(b.dataset.show, true));
+    activeButton.addEventListener('click', () => { activeOnly = !activeOnly; store('localStorage')?.setItem(ACTIVE_KEY, activeOnly ? '1' : '0'); if (payload) render(); });
+    document.getElementById('ctl-expand-all').addEventListener('click', () => { if (payload) for (const r of payload.bots) if (L.visible(r, show, activeOnly)) setExpanded(r.username, true); });
     document.getElementById('ctl-collapse-all').addEventListener('click', () => { for (const name of [...expanded]) setExpanded(name, false); });
     document.getElementById('ctl-select-none').addEventListener('click', () => { selected.clear(); save(); if (payload) render(); });
     bulk.addEventListener('toggle', renderBulk);
+    setShow(show, false);
     poll();
     setInterval(() => { if (!document.hidden) poll(); }, refreshMs);
 })();

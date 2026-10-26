@@ -268,3 +268,15 @@ footer { margin-top: 32px; padding-top: 18px; border-top: 1px solid #68563866; c
 .ctl-bulk summary { cursor: pointer; font-weight: bold; }
 .ctl-bulk .ctl-form { margin-top: 10px; }
 .ctl-flash.bad { border-color: #a3452d; color: #f0b9a0; }
+/* Bot controller: account types, live job log, embedded game client (browser view). */
+.ctl-type-bot { color: #c5b99a; }
+.ctl-type-regular { color: #d9e6f2; border-color: #5c7286 !important; }
+.ctl-log h3, .ctl-frame h3 { font: bold 11px Arial, sans-serif; text-transform: uppercase; letter-spacing: 1px; color: #a8987a; margin: 12px 0 6px; }
+.ctl-log-lines { max-height: 260px; overflow: auto; margin: 0; padding: 8px; background: #090a07; border: 1px solid #3d3322; color: #d8cfb6; font: 11px/1.45 Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-all; }
+.ctl-frame { margin-top: 10px; }
+.ctl-frame-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.ctl-frame-head .ctl-desc { margin: 0; }
+.ctl-frame-note { color: #ffcf8a; }
+.ctl-game { display: block; width: 100%; height: min(78vh, 620px); min-height: 420px; resize: vertical; border: 1px solid #8d7444; background: #000; }
+.ctl-card.has-frame { border-color: #ffe139; }
+.ctl-mode[hidden] { display: none; }
