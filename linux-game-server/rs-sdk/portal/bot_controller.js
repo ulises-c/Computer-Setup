@@ -18,8 +18,9 @@ const ControllerLogic = (() => {
         for (const a of spec.args) {
             const v = raw ? raw[a.name] : undefined;
             if (a.type === 'enum') {
-                if (typeof v === 'string' && a.values.includes(v)) args[a.name] = v;
-                else errors[a.name] = `one of ${a.values.join(', ')}`;
+                const allowed = allowedValues(a, args);
+                if (typeof v === 'string' && allowed.includes(v)) args[a.name] = v;
+                else errors[a.name] = `one of ${allowed.join(', ')}`;
             } else {
                 const text = typeof v === 'number' ? String(v) : String(v ?? '').trim();
                 const n = /^\d{1,7}$/.test(text) ? Number(text) : NaN;
@@ -81,6 +82,14 @@ const ControllerLogic = (() => {
     const showLog = row => !!(row && row.controller && Array.isArray(row.controller.log) && row.controller.log.length);
     const frameNote = row => `${row.type === 'player' ? `Log in as ${row.displayName || row.username} in the game view below (your password never touches the portal).` : 'The game view logs this bot in by itself.'} `
         + 'This game client is the account\u2019s only client and lives only while this page and its game view stay open: log out in the game before closing it, or the server keeps the player in the world for a few minutes.';
+    // Dangerous routines (registry `danger`): a warning next to the routine and an explicit confirm before Start.
+    const dangerOf = spec => (spec && typeof spec.danger === 'string' && spec.danger.trim() ? spec.danger : null);
+    const optionLabel = spec => (dangerOf(spec) ? `\u26a0 ${spec.label} (dangerous)` : spec ? spec.label : '');
+    const dangerConfirm = (spec, bots) => (dangerOf(spec)
+        ? `${spec.label} is DANGEROUS for ${bots.join(', ')}:\n\n${spec.danger}\n\nStart it anyway?` : null);
+    // Values an enum arg offers given the args before it (mirror of the daemon's allowedValues): one fixed
+    // list today; dependent args plug in here, and renderFields re-renders when an earlier field changes.
+    const allowedValues = (arg, _chosen) => arg.values;
     const parseSet = raw => {
         try {
             const value = JSON.parse(raw || '[]');
@@ -89,7 +98,7 @@ const ControllerLogic = (() => {
             return new Set();
         }
     };
-    return { routineById, defaults, validateArgs, commonEligible, tone, desiredText, ago, heartbeat, validShow, initialShow, withShow, visible, isActive, label, modesFor, showLog, frameNote, parseSet };
+    return { routineById, defaults, validateArgs, commonEligible, tone, desiredText, ago, heartbeat, validShow, initialShow, withShow, visible, isActive, label, modesFor, showLog, frameNote, dangerOf, optionLabel, dangerConfirm, allowedValues, parseSet };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = ControllerLogic;
 
@@ -138,12 +147,12 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         flash.classList.toggle('bad', !!bad);
     }
 
-    async function send(bots, action, routine, args, mode) {
+    async function send(bots, action, routine, args, mode, confirmDanger) {
         if (!canWrite() || busy) return false;
         busy = true;
         try {
             const body = { bots, action };
-            if (action === 'run') Object.assign(body, { routine, args, mode: mode || 'headless' });
+            if (action === 'run') Object.assign(body, { routine, args, mode: mode || 'headless' }, confirmDanger ? { confirmDanger: true } : {});
             const res = await fetch(postUrl, {
                 method: 'POST', credentials: 'same-origin', cache: 'no-store',
                 headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': payload.auth.csrf }, body: JSON.stringify(body),
@@ -177,7 +186,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         pick.setAttribute('aria-label', 'Routine');
         for (const id of eligible) {
             const spec = L.routineById(registry, id);
-            const o = el('option', '', spec ? spec.label : id);
+            const o = el('option', '', spec ? L.optionLabel(spec) : id);
             o.value = id;
             pick.append(o);
         }
@@ -188,6 +197,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         modePick.name = 'mode';
         modeLabel.append(modePick);
         const desc = el('p', 'ctl-desc');
+        const danger = el('p', 'ctl-danger');
+        danger.setAttribute('role', 'alert');
         const errors = el('p', 'ctl-errors');
         const inputs = {};
         const renderFields = () => {
@@ -195,6 +206,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
             for (const k of Object.keys(inputs)) delete inputs[k];
             const spec = L.routineById(registry, pick.value);
             desc.textContent = spec ? spec.description : '';
+            const warn = L.dangerOf(spec);
+            danger.hidden = !warn;
+            danger.textContent = warn ? `\u26a0 Dangerous: ${warn}` : '';
             const values = L.defaults(spec);
             const modes = L.modesFor(spec, opts.single ? 1 : 2);
             const keep = modePick.value;
@@ -207,7 +221,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
                 let input;
                 if (a.type === 'enum') {
                     input = el('select');
-                    for (const v of a.values) { const o = el('option', '', v); o.value = v; input.append(o); }
+                    for (const v of L.allowedValues(a, values)) { const o = el('option', '', v); o.value = v; input.append(o); }
                 } else {
                     input = el('input');
                     Object.assign(input, { type: 'number', min: a.min, max: a.max, step: 1, inputMode: 'numeric' });
@@ -235,7 +249,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
                     const raw = Object.fromEntries(Object.entries(inputs).map(([k, i]) => [k, i.value]));
                     const v = L.validateArgs(spec, raw);
                     if (!v.ok) { errors.textContent = Object.entries(v.errors).map(([k, e]) => `${k}: ${e}`).join('; '); return; }
-                    await send(bots, 'run', spec.id, v.args, modeLabel.hidden ? 'headless' : modePick.value);
+                    const ask = L.dangerConfirm(spec, bots);
+                    if (ask && !window.confirm(ask)) { say(`${spec.label} not started.`); return; }
+                    await send(bots, 'run', spec.id, v.args, modeLabel.hidden ? 'headless' : modePick.value, !!ask);
                 } else {
                     if (action === 'stop' && bots.length > 1 && !window.confirm(`Stop ${bots.length} accounts?`)) return;
                     await send(bots, action);
@@ -245,7 +261,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         };
         const buttons = el('div', 'ctl-buttons');
         if (eligible.length) {
-            form.append(pick, fields, modeLabel, desc);
+            form.append(pick, danger, fields, modeLabel, desc);
             buttons.append(button('Start', 'run', 'ctl-start'));
         } else {
             form.append(el('p', 'ctl-desc', opts.noneText || 'No registry routine is launchable for this bot.'));

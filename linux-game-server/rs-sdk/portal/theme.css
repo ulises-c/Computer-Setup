@@ -256,6 +256,8 @@ footer { margin-top: 32px; padding-top: 18px; border-top: 1px solid #68563866; c
 .ctl-field { display: grid; gap: 2px; font-size: 11px; color: #a8987a; flex: 1 1 120px; min-width: 0; }
 .ctl-field input, .ctl-field select { width: 100%; }
 .ctl-desc { font-size: 12px; color: #a8987a; margin: 4px 0 8px; }
+.ctl-danger { font-size: 12px; font-weight: 600; color: #ffb36b; background: rgba(255, 120, 60, 0.12); border: 1px solid #c8662e; border-radius: 4px; padding: 6px 8px; margin: 6px 0; }
+.ctl-danger[hidden] { display: none; }
 .ctl-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
 .ctl-buttons button { font: bold 12px Arial, sans-serif; color: #c5b99a; background: #090a07dd; border: 1px solid #685638; padding: 8px 12px; cursor: pointer; min-height: 38px; }
 .ctl-buttons button:hover:not(:disabled) { color: #ffe139; background: #29251b; }

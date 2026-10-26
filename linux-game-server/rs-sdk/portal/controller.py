@@ -141,6 +141,9 @@ def parse_registry(raw):
             raise ValueError(f'{rid}: pioneer runner must allow exactly {PIONEER}')
         if r['runner'] != 'pioneer' and PIONEER not in deny:
             raise ValueError(f'{rid}: must deny {PIONEER}')
+        danger = r.get('danger')
+        if danger is not None and (not _text(danger, 400) or not danger.strip()):
+            raise ValueError(f'{rid}: danger')
         players = r.get('allowPlayers', False)
         if not isinstance(players, bool):
             raise ValueError(f'{rid}: allowPlayers must be true or false')
@@ -177,7 +180,7 @@ def parse_registry(raw):
                 raise ValueError(f'{rid}.{a.get("name")}: type')
         entry = {'id': rid, 'label': r['label'], 'description': r.get('description') or '', 'runner': r['runner'],
                  'safeStart': r.get('safeStart') is True, 'enabled': r.get('enabled') is not False, 'allowBots': allow,
-                 'denyBots': deny, 'allowPlayers': players, 'fixedArgs': list(fixed), 'args': args}
+                 'denyBots': deny, 'allowPlayers': players, 'danger': danger, 'fixedArgs': list(fixed), 'args': args}
         if r['runner'] == 'session':
             entry['routine'] = r['routine']
         routines.append(entry)
@@ -197,6 +200,12 @@ def bot_denied(registry, routine, bot):
     if bot in routine['denyBots']:
         return f'{routine["id"]} is not allowed for {bot}'
     return None
+
+
+def allowed_values(spec, chosen):
+    """Values an enum arg accepts given the args before it (mirror of bot-controller.ts allowedValues). One fixed
+    list today; dependent args (values keyed by an earlier arg's value) plug in here and in the page."""
+    return spec['values']
 
 
 def validate_run(registry, bot, routine_id, args, mode='headless'):
@@ -224,8 +233,9 @@ def validate_run(registry, bot, routine_id, args, mode='headless'):
     for spec in routine['args']:
         value = args.get(spec['name'], spec['default'])
         if spec['type'] == 'enum':
-            if not isinstance(value, str) or value not in spec['values']:
-                raise ValueError(f'{spec["name"]}: one of {", ".join(spec["values"])}')
+            allowed = allowed_values(spec, out)
+            if not isinstance(value, str) or value not in allowed:
+                raise ValueError(f'{spec["name"]}: one of {", ".join(allowed)}')
         elif _int(value, spec['min'], spec['max']) is None:
             raise ValueError(f'{spec["name"]}: integer {spec["min"]}..{spec["max"]}')
         out[spec['name']] = value
@@ -455,6 +465,11 @@ class Store:
                     args_by_bot[bot] = validate_run(registry, bot, request.get('routine'), request.get('args'), mode)
                 except ValueError as exc:
                     errors[bot] = str(exc)
+        if action == 'run' and not errors:
+            spec = next((r for r in registry['routines'] if r['id'] == request.get('routine')), None)
+            # A dangerous routine starts only with the page's explicit confirmation (danger shown, OK pressed).
+            if spec and spec.get('danger') and request.get('confirmDanger') is not True:
+                return 400, {'error': f'{spec["id"]} is marked dangerous ({spec["danger"]}); confirm on the page to start it.'}
         if errors:
             return 400, {'error': 'Request rejected; nothing was changed.', 'bots': errors}
         if not self.rate.allow():
@@ -478,7 +493,8 @@ class Store:
             self.dir.mkdir(parents=True, exist_ok=True)
             write_atomic(self.dir / 'desired.json', desired)
             self.audit({'at': now, 'by': login, 'action': action, 'routine': request.get('routine') if action == 'run' else None,
-                        'args': request.get('args') if action == 'run' else None, 'mode': mode, 'bots': bots})
+                        'args': request.get('args') if action == 'run' else None, 'mode': mode, 'bots': bots,
+                        **({'confirmedDanger': True} if action == 'run' and request.get('confirmDanger') is True else {})})
         return 200, {'ok': True, 'changed': changed}
 
     def audit(self, row):

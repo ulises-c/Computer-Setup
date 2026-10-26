@@ -15,6 +15,8 @@ import live
 
 OWNER = 'owner@example.com'
 ORIGIN = 'https://portal.example'
+THIEVING_DANGER = ('Suicide pickpocketing at Lumbridge castle with NO food: the account dies again and again and relies on death recovery '
+                   'to pick its drop back up. Anything not recovered within ~2 min is lost for good. Bank your valuables first.')
 # Mirror of 2004Scape-Botting routines/registry.json (trimmed descriptions).
 REGISTRY = {
     'version': 1, 'excludedBots': ['bot_tester'],
@@ -31,6 +33,8 @@ REGISTRY = {
         {'id': 'onboard', 'label': 'Onboard', 'runner': 'onboard', 'enabled': False, 'denyBots': ['bot_pioneer'], 'args': []},
         {'id': 'scavenge', 'label': 'Scavenger 24/7', 'runner': 'scavenge-247', 'allowBots': ['bot_magpie'], 'denyBots': ['bot_pioneer'],
          'args': [{'name': 'pen', 'type': 'enum', 'values': ['lumbridge-east'], 'default': 'lumbridge-east'}]},
+        {'id': 'thieving', 'label': 'Thieving (suicide, Lumbridge)', 'runner': 'session', 'routine': 'thieving', 'denyBots': ['bot_pioneer'], 'allowPlayers': True,
+         'danger': THIEVING_DANGER, 'args': [{'name': 'seconds', 'label': 'Seconds', 'type': 'int', 'min': 60, 'max': 21600, 'default': 600}]},
     ],
 }
 ACCOUNTS = ['bot_pioneer', 'bot_tester', 'bot_wormlike', 'bot_apehood']
@@ -51,8 +55,10 @@ def status_doc(**extra):
 class RegistryTests(unittest.TestCase):
     def test_registry_parses_and_rejects_unsafe_entries(self):
         reg = controller.parse_registry(REGISTRY)
-        self.assertEqual([r['id'] for r in reg['routines']], ['mining', 'chickens', 'pioneer-fish', 'onboard', 'scavenge'])
-        self.assertEqual([r['id'] for r in reg['routines'] if r['allowPlayers']], ['mining'])
+        self.assertEqual([r['id'] for r in reg['routines']], ['mining', 'chickens', 'pioneer-fish', 'onboard', 'scavenge', 'thieving'])
+        self.assertEqual([r['id'] for r in reg['routines'] if r['allowPlayers']], ['mining', 'thieving'])
+        self.assertEqual([(r['id'], r['danger']) for r in reg['routines'] if r['danger']], [('thieving', THIEVING_DANGER)])
+        self.assertIsNone(reg['routines'][0]['danger'])
         self.assertFalse(reg['routines'][3]['enabled'])
 
         def bad(mutate):
@@ -74,11 +80,21 @@ class RegistryTests(unittest.TestCase):
         bad(lambda r: r['routines'][1].update(allowPlayers=True))
         bad(lambda r: r['routines'][4].update(allowPlayers=True))
         bad(lambda r: r['routines'][0].update(allowPlayers='yes'))
+        # danger: non-empty printable text up to 400 characters.
+        for value in ('', '   ', 'x' * 401, 'line\nbreak', 5, ['x']):
+            bad(lambda r, value=value: r['routines'][0].update(danger=value))
 
     @unittest.skipUnless(Path.home().joinpath('forgejo/2004Scape-Botting/routines/registry.json').exists(), 'bot repo not on this machine')
     def test_the_bot_repo_registry_is_accepted(self):
         raw = json.loads(Path.home().joinpath('forgejo/2004Scape-Botting/routines/registry.json').read_text())
-        self.assertIn('mining', [r['id'] for r in controller.parse_registry(raw)['routines']])
+        reg = controller.parse_registry(raw)
+        self.assertIn('mining', [r['id'] for r in reg['routines']])
+        # Any runner the daemon's registry uses must be one the portal accepts (else registryError drops it all).
+        self.assertTrue({r['runner'] for r in raw['routines']} <= set(controller.RUNNERS))
+        thieving = next((r for r in reg['routines'] if r['id'] == 'thieving'), None)
+        if thieving is not None:
+            self.assertTrue(thieving['allowPlayers'])
+            self.assertIn('Bank your valuables', thieving['danger'])
 
     def test_run_validation(self):
         reg = controller.parse_registry(REGISTRY)
@@ -298,6 +314,23 @@ class StoreTests(unittest.TestCase):
         # A player id the daemon never reported is not a known account.
         self.assertEqual(self.apply({'action': 'stop', 'bots': ['player_nobody']})[0], 400)
 
+    def test_dangerous_routines_need_the_explicit_confirmation(self):
+        request = {'action': 'run', 'bots': [PLAYER], 'routine': 'thieving', 'args': {'seconds': 600}}
+        for extra in ({}, {'confirmDanger': False}, {'confirmDanger': 'yes'}, {'confirmDanger': 1}):
+            status, body = self.store.apply({**request, **extra}, self.reg, ACCOUNTS + [PLAYER], OWNER)
+            self.assertEqual(status, 400, extra)
+            self.assertIn('dangerous', body['error'])
+            self.assertIn('Bank your valuables', body['error'])
+        self.assertFalse((self.dir / 'desired.json').exists())
+        status, body = self.store.apply({**request, 'confirmDanger': True}, self.reg, ACCOUNTS + [PLAYER], OWNER)
+        self.assertEqual(status, 200, body)
+        self.assertEqual(self.store.read()['bots'][PLAYER]['routine'], 'thieving')
+        audit = [json.loads(line) for line in (self.dir / 'audit.jsonl').read_text().splitlines()]
+        self.assertTrue(audit[-1]['confirmedDanger'])
+        # Routines without a danger note need no confirmation; stop never does.
+        self.assertEqual(self.apply({'action': 'run', 'bots': ['bot_wormlike'], 'routine': 'mining', 'args': {}})[0], 200)
+        self.assertEqual(self.apply({'action': 'stop', 'bots': ['bot_wormlike']})[0], 200)
+
     def test_rate_limit(self):
         for _ in range(30):
             self.assertEqual(self.apply({'action': 'hold', 'bots': ['bot_wormlike']})[0], 200)
@@ -312,7 +345,7 @@ class StoreTests(unittest.TestCase):
         view = controller.view(ACCOUNTS, live_payload, status, self.store.read(), {'canWrite': False})
         rows = {r['username']: r for r in view['bots']}
         self.assertEqual(sorted(rows), sorted(ACCOUNTS))
-        self.assertEqual(rows['bot_wormlike']['eligible'], ['mining', 'chickens'])
+        self.assertEqual(rows['bot_wormlike']['eligible'], ['mining', 'chickens', 'thieving'])
         self.assertEqual(rows['bot_pioneer']['eligible'], ['pioneer-fish'])
         self.assertEqual((rows['bot_tester']['launchable'], rows['bot_tester']['eligible']), (False, []))
         self.assertEqual(rows['bot_wormlike']['phase'], 'mining tin')
@@ -330,7 +363,7 @@ class StoreTests(unittest.TestCase):
         view = controller.view(ACCOUNTS, {'available': False, 'bots': []}, status, self.store.read(), {'canWrite': True})
         rows = {r['username']: r for r in view['bots']}
         self.assertEqual((rows[PLAYER]['type'], rows[PLAYER]['displayName'], rows[PLAYER]['presence']), ('player', 'Cant Pvm', 'offline'))
-        self.assertEqual(rows[PLAYER]['eligible'], ['mining'])
+        self.assertEqual(rows[PLAYER]['eligible'], ['mining', 'thieving'])
         self.assertEqual(rows['bot_wormlike']['type'], 'bot')
         self.assertTrue(rows[PLAYER]['frame']['offered'])
         self.assertFalse(rows[PLAYER]['frame']['login'])
@@ -514,6 +547,10 @@ const out = {
   frameLines: L.frameNote({type: 'player', displayName: 'Cant Pvm'}),
   modes: [L.modesFor({runner: 'session'}, 1), L.modesFor({runner: 'session'}, 2), L.modesFor({runner: 'chickens-247'}, 1)],
   logShown: [L.showLog({controller: {log: ['a']}}), L.showLog({controller: {log: []}}), L.showLog({})],
+  danger: [L.dangerOf(L.routineById(reg, 'thieving')), L.dangerOf(mining), L.dangerOf(null), L.dangerOf({danger: '  '})],
+  optionLabels: [L.optionLabel(L.routineById(reg, 'thieving')), L.optionLabel(mining)],
+  confirm: [L.dangerConfirm(L.routineById(reg, 'thieving'), ['player_cantpvm']), L.dangerConfirm(mining, ['bot_a'])],
+  allowed: L.allowedValues(mining.args[0], {}),
   set: [...L.parseSet('["bot_a", 1]')], broken: [...L.parseSet('{')],
 };
 console.log(JSON.stringify(out));
@@ -539,6 +576,12 @@ console.log(JSON.stringify(out));
         self.assertEqual(got['modes'], [['headless', 'browser'], ['headless'], ['headless']])
         self.assertEqual(got['logShown'], [True, False, False])
         self.assertEqual((got['set'], got['broken']), (['bot_a'], []))
+        self.assertEqual(got['danger'], [THIEVING_DANGER, None, None, None])
+        self.assertEqual(got['optionLabels'], ['\u26a0 Thieving (suicide, Lumbridge) (dangerous)', 'Mining'])
+        self.assertIn('DANGEROUS for player_cantpvm', got['confirm'][0])
+        self.assertIn(THIEVING_DANGER, got['confirm'][0])
+        self.assertIsNone(got['confirm'][1])
+        self.assertEqual(got['allowed'], ['tin-barbarian-village', 'coal-barbarian-village'])
 
 
 if __name__ == '__main__':
