@@ -354,6 +354,29 @@ def rs_sdk(source, data, history, boot, window):
     return result
 
 
+def world_list():
+    """rs-sdk/worlds/worlds.py's machine-readable world list (None if it cannot be built)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('rs_sdk_worlds', GAME / 'rs-sdk' / 'worlds' / 'worlds.py')
+    try:
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.world_list()
+    except Exception:  # noqa: BLE001 - the cards must keep publishing whatever the world list does
+        return None
+
+
+def worlds_summary(document):
+    if not document:
+        return 'unknown'
+    parts = []
+    for world in document['worlds']:
+        state = 'up' if world['online'] else 'down'
+        players = f" {world['players']} online" if world['online'] and world['players'] is not None else ''
+        parts.append(f"{world['id']} {world['role']} {state}{players}")
+    return ' · '.join(parts)
+
+
 def publish(destination, document):
     destination.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix='.status.', dir=destination.parent)
@@ -386,9 +409,14 @@ def main():
                     lostcity(lostcity_env['LOSTCITY_RUNTIME_DIR'], metrics / 'lostcity-history.json', boot,
                              maintenance(settings, 'lostcity', state_dir)))
         if rs_sdk_env.get('RS_SDK_SOURCE_DIR') and rs_sdk_env.get('RS_SDK_DATA_DIR'):
-            publish(status_dir / 'rs-sdk-status.json',
-                    rs_sdk(rs_sdk_env['RS_SDK_SOURCE_DIR'], rs_sdk_env['RS_SDK_DATA_DIR'],
-                           metrics / 'rs-sdk-history.json', boot, maintenance(settings, 'rs-sdk', state_dir)))
+            worlds = world_list()
+            if worlds is not None:
+                # Served on the tailnet as /rs-sdk-worlds.json (serve.conf) for bots that hop worlds.
+                publish(status_dir / 'rs-sdk-worlds.json', worlds)
+            card = rs_sdk(rs_sdk_env['RS_SDK_SOURCE_DIR'], rs_sdk_env['RS_SDK_DATA_DIR'],
+                          metrics / 'rs-sdk-history.json', boot, maintenance(settings, 'rs-sdk', state_dir))
+            card['worlds_summary'] = worlds_summary(worlds)
+            publish(status_dir / 'rs-sdk-status.json', card)
 
 
 if __name__ == '__main__':

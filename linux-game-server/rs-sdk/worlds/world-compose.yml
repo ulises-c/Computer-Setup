@@ -1,0 +1,103 @@
+# One extra RS-SDK world (not world 1). Started only by
+# `2004scape/world.sh up <id>`, which reads worlds.conf and exports the WORLD_*
+# variables below; project name rs-sdk-world-<id>, so it never touches world 1's
+# rs-sdk-server container or compose project.
+#
+# Shared with world 1 (one set of accounts, saves, banks and hiscores):
+#   - world 1's login, friend and logger servers on loopback (43510/45109/43511);
+#   - world 1's data directory: db.sqlite (hiscore pages, login guard reads) and
+#     market.sqlite, the Grand Exchange save ledger every login loads from. Saves
+#     themselves are written only by world 1's login server.
+# Grand Exchange trading stays off here (GE_ENABLED=false): one matching engine,
+# world 1's. The ledger is still shared so a save never forks between worlds.
+# Gameplay settings must match world 1's compose service (tests enforce it).
+services:
+  world:
+    image: ${WORLD_IMAGE:?set by world.sh}
+    container_name: rs-sdk-world-${WORLD_ID:?set by world.sh}
+    init: true
+    network_mode: host
+    restart: ${WORLD_RESTART:?set by world.sh}
+    labels:
+      - com.centurylinklabs.watchtower.enable=false
+      - computer-setup.rs-sdk.world=${WORLD_ID}
+      - computer-setup.rs-sdk.world-role=${WORLD_ROLE:?set by world.sh}
+    env_file:
+      - path: ../../../server-base/timezone.env
+        required: true
+    entrypoint: ["/bin/bash", "/opt/world/world-entrypoint.sh"]
+    command: []
+    environment:
+      WORLD_ID: ${WORLD_ID}
+      NODE_ID: ${WORLD_NODE_ID:?set by world.sh}
+      WORLD_ROLE: ${WORLD_ROLE}
+      # Guards (world-node.js). The allowlist is on for test worlds.
+      WORLD_ALLOWLIST_ENABLED: ${WORLD_ALLOWLIST_ENABLED:?set by world.sh}
+      WORLD_LOGIN_ALLOWLIST: ${WORLD_LOGIN_ALLOWLIST:-}
+      WORLD_EXCLUSIVE_LOGIN: "true"
+      WORLD_TAKEOVER_WATCH: "true"
+      WORLD_SAVE_BACKUP_DIR: /opt/world-state/save-backups
+      BUG_REPORTS_FILE: /opt/world-state/bug-reports.jsonl
+      GE_DATABASE: /opt/server/data/market.sqlite
+      GE_ENABLED: "false"
+      BUILD_STARTUP: "false"
+      BUILD_STARTUP_UPDATE: "false"
+      DB_BACKEND: sqlite
+      # World 1 runs the login/friend/logger servers; this node only connects.
+      EASY_STARTUP: "false"
+      LOGIN_SERVER: "true"
+      FRIEND_SERVER: "true"
+      LOGIN_HOST: 127.0.0.1
+      LOGIN_PORT: "43510"
+      FRIEND_HOST: 127.0.0.1
+      FRIEND_PORT: "45109"
+      LOGGER_HOST: 127.0.0.1
+      LOGGER_PORT: "43511"
+      NODE_MEMBERS: "true"
+      NODE_PORT: ${WORLD_GAME_PORT:?}
+      NODE_XPRATE: "1"
+      NODE_INFINITE_RUN: "false"
+      NODE_RANDOM_EVENTS: "true"
+      NODE_TICKRATE: "600"
+      WEBSITE_REGISTRATION: "false"
+      WEB_PORT: ${WORLD_WEB_PORT:?}
+      WEB_MANAGEMENT_PORT: ${WORLD_MANAGEMENT_PORT:?}
+      GATEWAY_URL: http://127.0.0.1:${WORLD_GATEWAY_PORT:?}
+      AGENT_PORT: ${WORLD_GATEWAY_PORT}
+      GATEWAY_PUBLIC_PORT: ${WORLD_GATEWAY_PUBLIC_PORT:?}
+      GATEWAY_HOSTNAME: 0.0.0.0
+    volumes:
+      - type: bind
+        source: ${RS_SDK_DATA_DIR:?}
+        target: /opt/server/data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${WORLD_STATE_DIR:?}
+        target: /opt/world-state
+        bind:
+          create_host_path: false
+      - type: bind
+        source: .
+        target: /opt/world
+        read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 120s
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
+    healthcheck:
+      test:
+        - CMD
+        - bun
+        - -e
+        - "fetch('http://127.0.0.1:' + process.env.WEB_PORT + '/engine-status').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 180s

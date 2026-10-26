@@ -81,7 +81,8 @@ const op = relayOpcodes();
 const CLIENT_TICK_MS = 600;
 const resendMs = tickMs < CLIENT_TICK_MS ? 2_000 : 30_000;
 const checkpoints = [3600, 1800, 900, 600, 300, 120, 60, 30, 10];
-const reason = process.env.COUNTDOWN_WITH_UPDATE === '1' ? 'a backup and update' : 'a backup and restart';
+const reason = process.env.COUNTDOWN_REASON
+    || (process.env.COUNTDOWN_WITH_UPDATE === '1' ? 'a backup and update' : 'a backup and restart');
 
 const remainingMs = () => deadline - Date.now();
 

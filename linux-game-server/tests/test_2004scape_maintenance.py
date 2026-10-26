@@ -196,6 +196,7 @@ case "$1" in
     [[ -n "$id" ]] || exit 1
     mkdir -p "$S/tags"; echo "$id" >"$(tagfile "$3")" ;;
   rm) : ;;
+  ps) cat "$S/extra-worlds" 2>/dev/null || true ;;
   run)
     # rs_sdk_data_op: run its script against the real directory behind /parent.
     parent=""; name=""; script=""; prev=""
@@ -319,6 +320,11 @@ class MaintenanceFlowTests(unittest.TestCase):
         (game / "2004scape").mkdir(parents=True)
         for name in ("maintenance.sh", "countdown.js"):
             shutil.copy(SCAPE / name, game / "2004scape" / name)
+        # world.sh is exercised by test_rs_sdk_worlds; here it only records its calls.
+        (game / "2004scape/world.sh").write_text(
+            '#!/usr/bin/env bash\nprintf "world.sh %s\\n" "$*" >>"$STUB_STATE/calls"\n'
+            'exit "$(cat "$STUB_STATE/world-rc" 2>/dev/null || echo 0)"\n')
+        shutil.copytree(SCAPE.parent / "rs-sdk/worlds", game / "rs-sdk/worlds")
         self.script = game / "2004scape" / "maintenance.sh"
         self.runtime = self.tmp / "games/lost-city/runtime"
         self.rs_src = self.tmp / "rs-sdk-src"
@@ -335,7 +341,6 @@ class MaintenanceFlowTests(unittest.TestCase):
         (self.players / "main").mkdir(parents=True)
         (self.players / "main/alice.sav").write_text("old-save")
         (game / "lostcity").mkdir()
-        (game / "rs-sdk").mkdir()
         (game / "lostcity/.env").write_text(f"LOSTCITY_RUNTIME_DIR={self.runtime}\nLOSTCITY_REVISION=254\n")
         (game / "rs-sdk/.env").write_text(f"RS_SDK_SOURCE_DIR={self.rs_src}\nRS_SDK_DATA_DIR={self.rs_data}\n")
         self.next_epoch = int(time.time()) + 3600
@@ -343,7 +348,10 @@ class MaintenanceFlowTests(unittest.TestCase):
         self.backup_day = datetime.datetime.fromtimestamp(self.next_epoch).strftime("%a")
         other_day = next(d for d in ("Mon", "Tue") if d != self.backup_day)
         self.scape_env = game / "2004scape/.env"
-        self.base_env = f"COUNTDOWN_MINUTES=1\nNTFY_URL=https://ntfy.example\nNTFY_TOPIC=t\nMAINTENANCE_DAY={other_day}\n"
+        # The update-mechanics tests below drive RS-SDK's in-place update; the
+        # candidate/promote flow (the default) has its own tests.
+        self.base_env = (f"COUNTDOWN_MINUTES=1\nNTFY_URL=https://ntfy.example\nNTFY_TOPIC=t\nMAINTENANCE_DAY={other_day}\n"
+                         "RS_SDK_UPDATES=direct\n")
         self.scape_env.write_text(self.base_env)
         bin_dir = self.tmp / "bin"
         bin_dir.mkdir()
@@ -1124,6 +1132,130 @@ class UnitTemplateTests(unittest.TestCase):
         self.assertIn("User=tester", result.stdout)
         self.assertIn("disable --now 2004scape-update.timer", result.stdout)
         self.assertNotIn("stop 2004scape-update.service", result.stdout)
+
+
+class RsSdkCandidateFlowTests(MaintenanceFlowTests):
+    """RS-SDK updates build candidates and wait for an owner promotion (world.sh)."""
+    PROMOTED = "sha256:" + "c" * 64
+
+    def setUp(self):
+        super().setUp()
+        self.base_env = self.base_env.replace("RS_SDK_UPDATES=direct\n", "")
+        self.scape_env.write_text(self.base_env)
+
+    def promote(self, image=PROMOTED):
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        (self.state_dir / "rs-sdk.promote").write_text(image + "\n")
+
+    def test_upstream_update_builds_a_candidate_and_never_touches_world_1(self):
+        self.maintenance_night()
+        self.running("rs-sdk-server")
+        self.set_repo(self.rs_src, "main", self.OLD, self.NEW)
+        result, calls, notify = self.run_maintenance()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.count(calls, "world.sh candidate build --if-new"), 1)
+        self.assert_no_call(calls, "merge --ff-only")
+        self.assert_no_call(calls, " build rs-sdk")
+        self.assertFalse(any("COUNTDOWN_WITH_UPDATE" in line for line in calls))
+        self.assertEqual(self.started_images("rs-sdk-server"), ["sha256:running-rs-sdk-server"])
+        self.assertNotIn("2004Scape updated", notify)
+
+    def test_failed_candidate_build_is_only_logged(self):
+        self.running("rs-sdk-server")
+        self.set_repo(self.rs_src, "main", self.OLD, self.NEW)
+        self.stub("world-rc", 1)
+        result, calls, _ = self.run_maintenance()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("candidate build failed", result.stdout)
+        self.assert_no_call(calls, "docker exec")
+
+    def test_check_mode_builds_nothing(self):
+        self.running("rs-sdk-server")
+        self.set_repo(self.rs_src, "main", self.OLD, self.NEW)
+        result, calls, _ = self.run_maintenance("--check")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assert_no_call(calls, "world.sh")
+
+    def test_notify_mode_reports_once(self):
+        self.base_env += "RS_SDK_UPDATES=notify\n"
+        self.scape_env.write_text(self.base_env)
+        self.running("rs-sdk-server")
+        self.set_repo(self.rs_src, "main", self.OLD, self.NEW)
+        _, calls, notify = self.run_maintenance()
+        self.assert_no_call(calls, "world.sh")
+        self.assertEqual(notify.count("2004Scape update available"), 1)
+        _, _, notify = self.run_maintenance()
+        self.assertEqual(notify.count("2004Scape update available"), 1)
+
+    def test_promotion_deploys_the_owner_tested_image_at_the_window(self):
+        self.promote()
+        self.maintenance_night()
+        self.running("rs-sdk-server")
+        self.set_repo(self.rs_src, "main", self.OLD, self.NEW)
+        result, calls, notify = self.run_maintenance()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        announce = next(line for line in calls if line.startswith("docker exec") and "rs-sdk-server" in line)
+        self.assertIn("COUNTDOWN_WITH_UPDATE=1", announce)
+        verify = self.index(calls, "start --wait game-backup-restore-check.service")
+        self.assertLess(verify, self.index(calls, f"docker tag {self.PROMOTED} computer-setup/rs-sdk:local"))
+        self.assertEqual(self.started_images("rs-sdk-server"), [self.PROMOTED])
+        self.assert_no_call(calls, "merge --ff-only")
+        self.assert_no_call(calls, " build rs-sdk")
+        self.assert_no_call(calls, "world.sh candidate")
+        self.assertEqual((self.state_dir / "rs-sdk.image").read_text().strip(), self.PROMOTED)
+        self.assertFalse((self.state_dir / "rs-sdk.promote").exists())
+        self.assertIn("2004Scape updated", notify)
+
+    def test_unhealthy_promotion_rolls_back_without_touching_the_checkout(self):
+        self.promote()
+        self.maintenance_night()
+        self.running("rs-sdk-server")
+        self.stub("healthy-from-up.rs-sdk-server", 2)
+        result, calls, notify = self.run_maintenance()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(self.started_images("rs-sdk-server"), [self.PROMOTED, "sha256:running-rs-sdk-server"])
+        self.assert_no_call(calls, "reset --hard")
+        self.assertEqual((self.rs_data / "db.sqlite").read_text(), "old-rs-data")
+        self.assertFalse((self.state_dir / "rs-sdk.promote").exists())
+        self.assertIn("2004Scape update FAILED", notify)
+
+    def test_promotion_to_a_missing_image_is_dropped_loudly(self):
+        self.promote("sha256:" + "d" * 64)
+        (self.state / f"gone.sha256:{'d' * 64}").write_text("")
+        self.maintenance_night()
+        self.running("rs-sdk-server")
+        result, _, notify = self.run_maintenance()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("2004Scape promotion ignored", notify)
+        self.assertFalse((self.state_dir / "rs-sdk.promote").exists())
+        self.assertEqual(self.started_images("rs-sdk-server"), ["sha256:running-rs-sdk-server"])
+
+    def test_extra_worlds_go_down_before_world_1_and_test_worlds_stay_down(self):
+        self.maintenance_night()
+        self.running("rs-sdk-server")
+        self.stub("extra-worlds", "100")
+        result, calls, _ = self.run_maintenance()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        down = self.index(calls, "world.sh down 100 --countdown")
+        self.assertLess(down, self.index(calls, "start --wait game-backup.service"))
+        self.assert_no_call(calls, "world.sh up")
+        self.assertIn("test world 100 stays down", result.stdout)
+
+    def test_live_extra_world_comes_back_after_world_1(self):
+        conf = self.script.parent.parent / "rs-sdk/worlds/worlds.conf"
+        conf.write_text(conf.read_text().replace("100   100   test", "100   100   live"))
+        self.maintenance_night()
+        self.running("rs-sdk-server")
+        self.stub("extra-worlds", "100")
+        result, calls, _ = self.run_maintenance()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertLess(self.index(calls, "up -d --no-build --force-recreate rs-sdk"), self.index(calls, "world.sh up 100"))
+
+
+# Only the candidate-flow tests run in that class; the inherited ones run once, above.
+for _name in dir(MaintenanceFlowTests):
+    if _name.startswith("test_") and _name not in RsSdkCandidateFlowTests.__dict__:
+        setattr(RsSdkCandidateFlowTests, _name, None)
 
 
 if __name__ == "__main__":

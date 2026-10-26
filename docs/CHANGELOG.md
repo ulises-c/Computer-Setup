@@ -9,6 +9,21 @@ in [UNIFICATION.md](UNIFICATION.md).
 ## Unreleased — 2004Scape backup and maintenance safety
 
 ### Added
+- RS-SDK worlds: extra engines share world 1's accounts, saves, banks and hiscores
+  through its login, friend and logger servers and its Grand Exchange save ledger.
+  Worlds are rows in `linux-game-server/rs-sdk/worlds/worlds.conf`; test world 100
+  runs a candidate image on demand (`2004scape/world.sh test up|down`) with an
+  allowlist, an exclusive-login check, a save backup before every login, a takeover
+  watch, and a refusal to start on an image with another XP curve, save format or
+  migrations. Countdowns stay on their own world. The world list is published as
+  `/rs-sdk-worlds.json` for world-hopping bots.
+- RS-SDK updates build a candidate (upstream + patch scripts) and notify instead of
+  updating world 1 (`RS_SDK_UPDATES=candidate`); world 1 changes only on
+  `world.sh promote --next-window` (weekly maintenance, with backup and rollback) or
+  `--now` (2-minute countdown, data copy and rollback).
+- `hop-timer-utc.js`: the login server read the stored UTC logout time as Pacific
+  time, so the 45-second hop timer between worlds lasted 7-8 hours. Fixed in
+  candidates; reaches world 1 with the next promotion.
 - Server-authoritative RS-SDK wiki: the game server owns the scraped store,
   SQLite databases, image/stylesheet queues and shared request pacing. Existing
   bot wiki commands forward over SSH without local-fetch fallback. User timers

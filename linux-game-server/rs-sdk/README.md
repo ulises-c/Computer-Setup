@@ -20,12 +20,52 @@ The same image layer patches the engine's hiscores (each script fails the build 
 - `hiscore-pages.js` (`web/pages/hiscores.ts`): the ranked lists (Overall, each skill, Quest Points) get a stone-styled pager under the table: Top, Prev and Next move 21 ranks, the rank search's page size, and keep `category`, `profile` and a searched `player`; the ends are greyed out and the box shows "Ranks X–Y of N". A name search highlights the player and links its rank to the page that shows them. Equipment and Bank (fixed top 50) and Lava Maze Runite (three top 10s) are not paginated lists, so they get no pager.
 - `hiscore-prune.js` (`server/login/LoginServer.ts`): the login server writes a skill row only at base level 15+ and never deleted one, so a row written at a higher level (e.g. under another XP curve) stayed on the board. At save, a skill below 15 now deletes its row; rows at 15+ are written exactly as upstream does.
 
+`hop-timer-utc.js` (`server/login/LoginServer.ts`) fixes the hop timer between worlds: the login server stores `logout_time` as UTC text and read it back as local time, so with the container's Pacific `TZ` the 45-second timer lasted 7-8 hours and an account could not change worlds the same day (measured on the test world: refused with 419 minutes left). It reads the text as UTC; it reaches world 1 only with the next promoted image.
+
 `fix-hiscore-levels.py` is the one-off repair for rows already written under the wrong curve: it recomputes each skill row's level from its stored XP on the original curve (deleting rows under 15) and leaves Quest Points, playtime and `hiscore_large` alone (total level needs every skill; it heals at the account's next logout). It is a dry run by default; `--apply` refuses while `rs-sdk-server` runs on that database and backs it up first (`~/.local/state/computer-setup/hiscore-fix-<time>.sqlite`). Run it while the engine is stopped:
 
 ```sh
 python3 linux-game-server/rs-sdk/fix-hiscore-levels.py --db ~/games/rs-sdk/data/db.sqlite          # dry run
 python3 linux-game-server/rs-sdk/fix-hiscore-levels.py --db ~/games/rs-sdk/data/db.sqlite --apply  # engine stopped
 ```
+
+## Worlds
+
+Several engines can share one set of accounts. World 1 (`rs-sdk-server`, node 10) is the main stack and runs the login, friend and logger servers in-process (`EASY_STARTUP=true`). Every other world is a node that connects to those servers over loopback (host networking): same `profile` (`main`), so accounts, saves, banks, quests and hiscores are shared. The worlds are listed in [`worlds/worlds.conf`](worlds/worlds.conf) (id, node id, role, ports); adding a world is one row there, its two Tailscale routes in `../serve.conf`, then `world.sh up <id>`.
+
+| World | Node | Role | Web (tailnet) | SDK gateway (tailnet) | Game TCP | Internal |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 10 | live | `:9445` → 8080 | `:9446` → 7781 | 43595 | gateway 7780, management 8899 |
+| 100 | 100 | test | `:9448` → 8180 | `:9449` → 7791 | 43600 | gateway 7790, management 8199 |
+
+- **Roles.** `live`: world 1's own image, open to everyone, a hop target for bots. `test`: a candidate image, an allowlist (default on, kept in the state dir, never committed), never a hop target. `world.sh role <id> live|test` switches; a running world is restarted with a countdown on that world only. Today there is one live world; the test world 100 is up only while a test needs it (`world.sh test up [IMAGE]`, `world.sh test down`).
+- **What an extra world shares** (`worlds/world-compose.yml`): world 1's data directory, read-write only for SQLite's lock files: `db.sqlite` for its hiscore pages and the login guard, and `market.sqlite`, the Grand Exchange ledger. That ledger holds a save checkpoint for every account and the engine loads it in preference to the login server's `.sav`, so a world that did not share it would roll back every account it hosted on its next world-1 login. Saves themselves are written only by world 1's login server. Grand Exchange trading is off on extra worlds (`GE_ENABLED=false`, one matching engine). An extra world never migrates the database (`worlds/world-entrypoint.sh`); `world.sh` refuses an image whose migrations differ.
+- **Guards** (`worlds/world-node.js`, applied inside the extra world's container at each start, never to world 1's image; a patch that no longer matches upstream stops the start):
+  - `world.sh up` fingerprints both images (`worlds/world-compat.js`: the XP table the engine computes, the save version and the save reader/writer, the migrations, the server packs) and refuses a different curve, save format or migrations; changed content packs need `--allow-content-change`, because a save that names an object world 1 does not have may stop loading there.
+  - Exclusive login: an account the login table shows on another world is refused ("already logged in") instead of taken over.
+  - Every login is preceded by a copy of the save and ledger checkpoint it loads, under the world's state dir (`save-backups/<account>/`); a failed copy refuses the login.
+  - Takeover watch: world 1's login server still lets a world-1 login take over an account that is on the extra world. The extra world sees the login table change (two polls, about 4 s) and drops the player without saving, so the two sessions never overwrite each other. The cost is the extra-world progress since its last checkpoint (login, 15-minute autosave or logout).
+  - The browser client's `/gateway` relay dials the world's own gateway port (upstream hard-codes world 1's 7780).
+- **Broadcasts and restarts are per world.** The friend server relays shutdown timers and broadcasts to one node id (`socketByWorld[nodeId]`), and `countdown.js` sends the node id of the container it runs in, so a test-world countdown never reaches world 1's players or the fleet. `world.sh down` counts down only when someone is on that world, waits for the engine's own logout, removes the container, and checks that the login table shows no account on its node (it sends `world_startup` for the node if one is left).
+- **Choosing a world.** A world is a pair of URLs: the web URL for the game client (`SERVER` in a bot's `bot.env`) and its own gateway for the SDK (`GATEWAY_URL`). The gateway takes no world parameter: it relays between the client and the SDK by account and authenticates through the shared login server, so a bot moves world by changing both. The world list is published every 15 seconds by the status timer at `https://<game-host>.<tailnet>.ts.net/rs-sdk-worlds.json` (id, node, role, online, players, countdown, image, `hoppable`, the URLs and `bot_env`); bots hop only to `hoppable` worlds. After a logout, the login server holds a 45-second hop timer before another world accepts the account. Until `hop-timer-utc.js` is on world 1 (whose login server runs the timer), that timer lasts 7-8 hours for ordinary accounts: one hop per account per working day. Staff accounts (staffmodlevel 2+) skip it.
+- **Cost.** An idle world needs about what world 1 does without players; world 1 measured 700 MiB and 17% of one core with 61 players (Oct 2026) on a 30 GiB, 12-core host.
+
+```sh
+bash linux-game-server/2004scape/world.sh status            # every world, the pin, candidates, allowlist
+bash linux-game-server/2004scape/world.sh allow 100 add NAME    # then restart the test world
+bash linux-game-server/2004scape/world.sh test up [IMAGE]       # default: the latest candidate
+bash linux-game-server/2004scape/world.sh test down
+bash linux-game-server/2004scape/world.sh compat IMAGE          # would IMAGE share saves safely?
+```
+
+## Updates: candidate, test world, promotion
+
+World 1 is never updated in place by default (`RS_SDK_UPDATES=candidate` in `2004scape/.env`). When upstream moves, the daily maintenance run builds a candidate (`world.sh candidate build`): upstream at the new commit (a temporary worktree, the live checkout is not touched) plus this directory's patch scripts, built through `worlds/candidate-compose.yml` (the same two stages as world 1's compose file, under candidate tags, so world 1's `:local` and `:upstream` tags never move), tagged `computer-setup/rs-sdk:candidate-<upstream>-<patch set>` and labelled with both. A patch script that no longer matches upstream fails the build: ntfy says so and neither world changes. A good build is checked against world 1 and announced on ntfy ("candidate ready"); nothing starts by itself. The owner then runs `world.sh test up`, tests on world 100, and promotes:
+
+- `world.sh promote [IMAGE] --next-window`: the next weekly maintenance counts down, backs up and verifies, then starts world 1 on the image (rollback to the previous image and data if it is not healthy). This is the safe default.
+- `world.sh promote [IMAGE] --now`: a 2-minute countdown on world 1, a copy of the data dir (`data.pre-promote`), then world 1 on the image; not healthy = data and image put back. It refuses while maintenance runs.
+
+Both refuse an image with another XP curve, record the image so maintenance keeps it (`rs-sdk.image`), and remind you to take the test world down. `RS_SDK_UPDATES=direct` restores the old in-place update; `notify` only reports.
 
 ## Access
 

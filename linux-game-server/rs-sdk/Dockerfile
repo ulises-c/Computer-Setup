@@ -5,10 +5,12 @@ COPY restore-xp.js /usr/local/lib/restore-xp.js
 COPY restore-client.js /usr/local/lib/restore-client.js
 COPY hiscore-pages.js /usr/local/lib/hiscore-pages.js
 COPY hiscore-prune.js /usr/local/lib/hiscore-prune.js
+COPY hop-timer-utc.js /usr/local/lib/hop-timer-utc.js
 RUN bun /usr/local/lib/restore-xp.js /opt \
     && bun /usr/local/lib/restore-client.js /opt \
     && bun /usr/local/lib/hiscore-pages.js /opt \
     && bun /usr/local/lib/hiscore-prune.js /opt \
+    && bun /usr/local/lib/hop-timer-utc.js /opt \
     && cd /opt/server/webclient \
     && bun run build
 

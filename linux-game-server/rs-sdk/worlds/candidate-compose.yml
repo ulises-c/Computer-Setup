@@ -1,0 +1,31 @@
+# Builds an RS-SDK candidate image (2004scape/world.sh candidate build): upstream at
+# a given commit (a temporary worktree) plus this repository's patch scripts, the
+# same two-stage build as ../docker-compose.yml but under candidate tags, so the
+# build never moves world 1's computer-setup/rs-sdk:local or :upstream tags.
+# Compose drives BuildKit itself; plain `docker build` on the host has no buildx.
+name: rs-sdk-candidate
+
+services:
+  upstream:
+    build:
+      context: ${CANDIDATE_SOURCE:?set by world.sh}
+      dockerfile: server/Dockerfile
+    image: ${CANDIDATE_UPSTREAM_TAG:?set by world.sh}
+    network_mode: none
+    entrypoint: ["/bin/true"]
+    restart: "no"
+
+  candidate:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      additional_contexts:
+        rs_sdk_upstream: service:upstream
+      labels:
+        computer-setup.rs-sdk.candidate: "true"
+        computer-setup.rs-sdk.upstream: ${CANDIDATE_UPSTREAM:?set by world.sh}
+        computer-setup.rs-sdk.patches: ${CANDIDATE_PATCHES:?set by world.sh}
+    image: ${CANDIDATE_TAG:?set by world.sh}
+    network_mode: none
+    entrypoint: ["/bin/true"]
+    restart: "no"

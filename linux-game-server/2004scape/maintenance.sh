@@ -39,11 +39,17 @@ for env_file in "$SCRIPT_DIR/.env" "$GAME_DIR/lostcity/.env" "$GAME_DIR/rs-sdk/.
   set +a
 done
 : "${AUTO_UPDATE:=true}"
+# RS-SDK never updates world 1 directly any more (see world.sh): candidate = build
+# upstream + this repo's patch scripts into a candidate image and notify; the owner
+# tests it on the test world and promotes it. direct = the old in-place update;
+# notify = only report.
+: "${RS_SDK_UPDATES:=candidate}"
 : "${MAINTENANCE_DAY:=Mon}"
 : "${COUNTDOWN_MINUTES:=10}"
 : "${NTFY_URL:=}"
 : "${NTFY_TOPIC:=}"
 : "${NTFY_TOKEN:=}"
+[[ "$RS_SDK_UPDATES" =~ ^(candidate|direct|notify)$ ]] || die "RS_SDK_UPDATES must be candidate, direct or notify"
 [[ "$MAINTENANCE_DAY" =~ ^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)$ ]] || die "MAINTENANCE_DAY must be one of Mon Tue Wed Thu Fri Sat Sun"
 [[ "$COUNTDOWN_MINUTES" =~ ^[1-9][0-9]?$ ]] && (( COUNTDOWN_MINUTES <= 60 )) || die "COUNTDOWN_MINUTES must be 1-60"
 for path in "$LOSTCITY_RUNTIME_DIR" "$RS_SDK_SOURCE_DIR" "$RS_SDK_DATA_DIR"; do
@@ -165,6 +171,7 @@ wait_healthy() {
 }
 
 declare -A OLD=() NEW=() TARGET=() CHANGED=()
+PROMOTE_IMAGE=""
 
 # --- update and rollback ------------------------------------------------------
 # These run from `if`, where set -e is off: every step checks its own status.
@@ -187,7 +194,7 @@ load_change() {
   CHANGED[$stack]=true
   while read -r kind rest; do
     case "$kind" in
-      target) TARGET[$stack]="$rest" ;;
+      target) TARGET[$stack]="$rest"; [[ "$rest" != promote\ * ]] || PROMOTE_IMAGE="${rest#promote }" ;;
       repo) read -r repo old new <<<"$rest"; OLD[$repo]="$old"; NEW[$repo]="$new" ;;
     esac
   done <"$STATE_DIR/$stack.inprogress"
@@ -253,17 +260,26 @@ update_rs_sdk() {
   rs_sdk_data_op 'set -e; cd /parent; rm -rf "$NAME.pre-update" "$NAME.pre-update.complete"
     cp -a "$NAME" "$NAME.pre-update"; touch "$NAME.pre-update.complete"' || return 1
   begin_change rs-sdk || return 1
-  git_ -C "$RS_SDK_SOURCE_DIR" merge --ff-only --quiet "${NEW[$RS_SDK_SOURCE_DIR]}" </dev/null || return 1
-  compose rs-sdk build rs-sdk </dev/null || return 1
-  # Started on, but only recorded as deployed once it is healthy (see below).
-  built="$(image_id "$RS_SDK_IMAGE")" || return 1
+  if [[ -n "$PROMOTE_IMAGE" ]]; then
+    # world.sh promote --next-window: the owner-tested candidate, no build.
+    built="$PROMOTE_IMAGE"
+    docker tag "$built" "$RS_SDK_IMAGE" || return 1
+  else
+    git_ -C "$RS_SDK_SOURCE_DIR" merge --ff-only --quiet "${NEW[$RS_SDK_SOURCE_DIR]}" </dev/null || return 1
+    compose rs-sdk build rs-sdk </dev/null || return 1
+    # Started on, but only recorded as deployed once it is healthy (see below).
+    built="$(image_id "$RS_SDK_IMAGE")" || return 1
+  fi
   DEPLOY[rs-sdk]="$built"
   start_stack rs-sdk || return 1
   wait_healthy rs-sdk-server
 }
 rollback_rs_sdk() {
   compose rs-sdk stop -t 120 rs-sdk </dev/null || true
-  git_ -C "$RS_SDK_SOURCE_DIR" reset --hard --quiet "${OLD[$RS_SDK_SOURCE_DIR]}" </dev/null || return 1
+  # A promotion changed no checkout.
+  if [[ -n "${OLD[$RS_SDK_SOURCE_DIR]:-}" ]]; then
+    git_ -C "$RS_SDK_SOURCE_DIR" reset --hard --quiet "${OLD[$RS_SDK_SOURCE_DIR]}" </dev/null || return 1
+  fi
   # start_stack retags :local to it.
   DEPLOY[rs-sdk]="$(image_id "$RS_SDK_ROLLBACK_IMAGE")" || return 1
   rs_sdk_data_op 'set -e; cd /parent; [ -e "$NAME.pre-update.complete" ]
@@ -344,6 +360,27 @@ for stack in lostcity rs-sdk; do
   DOWN+=("$stack")
   running_image="$(docker inspect -f '{{.Image}}' "$container")" || die "$stack: cannot read the image $container runs"
   if [[ "$MODE" == check ]]; then DEPLOY[$stack]="$running_image"; else save_image "$stack" "$running_image"; fi
+  # An owner promotion (world.sh promote --next-window) replaces any upstream update.
+  if [[ "$stack" == rs-sdk && -r "$STATE_DIR/rs-sdk.promote" ]]; then
+    read -r promote <"$STATE_DIR/rs-sdk.promote" || promote=""
+    if [[ "$promote" =~ ^sha256:[0-9a-f]{64}$ ]] && docker image inspect "$promote" >/dev/null 2>&1; then
+      if [[ "$promote" == "$running_image" ]]; then
+        log "rs-sdk: already runs the promoted image"
+        [[ "$MODE" == check ]] || rm -f "$STATE_DIR/rs-sdk.promote"
+      else
+        PROMOTE_IMAGE="$promote"
+        TARGET[$stack]="promote $promote"
+        log "rs-sdk: owner promotion pending: $promote"
+        UPDATE+=("$stack")
+      fi
+      continue
+    fi
+    log "warning: rs-sdk: the promotion marker names no local image ($promote); ignored"
+    if [[ "$MODE" != check ]]; then
+      notify "2004Scape promotion ignored" "rs-sdk.promote names $promote, which is not a local image. Promote again with world.sh promote." high
+      rm -f "$STATE_DIR/rs-sdk.promote"
+    fi
+  fi
   branch="$(branch_of "$stack")" || branch=""
   mapfile -t repos < <(repos_of "$stack")
   usable=true
@@ -373,6 +410,21 @@ for stack in lostcity rs-sdk; do
     continue
   fi
   log "$stack: update available ($target)"
+  if [[ "$stack" == rs-sdk && "$RS_SDK_UPDATES" != direct ]]; then
+    # Never world 1: build a candidate for the test world (world.sh) and say so.
+    if [[ "$MODE" != check && "$RS_SDK_UPDATES" == candidate ]]; then
+      bash "$SCRIPT_DIR/world.sh" candidate build --if-new </dev/null \
+        || log "rs-sdk: candidate build failed (notified); neither world was touched"
+    elif [[ "$MODE" != check ]]; then
+      notified=""
+      if [[ -r "$STATE_DIR/$stack.notified" ]]; then read -r notified <"$STATE_DIR/$stack.notified" || true; fi
+      if [[ "$notified" != "$target" ]]; then
+        notify "2004Scape update available" "$stack: $target. RS_SDK_UPDATES=notify, so no candidate is built."
+        printf '%s\n' "$target" >"$STATE_DIR/$stack.notified"
+      fi
+    fi
+    continue
+  fi
   if [[ "$AUTO_UPDATE" != true ]]; then
     notified=""
     if [[ -r "$STATE_DIR/$stack.notified" ]]; then read -r notified <"$STATE_DIR/$stack.notified" || true; fi
@@ -508,6 +560,20 @@ fi
 wait_backup || die "$BACKUP_UNIT is still running; games left alone"
 PHASE=countdown
 started="$(date +%s)"
+# Extra RS-SDK worlds (world.sh) use world 1's login server, so they log their
+# players out a minute before it goes; each counts down on its own node only.
+declare -a EXTRA_WORLDS=() EXTRA_PIDS=()
+if [[ " ${DOWN[*]} " == *" rs-sdk "* ]]; then
+  mapfile -t EXTRA_WORLDS < <(docker ps --filter label=computer-setup.rs-sdk.world --format '{{.Label "computer-setup.rs-sdk.world"}}')
+fi
+for world in ${EXTRA_WORLDS[@]+"${EXTRA_WORLDS[@]}"}; do
+  lead=$(( deadline - 60 - $(date +%s) ))
+  (( lead >= 15 )) || lead=15
+  bash "$SCRIPT_DIR/world.sh" down "$world" --countdown "$lead" \
+    >"$STATE_DIR/world-$world.down.log" 2>&1 </dev/null &
+  EXTRA_PIDS+=("$!")
+  HELPER_PIDS+=("$!")
+done
 helper="$(<"$SCRIPT_DIR/countdown.js")"
 for stack in "${DOWN[@]}"; do
   container="$(container_of "$stack")"
@@ -542,6 +608,9 @@ for stack in "${DOWN[@]}"; do
   # Not forced: that would take players down with no warning.
   ! is_running "$container" \
     || die "$stack: did not shut down on its countdown (the engine never got it); left running"
+done
+for pid in ${EXTRA_PIDS[@]+"${EXTRA_PIDS[@]}"}; do
+  wait "$pid" 2>/dev/null || log "warning: an extra world did not go down cleanly; see $STATE_DIR/world-*.down.log"
 done
 PHASE=stopped
 for pid in "${HELPER_PIDS[@]}"; do kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; done
@@ -611,11 +680,14 @@ for stack in ${UPDATE[@]+"${UPDATE[@]}"}; do
     deployed="$(deploy_image "$stack")"
     [[ -z "$deployed" ]] || save_image "$stack" "$deployed"
     rm -f "$STATE_DIR/$stack.inprogress" "$STATE_DIR/$stack.failed" "$STATE_DIR/$stack.notified"
+    [[ "$stack" != rs-sdk || -z "$PROMOTE_IMAGE" ]] || rm -f "$STATE_DIR/rs-sdk.promote"
     log "$stack: updated and healthy"
     notify "2004Scape updated" "$stack is back up on ${TARGET[$stack]}." low
   else
     failures=$((failures + 1))
     printf '%s\n' "${TARGET[$stack]}" >"$STATE_DIR/$stack.failed"
+    # A failed promotion is not retried every week; the owner promotes again.
+    [[ "$stack" != rs-sdk || -z "$PROMOTE_IMAGE" ]] || rm -f "$STATE_DIR/rs-sdk.promote"
     log "$stack: update failed; putting it back"
     if recover "$stack"; then
       log "$stack: back up on its previous code"
@@ -626,6 +698,17 @@ for stack in ${UPDATE[@]+"${UPDATE[@]}"}; do
     fi
   fi
   STARTED[$stack]=1
+done
+# Live extra worlds come back on world 1's (possibly new) image; test worlds stay
+# down until the owner needs them again.
+for world in ${EXTRA_WORLDS[@]+"${EXTRA_WORLDS[@]}"}; do
+  role="$(python3 "$GAME_DIR/rs-sdk/worlds/worlds.py" row "$world" | awk '{print $3}')" || role=""
+  if [[ "$role" == live ]]; then
+    bash "$SCRIPT_DIR/world.sh" up "$world" </dev/null >>"$STATE_DIR/world-$world.down.log" 2>&1 \
+      || notify "2004Scape world $world did not come back" "Live world $world failed to start after maintenance. Check: world.sh status" high
+  else
+    log "test world $world stays down after maintenance (world.sh test up to bring it back)"
+  fi
 done
 PHASE=finished
 log "maintenance done: backup verified${UPDATE[*]:+; updates attempted for ${UPDATE[*]}}"
