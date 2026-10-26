@@ -584,5 +584,157 @@ console.log(JSON.stringify(out));
         self.assertEqual(got['allowed'], ['tin-barbarian-village', 'coal-barbarian-village'])
 
 
+# Mirror of a gathering entry (2004Scape-Botting tools/gather-registry.ts output, trimmed).
+GATHER = {
+    'id': 'gather-woodcutting', 'label': 'Woodcutting', 'runner': 'session', 'routine': 'gather', 'gather': 'woodcutting', 'safeStart': True,
+    'denyBots': ['bot_pioneer'], 'allowPlayers': True,
+    'args': [
+        {'name': 'resource', 'label': 'Resource', 'type': 'enum', 'values': ['best', 'tree', 'oak', 'maple'], 'default': 'best',
+         'valueLabels': {'best': 'Best (most XP/h)', 'oak': 'Oak (Woodcutting 15)'}},
+        {'name': 'location', 'label': 'Location', 'type': 'enum', 'values': ['best', 'closest', 'varrock-northwest-trees', 'varrock-west-oaks'], 'default': 'best',
+         'valuesBy': {'arg': 'resource', 'map': {'best': ['best', 'closest', 'varrock-northwest-trees', 'varrock-west-oaks'],
+                                                 'tree': ['best', 'closest', 'varrock-northwest-trees'], 'oak': ['best', 'closest', 'varrock-west-oaks'],
+                                                 'maple': ['best', 'closest']}}},
+        {'name': 'handling', 'label': 'Handling', 'type': 'enum', 'values': ['bank', 'burn', 'drop'], 'default': 'bank', 'playersOnly': ['burn', 'drop'],
+         'valueLabels': {'bank': 'Bank', 'burn': 'Consume (burn logs)', 'drop': 'Drop'}},
+        {'name': 'seconds', 'label': 'Seconds', 'type': 'int', 'min': 60, 'max': 21600, 'default': 600},
+    ],
+}
+RETIRED = {'id': 'chopbank', 'label': 'Chop and bank', 'runner': 'session', 'routine': 'chopbank', 'denyBots': ['bot_pioneer'], 'allowPlayers': True, 'hidden': True,
+           'args': [{'name': 'spot', 'type': 'enum', 'values': ['oak-varrock'], 'default': 'oak-varrock'}]}
+
+
+def gather_registry():
+    raw = json.loads(json.dumps(REGISTRY))
+    raw['routines'] = [json.loads(json.dumps(GATHER)), json.loads(json.dumps(RETIRED))] + raw['routines']
+    return raw
+
+
+CHOICES = {'c0': {'off': {'resource': {'by': None, 'map': {'': {'maple': 'Woodcutting 35 < 45; no verified spot yet'}}},
+                          'location': {'by': 'resource', 'map': {'best': {}, 'tree': {'varrock-northwest-trees': 'full: 2/2 (bot_a, bot_b)'}}},
+                          'handling': {'by': 'resource', 'map': {'best': {}, 'oak': {'burn': 'Firemaking 10 < 15'}}}},
+                  'notes': ['Banked tools are not known yet.']}}
+
+
+class GatherTests(unittest.TestCase):
+    def test_dependent_args_hidden_entries_and_players_only_values(self):
+        reg = controller.parse_registry(gather_registry())
+        wc = reg['routines'][0]
+        self.assertEqual((wc['gather'], wc['hidden'], reg['routines'][1]['hidden']), ('woodcutting', False, True))
+        self.assertEqual(controller.allowed_values(wc['args'][1], {'resource': 'oak'}), ['best', 'closest', 'varrock-west-oaks'])
+        self.assertEqual(controller.allowed_values(wc['args'][1], {}), [])
+        self.assertEqual(controller.validate_run(reg, PLAYER, 'gather-woodcutting', {}),
+                         {'resource': 'best', 'location': 'best', 'handling': 'bank', 'seconds': 600})
+        self.assertEqual(controller.validate_run(reg, PLAYER, 'gather-woodcutting', {'resource': 'oak', 'location': 'varrock-west-oaks', 'handling': 'burn'})['handling'], 'burn')
+        self.assertEqual(controller.validate_run(reg, 'bot_wormlike', 'gather-woodcutting', {'resource': 'tree'})['resource'], 'tree')
+        for bot, args, reason in [
+            (PLAYER, {'resource': 'oak', 'location': 'varrock-northwest-trees'}, 'location: one of best, closest, varrock-west-oaks'),
+            ('bot_wormlike', {'handling': 'drop'}, 'regular accounts only'),
+            ('bot_wormlike', {'handling': 'burn'}, 'regular accounts only'),
+            (PLAYER, {'handling': 'cook'}, 'handling: one of'),
+        ]:
+            with self.assertRaises(ValueError) as caught:
+                controller.validate_run(reg, bot, 'gather-woodcutting', args)
+            self.assertIn(reason, str(caught.exception), (bot, args))
+        # Retired entries still validate (a running daemon's in-flight requests) but are never offered.
+        self.assertEqual(controller.validate_run(reg, PLAYER, 'chopbank', {}), {'spot': 'oak-varrock'})
+
+        def bad(mutate):
+            raw = gather_registry()
+            mutate(raw['routines'][0])
+            with self.assertRaises(ValueError):
+                controller.parse_registry(raw)
+        bad(lambda r: r['args'][1]['valuesBy'].update(arg='handling'))
+        bad(lambda r: r['args'][1]['valuesBy'].update(arg='seconds'))
+        bad(lambda r: r['args'][1]['valuesBy']['map'].pop('oak'))
+        bad(lambda r: r['args'][1]['valuesBy']['map'].update(nowhere=['best']))
+        bad(lambda r: r['args'][1]['valuesBy']['map'].update(oak=['best', 'lumbridge']))
+        bad(lambda r: r['args'][1]['valuesBy']['map'].update(oak=[]))
+        bad(lambda r: r['args'][1]['valuesBy']['map'].update(oak=['closest']))
+        bad(lambda r: r['args'][0]['valueLabels'].update(nowhere='x'))
+        bad(lambda r: r['args'][2].update(playersOnly=['bank']))
+        bad(lambda r: r.update(allowPlayers=False))
+        bad(lambda r: r.update(gather='thieving'))
+        bad(lambda r: r.update(routine='chopbank'))
+        bad(lambda r: r.update(hidden='yes'))
+
+    def test_status_carries_choices_and_the_resolution_note_and_the_store_refuses_retired_entries(self):
+        doc = status_doc(registry=gather_registry(), gatherChoices={**CHOICES, 'evil id': {}, 'c1': {'off': {'resource': {'by': 'x', 'map': {'a b': {'x': 'y'}}}}}})
+        doc['bots'][PLAYER] = {'displayName': 'Cant Pvm', 'state': 'running', 'gather': {'gather-woodcutting': 'c0', 'x y': 'c0', 'gather-mining': 'zz'},
+                               'job': {'kind': 'run', 'routine': 'gather', 'args': ['woodcutting', 'tree', 'varrock-northwest-trees', 'burn', '600'],
+                                       'pid': 7, 'startedAt': 1, 'note': 'resolved resource best -> tree, location best -> varrock-northwest-trees'}}
+        shaped = controller.shape_status(doc, 9)
+        self.assertIsNone(shaped['registryError'])
+        self.assertEqual(shaped['gatherChoices']['c0'], CHOICES['c0'])
+        self.assertEqual(shaped['gatherChoices']['c1'], {'off': {'resource': {'by': None, 'map': {}}}, 'notes': []})
+        self.assertNotIn('evil id', shaped['gatherChoices'])
+        self.assertEqual(shaped['bots'][PLAYER]['gather'], {'gather-woodcutting': 'c0'})
+        self.assertIn('-> tree', shaped['bots'][PLAYER]['job']['note'])
+        reg = controller.parse_registry(gather_registry())
+        with tempfile.TemporaryDirectory() as d:
+            store = controller.Store(d)
+            code, body = store.apply({'action': 'run', 'bots': [PLAYER], 'routine': 'chopbank', 'args': {}}, reg, [PLAYER], OWNER)
+            self.assertEqual(code, 400)
+            self.assertIn('retired', body['error'])
+            code, body = store.apply({'action': 'run', 'bots': ['bot_wormlike'], 'routine': 'gather-woodcutting', 'args': {'handling': 'drop'}}, reg, ['bot_wormlike'], OWNER)
+            self.assertEqual(code, 400)
+            self.assertIn('regular accounts only', body['bots']['bot_wormlike'])
+            code, body = store.apply({'action': 'run', 'bots': [PLAYER], 'routine': 'gather-woodcutting', 'args': {'handling': 'burn'}}, reg, [PLAYER], OWNER)
+            self.assertEqual(code, 200, body)
+        status = {**shaped, 'online': True}
+        page = controller.view([PLAYER], {}, status, controller.empty_desired(), {})
+        self.assertEqual(page['gatherChoices']['c0'], CHOICES['c0'])
+        row = next(r for r in page['bots'] if r['username'] == PLAYER)
+        self.assertIn('gather-woodcutting', row['eligible'])
+        self.assertNotIn('chopbank', row['eligible'])
+
+    @unittest.skipUnless(shutil.which('node'), 'node not installed')
+    def test_page_logic_for_dependent_and_greyed_out_values(self):
+        script = Path(__file__).with_name('bot_controller.js')
+        probe = """
+const L = require(process.argv[1]);
+const reg = JSON.parse(process.argv[2]);
+const choices = JSON.parse(process.argv[3]).c0;
+const wc = L.routineById(reg, 'gather-woodcutting');
+const [res, loc, hand] = wc.args;
+const me = [{username: 'player_cantpvm', type: 'player', choices}];
+const bot = [{username: 'bot_a', type: 'bot', choices: null}];
+const both = [...me, ...bot];
+const offMe = (a, chosen) => L.offReasons(a, chosen, me);
+console.log(JSON.stringify({
+  locOak: L.allowedValues(loc, {resource: 'oak'}),
+  locNone: L.allowedValues(loc, {}),
+  resOff: L.offReasons(res, {}, me),
+  locOffTree: L.offReasons(loc, {resource: 'tree'}, me),
+  handOak: L.offReasons(hand, {resource: 'oak'}, me),
+  handBot: L.offReasons(hand, {resource: 'tree'}, bot),
+  handBoth: L.offReasons(hand, {resource: 'oak'}, both),
+  pick: [L.pickValue(['best', 'closest', 'varrock-northwest-trees'], {'varrock-northwest-trees': 'full'}, 'varrock-northwest-trees', 'best'),
+         L.pickValue(['a', 'b'], {a: 'x'}, 'a', 'a'), L.pickValue(['a'], {a: 'x'}, 'a', 'a')],
+  labels: [L.valueText(hand, 'burn'), L.valueText(loc, 'varrock-west-oaks')],
+  okBurn: L.validateArgs(wc, {resource: 'tree', location: 'best', handling: 'burn', seconds: '600'}, offMe),
+  badBurn: L.validateArgs(wc, {resource: 'oak', location: 'best', handling: 'burn', seconds: '600'}, offMe),
+  badMaple: L.validateArgs(wc, {resource: 'maple', location: 'best', handling: 'bank', seconds: '600'}, offMe),
+  badLoc: L.validateArgs(wc, {resource: 'oak', location: 'varrock-northwest-trees', handling: 'bank', seconds: '600'}),
+}));
+"""
+        result = subprocess.run(['node', '-e', probe, str(script), json.dumps(controller.parse_registry(gather_registry())), json.dumps(CHOICES)],
+                                capture_output=True, text=True, timeout=20, check=True)
+        got = json.loads(result.stdout)
+        self.assertEqual(got['locOak'], ['best', 'closest', 'varrock-west-oaks'])
+        self.assertEqual(got['locNone'], [])
+        self.assertEqual(got['resOff'], {'maple': 'Woodcutting 35 < 45; no verified spot yet'})
+        self.assertEqual(got['locOffTree'], {'varrock-northwest-trees': 'full: 2/2 (bot_a, bot_b)'})
+        self.assertEqual(got['handOak'], {'burn': 'Firemaking 10 < 15'})
+        self.assertEqual(got['handBot'], {'burn': 'fleet bots bank their produce', 'drop': 'fleet bots bank their produce'})
+        self.assertEqual(got['handBoth'], {'burn': 'player_cantpvm: Firemaking 10 < 15', 'drop': 'bot_a: fleet bots bank their produce'})
+        self.assertEqual(got['pick'], ['best', 'b', 'a'])
+        self.assertEqual(got['labels'], ['Consume (burn logs)', 'varrock-west-oaks'])
+        self.assertTrue(got['okBurn']['ok'])
+        self.assertEqual(got['badBurn']['errors'], {'handling': 'Firemaking 10 < 15'})
+        self.assertEqual(got['badMaple']['errors'], {'resource': 'Woodcutting 35 < 45; no verified spot yet'})
+        self.assertIn('location', got['badLoc']['errors'])
+
+
 if __name__ == '__main__':
     unittest.main()

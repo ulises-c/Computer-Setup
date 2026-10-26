@@ -47,6 +47,9 @@ TEXT = re.compile(r'^[\x20-\x7e]*$')
 RUNNERS = ('session', 'chickens-247', 'combat-247', 'scavenge-247', 'food-247', 'pioneer', 'onboard')
 ACTIONS = ('run', 'stop', 'hold', 'clear')
 ALWAYS_EXCLUDED = ('bot_tester',)
+# Gathering entries (2004Scape-Botting routines/gather.ts): session routine 'gather', args in this order.
+GATHER_SKILLS = ('woodcutting', 'mining', 'fishing')
+GATHER_ARGS = ('resource', 'location', 'handling', 'seconds')
 PIONEER = 'bot_pioneer'
 MAX_STATUS = 1024 * 1024
 MAX_BODY = 16 * 1024
@@ -149,6 +152,9 @@ def parse_registry(raw):
             raise ValueError(f'{rid}: allowPlayers must be true or false')
         if players and (r['runner'] != 'session' or allow is not None):
             raise ValueError(f'{rid}: allowPlayers only for session routines without allowBots')
+        hidden = r.get('hidden', False)
+        if not isinstance(hidden, bool):
+            raise ValueError(f'{rid}: hidden must be true or false')
         fixed = r.get('fixedArgs', [])
         if not isinstance(fixed, list) or len(fixed) > 4 or not all(isinstance(a, str) and VALUE.match(a) for a in fixed):
             raise ValueError(f'{rid}: fixedArgs')
@@ -167,7 +173,35 @@ def parse_registry(raw):
                     raise ValueError(f'{rid}.{a["name"]}: enum values')
                 if a.get('default') is not None and a['default'] not in values:
                     raise ValueError(f'{rid}.{a["name"]}: default')
-                args.append({'name': a['name'], 'label': label, 'type': 'enum', 'values': list(values), 'default': a.get('default')})
+                arg = {'name': a['name'], 'label': label, 'type': 'enum', 'values': list(values), 'default': a.get('default')}
+                if a.get('valuesBy') is not None:
+                    # Dependent enum: one list per value of an EARLIER enum arg, each a non-empty subset holding the default.
+                    by = a['valuesBy']
+                    ref = next((p for p in args if isinstance(by, dict) and p['name'] == by.get('arg') and p['type'] == 'enum'), None)
+                    if ref is None or not isinstance(by.get('map'), dict):
+                        raise ValueError(f'{rid}.{a["name"]}: valuesBy.arg must name an earlier enum arg')
+                    if set(by['map']) != set(ref['values']) or len(by['map']) != len(ref['values']):
+                        raise ValueError(f'{rid}.{a["name"]}: valuesBy.map keys must be exactly the values of {ref["name"]}')
+                    shaped = {}
+                    for key in ref['values']:
+                        lst = by['map'][key]
+                        if not isinstance(lst, list) or not lst or len(set(lst)) != len(lst) or not all(isinstance(v, str) and v in values for v in lst):
+                            raise ValueError(f'{rid}.{a["name"]}: valuesBy.map.{key} must be a non-empty subset of values')
+                        if a.get('default') is not None and a['default'] not in lst:
+                            raise ValueError(f'{rid}.{a["name"]}: valuesBy.map.{key} must include the default')
+                        shaped[key] = list(lst)
+                    arg['valuesBy'] = {'arg': ref['name'], 'map': shaped}
+                if a.get('valueLabels') is not None:
+                    labels = a['valueLabels']
+                    if not isinstance(labels, dict) or not all(k in values and _text(v, 80) and v for k, v in labels.items()):
+                        raise ValueError(f'{rid}.{a["name"]}: valueLabels')
+                    arg['valueLabels'] = dict(labels)
+                if a.get('playersOnly') is not None:
+                    only = a['playersOnly']
+                    if not isinstance(only, list) or not all(isinstance(v, str) and v in values for v in only) or a.get('default') in only or not players:
+                        raise ValueError(f'{rid}.{a["name"]}: playersOnly (values other than the default, on allowPlayers routines)')
+                    arg['playersOnly'] = list(only)
+                args.append(arg)
             elif a.get('type') == 'int':
                 low, high = _int(a.get('min'), 0, 1_000_000), _int(a.get('max'), 0, 1_000_000)
                 if low is None or high is None or low > high:
@@ -178,9 +212,14 @@ def parse_registry(raw):
                 args.append({'name': a['name'], 'label': label, 'type': 'int', 'min': low, 'max': high, 'default': default})
             else:
                 raise ValueError(f'{rid}.{a.get("name")}: type')
+        gather = r.get('gather')
+        if gather is not None and (gather not in GATHER_SKILLS or r['runner'] != 'session' or r.get('routine') != 'gather'
+                                   or tuple(a['name'] for a in args) != GATHER_ARGS or any(a['type'] != 'enum' for a in args[:3]) or args[3]['type'] != 'int'):
+            raise ValueError(f'{rid}: gather (session routine gather with args {", ".join(GATHER_ARGS)})')
         entry = {'id': rid, 'label': r['label'], 'description': r.get('description') or '', 'runner': r['runner'],
                  'safeStart': r.get('safeStart') is True, 'enabled': r.get('enabled') is not False, 'allowBots': allow,
-                 'denyBots': deny, 'allowPlayers': players, 'danger': danger, 'fixedArgs': list(fixed), 'args': args}
+                 'denyBots': deny, 'allowPlayers': players, 'danger': danger, 'fixedArgs': list(fixed), 'args': args,
+                 'hidden': hidden, 'gather': gather}
         if r['runner'] == 'session':
             entry['routine'] = r['routine']
         routines.append(entry)
@@ -203,8 +242,11 @@ def bot_denied(registry, routine, bot):
 
 
 def allowed_values(spec, chosen):
-    """Values an enum arg accepts given the args before it (mirror of bot-controller.ts allowedValues). One fixed
-    list today; dependent args (values keyed by an earlier arg's value) plug in here and in the page."""
+    """Values an enum arg accepts given the args before it (mirror of bot-controller.ts allowedValues): its valuesBy
+    list for the chosen value of the referenced earlier arg, else its fixed values. The page's L.allowedValues too."""
+    by = spec.get('valuesBy')
+    if by:
+        return by['map'].get(chosen.get(by['arg']), [])
     return spec['values']
 
 
@@ -236,6 +278,9 @@ def validate_run(registry, bot, routine_id, args, mode='headless'):
             allowed = allowed_values(spec, out)
             if not isinstance(value, str) or value not in allowed:
                 raise ValueError(f'{spec["name"]}: one of {", ".join(allowed)}')
+            # Fleet bots never drop or consume produce (owner rule: produce is banked): regular accounts only.
+            if value in (spec.get('playersOnly') or []) and not (isinstance(bot, str) and PLAYER.match(bot)):
+                raise ValueError(f'{spec["name"]} {value}: regular accounts only (fleet bots bank their produce)')
         elif _int(value, spec['min'], spec['max']) is None:
             raise ValueError(f'{spec["name"]}: integer {spec["min"]}..{spec["max"]}')
         out[spec['name']] = value
@@ -310,7 +355,10 @@ def shape_status(raw, received_at):
                 'routine': job.get('routine') if isinstance(job.get('routine'), str) and ROUTINE_ID.match(job['routine']) else None,
                 'args': [a for a in (job.get('args') if isinstance(job.get('args'), list) else [])[:6] if isinstance(a, str) and VALUE.match(a)],
                 'mode': job.get('mode') if job.get('mode') in MODES else 'headless',
-                'pid': _int(job.get('pid'), 1, 1 << 31), 'startedAt': _int(job.get('startedAt')), 'stopping': job.get('stopping') is True},
+                'pid': _int(job.get('pid'), 1, 1 << 31), 'startedAt': _int(job.get('startedAt')), 'stopping': job.get('stopping') is True,
+                'note': _clean(job.get('note'), 240)},
+            'gather': {rid: cid for rid, cid in list((entry.get('gather') if isinstance(entry.get('gather'), dict) else {}).items())[:6]
+                       if isinstance(rid, str) and ROUTINE_ID.match(rid) and isinstance(cid, str) and CHOICE_ID.match(cid)},
             'gates': _shape_list(entry.get('gates')), 'foreign': _shape_list(entry.get('foreign')),
             'lastResult': _shape_result(entry.get('lastResult')), 'updatedAt': _int(entry.get('updatedAt')),
         }
@@ -323,9 +371,38 @@ def shape_status(raw, received_at):
                    'commit': commit if isinstance(commit, str) and re.match(r'^[0-9a-f]{4,40}$', commit) else None,
                    'error': _clean(daemon.get('error'), 200)},
         'registry': registry, 'registryError': registry_error,
+        'gatherChoices': shape_choices(raw.get('gatherChoices')),
         'fleet': {'pause': (raw.get('fleet') or {}).get('pause') is True if isinstance(raw.get('fleet'), dict) else False},
         'bots': bots,
     }
+
+
+CHOICE_ID = re.compile(r'^c[0-9]{1,4}$')
+CHOICE_ARGS = ('resource', 'location', 'handling')
+
+
+def shape_choices(raw):
+    """Per-account gathering choices (daemon gatherChoices): id -> {off: {arg: {by, map: {key: {value: reason}}}}, notes}.
+    Tokens and short reasons only (levels, tools, hazards, full spots); everything else is dropped."""
+    out = {}
+    for cid, table in list((raw if isinstance(raw, dict) else {}).items())[:200]:
+        if not (isinstance(cid, str) and CHOICE_ID.match(cid) and isinstance(table, dict) and isinstance(table.get('off'), dict)):
+            continue
+        off = {}
+        for arg in CHOICE_ARGS:
+            spec = table['off'].get(arg)
+            if not isinstance(spec, dict) or not isinstance(spec.get('map'), dict):
+                continue
+            by = spec.get('by') if spec.get('by') in CHOICE_ARGS else None
+            shaped = {}
+            for key, reasons in list(spec['map'].items())[:40]:
+                if not (key == '' or isinstance(key, str) and VALUE.match(key)) or not isinstance(reasons, dict):
+                    continue
+                shaped[key] = {v: _clean(why, 160) for v, why in list(reasons.items())[:40]
+                               if isinstance(v, str) and VALUE.match(v) and _clean(why, 160)}
+            off[arg] = {'by': by, 'map': shaped}
+        out[cid] = {'off': off, 'notes': _shape_list(table.get('notes'), 4, 240)}
+    return out
 
 
 def shape_frames(raw):
@@ -467,6 +544,9 @@ class Store:
                     errors[bot] = str(exc)
         if action == 'run' and not errors:
             spec = next((r for r in registry['routines'] if r['id'] == request.get('routine')), None)
+            # Retired entries stay valid in the daemon for requests already recorded; new requests use the new entry.
+            if spec and spec.get('hidden'):
+                return 400, {'error': f'{spec["id"]} is retired; use the {"Mining" if spec["id"] == "mining" else "Woodcutting"} entry.'}
             # A dangerous routine starts only with the page's explicit confirmation (danger shown, OK pressed).
             if spec and spec.get('danger') and request.get('confirmDanger') is not True:
                 return 400, {'error': f'{spec["id"]} is marked dangerous ({spec["danger"]}); confirm on the page to start it.'}
@@ -592,7 +672,7 @@ def view(accounts, live, status, desired, auth_info):
                 'username': name, 'type': 'player', 'displayName': report['displayName'], 'presence': presence,
                 'activity': None, 'routine': None, 'phase': None, 'routineState': None,
                 'desired': desired['bots'].get(name), 'controller': report, 'launchable': True,
-                'eligible': [] if registry is None else [r['id'] for r in registry['routines'] if r['enabled'] and bot_denied(registry, r, name) is None],
+                'eligible': [] if registry is None else [r['id'] for r in registry['routines'] if r['enabled'] and not r.get('hidden') and bot_denied(registry, r, name) is None],
                 'frame': frame_offer(name, kind, True, desired['bots'].get(name), report),
             })
             continue
@@ -600,7 +680,7 @@ def view(accounts, live, status, desired, auth_info):
         activity = lb.get('activity') or {}
         routine_status = activity.get('status') or {}
         eligible = [] if registry is None or name in excluded else [
-            r['id'] for r in registry['routines'] if r['enabled'] and bot_denied(registry, r, name) is None]
+            r['id'] for r in registry['routines'] if r['enabled'] and not r.get('hidden') and bot_denied(registry, r, name) is None]
         rows.append({
             'username': name, 'type': 'bot', 'displayName': None, 'presence': lb.get('presence') or 'unknown', 'activity': activity.get('label'),
             'routine': routine_status.get('routine') or activity.get('routine'),
@@ -614,6 +694,7 @@ def view(accounts, live, status, desired, auth_info):
     return {'version': 1, 'now': int(time.time() * 1000), 'auth': auth_info,
             'daemon': daemon, 'online': status.get('online', False), 'ageMs': status.get('ageMs'), 'error': status.get('error'),
             'registry': registry, 'registryError': status.get('registryError'), 'fleet': status.get('fleet') or {'pause': False},
+            'gatherChoices': status.get('gatherChoices') or {},
             'liveAvailable': bool(live.get('available')), 'liveStale': bool(live.get('stale')), 'bots': rows}
 
 

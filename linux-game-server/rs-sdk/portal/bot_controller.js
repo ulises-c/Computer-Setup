@@ -11,16 +11,20 @@ const ControllerLogic = (() => {
     const routineById = (registry, id) => (registry && Array.isArray(registry.routines) ? registry.routines.find(r => r.id === id) : null) || null;
     const defaults = spec => Object.fromEntries((spec ? spec.args : []).map(a => [a.name, a.default ?? (a.type === 'enum' ? a.values[0] : a.min)]));
     // Same rules as the portal and the daemon: enum values from the list, integers within bounds, no extra keys.
-    const validateArgs = (spec, raw) => {
+    // `off(arg, chosen)` (optional): value -> reason for values this account cannot choose (greyed out on the page).
+    const validateArgs = (spec, raw, off) => {
         const args = {};
         const errors = {};
         if (!spec) return { ok: false, args, errors: { routine: 'choose a routine' } };
+        const chosen = {};   // valid-looking values, for the later args' lookups (an off value is still the choice)
         for (const a of spec.args) {
             const v = raw ? raw[a.name] : undefined;
             if (a.type === 'enum') {
-                const allowed = allowedValues(a, args);
-                if (typeof v === 'string' && allowed.includes(v)) args[a.name] = v;
-                else errors[a.name] = `one of ${allowed.join(', ')}`;
+                const allowed = allowedValues(a, chosen);
+                const why = off ? off(a, chosen)[v] : undefined;
+                if (typeof v === 'string' && allowed.includes(v)) chosen[a.name] = v;
+                if (typeof v === 'string' && allowed.includes(v) && !why) args[a.name] = v;
+                else errors[a.name] = why || `one of ${allowed.join(', ')}`;
             } else {
                 const text = typeof v === 'number' ? String(v) : String(v ?? '').trim();
                 const n = /^\d{1,7}$/.test(text) ? Number(text) : NaN;
@@ -87,9 +91,34 @@ const ControllerLogic = (() => {
     const optionLabel = spec => (dangerOf(spec) ? `\u26a0 ${spec.label} (dangerous)` : spec ? spec.label : '');
     const dangerConfirm = (spec, bots) => (dangerOf(spec)
         ? `${spec.label} is DANGEROUS for ${bots.join(', ')}:\n\n${spec.danger}\n\nStart it anyway?` : null);
-    // Values an enum arg offers given the args before it (mirror of the daemon's allowedValues): one fixed
-    // list today; dependent args plug in here, and renderFields re-renders when an earlier field changes.
-    const allowedValues = (arg, _chosen) => arg.values;
+    // Values an enum arg offers given the args before it (mirror of the daemon's allowedValues and the portal's
+    // allowed_values): its valuesBy list for the chosen value of the earlier arg, else its fixed values.
+    // renderFields re-renders the later fields when an earlier one changes.
+    const allowedValues = (arg, chosen) => (arg.valuesBy ? (arg.valuesBy.map[(chosen || {})[arg.valuesBy.arg]] || []) : arg.values);
+    const valueText = (arg, v) => (arg.valueLabels && arg.valueLabels[v]) || v;
+    const BANK_ONLY = 'fleet bots bank their produce';
+    // Why each value of `arg` is off for these accounts, given the earlier choices: registry playersOnly (fleet bots)
+    // plus the daemon's per-account gathering choices (level, tool, hazard, full spot, not available yet).
+    // accounts: [{ username, type, choices }] where choices = payload.gatherChoices[row.controller.gather[spec.id]].
+    const offReasons = (arg, chosen, accounts) => {
+        const out = {};
+        const many = accounts.length > 1;
+        const add = (who, v, why) => { if (why && !(v in out)) out[v] = many ? `${who}: ${why}` : why; };
+        for (const acc of accounts) {
+            if (acc.type !== 'player') for (const v of arg.playersOnly || []) add(acc.username, v, BANK_ONLY);
+            const t = acc.choices && acc.choices.off ? acc.choices.off[arg.name] : null;
+            if (!t || !t.map) continue;
+            const reasons = t.map[t.by ? (chosen || {})[t.by] : ''] || {};
+            for (const [v, why] of Object.entries(reasons)) add(acc.username, v, why);
+        }
+        return out;
+    };
+    // First value that is allowed and not off (keeps `current` when it still is).
+    const pickValue = (allowed, off, current, fallback) => {
+        if (allowed.includes(current) && !off[current]) return current;
+        if (allowed.includes(fallback) && !off[fallback]) return fallback;
+        return allowed.find(v => !off[v]) ?? (allowed.includes(fallback) ? fallback : allowed[0]);
+    };
     const parseSet = raw => {
         try {
             const value = JSON.parse(raw || '[]');
@@ -98,7 +127,7 @@ const ControllerLogic = (() => {
             return new Set();
         }
     };
-    return { routineById, defaults, validateArgs, commonEligible, tone, desiredText, ago, heartbeat, validShow, initialShow, withShow, visible, isActive, label, modesFor, showLog, frameNote, dangerOf, optionLabel, dangerConfirm, allowedValues, parseSet };
+    return { routineById, defaults, validateArgs, commonEligible, tone, desiredText, ago, heartbeat, validShow, initialShow, withShow, visible, isActive, label, modesFor, showLog, frameNote, dangerOf, optionLabel, dangerConfirm, allowedValues, valueText, offReasons, pickValue, parseSet };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = ControllerLogic;
 
@@ -178,6 +207,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
     // Routine picker + argument fields + action buttons. Kept across refreshes (values persist);
     // rebuilt only when the eligible routines or the registry change.
     function buildForm(container, eligible, botsOf, opts = {}) {
+        // Keep what the owner picked across rebuilds (registry or per-account choices changed).
+        const prevPick = container.querySelector('select[aria-label="Routine"]')?.value;
+        const prevValues = Object.fromEntries([...container.querySelectorAll('.ctl-fields [name]')].map(i => [i.name, i.value]));
         container.replaceChildren();
         const registry = payload.registry;
         const form = el('form', 'ctl-actions');
@@ -200,12 +232,23 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         const danger = el('p', 'ctl-danger');
         danger.setAttribute('role', 'alert');
         const errors = el('p', 'ctl-errors');
+        const notes = el('p', 'ctl-desc ctl-notes');
         const inputs = {};
-        const renderFields = () => {
+        // Per-account eligibility for this routine (gathering entries): the accounts the form acts on.
+        const accountsFor = spec => (opts.accountsOf ? opts.accountsOf() : []).map(row => ({
+            username: row.username, type: row.type,
+            choices: spec && row.controller && row.controller.gather && payload.gatherChoices ? payload.gatherChoices[row.controller.gather[spec.id]] : null,
+        }));
+        const offFor = spec => { const accs = accountsFor(spec); return (a, chosen) => (a.type === 'enum' ? L.offReasons(a, chosen, accs) : {}); };
+        const renderFields = (kept) => {
             fields.replaceChildren();
             for (const k of Object.keys(inputs)) delete inputs[k];
             const spec = L.routineById(registry, pick.value);
             desc.textContent = spec ? spec.description : '';
+            const accs = accountsFor(spec);
+            const noteText = [...new Set(accs.flatMap(a => (a.choices && a.choices.notes) || []))];
+            notes.textContent = noteText.join(' ');
+            notes.hidden = !noteText.length;
             const warn = L.dangerOf(spec);
             danger.hidden = !warn;
             danger.textContent = warn ? `\u26a0 Dangerous: ${warn}` : '';
@@ -215,26 +258,44 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
             modePick.replaceChildren(...modes.map(m => { const o = el('option', '', m === 'browser' ? 'Browser view (game in this page)' : 'Headless (workstation client, logs out at the end)'); o.value = m; return o; }));
             modePick.value = modes.includes(keep) ? keep : 'headless';
             modeLabel.hidden = modes.length < 2;
+            const chosen = {};
+            const off = offFor(spec);
             for (const a of spec ? spec.args : []) {
                 const label = el('label', 'ctl-field');
                 label.append(el('span', '', a.label));
                 let input;
+                const before = kept && kept[a.name] !== undefined ? kept[a.name] : values[a.name];
                 if (a.type === 'enum') {
                     input = el('select');
-                    for (const v of L.allowedValues(a, values)) { const o = el('option', '', v); o.value = v; input.append(o); }
+                    const allowed = L.allowedValues(a, chosen);
+                    const reasons = off(a, chosen);
+                    for (const v of allowed) {
+                        const o = el('option', '', reasons[v] ? `${L.valueText(a, v)} \u2014 ${reasons[v]}` : L.valueText(a, v));
+                        o.value = v;
+                        o.disabled = !!reasons[v];
+                        if (reasons[v]) o.title = reasons[v];
+                        input.append(o);
+                    }
+                    input.value = L.pickValue(allowed, reasons, String(before), a.default);
+                    chosen[a.name] = input.value;
+                    // A later arg may depend on this one: re-render the fields, keeping what still applies.
+                    if (spec.args.some(b => b.valuesBy && b.valuesBy.arg === a.name) || spec.gather) {
+                        input.addEventListener('change', () => renderFields(Object.fromEntries(Object.entries(inputs).map(([k, i]) => [k, i.value]))));
+                    }
                 } else {
                     input = el('input');
                     Object.assign(input, { type: 'number', min: a.min, max: a.max, step: 1, inputMode: 'numeric' });
+                    input.value = String(before);
                 }
-                input.value = String(values[a.name]);
                 input.name = a.name;
                 label.append(input);
                 fields.append(label);
                 inputs[a.name] = input;
             }
         };
-        pick.addEventListener('change', renderFields);
-        renderFields();
+        pick.addEventListener('change', () => renderFields());
+        if (prevPick && eligible.includes(prevPick)) pick.value = prevPick;
+        renderFields(prevPick === pick.value ? prevValues : undefined);
         const button = (label, action, cls) => {
             const b = el('button', cls, label);
             b.type = 'button';
@@ -247,7 +308,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
                 if (action === 'run') {
                     const spec = L.routineById(registry, pick.value);
                     const raw = Object.fromEntries(Object.entries(inputs).map(([k, i]) => [k, i.value]));
-                    const v = L.validateArgs(spec, raw);
+                    const v = L.validateArgs(spec, raw, offFor(spec));
                     if (!v.ok) { errors.textContent = Object.entries(v.errors).map(([k, e]) => `${k}: ${e}`).join('; '); return; }
                     const ask = L.dangerConfirm(spec, bots);
                     if (ask && !window.confirm(ask)) { say(`${spec.label} not started.`); return; }
@@ -261,7 +322,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         };
         const buttons = el('div', 'ctl-buttons');
         if (eligible.length) {
-            form.append(pick, danger, fields, modeLabel, desc);
+            form.append(pick, danger, fields, notes, modeLabel, desc);
             buttons.append(button('Start', 'run', 'ctl-start'));
         } else {
             form.append(el('p', 'ctl-desc', opts.noneText || 'No registry routine is launchable for this bot.'));
@@ -395,6 +456,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         const rows = [];
         if (row.type === 'player') rows.push(['Account', `${row.displayName} (regular account, profile ${row.username})`]);
         if (c.job) rows.push(['Job', `${c.job.kind === 'stop' ? 'logout' : `${c.job.routine} ${c.job.args.join(' ')}`}${c.job.mode === 'browser' ? ' · browser view' : ' · headless'} · pid ${c.job.pid} · ${L.ago(Date.now() - c.job.startedAt)}${c.job.stopping ? ' · stopping' : ''}`]);
+        if (c.job && c.job.note) rows.push(['Resolved', c.job.note]);
         if (c.client) rows.push(['Client', c.client === 'headless' ? 'headless, on the workstation' : 'browser view (this page)']);
         if (row.type !== 'player') rows.push(['Gates', c.gates && c.gates.length ? c.gates.join('; ') : 'none (read-only; cleared only on the workstation)']);
         if (c.foreign && c.foreign.length) rows.push(['Other controllers', c.foreign.join('; ')]);
@@ -419,10 +481,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         card.message.textContent = c && c.message ? c.message : row.launchable ? '' : 'Not launchable from the controller';
         card.message.className = `line ctl-message tone-${L.tone(c && c.state)}`;
         card.info.replaceChildren(...infoRows(row).flatMap(([k, v]) => [el('dt', '', k), el('dd', '', v)]));
-        const sig = `${registrySig}|${row.launchable}|${row.eligible.join(',')}`;
+        const sig = `${registrySig}|${row.launchable}|${row.eligible.join(',')}|${choicesSig([row])}`;
         if (sig !== card.formSig) {
             card.formSig = sig;
-            if (row.launchable) buildForm(card.formBox, row.eligible, () => [row.username], { single: true });
+            if (row.launchable) buildForm(card.formBox, row.eligible, () => [row.username], { single: true, accountsOf: () => [card.row] });
             else card.formBox.replaceChildren(el('p', 'ctl-desc', 'This account is not launchable from the controller (registry exclusion).'));
         }
         setDisabled(card.formBox);
@@ -449,17 +511,23 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         card.node.hidden = !L.visible(row, show, activeOnly);
     }
 
+    // The gathering choices these accounts see (rebuild the form only when they change).
+    const choicesSig = rows => JSON.stringify(rows.map(r => {
+        const g = (r.controller && r.controller.gather) || {};
+        return Object.keys(g).sort().map(id => [id, (payload.gatherChoices || {})[g[id]] || null]);
+    }));
     let bulkSig = '';
     function renderBulk() {
         if (!payload) return;
         const rows = payload.bots.filter(r => selected.has(r.username) && r.launchable);
         selectedCount.textContent = String(rows.length);
         const eligible = L.commonEligible(rows);
-        const sig = `${registrySig}|${rows.map(r => r.username).join(',')}|${eligible.join(',')}`;
+        const sig = `${registrySig}|${rows.map(r => r.username).join(',')}|${eligible.join(',')}|${choicesSig(rows)}`;
         if (sig !== bulkSig) {
             bulkSig = sig;
             buildForm(bulkForm, eligible, () => payload.bots.filter(r => selected.has(r.username) && r.launchable).map(r => r.username),
-                { noneText: rows.length ? 'No routine is launchable for every selected account.' : 'Select accounts with the checkboxes.' });
+                { noneText: rows.length ? 'No routine is launchable for every selected account.' : 'Select accounts with the checkboxes.',
+                  accountsOf: () => payload.bots.filter(r => selected.has(r.username) && r.launchable) });
         }
         setDisabled(bulkForm);
     }
