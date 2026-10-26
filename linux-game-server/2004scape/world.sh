@@ -13,9 +13,12 @@ set -euo pipefail
 #   world.sh role ID live|test             switch a world's role (restarts it if it runs)
 #   world.sh allow ID list|add|remove NAME the world's login allowlist (test role)
 #   world.sh compat IMAGE                  would IMAGE share saves safely with world 1?
-#   world.sh candidate build [--if-new] [--source-ref COMMIT]
+#   world.sh candidate build [--if-new] [--source-ref COMMIT [--base-image IMAGE]]
 #                                          build upstream (or COMMIT, e.g. world 1's own source,
-#                                          without fetching) + this repo's patches, never deploy
+#                                          without fetching) + this repo's patches, never deploy;
+#                                          --base-image: the patch layer on IMAGE (an image already
+#                                          built from COMMIT, e.g. world 1's) instead of a fresh
+#                                          upstream build, so runtime and OS stay byte-identical
 #   world.sh candidate list
 #   world.sh promote [IMAGE] --next-window|--now [--yes] [--fix-hiscores | --pre-start CMD]
 #                                          put IMAGE (default: the test world's) on world 1;
@@ -294,15 +297,25 @@ patch_set() {
 }
 
 cmd_candidate_build() {
-  local if_new=false source_ref=""
+  local if_new=false source_ref="" base_image="" base_tag=""
   while (($#)); do
     case "$1" in
       --if-new) if_new=true ;;
       --source-ref) source_ref="${2:?--source-ref needs a commit}"; shift ;;
-      *) die "unknown option $1 (usage: candidate build [--if-new] [--source-ref COMMIT])" ;;
+      --base-image) base_image="${2:?--base-image needs an image}"; shift ;;
+      *) die "unknown option $1 (usage: candidate build [--if-new] [--source-ref COMMIT [--base-image IMAGE]])" ;;
     esac
     shift
   done
+  if [[ -n "$base_image" ]]; then
+    # The upstream stage of a fresh build pulls the newest bun base image and Debian
+    # packages; layering the patches on the image world 1 runs keeps both unchanged.
+    [[ -n "$source_ref" ]] || die "--base-image needs --source-ref (the upstream commit IMAGE was built from)"
+    local base_id
+    base_id="$(image_id "$base_image")" || die "no such image: $base_image"
+    base_tag="$CANDIDATE_REPO:base-${base_id:7:12}"
+    docker tag "$base_id" "$base_tag"
+  fi
   local branch upstream patches tag log_file work
   if [[ -n "$source_ref" ]]; then
     # A pinned commit (e.g. world 1's own source for a fixes-only build): resolved in
@@ -316,7 +329,7 @@ cmd_candidate_build() {
     upstream="$(git_ -C "$RS_SDK_SOURCE_DIR" rev-parse FETCH_HEAD)"
   fi
   patches="$(patch_set)"
-  tag="$CANDIDATE_REPO:candidate-${upstream:0:12}-$patches"
+  tag="$CANDIDATE_REPO:candidate-${upstream:0:12}-$patches${base_tag:+-on-${base_tag##*:base-}}"
   if image_id "$tag" >/dev/null; then
     log "candidate $tag already built"
     $if_new && return 0
@@ -325,16 +338,17 @@ cmd_candidate_build() {
     log "candidate for upstream ${upstream:0:12} with patch set $patches failed before; not retried"
     return 1
   fi
-  log_file="$STATE_DIR/candidate-${upstream:0:12}-$patches.log"
+  log_file="$STATE_DIR/${tag##*:}.log"
   work="$STATE_DIR/build-src"
   git_ -C "$RS_SDK_SOURCE_DIR" worktree remove --force "$work" >/dev/null 2>&1 || rm -rf "$work"
   git_ -C "$RS_SDK_SOURCE_DIR" worktree prune
-  log "building candidate from upstream ${upstream:0:12} + patch set $patches (log: $log_file)"
+  log "building candidate from upstream ${upstream:0:12}${base_tag:+ (on $base_image)} + patch set $patches (log: $log_file)"
   local ok=true
   {
     git_ -C "$RS_SDK_SOURCE_DIR" worktree add --detach --quiet "$work" "$upstream" \
       && CANDIDATE_SOURCE="$work" CANDIDATE_UPSTREAM="$upstream" CANDIDATE_PATCHES="$patches" \
          CANDIDATE_UPSTREAM_TAG="$CANDIDATE_REPO:upstream-${upstream:0:12}" CANDIDATE_TAG="$tag" \
+         CANDIDATE_BASE_IMAGE="${base_tag:-rs_sdk_upstream}" \
          docker compose -f "$WORLDS_DIR/candidate-compose.yml" build candidate
   } >"$log_file" 2>&1 </dev/null || ok=false
   git_ -C "$RS_SDK_SOURCE_DIR" worktree remove --force "$work" >/dev/null 2>&1 || true

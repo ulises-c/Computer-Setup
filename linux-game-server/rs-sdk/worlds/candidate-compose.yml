@@ -21,10 +21,15 @@ services:
       dockerfile: Dockerfile
       additional_contexts:
         rs_sdk_upstream: service:upstream
+      args:
+        # rs_sdk_upstream (the stage above), or an existing image built from the same
+        # upstream commit (world.sh candidate build --base-image, e.g. world 1's image).
+        RS_SDK_BASE_IMAGE: ${CANDIDATE_BASE_IMAGE:-rs_sdk_upstream}
       labels:
         computer-setup.rs-sdk.candidate: "true"
         computer-setup.rs-sdk.upstream: ${CANDIDATE_UPSTREAM:?set by world.sh}
         computer-setup.rs-sdk.patches: ${CANDIDATE_PATCHES:?set by world.sh}
+        computer-setup.rs-sdk.base: ${CANDIDATE_BASE_IMAGE:-rs_sdk_upstream}
     image: ${CANDIDATE_TAG:?set by world.sh}
     network_mode: none
     entrypoint: ["/bin/true"]

@@ -27,7 +27,7 @@ STUB = textwrap.dedent(r'''
     args = sys.argv[1:]
     with open(os.environ["STUB_LOG"], "a") as log:
         log.write(json.dumps({"args": args, "running": state["running"],
-                              "env": {k: os.environ.get(k) for k in ("CANDIDATE_UPSTREAM", "CANDIDATE_TAG")}}) + "\n")
+                              "env": {k: os.environ.get(k) for k in ("CANDIDATE_UPSTREAM", "CANDIDATE_TAG", "CANDIDATE_BASE_IMAGE")}}) + "\n")
     def save():
         json.dump(state, open(state_file, "w"))
     def resolve(name):
@@ -205,6 +205,9 @@ class PromoteTests(unittest.TestCase):
         self.assertIn("only with --now", result.stderr)
 
     def test_source_ref_builds_that_commit_without_fetching_or_moving_the_checkout(self):
+        self.source_ref_build()
+
+    def source_ref_build(self):
         git = ["git", "-C", str(self.source), "-c", "user.email=t@example.invalid", "-c", "user.name=t"]
         subprocess.run(["git", "init", "-q", str(self.source)], check=True)
         subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "one"], check=True)
@@ -219,9 +222,25 @@ class PromoteTests(unittest.TestCase):
         self.assertTrue(build[0]["env"]["CANDIDATE_TAG"].startswith(f"computer-setup/rs-sdk:candidate-{first[:12]}-"))
         self.assertEqual(subprocess.run([*git, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip(), head)
         self.assertEqual(subprocess.run([*git, "worktree", "list"], capture_output=True, text=True).stdout.count("\n"), 1)
+        self.assertEqual(build[0]["env"]["CANDIDATE_BASE_IMAGE"], "rs_sdk_upstream")
         bad = self.run_sh("candidate", "build", "--source-ref", "no-such-commit")
         self.assertNotEqual(bad.returncode, 0)
         self.assertIn("is not a commit", bad.stderr)
+        return first
+
+    def test_base_image_layers_the_patches_on_an_existing_image(self):
+        first = self.source_ref_build()
+        self.log.write_text("")
+        result = self.run_sh("candidate", "build", "--source-ref", first, "--base-image", "computer-setup/rs-sdk:local")
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        base = f"computer-setup/rs-sdk:base-{OLD[7:19]}"
+        self.assertEqual(self.final()["tags"][base], OLD)
+        build = [c for c in self.calls() if c["args"][0] == "compose" and "build" in c["args"]]
+        self.assertEqual(build[0]["env"]["CANDIDATE_BASE_IMAGE"], base)
+        self.assertTrue(build[0]["env"]["CANDIDATE_TAG"].endswith(f"-on-{OLD[7:19]}"))
+        alone = self.run_sh("candidate", "build", "--base-image", "computer-setup/rs-sdk:local")
+        self.assertNotEqual(alone.returncode, 0)
+        self.assertIn("--base-image needs --source-ref", alone.stderr)
 
 
 if __name__ == "__main__":
