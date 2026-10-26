@@ -41,7 +41,8 @@ Isolated world 100 (`world.sh test up --isolated`, on a copy of world 1's data t
    ```sh
    bash linux-game-server/2004scape/world.sh status
    ```
-   World 1 should be healthy. World 100 may stay up: it is isolated and shares nothing with world 1.
+   World 1 should be healthy.
+3. Take world 100 down: `bash linux-game-server/2004scape/world.sh test down`. The owner's rule is that it stays offline until the next promotion test. Once world 1 is verified, delete the isolated copy with `world.sh test down --wipe`, because it holds account data. The next `test up --isolated` takes a fresh copy. Neither maintenance nor a candidate build starts world 100.
 
 ## Promote
 
@@ -86,6 +87,8 @@ Then, in game:
 - open a bank and check the slot count;
 - open the Grand Exchange at the Varrock west bank table and check the 12 slots;
 - watch a few bots relog: the fleet resumes 2 minutes after the restart, staggered over another 2 minutes.
+
+Saves convert lazily. A save becomes version 10 (bytes 3-4 of the file are `00 0a`) the next time the engine writes it: at the 15-minute autosave or at logout. Saves of accounts that have not logged in since stay version 9. The engine logs no line for the conversion; only the two `Applying migration` lines and `[playtime-migration] backups complete` appear.
 
 ## Rollback
 
