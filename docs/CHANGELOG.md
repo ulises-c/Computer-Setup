@@ -61,6 +61,30 @@ in [UNIFICATION.md](UNIFICATION.md).
   `fetch-assets.sh linux-game-server` and `sudo bash
   linux-game-server/2004scape/install-status-timer.sh`.
 
+### Fixed
+- 2004Scape maintenance misreported a passed restore check as failed
+  (2026-10-26): `game-backup-restore-check.service` is unloaded by systemd as
+  soon as it finishes (no timer references it), so its
+  `ExecMainStartTimestamp` read back empty, `date -d ""` turned that into
+  midnight, the run looked older than the shutdown, the check ran a second
+  time, passed again, and the run died "failed; games restarted on their current
+  code". Maintenance now only reads a start time while systemd reports one: a
+  unit found idle is simply started, a run in progress from before the shutdown
+  is waited out, then rerun.
+- That failure path restarted RS-SDK on whatever `computer-setup/rs-sdk:local`
+  pointed at, an image from before the original-gameplay deploy (a playtest had
+  recreated the container from its own compose override on
+  `:original-gameplay`, never moving `:local`), so the server ran 9 hours on
+  pre-original gameplay. Every start by maintenance (normal restart, failure
+  restart, abort trap, rollback, `--resume`) now retags the stack's compose tag
+  to the image its container ran before the countdown (recorded in
+  `~/.local/state/computer-setup/2004scape-maintenance/<stack>.image`), and
+  refuses to start if that image is gone; only a healthy update replaces it with
+  the newly built image. Lost City gets the same pin on
+  `computer-setup/lostcity:node24`. A tag that differs from the running image is
+  logged as a WARNING on every run (`--check` too) and sent to ntfy once per
+  drift.
+
 ## Unreleased — Shared server base and cross-linked dashboards
 
 ### Added

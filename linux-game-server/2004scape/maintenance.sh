@@ -17,6 +17,7 @@ readonly STOP_GRACE_SECONDS=180
 readonly DOWN_BEFORE_BACKUP_SECONDS=120
 readonly RS_SDK_IMAGE=computer-setup/rs-sdk:local
 readonly RS_SDK_ROLLBACK_IMAGE=computer-setup/rs-sdk:rollback
+readonly LOSTCITY_IMAGE=computer-setup/lostcity:node24
 
 log() { printf '%s %s\n' "$(date '+%F %T %Z')" "$*"; }
 die() { log "error: $*" >&2; exit 1; }
@@ -80,7 +81,18 @@ compose() {
   docker compose --project-directory "$GAME_DIR/$stack" -f "$GAME_DIR/$stack/docker-compose.yml" "$@"
 }
 unit_show() { systemctl show "$1" -p "$2" --value; }
-backup_busy() { [[ "$(unit_show "$BACKUP_UNIT" ActiveState)" =~ ^(activating|active|deactivating|reloading)$ ]]; }
+unit_busy() { [[ "$(unit_show "$1" ActiveState)" =~ ^(activating|active|deactivating|reloading)$ ]]; }
+backup_busy() { unit_busy "$BACKUP_UNIT"; }
+# When the unit's current or last run began (epoch). Fails when systemd no
+# longer knows: a oneshot unit nothing else references (the restore check) is
+# unloaded once it finishes, and then shows its timestamps empty. An empty
+# value must never be parsed: `date -d ""` is midnight, not an error.
+unit_started_at() {
+  local stamp
+  stamp="$(unit_show "$1" ExecMainStartTimestamp)" || return 1
+  [[ -n "$stamp" && "$stamp" != n/a ]] || return 1
+  date -d "$stamp" +%s
+}
 wait_backup() {
   for _ in $(seq 1 120); do
     backup_busy || return 0
@@ -90,7 +102,42 @@ wait_backup() {
 }
 container_of() { case "$1" in lostcity) printf 'lostcity' ;; rs-sdk) printf 'rs-sdk-server' ;; esac; }
 is_running() { [[ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" == true ]]; }
-start_stack() { compose "$1" up -d --no-build --force-recreate "$1" </dev/null; }
+image_of() { case "$1" in lostcity) printf '%s' "$LOSTCITY_IMAGE" ;; rs-sdk) printf '%s' "$RS_SDK_IMAGE" ;; esac; }
+image_id() { docker image inspect -f '{{.Id}}' "$1" 2>/dev/null; }
+
+# The image each stack must (re)start on: the one its container ran before the
+# countdown, or the one a verified update built. Compose starts whatever its
+# tag points at, and a tag can drift (a manual build, a playtest image), so
+# every start retags first. Kept in the state dir too, so the recovery of a
+# crashed run still knows it.
+declare -A DEPLOY=()
+image_file() { printf '%s/%s.image' "$STATE_DIR" "$1"; }
+save_image() {
+  DEPLOY[$1]="$2"
+  printf '%s\n' "$2" >"$(image_file "$1").tmp" && mv "$(image_file "$1").tmp" "$(image_file "$1")"
+}
+deploy_image() {
+  local id="${DEPLOY[$1]:-}"
+  if [[ -z "$id" && -r "$(image_file "$1")" ]]; then read -r id <"$(image_file "$1")" || id=""; fi
+  printf '%s' "$id"
+}
+pin_image() {
+  local stack="$1" tag want have
+  tag="$(image_of "$stack")"
+  want="$(deploy_image "$stack")"
+  if [[ -z "$want" ]]; then
+    log "warning: $stack: no record of the image it ran; starting $tag as it is"
+    return 0
+  fi
+  # Never fall back to whatever the tag holds: that is how a stack comes back on old code.
+  docker image inspect "$want" >/dev/null 2>&1 \
+    || { log "error: $stack: the image it ran ($want) is gone; not starting it on $tag"; return 1; }
+  have="$(image_id "$tag")" || have=""
+  [[ "$have" != "$want" ]] || return 0
+  log "$stack: $tag is ${have:-missing}, not the image the stack ran ($want); retagging it before the start"
+  docker tag "$want" "$tag"
+}
+start_stack() { pin_image "$1" || return 1; compose "$1" up -d --no-build --force-recreate "$1" </dev/null; }
 
 # Lost City serves the client committed in its engine (public/client), so the
 # webclient checkout is not deployed and never needs an update.
@@ -148,6 +195,7 @@ load_change() {
 
 lostcity_snapshot="$LOSTCITY_RUNTIME_DIR.pre-update"
 lostcity_rebuild() {
+  pin_image lostcity || return 1
   docker rm -f lostcity-update >/dev/null 2>&1 || true
   local steps='cd engine && bun install && bun run build'
   [[ "$1" == migrate ]] && steps='cd engine && bun install && bun run sqlite:migrate && bun run build'
@@ -197,23 +245,27 @@ rs_sdk_data_op() {
     "$RS_SDK_ROLLBACK_IMAGE" -c "$1" </dev/null
 }
 update_rs_sdk() {
-  local running_image
+  local running_image built
   # The image the stack last ran, not whatever :local points at by now.
-  running_image="$(docker inspect -f '{{.Image}}' rs-sdk-server)" || return 1
+  running_image="$(deploy_image rs-sdk)"
+  [[ -n "$running_image" ]] || running_image="$(docker inspect -f '{{.Image}}' rs-sdk-server)" || return 1
   docker tag "$running_image" "$RS_SDK_ROLLBACK_IMAGE" || return 1
   rs_sdk_data_op 'set -e; cd /parent; rm -rf "$NAME.pre-update" "$NAME.pre-update.complete"
     cp -a "$NAME" "$NAME.pre-update"; touch "$NAME.pre-update.complete"' || return 1
   begin_change rs-sdk || return 1
   git_ -C "$RS_SDK_SOURCE_DIR" merge --ff-only --quiet "${NEW[$RS_SDK_SOURCE_DIR]}" </dev/null || return 1
   compose rs-sdk build rs-sdk </dev/null || return 1
+  # Started on, but only recorded as deployed once it is healthy (see below).
+  built="$(image_id "$RS_SDK_IMAGE")" || return 1
+  DEPLOY[rs-sdk]="$built"
   start_stack rs-sdk || return 1
   wait_healthy rs-sdk-server
 }
 rollback_rs_sdk() {
   compose rs-sdk stop -t 120 rs-sdk </dev/null || true
   git_ -C "$RS_SDK_SOURCE_DIR" reset --hard --quiet "${OLD[$RS_SDK_SOURCE_DIR]}" </dev/null || return 1
-  docker image inspect "$RS_SDK_ROLLBACK_IMAGE" >/dev/null || return 1
-  docker tag "$RS_SDK_ROLLBACK_IMAGE" "$RS_SDK_IMAGE" || return 1
+  # start_stack retags :local to it.
+  DEPLOY[rs-sdk]="$(image_id "$RS_SDK_ROLLBACK_IMAGE")" || return 1
   rs_sdk_data_op 'set -e; cd /parent; [ -e "$NAME.pre-update.complete" ]
     find "$NAME" -mindepth 1 -maxdepth 1 -exec rm -rf {} +; cp -a "$NAME.pre-update/." "$NAME/"' || return 1
   start_stack rs-sdk || return 1
@@ -290,6 +342,8 @@ for stack in lostcity rs-sdk; do
     continue
   fi
   DOWN+=("$stack")
+  running_image="$(docker inspect -f '{{.Image}}' "$container")" || die "$stack: cannot read the image $container runs"
+  if [[ "$MODE" == check ]]; then DEPLOY[$stack]="$running_image"; else save_image "$stack" "$running_image"; fi
   branch="$(branch_of "$stack")" || branch=""
   mapfile -t repos < <(repos_of "$stack")
   usable=true
@@ -329,6 +383,30 @@ for stack in lostcity rs-sdk; do
     continue
   fi
   UPDATE+=("$stack")
+done
+
+# A tag that no longer names the running image is restarted from nowhere: the
+# start retags it (pin_image), but say so loudly, once per drift.
+for stack in ${DOWN[@]+"${DOWN[@]}"}; do
+  tag="$(image_of "$stack")"
+  have="$(image_id "$tag")" || have=""
+  if [[ "$have" == "${DEPLOY[$stack]}" ]]; then
+    [[ "$MODE" == check ]] || rm -f "$STATE_DIR/$stack.drift"
+    continue
+  fi
+  if [[ " ${UPDATE[*]} " == *" $stack "* ]]; then
+    plan="the update builds a new $tag; a failed update goes back to the running image"
+  else
+    plan="maintenance restarts it on the running image and points $tag back at it"
+  fi
+  log "WARNING: $stack: $tag is ${have:-missing} but $(container_of "$stack") runs ${DEPLOY[$stack]}; $plan"
+  drift="$tag ${have:-missing} ${DEPLOY[$stack]}"
+  noted=""
+  if [[ -r "$STATE_DIR/$stack.drift" ]]; then read -r noted <"$STATE_DIR/$stack.drift" || true; fi
+  if [[ "$MODE" != check && "$noted" != "$drift" ]]; then
+    notify "2004Scape image drift" "$stack: $tag is ${have:-missing}, not the image $(container_of "$stack") runs (${DEPLOY[$stack]}); $plan. Check: docker image inspect -f '{{.Id}}' $tag" high
+    printf '%s\n' "$drift" >"$STATE_DIR/$stack.drift"
+  fi
 done
 [[ "$MODE" != check ]] || exit 0
 [[ ${#DOWN[@]} -gt 0 ]] || { log "no running stack; nothing to do"; exit 0; }
@@ -478,14 +556,24 @@ done
 stopped_at="$(date +%s)"
 
 # --- backup and verification of the stopped data ----------------------------------
-# Starts, or joins, a run of the unit and waits for its result; a run that began
-# before the games were down (a late shutdown) does not count, so it runs again.
+# Starts, or joins, a run of the unit that began after the games were down and
+# waits for its result. A run in progress that began before (a late shutdown)
+# does not count: it is waited out, then the unit runs again. A unit found idle
+# is simply started: any run from then on began after the stop. Its start time
+# is only trusted while systemd still reports it; the restore check is unloaded
+# as soon as it finishes, and reading its empty timestamp as midnight once made
+# a passed check run twice and then count as failed.
 run_after_stop() {
-  local unit="$1" began
-  for _ in 1 2; do
+  local unit="$1" began starts=0
+  for _ in $(seq 1 720); do
+    if unit_busy "$unit"; then
+      began="$(unit_started_at "$unit")" || began=0
+      if (( began < stopped_at )); then sleep 5; continue; fi
+    fi
+    (( starts++ < 2 )) || return 1
     systemctl --no-ask-password start --wait "$unit" || return 1
-    began="$(date -d "$(unit_show "$unit" ExecMainStartTimestamp)" +%s)" || return 1
-    (( began >= stopped_at )) && return 0
+    began="$(unit_started_at "$unit")" || return 0
+    (( began < stopped_at )) || return 0
   done
   return 1
 }
@@ -494,7 +582,7 @@ if [[ "$MODE" == scheduled ]]; then
   (( next_epoch > now )) && sleep "$((next_epoch - now + 5))"
 fi
 log "backing up the stopped games"
-began="$(date -d "$(unit_show "$BACKUP_UNIT" ExecMainStartTimestamp)" +%s 2>/dev/null)" || began=0
+began="$(unit_started_at "$BACKUP_UNIT" 2>/dev/null)" || began=0
 if (( began < stopped_at )); then
   run_after_stop "$BACKUP_UNIT" || die "$BACKUP_UNIT failed; games restarted on their current code, not updated"
 fi
@@ -520,6 +608,8 @@ done
 for stack in ${UPDATE[@]+"${UPDATE[@]}"}; do
   log "$stack: updating to ${TARGET[$stack]}"
   if "update_${stack//-/_}"; then
+    deployed="$(deploy_image "$stack")"
+    [[ -z "$deployed" ]] || save_image "$stack" "$deployed"
     rm -f "$STATE_DIR/$stack.inprogress" "$STATE_DIR/$stack.failed" "$STATE_DIR/$stack.notified"
     log "$stack: updated and healthy"
     notify "2004Scape updated" "$stack is back up on ${TARGET[$stack]}." low

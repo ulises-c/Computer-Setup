@@ -157,6 +157,13 @@ DOCKER_STUB = r"""#!/usr/bin/env bash
 S="$STUB_STATE"
 printf 'docker %s\n' "$(printf '%s ' "$@" | tr '\n' ' ' | cut -c1-1000)" >>"$S/calls"
 service_container() { case "$1" in lostcity) echo lostcity ;; rs-sdk) echo rs-sdk-server ;; esac; }
+service_image() { case "$1" in lostcity) echo computer-setup/lostcity:node24 ;; rs-sdk) echo computer-setup/rs-sdk:local ;; esac; }
+# Images: an id is sha256:<name> (gone once $S/gone.<id> exists); a tag is a file under $S/tags.
+tagfile() { printf '%s/tags/%s' "$S" "$(printf '%s' "$1" | tr '/:' '__')"; }
+resolve() {
+  if [[ "$1" == sha256:* ]]; then [[ ! -e "$S/gone.$1" ]] && echo "$1"
+  else cat "$(tagfile "$1")" 2>/dev/null; fi
+}
 case "$1" in
   inspect)
     fmt="$3"; c="$4"
@@ -168,7 +175,7 @@ case "$1" in
     elif [[ "$fmt" == *ExitCode* ]]; then
       cat "$S/exit.$c" 2>/dev/null || echo "false 0 false"
     elif [[ "$fmt" == *.Image* ]]; then
-      echo "sha256:running-$c"
+      cat "$S/image.$c" 2>/dev/null || echo "sha256:running-$c"
     else
       echo "$running"
     fi ;;
@@ -180,7 +187,15 @@ case "$1" in
     # The engine shuts itself down at the deadline, unless it never got the countdown.
     [[ -e "$S/no-shutdown.$c" ]] || echo false >"$S/running.$c" ;;
   logs) echo "Server shutdown complete" ;;
-  image|tag|rm) : ;;
+  image)
+    id="$(resolve "${*: -1}")" || exit 1
+    [[ -n "$id" ]] || exit 1
+    [[ "$3" != -f ]] || echo "$id" ;;
+  tag)
+    id="$(resolve "$2")" || exit 1
+    [[ -n "$id" ]] || exit 1
+    mkdir -p "$S/tags"; echo "$id" >"$(tagfile "$3")" ;;
+  rm) : ;;
   run)
     # rs_sdk_data_op: run its script against the real directory behind /parent.
     parent=""; name=""; script=""; prev=""
@@ -198,6 +213,10 @@ case "$1" in
     dir=""; prev=""; for a in "$@"; do [[ "$prev" == --project-directory ]] && dir="$a"; prev="$a"; done
     c="$(service_container "$(basename "$dir")")"
     if [[ " $* " == *" up "* ]]; then
+      # --no-build: the container runs whatever the service's tag points at now.
+      id="$(resolve "$(service_image "$(basename "$dir")")")" || exit 1
+      echo "$id" >"$S/image.$c"
+      echo "$c $id" >>"$S/started-images"
       echo true >"$S/running.$c"
       echo $(( $(cat "$S/ups.$c" 2>/dev/null || echo 0) + 1 )) >"$S/ups.$c"
     elif [[ " $* " == *" stop "* ]]; then
@@ -214,7 +233,9 @@ case "$1" in
       fi
     elif [[ " $* " == *" build "* ]]; then
       echo new-rs-data >"$RS_DATA/db.sqlite"
-      exit "$(cat "$S/build-rc" 2>/dev/null || echo 0)"
+      rc="$(cat "$S/build-rc" 2>/dev/null || echo 0)"
+      if [[ "$rc" == 0 ]]; then mkdir -p "$S/tags"; echo sha256:built-rs-sdk >"$(tagfile computer-setup/rs-sdk:local)"; fi
+      exit "$rc"
     fi ;;
   *) exit 1 ;;
 esac
@@ -253,13 +274,21 @@ case "$*" in
   "show game-backup.service -p Environment --value") cat "$S/backup-env" ;;
   "show game-backup-restore-check.service -p ExecStart --value") cat "$S/verify-exec" ;;
   "show "*" -p LoadState --value") if [[ -e "$S/missing.$2" ]]; then echo not-found; else echo loaded; fi ;;
-  "show "*" -p ActiveState --value") cat "$S/active.$2" 2>/dev/null || echo inactive ;;
+  "show "*" -p ActiveState --value")
+    # busy.<unit>: a run in progress for that many more polls.
+    n="$(cat "$S/busy.$2" 2>/dev/null || echo 0)"
+    if (( n > 0 )); then echo $((n - 1)) >"$S/busy.$2"; echo activating
+    else cat "$S/active.$2" 2>/dev/null || echo inactive; fi ;;
   "show "*" -p Result --value") cat "$S/result.$2" 2>/dev/null || echo success ;;
-  "show "*" -p ExecMainStartTimestamp --value") cat "$S/started.$2" 2>/dev/null || echo n/a ;;
+  # Like systemd: empty once the unit is unloaded, or before any run.
+  "show "*" -p ExecMainStartTimestamp --value") cat "$S/started.$2" 2>/dev/null || echo ;;
   "--no-ask-password start --wait "*)
     u="$4"
     if [[ -e "$S/stale-start.$u" ]]; then rm "$S/stale-start.$u"; stamp $(( $(date +%s) - 600 )) >"$S/started.$u"
     else stamp "$(date +%s)" >"$S/started.$u"; fi
+    # gc.<unit>: a oneshot unit nothing references is unloaded once it finishes,
+    # and systemctl show then has no timestamps for it.
+    [[ ! -e "$S/gc.$u" ]] || rm -f "$S/started.$u"
     exit "$(cat "$S/rc.$u" 2>/dev/null || echo 0)" ;;
   *) exit 1 ;;
 esac
@@ -335,6 +364,28 @@ class MaintenanceFlowTests(unittest.TestCase):
         for repo in self.lostcity_repos():
             self.set_repo(repo, "254", self.OLD, self.OLD)
         self.set_repo(self.rs_src, "main", self.OLD, self.OLD)
+        # As on the server: the restore check has no timer holding it loaded.
+        self.stub("gc.game-backup-restore-check.service", "")
+        self.set_tag(self.RS_TAG, "sha256:running-rs-sdk-server")
+        self.set_tag(self.LC_TAG, "sha256:running-lostcity")
+
+    RS_TAG = "computer-setup/rs-sdk:local"
+    LC_TAG = "computer-setup/lostcity:node24"
+
+    def tag_path(self, tag):
+        return self.state / "tags" / tag.replace("/", "_").replace(":", "_")
+
+    def set_tag(self, tag, image_id):
+        self.tag_path(tag).parent.mkdir(exist_ok=True)
+        self.tag_path(tag).write_text(image_id + "\n")
+
+    def tag(self, tag):
+        return self.tag_path(tag).read_text().strip()
+
+    def started_images(self, container):
+        f = self.state / "started-images"
+        lines = f.read_text().splitlines() if f.exists() else []
+        return [line.split()[1] for line in lines if line.split()[0] == container]
 
     def lostcity_repos(self):
         return [self.runtime / "engine", self.runtime / "content"]
@@ -556,8 +607,10 @@ class MaintenanceFlowTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual((self.rs_data / "db.sqlite").read_text(), "old-rs-data")
         self.assertEqual((self.rs_data / ".hidden").read_text(), "kept")
-        retag = self.index(calls, "docker tag computer-setup/rs-sdk:rollback computer-setup/rs-sdk:local")
+        retag = self.index(calls, "docker tag sha256:running-rs-sdk-server computer-setup/rs-sdk:local")
         self.assertGreater(retag, self.index(calls, f"git {self.rs_src} reset --hard --quiet {self.OLD}"))
+        self.assertEqual(self.started_images("rs-sdk-server"), ["sha256:built-rs-sdk", "sha256:running-rs-sdk-server"])
+        self.assertEqual((self.state_dir / "rs-sdk.image").read_text().strip(), "sha256:running-rs-sdk-server")
         self.assertEqual(self.head(self.rs_src), self.OLD)
         self.assertIn("back up on its previous code", notify)
 
@@ -674,6 +727,162 @@ class MaintenanceFlowTests(unittest.TestCase):
         result, calls, _ = self.run_maintenance()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.count(calls, "start --wait game-backup.service"), 2)
+
+    def test_passed_restore_check_that_systemd_unloads_counts_once(self):
+        # 2026-10-26: the check passed, was unloaded (empty ExecMainStartTimestamp,
+        # which `date -d ""` reads as midnight), ran a second time, passed again,
+        # and the run still died "restore-check failed".
+        self.maintenance_night()
+        self.running("lostcity", "rs-sdk-server")
+        result, calls, notify = self.run_maintenance()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.count(calls, "start --wait game-backup-restore-check.service"), 1)
+        self.assertNotIn("failed", result.stdout + result.stderr)
+        self.assertIn("2004Scape maintenance done", notify)
+        self.assertNotIn("aborted", notify)
+
+    def test_restore_check_run_from_before_the_stop_is_waited_out_then_rerun(self):
+        self.maintenance_night()
+        self.running("lostcity")
+        unit = "game-backup-restore-check.service"
+        self.stub(f"busy.{unit}", 3)
+        self.stub(f"started.{unit}", datetime.datetime.fromtimestamp(int(time.time()) - 3600).strftime("%a %Y-%m-%d %H:%M:%S"))
+        result, calls, _ = self.run_maintenance()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        start = self.index(calls, f"start --wait {unit}")
+        self.assertEqual(sum(f"show {unit} -p ActiveState" in line for line in calls[:start]), 4)
+        self.assertEqual(self.count(calls, f"start --wait {unit}"), 1)
+
+    def test_restore_check_run_begun_after_the_stop_is_joined(self):
+        self.maintenance_night()
+        self.running("lostcity")
+        unit = "game-backup-restore-check.service"
+        self.stub(f"busy.{unit}", 1)
+        self.stub(f"started.{unit}", datetime.datetime.fromtimestamp(int(time.time()) + 3600).strftime("%a %Y-%m-%d %H:%M:%S"))
+        result, calls, _ = self.run_maintenance()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        start = self.index(calls, f"start --wait {unit}")
+        self.assertEqual(sum(f"show {unit} -p ActiveState" in line for line in calls[:start]), 1)
+        self.assertEqual(self.count(calls, f"start --wait {unit}"), 1)
+
+    # --- which image a restart uses -----------------------------------------------------
+
+    def drift(self):
+        # What happened before 2026-10-26: :local still named an image from before
+        # a hand-deployed one (the containers ran something else).
+        self.set_tag(self.RS_TAG, "sha256:pre-original-gameplay")
+        self.set_tag(self.LC_TAG, "sha256:old-lostcity")
+
+    def test_failed_restore_check_restarts_the_images_that_were_running(self):
+        self.maintenance_night()
+        self.running("lostcity", "rs-sdk-server")
+        self.drift()
+        self.stub("rc.game-backup-restore-check.service", 1)
+        result, calls, notify = self.run_maintenance()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("games restarted on their current code", result.stderr)
+        self.assertEqual(self.started_images("rs-sdk-server"), ["sha256:running-rs-sdk-server"])
+        self.assertEqual(self.started_images("lostcity"), ["sha256:running-lostcity"])
+        self.assertEqual(self.tag(self.RS_TAG), "sha256:running-rs-sdk-server")
+        self.assertLess(self.index(calls, f"docker tag sha256:running-rs-sdk-server {self.RS_TAG}"),
+                        self.index(calls, "up -d --no-build --force-recreate rs-sdk"))
+        self.assertEqual((self.state_dir / "rs-sdk.image").read_text().strip(), "sha256:running-rs-sdk-server")
+
+    def test_quiet_weekly_restart_keeps_the_running_image_and_warns_about_drift(self):
+        self.maintenance_night()
+        self.running("lostcity", "rs-sdk-server")
+        self.drift()
+        result, calls, notify = self.run_maintenance()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.started_images("rs-sdk-server"), ["sha256:running-rs-sdk-server"])
+        self.assertEqual(self.started_images("lostcity"), ["sha256:running-lostcity"])
+        self.assertIn(f"WARNING: rs-sdk: {self.RS_TAG} is sha256:pre-original-gameplay but rs-sdk-server runs sha256:running-rs-sdk-server", result.stdout)
+        self.assertEqual(notify.count("2004Scape image drift [high]"), 2)
+        # The warning precedes any disconnect.
+        self.assertLess(result.stdout.index("WARNING: rs-sdk"), result.stdout.index("countdown announced"))
+
+    def test_drift_is_notified_once_and_reported_by_check(self):
+        self.running("rs-sdk-server")
+        self.drift()
+        result, calls, notify = self.run_maintenance("--check")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("WARNING: rs-sdk:", result.stdout)
+        self.assertEqual(notify, "")
+        self.assert_no_call(calls, "docker tag")
+        self.assertFalse((self.state_dir / "rs-sdk.image").exists())
+        for _ in range(2):
+            self.run_maintenance()
+        notify = (self.state / "notify").read_text()
+        self.assertEqual(notify.count("2004Scape image drift"), 1)
+        self.assert_no_call(calls, "up -d")
+
+    def test_successful_update_deploys_the_built_image(self):
+        self.maintenance_night()
+        self.running("rs-sdk-server")
+        self.drift()
+        self.set_repo(self.rs_src, "main", self.OLD, self.NEW)
+        result, calls, notify = self.run_maintenance()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.started_images("rs-sdk-server"), ["sha256:built-rs-sdk"])
+        self.assertEqual((self.state_dir / "rs-sdk.image").read_text().strip(), "sha256:built-rs-sdk")
+        self.assertEqual(self.tag("computer-setup/rs-sdk:rollback"), "sha256:running-rs-sdk-server")
+        self.assertIn("the update builds a new", result.stdout)
+
+    def test_failed_rs_sdk_update_with_drift_goes_back_to_the_running_image(self):
+        self.maintenance_night()
+        self.running("rs-sdk-server")
+        self.drift()
+        self.set_repo(self.rs_src, "main", self.OLD, self.NEW)
+        self.stub("build-rc", 1)
+        result, calls, notify = self.run_maintenance()
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(self.started_images("rs-sdk-server"), ["sha256:running-rs-sdk-server"])
+        self.assertEqual(self.tag(self.RS_TAG), "sha256:running-rs-sdk-server")
+        self.assertIn("back up on its previous code", notify)
+
+    def test_failure_before_the_update_changed_anything_restarts_the_running_image(self):
+        self.maintenance_night()
+        self.running("rs-sdk-server")
+        self.drift()
+        self.set_repo(self.rs_src, "main", self.OLD, self.NEW)
+        self.stub("run-rc", 1)
+        result, calls, _ = self.run_maintenance()
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(self.started_images("rs-sdk-server"), ["sha256:running-rs-sdk-server"])
+
+    def test_crashed_run_is_recovered_on_the_recorded_image(self):
+        self.maintenance_night()
+        self.running("lostcity")
+        self.set_repo(self.runtime / "engine", "254", self.OLD, self.NEW)
+        (self.state / "kill-on-rebuild").touch()
+        result, _, _ = self.run_maintenance()
+        self.assertEqual(result.returncode, 143, result.stdout + result.stderr)
+        self.assertEqual((self.state_dir / "lostcity.image").read_text().strip(), "sha256:running-lostcity")
+        # Someone moves the tag while the stack is down.
+        self.set_tag(self.LC_TAG, "sha256:old-lostcity")
+        result, calls, _ = self.run_maintenance("--resume")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.started_images("lostcity"), ["sha256:running-lostcity"])
+        self.assertLess(self.index(calls, f"docker tag sha256:running-lostcity {self.LC_TAG}"),
+                        self.index(calls, "run --rm --no-deps -T --name lostcity-update"))
+
+    def test_missing_running_image_is_never_replaced_by_the_tag(self):
+        self.maintenance_night()
+        self.running("rs-sdk-server")
+        self.drift()
+        (self.state / "gone.sha256:running-rs-sdk-server").touch()
+        result, calls, notify = self.run_maintenance()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("is gone; not starting it", result.stdout)
+        self.assert_no_call(calls, "up -d")
+        self.assertIn("2004Scape did not come back", notify)
+
+    def test_script_tags_match_the_compose_files(self):
+        script = (SCAPE / "maintenance.sh").read_text()
+        for stack, var in (("rs-sdk", "RS_SDK_IMAGE"), ("lostcity", "LOSTCITY_IMAGE")):
+            tag = re.search(rf"^readonly {var}=(\S+)$", script, re.M).group(1)
+            compose = (ROOT / stack / "docker-compose.yml").read_text()
+            self.assertIn(f"image: {tag}\n", compose)
 
     def test_last_failed_backup_or_check_keeps_the_games_up(self):
         self.maintenance_night()
