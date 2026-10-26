@@ -49,6 +49,8 @@ ACTIONS = ('run', 'stop', 'hold', 'clear')
 ALWAYS_EXCLUDED = ('bot_tester',)
 # Gathering entries (2004Scape-Botting routines/gather.ts): session routine 'gather', args in this order.
 GATHER_SKILLS = ('woodcutting', 'mining', 'fishing')
+# Longest duration any `unit: seconds` arg may allow (owner 2026-10-26): 7 days (mirror of bot-controller.ts MAX_DURATION_S).
+MAX_DURATION_S = 7 * 86_400
 GATHER_ARGS = ('resource', 'location', 'handling', 'seconds')
 PIONEER = 'bot_pioneer'
 MAX_STATUS = 1024 * 1024
@@ -166,6 +168,8 @@ def parse_registry(raw):
                 raise ValueError(f'{rid}: arg name')
             names.add(a['name'])
             label = a['label'] if _text(a.get('label'), 40) and a.get('label') else a['name']
+            if a.get('type') != 'int' and (a.get('unit') is not None or a.get('maxNote') is not None):
+                raise ValueError(f'{rid}.{a["name"]}: unit/maxNote only on int args')
             if a.get('type') == 'enum':
                 values = a.get('values')
                 if not isinstance(values, list) or not values or len(values) > 30 or len(set(values)) != len(values) \
@@ -209,7 +213,20 @@ def parse_registry(raw):
                 default = a.get('default')
                 if default is not None and (_int(default, low, high) is None):
                     raise ValueError(f'{rid}.{a["name"]}: default')
-                args.append({'name': a['name'], 'label': label, 'type': 'int', 'min': low, 'max': high, 'default': default})
+                arg = {'name': a['name'], 'label': label, 'type': 'int', 'min': low, 'max': high, 'default': default}
+                # Duration in seconds (the page shows days/hours/minutes/seconds boxes; the value stays whole seconds).
+                if a.get('unit') is not None:
+                    if a['unit'] != 'seconds':
+                        raise ValueError(f'{rid}.{a["name"]}: unit (only seconds)')
+                    if high > MAX_DURATION_S:
+                        raise ValueError(f'{rid}.{a["name"]}: a duration (unit seconds) is at most {MAX_DURATION_S} s (7 days)')
+                    arg['unit'] = 'seconds'
+                if a.get('maxNote') is not None:
+                    note = a['maxNote']
+                    if arg.get('unit') != 'seconds' or not _text(note, 200) or not note.strip() or high >= MAX_DURATION_S:
+                        raise ValueError(f'{rid}.{a["name"]}: maxNote (printable text, max 200, only on a duration arg whose max is below 7 days)')
+                    arg['maxNote'] = note
+                args.append(arg)
             else:
                 raise ValueError(f'{rid}.{a.get("name")}: type')
         gather = r.get('gather')

@@ -17,24 +17,25 @@ OWNER = 'owner@example.com'
 ORIGIN = 'https://portal.example'
 THIEVING_DANGER = ('Suicide pickpocketing at Lumbridge castle with NO food: the account dies again and again and relies on death recovery '
                    'to pick its drop back up. Anything not recovered within ~2 min is lost for good. Bank your valuables first.')
+PIONEER_NOTE = 'pioneer-fish.ts refuses runs over 1 h: bot_pioneer is the R&D account and only does short supervised runs.'
 # Mirror of 2004Scape-Botting routines/registry.json (trimmed descriptions).
 REGISTRY = {
     'version': 1, 'excludedBots': ['bot_tester'],
     'routines': [
         {'id': 'mining', 'label': 'Mining', 'runner': 'session', 'routine': 'mining', 'safeStart': True, 'denyBots': ['bot_pioneer'], 'allowPlayers': True,
          'args': [{'name': 'spot', 'label': 'Spot', 'type': 'enum', 'values': ['tin-barbarian-village', 'coal-barbarian-village'], 'default': 'tin-barbarian-village'},
-                  {'name': 'seconds', 'label': 'Seconds', 'type': 'int', 'min': 60, 'max': 21600, 'default': 600}],
+                  {'name': 'seconds', 'label': 'Duration', 'type': 'int', 'unit': 'seconds', 'min': 60, 'max': 604800, 'default': 600}],
          'spotLimit': {'arg': 'spot', 'limits': {'tin-barbarian-village': 2}}},
         {'id': 'chickens', 'label': 'Chickens 24/7', 'runner': 'chickens-247', 'denyBots': ['bot_pioneer'],
          'args': [{'name': 'pen', 'type': 'enum', 'values': ['lumbridge-east'], 'default': 'lumbridge-east'},
                   {'name': 'policy', 'type': 'enum', 'values': ['str-atk', 'str-atk-def'], 'default': 'str-atk'}]},
         {'id': 'pioneer-fish', 'label': 'Pioneer', 'runner': 'pioneer', 'allowBots': ['bot_pioneer'], 'fixedArgs': ['fish-bank'],
-         'args': [{'name': 'seconds', 'type': 'int', 'min': 60, 'max': 3600, 'default': 120}]},
+         'args': [{'name': 'seconds', 'type': 'int', 'unit': 'seconds', 'min': 60, 'max': 3600, 'default': 120, 'maxNote': PIONEER_NOTE}]},
         {'id': 'onboard', 'label': 'Onboard', 'runner': 'onboard', 'enabled': False, 'denyBots': ['bot_pioneer'], 'args': []},
         {'id': 'scavenge', 'label': 'Scavenger 24/7', 'runner': 'scavenge-247', 'allowBots': ['bot_magpie'], 'denyBots': ['bot_pioneer'],
          'args': [{'name': 'pen', 'type': 'enum', 'values': ['lumbridge-east'], 'default': 'lumbridge-east'}]},
         {'id': 'thieving', 'label': 'Thieving (suicide, Lumbridge)', 'runner': 'session', 'routine': 'thieving', 'denyBots': ['bot_pioneer'], 'allowPlayers': True,
-         'danger': THIEVING_DANGER, 'args': [{'name': 'seconds', 'label': 'Seconds', 'type': 'int', 'min': 60, 'max': 21600, 'default': 600}]},
+         'danger': THIEVING_DANGER, 'args': [{'name': 'seconds', 'label': 'Duration', 'type': 'int', 'unit': 'seconds', 'min': 60, 'max': 604800, 'default': 600}]},
     ],
 }
 ACCOUNTS = ['bot_pioneer', 'bot_tester', 'bot_wormlike', 'bot_apehood']
@@ -521,6 +522,105 @@ class ControllerHTTPTests(unittest.TestCase):
         self.assertNotIn(FLEET_PASSWORD, audit)
 
 
+class DurationTests(unittest.TestCase):
+    """Duration args (unit seconds): at most 7 days, wire value whole seconds; mirror of bot-controller.ts."""
+
+    def mutated(self, mutate):
+        raw = json.loads(json.dumps(REGISTRY))
+        mutate(raw)
+        return raw
+
+    def test_unit_and_max_note_are_validated_and_carried(self):
+        self.assertEqual(controller.MAX_DURATION_S, 604800)
+        reg = controller.parse_registry(REGISTRY)
+        mining = next(r for r in reg['routines'] if r['id'] == 'mining')
+        self.assertEqual((mining['args'][1]['unit'], mining['args'][1]['max']), ('seconds', 604800))
+        self.assertNotIn('unit', mining['args'][0])
+        pioneer = next(r for r in reg['routines'] if r['id'] == 'pioneer-fish')
+        self.assertEqual(pioneer['args'][0]['maxNote'], PIONEER_NOTE)
+        bad = [
+            (lambda r: r['routines'][0]['args'][1].update(max=604801), '7 days'),
+            (lambda r: r['routines'][0]['args'][1].update(unit='minutes'), 'unit'),
+            (lambda r: r['routines'][0]['args'][0].update(unit='seconds'), 'only on int'),
+            (lambda r: r['routines'][0]['args'][1].update(maxNote='why'), 'maxNote'),              # max is already 7 days
+            (lambda r: r['routines'][2]['args'][0].update(maxNote=''), 'maxNote'),
+            (lambda r: r['routines'][2]['args'][0].pop('unit'), 'maxNote'),                    # a note needs the unit
+            (lambda r: r['routines'][2]['args'][0].update(maxNote='x' * 201), 'maxNote'),
+        ]
+        for mutate, why in bad:
+            with self.assertRaisesRegex(ValueError, why):
+                controller.parse_registry(self.mutated(mutate))
+        # Without the unit an int keeps the generic cap.
+        plain = self.mutated(lambda r: (r['routines'][0]['args'][1].pop('unit'), r['routines'][0]['args'][1].update(max=700000)))
+        self.assertEqual(controller.parse_registry(plain)['routines'][0]['args'][1]['max'], 700000)
+
+    def test_run_requests_accept_up_to_seven_days(self):
+        reg = controller.parse_registry(REGISTRY)
+        self.assertEqual(controller.validate_run(reg, PLAYER, 'thieving', {'seconds': 604800}), {'seconds': 604800})
+        self.assertEqual(controller.validate_run(reg, 'bot_wormlike', 'mining', {'seconds': 90061}), {'spot': 'tin-barbarian-village', 'seconds': 90061})
+        for args in ({'seconds': 604801}, {'seconds': 59}, {'seconds': '604800'}, {'seconds': 6.5}):
+            with self.assertRaisesRegex(ValueError, 'seconds: integer 60..604800'):
+                controller.validate_run(reg, PLAYER, 'thieving', args)
+        with self.assertRaisesRegex(ValueError, 'seconds: integer 60..3600'):
+            controller.validate_run(reg, 'bot_pioneer', 'pioneer-fish', {'seconds': 3601})
+
+    @unittest.skipUnless(shutil.which('node'), 'node not installed')
+    def test_duration_logic_in_bot_controller_js(self):
+        script = Path(__file__).with_name('bot_controller.js')
+        probe = """
+const L = require(process.argv[1]);
+const reg = JSON.parse(process.argv[2]);
+const thieving = L.routineById(reg, 'thieving');
+const sec = thieving.args[0];
+const pioneer = L.routineById(reg, 'pioneer-fish').args[0];
+const out = {
+  max: L.MAX_DURATION_S,
+  parts: L.DURATION_PARTS.map(p => [p[0], p[1], p[3]]),
+  isDur: [L.isDuration(sec), L.isDuration(L.routineById(reg, 'mining').args[0]), L.isDuration({type: 'int', name: 'seconds'}), L.isDuration(null)],
+  split: [L.splitDuration(0), L.splitDuration(95400), L.splitDuration(604800), L.splitDuration(691200)],
+  text: [L.durationText(0), L.durationText(600), L.durationText(95400), L.durationText(604800), L.durationText(3661)],
+  total: [L.durationTotal({days: '1', hours: '2', minutes: '30', seconds: ''}), L.durationTotal({minutes: '90'}), L.durationTotal({}),
+          L.durationTotal({hours: '-1'}), L.durationTotal({minutes: '1.5'}), L.durationTotal({days: '1e3'})],
+  carry: L.splitDuration(L.durationTotal({minutes: '90', seconds: '75'})),
+  checks: [L.checkDuration(sec, {minutes: '10'}), L.checkDuration(sec, {seconds: '30'}), L.checkDuration(sec, {days: '7', seconds: '1'}),
+           L.checkDuration(sec, {days: '7'}), L.checkDuration(sec, {hours: 'x'}), L.checkDuration(pioneer, {hours: '2'})],
+  range: [L.durationRange(sec), L.durationRange(pioneer)],
+  valid: [L.validateArgs(thieving, {seconds: '604800'}), L.validateArgs(thieving, {seconds: '604801'}), L.validateArgs(thieving, {seconds: ''}),
+          L.validateArgs(thieving, {seconds: '30'})],
+  defaults: L.defaults(thieving),
+  desired: [L.desiredText({action: 'run', routine: 'thieving', args: {seconds: 6000}, rev: 2}, reg),
+            L.desiredText({action: 'run', routine: 'mining', args: {spot: 'tin-barbarian-village', seconds: 95400}, rev: 3}, reg),
+            L.desiredText({action: 'run', routine: 'thieving', args: {seconds: 6000}, rev: 2})],
+};
+console.log(JSON.stringify(out));
+"""
+        result = subprocess.run(['node', '-e', probe, str(script), json.dumps(controller.parse_registry(REGISTRY))],
+                                capture_output=True, text=True, timeout=20, check=True)
+        got = json.loads(result.stdout)
+        self.assertEqual(got['max'], 604800)
+        self.assertEqual(got['parts'], [['days', 'Days', 7], ['hours', 'Hours', 23], ['minutes', 'Minutes', 59], ['seconds', 'Seconds', 59]])
+        self.assertEqual(got['isDur'], [True, False, False, False])
+        self.assertEqual(got['split'], [{'days': 0, 'hours': 0, 'minutes': 0, 'seconds': 0}, {'days': 1, 'hours': 2, 'minutes': 30, 'seconds': 0},
+                                        {'days': 7, 'hours': 0, 'minutes': 0, 'seconds': 0}, {'days': 8, 'hours': 0, 'minutes': 0, 'seconds': 0}])
+        self.assertEqual(got['text'], ['0 s', '10 min', '1 d 2 h 30 min', '7 d', '1 h 1 min 1 s'])
+        self.assertEqual(got['total'], [95400, 5400, 0, None, None, None])
+        self.assertEqual(got['carry'], {'days': 0, 'hours': 1, 'minutes': 31, 'seconds': 15})   # 90 min 75 s carries
+        ok, low, high, full, junk, pio = got['checks']
+        self.assertEqual(ok, {'total': 600, 'text': '= 10 min', 'error': None})
+        self.assertEqual((low['total'], low['error']), (30, 'at least 1 min'))
+        self.assertEqual((high['total'], high['error']), (604801, 'at most 7 d (7 days)'))
+        self.assertIsNone(full['error'])
+        self.assertEqual((junk['total'], junk['error']), (None, 'whole numbers only (0 or more) in each box'))
+        self.assertEqual(pio['error'], 'at most 1 h')
+        self.assertEqual(got['range'], ['1 min to 7 d', '1 min to 1 h'])
+        self.assertEqual(got['valid'][0], {'ok': True, 'args': {'seconds': 604800}, 'errors': {}})
+        self.assertEqual(got['valid'][1]['errors'], {'seconds': 'at most 7 d (7 days)'})
+        self.assertFalse(got['valid'][2]['ok'])
+        self.assertEqual(got['valid'][3]['errors'], {'seconds': 'at least 1 min'})
+        self.assertEqual(got['defaults'], {'seconds': 600})
+        self.assertEqual(got['desired'], ['Run thieving 1 h 40 min · r2', 'Run mining tin-barbarian-village 1 d 2 h 30 min · r3', 'Run thieving 6000 · r2'])
+
+
 class ControllerJSTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which('node'), 'node not installed')
     def test_view_logic_in_bot_controller_js(self):
@@ -597,7 +697,7 @@ GATHER = {
                                                  'maple': ['best', 'closest']}}},
         {'name': 'handling', 'label': 'Handling', 'type': 'enum', 'values': ['bank', 'burn', 'drop'], 'default': 'bank', 'playersOnly': ['burn', 'drop'],
          'valueLabels': {'bank': 'Bank', 'burn': 'Consume (burn logs)', 'drop': 'Drop'}},
-        {'name': 'seconds', 'label': 'Seconds', 'type': 'int', 'min': 60, 'max': 21600, 'default': 600},
+        {'name': 'seconds', 'label': 'Duration', 'type': 'int', 'unit': 'seconds', 'min': 60, 'max': 604800, 'default': 600},
     ],
 }
 RETIRED = {'id': 'chopbank', 'label': 'Chop and bank', 'runner': 'session', 'routine': 'chopbank', 'denyBots': ['bot_pioneer'], 'allowPlayers': True, 'hidden': True,

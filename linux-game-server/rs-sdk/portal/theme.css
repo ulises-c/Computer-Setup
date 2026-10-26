@@ -282,3 +282,21 @@ footer { margin-top: 32px; padding-top: 18px; border-top: 1px solid #68563866; c
 .ctl-game { display: block; width: 100%; height: min(78vh, 620px); min-height: 420px; resize: vertical; border: 1px solid #8d7444; background: #000; }
 .ctl-card.has-frame { border-color: #ffe139; grid-column: 1 / -1; }
 .ctl-mode[hidden] { display: none; }
+/* Bot controller: duration args (Days / Hours / Minutes / Seconds boxes, total in seconds on the wire). */
+.ctl-duration { flex: 1 1 100%; min-width: 0; border: 0; margin: 0; padding: 0; }
+.ctl-duration legend { padding: 0; margin: 0 0 2px; font-size: 11px; color: #a8987a; }
+.ctl-duration-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 12px; }
+.ctl-duration-boxes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; flex: 1 1 260px; max-width: 440px; min-width: 0; }
+.ctl-duration-part { display: grid; gap: 2px; font-size: 11px; color: #a8987a; min-width: 0; }
+.ctl-duration-part input { width: 100%; min-width: 0; }
+.ctl-duration-part input:disabled { opacity: .45; }
+.ctl-duration-sum { font-size: 13px; color: #f0dba4; padding-bottom: 9px; white-space: nowrap; }
+.ctl-duration.invalid input:not(:disabled) { border-color: #e2412b; }
+.ctl-duration.invalid .ctl-duration-sum { color: #ff8a73; }
+.ctl-duration-err { color: #ff8a73; font-size: 12px; margin: 4px 0 0; }
+.ctl-duration-err:empty { display: none; }
+.ctl-duration-note { font-size: 11px; color: #8d8167; margin: 3px 0 0; }
+@media (max-width: 420px) {
+  .ctl-duration-boxes { grid-template-columns: repeat(2, minmax(0, 1fr)); flex-basis: 100%; max-width: none; }
+  .ctl-duration-sum { padding-bottom: 0; }
+}

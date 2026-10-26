@@ -10,6 +10,48 @@ const ControllerLogic = (() => {
     'use strict';
     const routineById = (registry, id) => (registry && Array.isArray(registry.routines) ? registry.routines.find(r => r.id === id) : null) || null;
     const defaults = spec => Object.fromEntries((spec ? spec.args : []).map(a => [a.name, a.default ?? (a.type === 'enum' ? a.values[0] : a.min)]));
+    // Durations (registry `unit: "seconds"`): Days / Hours / Minutes / Seconds boxes on the page, one whole number of
+    // seconds on the wire. Every duration allows at most 7 days (the daemon and the portal refuse more); an arg may
+    // allow less and then carries a maxNote saying why. Boxes carry over on change (90 min -> 1 h 30 min); a total
+    // outside the arg's min..max is an inline error that disables Start (never clamped silently).
+    const MAX_DURATION_S = 7 * 86400;
+    const DURATION_PARTS = [['days', 'Days', 86400, 7], ['hours', 'Hours', 3600, 23], ['minutes', 'Minutes', 60, 59], ['seconds', 'Seconds', 1, 59]];
+    const isDuration = a => !!a && a.type === 'int' && a.unit === 'seconds';
+    const splitDuration = total => {
+        let rest = Math.max(0, Math.floor(Number(total) || 0));
+        const out = {};
+        for (const [k, , size] of DURATION_PARTS) { out[k] = Math.floor(rest / size); rest -= out[k] * size; }
+        return out;
+    };
+    const UNIT_TEXT = { days: 'd', hours: 'h', minutes: 'min', seconds: 's' };
+    const durationText = total => {
+        const parts = splitDuration(total);
+        const bits = DURATION_PARTS.filter(([k]) => parts[k]).map(([k]) => `${parts[k]} ${UNIT_TEXT[k]}`);
+        return bits.length ? bits.join(' ') : '0 s';
+    };
+    // Box texts -> total seconds; an empty box counts as 0. null total = a box is not a whole number >= 0.
+    const durationTotal = raw => {
+        let total = 0;
+        for (const [k, , size] of DURATION_PARTS) {
+            const text = String((raw || {})[k] ?? '').trim();
+            if (text === '') continue;
+            if (!/^\d{1,7}$/.test(text)) return null;
+            total += Number(text) * size;
+        }
+        return total;
+    };
+    const durationError = (a, total) => {
+        if (total < a.min) return `at least ${durationText(a.min)}`;
+        if (total > a.max) return `at most ${durationText(a.max)}${a.max === MAX_DURATION_S ? ' (7 days)' : ''}`;
+        return null;
+    };
+    // What the duration control shows for these box texts: total, summary, error (null when fine).
+    const checkDuration = (a, raw) => {
+        const total = durationTotal(raw);
+        if (total === null) return { total: null, text: '', error: 'whole numbers only (0 or more) in each box' };
+        return { total, text: `= ${durationText(total)}`, error: durationError(a, total) };
+    };
+    const durationRange = a => `${durationText(a.min)} to ${durationText(a.max)}`;
     // Same rules as the portal and the daemon: enum values from the list, integers within bounds, no extra keys.
     // `off(arg, chosen)` (optional): value -> reason for values this account cannot choose (greyed out on the page).
     const validateArgs = (spec, raw, off) => {
@@ -29,7 +71,7 @@ const ControllerLogic = (() => {
                 const text = typeof v === 'number' ? String(v) : String(v ?? '').trim();
                 const n = /^\d{1,7}$/.test(text) ? Number(text) : NaN;
                 if (Number.isSafeInteger(n) && n >= a.min && n <= a.max) args[a.name] = n;
-                else errors[a.name] = `whole number ${a.min}–${a.max}`;
+                else errors[a.name] = isDuration(a) ? (Number.isSafeInteger(n) && durationError(a, n)) || 'whole days, hours, minutes and seconds' : `whole number ${a.min}–${a.max}`;
             }
         }
         return { ok: Object.keys(errors).length === 0, args, errors };
@@ -44,9 +86,12 @@ const ControllerLogic = (() => {
         blocked: 'warn', foreign: 'warn', expired: 'warn', unknown: 'warn', held: 'muted', idle: 'muted', rejected: 'bad', failed: 'bad', error: 'bad',
     };
     const tone = state => TONES[state] || 'muted';
-    const desiredText = d => {
+    // With the registry, duration args read as e.g. "1 h 40 min" instead of "6000".
+    const desiredText = (d, registry) => {
         if (!d) return 'No request';
-        const what = d.action === 'run' ? `Run ${d.routine} ${Object.values(d.args || {}).join(' ')}${d.mode === 'browser' ? ' (browser view)' : ''}`.trim() : d.action === 'stop' ? 'Stop' : 'Hold (hands off)';
+        const spec = registry ? routineById(registry, d.routine) : null;
+        const argText = ([k, v]) => { const a = spec && spec.args.find(x => x.name === k); return isDuration(a) && Number.isSafeInteger(v) ? durationText(v) : v; };
+        const what = d.action === 'run' ? `Run ${d.routine} ${Object.entries(d.args || {}).map(argText).join(' ')}${d.mode === 'browser' ? ' (browser view)' : ''}`.trim() : d.action === 'stop' ? 'Stop' : 'Hold (hands off)';
         return `${what} · r${d.rev}`;
     };
     const ago = ms => {
@@ -127,7 +172,8 @@ const ControllerLogic = (() => {
             return new Set();
         }
     };
-    return { routineById, defaults, validateArgs, commonEligible, tone, desiredText, ago, heartbeat, validShow, initialShow, withShow, visible, isActive, label, modesFor, showLog, frameNote, dangerOf, optionLabel, dangerConfirm, allowedValues, valueText, offReasons, pickValue, parseSet };
+    return { MAX_DURATION_S, DURATION_PARTS, isDuration, splitDuration, durationText, durationTotal, durationError, checkDuration, durationRange,
+        routineById, defaults, validateArgs, commonEligible, tone, desiredText, ago, heartbeat, validShow, initialShow, withShow, visible, isActive, label, modesFor, showLog, frameNote, dangerOf, optionLabel, dangerConfirm, allowedValues, valueText, offReasons, pickValue, parseSet };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = ControllerLogic;
 
@@ -241,6 +287,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         }));
         const offFor = spec => { const accs = accountsFor(spec); return (a, chosen) => (a.type === 'enum' ? L.offReasons(a, chosen, accs) : {}); };
         const renderFields = (kept) => {
+            // A kept duration is its total seconds (hidden input); an unparsable one falls back to the default.
+            const kept0 = a => { const v = kept && kept[a.name] !== undefined ? String(kept[a.name]) : ''; return /^\d{1,7}$/.test(v) ? Number(v) : L.defaults(L.routineById(registry, pick.value))[a.name]; };
             fields.replaceChildren();
             for (const k of Object.keys(inputs)) delete inputs[k];
             const spec = L.routineById(registry, pick.value);
@@ -261,6 +309,12 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
             const chosen = {};
             const off = offFor(spec);
             for (const a of spec ? spec.args : []) {
+                if (L.isDuration(a)) {
+                    const box = durationField(a, kept0(a), () => setDisabled(container));
+                    fields.append(box.node);
+                    inputs[a.name] = box.input;
+                    continue;
+                }
                 const label = el('label', 'ctl-field');
                 label.append(el('span', '', a.label));
                 let input;
@@ -334,9 +388,69 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         setDisabled(container);
     }
 
+    // Days / Hours / Minutes / Seconds boxes for a duration arg; the hidden input (name = the arg) holds the total
+    // seconds that validateArgs and the request use. Carries on change (blur, Enter, spinner): 90 min -> 1 h 30 min.
+    let durationIds = 0;
+    function durationField(a, value, onState) {
+        const id = `ctl-dur-${++durationIds}`;
+        const node = el('fieldset', 'ctl-duration');
+        node.append(el('legend', '', a.label));
+        const input = el('input');
+        input.type = 'hidden';
+        input.name = a.name;
+        const row = el('div', 'ctl-duration-row');
+        const grid = el('div', 'ctl-duration-boxes');
+        const sum = el('output', 'ctl-duration-sum');
+        sum.id = `${id}-sum`;
+        sum.setAttribute('aria-live', 'polite');
+        const err = el('p', 'ctl-duration-err');
+        err.id = `${id}-err`;
+        err.setAttribute('aria-live', 'polite');
+        const maxDays = Math.min(7, Math.floor(a.max / 86400));
+        const boxes = {};
+        for (const [k, text, , max] of L.DURATION_PARTS) {
+            const label = el('label', 'ctl-duration-part');
+            const box = el('input');
+            Object.assign(box, { type: 'number', min: 0, max: k === 'days' ? maxDays : max, step: 1, inputMode: 'numeric' });
+            box.dataset.part = k;
+            box.setAttribute('aria-describedby', `${sum.id} ${err.id} ${id}-note`);
+            if (k === 'days' && maxDays === 0) { box.disabled = true; box.title = 'This routine allows less than a day'; }
+            label.append(el('span', '', text), box);
+            grid.append(label);
+            boxes[k] = box;
+        }
+        row.append(grid, sum);
+        const note = el('p', 'ctl-duration-note', `Allowed: ${L.durationRange(a)}.${a.maxNote ? ` ${a.maxNote}` : ''}`);
+        note.id = `${id}-note`;
+        node.append(input, row, err, note);
+        const show = parts => { for (const [k] of L.DURATION_PARTS) boxes[k].value = String(parts[k]); };
+        const update = carry => {
+            const r = L.checkDuration(a, Object.fromEntries(Object.entries(boxes).map(([k, b]) => [k, b.value])));
+            if (carry && r.total !== null) show(L.splitDuration(r.total));
+            input.value = r.total === null ? '' : String(r.total);
+            sum.textContent = r.text;
+            err.textContent = r.error ? `${a.label}: ${r.error}` : '';
+            node.classList.toggle('invalid', !!r.error);
+            for (const b of Object.values(boxes)) b.setAttribute('aria-invalid', String(!!r.error));
+            onState();
+        };
+        for (const b of Object.values(boxes)) {
+            b.addEventListener('input', () => update(false));
+            b.addEventListener('change', () => update(true));
+        }
+        show(L.splitDuration(value));
+        update(false);
+        return { node, input };
+    }
+
+    // Start stays disabled while a duration box shows an error (the error says why).
     function setDisabled(container) {
         const off = !canWrite();
-        for (const b of container.querySelectorAll('button')) b.disabled = off;
+        for (const b of container.querySelectorAll('button')) {
+            const bad = b.dataset.action === 'run' && !!b.closest('form')?.querySelector('.ctl-duration.invalid');
+            b.disabled = off || bad;
+            if (b.dataset.action === 'run') b.title = bad ? 'Fix the duration first' : '';
+        }
     }
 
     function makeCard(row) {
@@ -461,7 +575,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         if (row.type !== 'player') rows.push(['Gates', c.gates && c.gates.length ? c.gates.join('; ') : 'none (read-only; cleared only on the workstation)']);
         if (c.foreign && c.foreign.length) rows.push(['Other controllers', c.foreign.join('; ')]);
         if (c.lastResult) rows.push(['Last job', `${c.lastResult.kind} r${c.lastResult.rev}: ${c.lastResult.rc === 0 ? 'exit 0' : c.lastResult.rc === null ? 'no result' : `exit ${c.lastResult.rc}`} · ${L.ago(Date.now() - c.lastResult.endedAt)} ago`]);
-        if (row.desired) rows.push(['Requested', `${L.desiredText(row.desired)} · by ${row.desired.by || '?'} · ${L.ago(Date.now() - row.desired.at)} ago`]);
+        if (row.desired) rows.push(['Requested', `${L.desiredText(row.desired, payload.registry)} · by ${row.desired.by || '?'} · ${L.ago(Date.now() - row.desired.at)} ago`]);
         if (row.phase) rows.push(['Routine phase', `${row.routine}: ${row.phase}`]);
         return rows;
     }
@@ -477,7 +591,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         card.state.textContent = st;
         card.state.className = `ctl-badge tone-${L.tone(c && c.state)}`;
         card.activity.textContent = row.activity || (row.presence === 'offline' ? 'Offline' : '—');
-        card.desired.textContent = L.desiredText(row.desired);
+        card.desired.textContent = L.desiredText(row.desired, payload.registry);
         card.message.textContent = c && c.message ? c.message : row.launchable ? '' : 'Not launchable from the controller';
         card.message.className = `line ctl-message tone-${L.tone(c && c.state)}`;
         card.info.replaceChildren(...infoRows(row).flatMap(([k, v]) => [el('dt', '', k), el('dd', '', v)]));
