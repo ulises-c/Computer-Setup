@@ -278,5 +278,5 @@ footer { margin-top: 32px; padding-top: 18px; border-top: 1px solid #68563866; c
 .ctl-frame-head .ctl-desc { margin: 0; }
 .ctl-frame-note { color: #ffcf8a; }
 .ctl-game { display: block; width: 100%; height: min(78vh, 620px); min-height: 420px; resize: vertical; border: 1px solid #8d7444; background: #000; }
-.ctl-card.has-frame { border-color: #ffe139; }
+.ctl-card.has-frame { border-color: #ffe139; grid-column: 1 / -1; }
 .ctl-mode[hidden] { display: none; }
