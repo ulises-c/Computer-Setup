@@ -13,10 +13,13 @@ set -euo pipefail
 #   world.sh role ID live|test             switch a world's role (restarts it if it runs)
 #   world.sh allow ID list|add|remove NAME the world's login allowlist (test role)
 #   world.sh compat IMAGE                  would IMAGE share saves safely with world 1?
-#   world.sh candidate build [--if-new]    build upstream + this repo's patches, never deploy
+#   world.sh candidate build [--if-new] [--source-ref COMMIT]
+#                                          build upstream (or COMMIT, e.g. world 1's own source,
+#                                          without fetching) + this repo's patches, never deploy
 #   world.sh candidate list
-#   world.sh promote [IMAGE] --next-window|--now [--yes]
-#                                          put IMAGE (default: the test world's) on world 1
+#   world.sh promote [IMAGE] --next-window|--now [--yes] [--fix-hiscores | --pre-start CMD]
+#                                          put IMAGE (default: the test world's) on world 1;
+#                                          --now runs the hook while the engine is stopped
 #
 # A live world runs exactly world 1's image and is open to everyone; a test world
 # runs a candidate with its allowlist on and is never a hop target. Nothing here
@@ -32,6 +35,7 @@ readonly RS_SDK_ROLLBACK_IMAGE=computer-setup/rs-sdk:rollback
 readonly CANDIDATE_REPO=computer-setup/rs-sdk
 : "${WORLD_COUNTDOWN_SECONDS:=120}"
 : "${WORLD_HEALTH_TIMEOUT:=600}"
+: "${HISCORE_FIX_IMAGE:=python:3.14-alpine}"
 
 log() { printf '%s %s\n' "$(date '+%F %T %Z')" "$*"; }
 die() { log "error: $*" >&2; exit 1; }
@@ -290,12 +294,27 @@ patch_set() {
 }
 
 cmd_candidate_build() {
-  local if_new=false
-  [[ "${1:-}" == --if-new ]] && if_new=true
+  local if_new=false source_ref=""
+  while (($#)); do
+    case "$1" in
+      --if-new) if_new=true ;;
+      --source-ref) source_ref="${2:?--source-ref needs a commit}"; shift ;;
+      *) die "unknown option $1 (usage: candidate build [--if-new] [--source-ref COMMIT])" ;;
+    esac
+    shift
+  done
   local branch upstream patches tag log_file work
-  branch="$(git_ -C "$RS_SDK_SOURCE_DIR" symbolic-ref --short -q HEAD)" || die "cannot read the branch of $RS_SDK_SOURCE_DIR"
-  git_ -C "$RS_SDK_SOURCE_DIR" fetch --quiet origin "$branch" </dev/null || die "cannot fetch $RS_SDK_SOURCE_DIR"
-  upstream="$(git_ -C "$RS_SDK_SOURCE_DIR" rev-parse FETCH_HEAD)"
+  if [[ -n "$source_ref" ]]; then
+    # A pinned commit (e.g. world 1's own source for a fixes-only build): resolved in
+    # the checkout without fetching; the checkout itself never moves (worktree below).
+    [[ "$source_ref" != -* ]] || die "--source-ref: not a commit: $source_ref"
+    upstream="$(git_ -C "$RS_SDK_SOURCE_DIR" rev-parse --verify --quiet "$source_ref^{commit}")" \
+      || die "--source-ref: $source_ref is not a commit in $RS_SDK_SOURCE_DIR"
+  else
+    branch="$(git_ -C "$RS_SDK_SOURCE_DIR" symbolic-ref --short -q HEAD)" || die "cannot read the branch of $RS_SDK_SOURCE_DIR"
+    git_ -C "$RS_SDK_SOURCE_DIR" fetch --quiet origin "$branch" </dev/null || die "cannot fetch $RS_SDK_SOURCE_DIR"
+    upstream="$(git_ -C "$RS_SDK_SOURCE_DIR" rev-parse FETCH_HEAD)"
+  fi
   patches="$(patch_set)"
   tag="$CANDIDATE_REPO:candidate-${upstream:0:12}-$patches"
   if image_id "$tag" >/dev/null; then
@@ -350,17 +369,27 @@ PY
 # --- promote --------------------------------------------------------------------------
 cmd_promote() {
   local image="" mode="" yes=false
+  PRE_START=""
   while (($#)); do
     case "$1" in
       --now) mode=now ;;
       --next-window) mode=window ;;
       --yes) yes=true ;;
+      --pre-start) [[ -z "$PRE_START" ]] || die "one --pre-start/--fix-hiscores only"; PRE_START="${2:?--pre-start needs a command}"; shift ;;
+      --fix-hiscores) [[ -z "$PRE_START" ]] || die "one --pre-start/--fix-hiscores only"; PRE_START=fix-hiscores ;;
       -*) die "unknown option $1" ;;
       *) image="$1" ;;
     esac
     shift
   done
   [[ -n "$mode" ]] || die "say when: --next-window (the weekly maintenance restart, with backup and rollback) or --now (2-minute countdown)"
+  [[ -z "$PRE_START" || "$mode" == now ]] || die "--pre-start/--fix-hiscores run only with --now (the engine-stopped step of this promotion)"
+  if [[ "$PRE_START" == fix-hiscores ]]; then
+    image_id "$HISCORE_FIX_IMAGE" >/dev/null || die "--fix-hiscores runs in $HISCORE_FIX_IMAGE, which is not on this host (docker pull it first)"
+    log "hiscore fix, dry run against the live database (applied while the engine is stopped):"
+    python3 "$GAME_DIR/rs-sdk/fix-hiscore-levels.py" --db "$RS_SDK_DATA_DIR/db.sqlite" --examples 0 \
+      || die "the hiscore fix's dry run failed; nothing changed"
+  fi
   if [[ -z "$image" ]]; then
     [[ -r "$STATE_DIR/$TEST_WORLD.image" ]] || die "no image named and the test world has never run one"
     image="$(cat "$STATE_DIR/$TEST_WORLD.image")"
@@ -430,12 +459,15 @@ promote_now() {
   docker run --rm --network none --entrypoint sh -e NAME="$name" -v "$parent":/parent "$RS_SDK_ROLLBACK_IMAGE" -c \
     'set -e; cd /parent; rm -rf "$NAME.pre-promote"; cp -a "$NAME" "$NAME.pre-promote"' </dev/null \
     || { start_main "$previous"; die "could not copy the data dir; world 1 restarted on its previous image"; }
-  if start_main "$id"; then
+  local why="world 1 is not healthy on $id"
+  if [[ -n "$PRE_START" ]] && ! run_pre_start; then
+    why="the pre-start step failed"
+  elif start_main "$id"; then
     log "world 1 runs $id"
     notify "RS-SDK world 1 promoted" "World 1 now runs $id (previous: $previous, tagged rollback)." default
     return 0
   fi
-  log "world 1 is not healthy on $id; rolling back data and image"
+  log "$why; rolling back data and image"
   docker stop -t 120 "$MAIN_CONTAINER" >/dev/null 2>&1 || true
   docker run --rm --network none --entrypoint sh -e NAME="$name" -v "$parent":/parent "$RS_SDK_ROLLBACK_IMAGE" -c \
     'set -e; cd /parent; find "$NAME" -mindepth 1 -maxdepth 1 -exec rm -rf {} +; cp -a "$NAME.pre-promote/." "$NAME/"' </dev/null \
@@ -443,6 +475,26 @@ promote_now() {
   start_main "$previous" || die "world 1 did not come back on its previous image; check docker logs $MAIN_CONTAINER"
   notify "RS-SDK promotion FAILED" "World 1 was not healthy on $id and is back on $previous with its data restored." high
   die "promotion failed; world 1 is back on its previous image"
+}
+
+# The promote hook: runs once, after the data copy and before world 1 starts on the new
+# image, with the engine stopped. A failure restores the data copy and the old image.
+run_pre_start() {
+  is_running "$MAIN_CONTAINER" && { log "pre-start: $MAIN_CONTAINER is running; refusing"; return 1; }
+  if [[ "$PRE_START" == fix-hiscores ]]; then
+    # The data dir is root's (the engine's), so the repair runs as root in a container,
+    # without network; its backups land in the operator's state dir.
+    local backups="$MAINT_STATE_DIR/../hiscore-fix"
+    install -d -m 700 "$backups"
+    log "pre-start: fix-hiscore-levels.py --apply (engine stopped; backup in $(cd "$backups" && pwd))"
+    docker run --rm --network none --entrypoint sh -e OWNER="$(id -u):$(id -g)" \
+      -v "$RS_SDK_DATA_DIR":/data -v "$backups":/backup \
+      -v "$GAME_DIR/rs-sdk/fix-hiscore-levels.py":/fix-hiscore-levels.py:ro "$HISCORE_FIX_IMAGE" -c \
+      'rc=0; python3 /fix-hiscore-levels.py --db /data/db.sqlite --apply --backup-dir /backup || rc=$?; chown -R "$OWNER" /backup; exit "$rc"' </dev/null
+  else
+    log "pre-start: $PRE_START (engine stopped)"
+    RS_SDK_DATA_DIR="$RS_SDK_DATA_DIR" bash -c "$PRE_START" </dev/null
+  fi
 }
 
 start_main() {
@@ -492,7 +544,7 @@ case "$command" in
     case "$sub" in
       build) flock -n "$WORLDS_LOCK" || die "another world.sh is running"; cmd_candidate_build "$@" ;;
       list) cmd_candidate_list ;;
-      *) die "usage: world.sh candidate build [--if-new] | candidate list" ;;
+      *) die "usage: world.sh candidate build [--if-new] [--source-ref COMMIT] | candidate list" ;;
     esac ;;
   promote) cmd_promote "$@" ;;
   *) die "unknown command: $command (see the header of $0)" ;;

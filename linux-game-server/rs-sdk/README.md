@@ -22,7 +22,7 @@ The same image layer patches the engine's hiscores (each script fails the build 
 
 `hop-timer-utc.js` (`server/login/LoginServer.ts`) fixes the hop timer between worlds: the login server stores `logout_time` as UTC text and read it back as local time, so with the container's Pacific `TZ` the 45-second timer lasted 7-8 hours and an account could not change worlds the same day (measured on the test world: refused with 419 minutes left). It reads the text as UTC; it reaches world 1 only with the next promoted image.
 
-`fix-hiscore-levels.py` is the one-off repair for rows already written under the wrong curve: it recomputes each skill row's level from its stored XP on the original curve (deleting rows under 15) and leaves Quest Points, playtime and `hiscore_large` alone (total level needs every skill; it heals at the account's next logout). It is a dry run by default; `--apply` refuses while `rs-sdk-server` runs on that database and backs it up first (`~/.local/state/computer-setup/hiscore-fix-<time>.sqlite`). Run it while the engine is stopped:
+`fix-hiscore-levels.py` is the one-off repair for rows already written under the wrong curve: it recomputes each skill row's level from its stored XP on the original curve (deleting rows under 15) and leaves Quest Points, playtime and `hiscore_large` alone (total level needs every skill; it heals at the account's next logout). It is a dry run by default; `--apply` refuses while `rs-sdk-server` runs on that database and backs it up first (`~/.local/state/computer-setup/hiscore-fix-<time>.sqlite`). Run it while the engine is stopped. The data dir belongs to root (the engine), so the simplest way is `world.sh promote IMAGE --now --fix-hiscores` (see "Updates"); by hand:
 
 ```sh
 python3 linux-game-server/rs-sdk/fix-hiscore-levels.py --db ~/games/rs-sdk/data/db.sqlite          # dry run
@@ -64,6 +64,8 @@ World 1 is never updated in place by default (`RS_SDK_UPDATES=candidate` in `200
 
 - `world.sh promote [IMAGE] --next-window`: the next weekly maintenance counts down, backs up and verifies, then starts world 1 on the image (rollback to the previous image and data if it is not healthy). This is the safe default.
 - `world.sh promote [IMAGE] --now`: a 2-minute countdown on world 1, a copy of the data dir (`data.pre-promote`), then world 1 on the image; not healthy = data and image put back. It refuses while maintenance runs.
+  - `--pre-start CMD` runs CMD (bash, `RS_SDK_DATA_DIR` set) once while the engine is stopped, after the data copy and before the new image starts; a failing CMD restores the data copy and the previous image. `--fix-hiscores` is the built-in hook: a dry run of `fix-hiscore-levels.py` before the countdown, then `--apply` as root in a network-less `python:3.14-alpine` container (`HISCORE_FIX_IMAGE`; it must be on the host, or the promotion stops before the countdown), backups in `~/.local/state/computer-setup/hiscore-fix/`.
+- `world.sh candidate build --source-ref COMMIT` builds a given upstream commit instead of the newest one (no fetch; a temporary worktree, so the checkout never moves). With world 1's own commit this is a fixes-only candidate: the same game plus the current patch scripts.
 
 Both refuse an image with another XP curve, record the image so maintenance keeps it (`rs-sdk.image`), and remind you to take the test world down. `RS_SDK_UPDATES=direct` restores the old in-place update; `notify` only reports.
 

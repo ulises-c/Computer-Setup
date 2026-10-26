@@ -21,6 +21,11 @@ in [UNIFICATION.md](UNIFICATION.md).
   updating world 1 (`RS_SDK_UPDATES=candidate`); world 1 changes only on
   `world.sh promote --next-window` (weekly maintenance, with backup and rollback) or
   `--now` (2-minute countdown, data copy and rollback).
+- `world.sh candidate build --source-ref COMMIT` (a fixes-only candidate from world 1's
+  own upstream commit) and `world.sh promote --now --pre-start CMD | --fix-hiscores`: a
+  hook that runs once while world 1's engine is stopped, after the data copy; a failure
+  restores the data and the previous image. `--fix-hiscores` applies
+  `fix-hiscore-levels.py` as root in a network-less container.
 - `hop-timer-utc.js`: the login server read the stored UTC logout time as Pacific
   time, so the 45-second hop timer between worlds lasted 7-8 hours. Fixed in
   candidates; reaches world 1 with the next promotion.
