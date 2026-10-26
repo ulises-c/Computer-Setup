@@ -13,6 +13,20 @@ This is the independent RS-SDK fork, which includes its own game engine, web cli
 
 These settings retain SDK connectivity and do not reset earned XP or player saves. An existing character's levels can change when the original XP thresholds are restored. Other fork differences, including its content revision, Grand Exchange and bot tooling, are unchanged; this is not a claim of full vanilla parity.
 
+## Hiscore patches
+
+The same image layer patches the engine's hiscores (each script fails the build if upstream no longer matches, and a rerun is a no-op):
+
+- `hiscore-pages.js` (`web/pages/hiscores.ts`): the ranked lists (Overall, each skill, Quest Points) get a stone-styled pager under the table: Top, Prev and Next move 21 ranks, the rank search's page size, and keep `category`, `profile` and a searched `player`; the ends are greyed out and the box shows "Ranks X–Y of N". A name search highlights the player and links its rank to the page that shows them. Equipment and Bank (fixed top 50) and Lava Maze Runite (three top 10s) are not paginated lists, so they get no pager.
+- `hiscore-prune.js` (`server/login/LoginServer.ts`): the login server writes a skill row only at base level 15+ and never deleted one, so a row written at a higher level (e.g. under another XP curve) stayed on the board. At save, a skill below 15 now deletes its row; rows at 15+ are written exactly as upstream does.
+
+`fix-hiscore-levels.py` is the one-off repair for rows already written under the wrong curve: it recomputes each skill row's level from its stored XP on the original curve (deleting rows under 15) and leaves Quest Points, playtime and `hiscore_large` alone (total level needs every skill; it heals at the account's next logout). It is a dry run by default; `--apply` refuses while `rs-sdk-server` runs on that database and backs it up first (`~/.local/state/computer-setup/hiscore-fix-<time>.sqlite`). Run it while the engine is stopped:
+
+```sh
+python3 linux-game-server/rs-sdk/fix-hiscore-levels.py --db ~/games/rs-sdk/data/db.sqlite          # dry run
+python3 linux-game-server/rs-sdk/fix-hiscore-levels.py --db ~/games/rs-sdk/data/db.sqlite --apply  # engine stopped
+```
+
 ## Access
 
 The RS-SDK Homepage card opens the game-server-hosted

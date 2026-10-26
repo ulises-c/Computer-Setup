@@ -60,8 +60,27 @@ in [UNIFICATION.md](UNIFICATION.md).
   scanlines, a robot icon and a BOT SERVER tag. Requires
   `fetch-assets.sh linux-game-server` and `sudo bash
   linux-game-server/2004scape/install-status-timer.sh`.
+- RS-SDK hiscore lists get Top/Prev/Next under the ranked table
+  (`linux-game-server/rs-sdk/hiscore-pages.js`, applied in the image layer like
+  `restore-xp.js`): 21 ranks a page, as the rank search already showed,
+  keeping category, profile and a searched name, ends greyed out, "Ranks X–Y of
+  N"; a name search highlights the player and links its rank to its page.
+  Equipment, Bank and Lava Maze Runite are fixed top-N boards and get no pager.
 
 ### Fixed
+- RS-SDK hiscores kept levels from the wrong XP curve (2026-10-26): for nine
+  hours the server ran an image with the fork's level/10 curve, so logouts wrote
+  inflated skill levels, and the login server never deletes a skill row (it only
+  writes at level 15+), so rows that fall under 15 on the original curve, and
+  every offline account, would have kept them. `hiscore-prune.js` makes a save
+  delete the row of any skill under 15; `fix-hiscore-levels.py` is the one-off
+  repair (dry run by default; `--apply` refuses while the engine runs, backs up
+  first, recomputes levels from stored XP with the engine's table and deletes
+  rows under 15). Tested on a copy of the live database: 69 of 95 skill rows
+  relevelled, 2 deleted, a rerun finds nothing. Built as
+  `computer-setup/rs-sdk:original-hiscores` on the running original-client
+  image; not deployed yet (waiting for a test world). The main Dockerfile
+  applies both scripts, so the next maintenance rebuild ships them.
 - 2004Scape maintenance misreported a passed restore check as failed
   (2026-10-26): `game-backup-restore-check.service` is unloaded by systemd as
   soon as it finishes (no timer references it), so its
