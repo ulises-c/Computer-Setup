@@ -23,13 +23,19 @@ in [UNIFICATION.md](UNIFICATION.md).
   `--now` (2-minute countdown, data copy and rollback).
 - `world.sh candidate build --source-ref COMMIT [--base-image IMAGE]` (a fixes-only
   candidate: world 1's own upstream commit, the patch layer on world 1's image so the
-  bun runtime and Debian packages do not move with the floating base tag) and `world.sh promote --now --pre-start CMD | --fix-hiscores`: a
-  hook that runs once while world 1's engine is stopped, after the data copy; a failure
-  restores the data and the previous image. `--fix-hiscores` applies
-  `fix-hiscore-levels.py` as root in a network-less container.
+  bun runtime and Debian packages do not move with the floating base tag) and
+  `world.sh promote --now --pre-start CMD | --fix-hiscores`: a hook that runs once
+  while world 1's engine is stopped, after the data copy; a failure restores the data
+  and the previous image. `--fix-hiscores` applies `fix-hiscore-levels.py` as root in
+  a network-less container.
+- World 1 promoted (2026-10-26, 2-minute countdown) to a fixes-only candidate: its own
+  upstream commit and image plus the five patch scripts (original XP curve and client
+  timing, hiscore pager, hiscore pruning, UTC hop timer). Only the two patched engine
+  files and the rebuilt client bundle differ from the previous image. The hiscore repair
+  ran during the downtime (5 rows relevelled, 2 rows under level 15 deleted).
 - `hop-timer-utc.js`: the login server read the stored UTC logout time as Pacific
-  time, so the 45-second hop timer between worlds lasted 7-8 hours. Fixed in
-  candidates; reaches world 1 with the next promotion.
+  time, so the 45-second hop timer between worlds lasted 7-8 hours. On world 1 since
+  the 2026-10-26 promotion.
 - Server-authoritative RS-SDK wiki: the game server owns the scraped store,
   SQLite databases, image/stylesheet queues and shared request pacing. Existing
   bot wiki commands forward over SSH without local-fetch fallback. User timers
