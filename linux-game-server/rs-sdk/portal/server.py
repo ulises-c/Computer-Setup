@@ -397,6 +397,7 @@ class Portal:
 <p id="ctl-daemon" class="note live-status">Loading controller state…</p>
 <p id="ctl-auth" class="note"></p>
 <p id="ctl-pause" class="note live-ghosts" hidden></p>
+<p id="ctl-maint" class="note live-ghosts" role="status" hidden></p>
 <p id="ctl-flash" class="note ctl-flash" role="status" hidden></p>
 <div class="live-toolbar"><div id="ctl-filter" class="live-filter" role="group" aria-label="Show accounts">{filters}</div>
 <div class="live-bulk"><button id="ctl-active" type="button" aria-pressed="false">Assigned / online only</button><button id="ctl-expand-all" type="button">Expand all</button><button id="ctl-collapse-all" type="button">Collapse all</button><button id="ctl-select-none" type="button">Clear selection</button></div></div>

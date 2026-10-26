@@ -341,6 +341,21 @@ def _shape_list(value, limit=8, width=160):
     return [t for t in (_clean(v, width) for v in (value if isinstance(value, list) else [])[:limit]) if t]
 
 
+MAINT_PHASES = {'window', 'down', 'settling', 'outage-down', 'outage-settling'}
+
+
+def shape_maintenance(value):
+    """Server maintenance banner from the daemon (2004Scape-Botting routines/lib/server-maintenance.ts), allowlisted."""
+    if not isinstance(value, dict):
+        return None
+    phase = value.get('phase') if value.get('phase') in MAINT_PHASES else None
+    return {'active': value.get('active') is True, 'hold': value.get('hold') is True, 'phase': phase,
+            'reason': _clean(value.get('reason'), 300), 'since': _int(value.get('since')), 'resumeAt': _int(value.get('resumeAt')),
+            'lastResumeAt': _int(value.get('lastResumeAt')), 'staggerMs': _int(value.get('staggerMs'), 0, 3_600_000),
+            'reachable': value.get('reachable') if isinstance(value.get('reachable'), bool) else None,
+            'nextWeekly': _int(value.get('nextWeekly')), 'tz': _clean(value.get('tz'), 40)}
+
+
 def shape_status(raw, received_at):
     """Allowlisted daemon report; ValueError if it is not one."""
     if not isinstance(raw, dict) or raw.get('version') != 1 or not isinstance(raw.get('bots'), dict):
@@ -390,6 +405,7 @@ def shape_status(raw, received_at):
         'registry': registry, 'registryError': registry_error,
         'gatherChoices': shape_choices(raw.get('gatherChoices')),
         'fleet': {'pause': (raw.get('fleet') or {}).get('pause') is True if isinstance(raw.get('fleet'), dict) else False},
+        'maintenance': shape_maintenance(raw.get('maintenance')),
         'bots': bots,
     }
 
@@ -480,10 +496,10 @@ def read_status(path, now_ms=None):
         status = shape_status(raw, _int(raw.get('receivedAt')) or 0)
     except FileNotFoundError:
         return {'available': False, 'error': 'The controller daemon has not connected yet.', 'registry': None, 'bots': {},
-                'daemon': None, 'fleet': {'pause': False}, 'ageMs': None, 'online': False}
+                'daemon': None, 'fleet': {'pause': False}, 'maintenance': None, 'ageMs': None, 'online': False}
     except (OSError, ValueError) as exc:
         return {'available': False, 'error': f'Controller status unreadable: {exc.__class__.__name__}', 'registry': None, 'bots': {},
-                'daemon': None, 'fleet': {'pause': False}, 'ageMs': None, 'online': False}
+                'daemon': None, 'fleet': {'pause': False}, 'maintenance': None, 'ageMs': None, 'online': False}
     age = max(0, now_ms - (status['receivedAt'] or 0))
     status.update({'available': True, 'ageMs': age, 'online': age <= HEARTBEAT_STALE_MS,
                    'error': None if age <= HEARTBEAT_STALE_MS else f'No controller heartbeat for {age // 1000} s: the daemon on the workstation may be stopped.'})
@@ -711,6 +727,7 @@ def view(accounts, live, status, desired, auth_info):
     return {'version': 1, 'now': int(time.time() * 1000), 'auth': auth_info,
             'daemon': daemon, 'online': status.get('online', False), 'ageMs': status.get('ageMs'), 'error': status.get('error'),
             'registry': registry, 'registryError': status.get('registryError'), 'fleet': status.get('fleet') or {'pause': False},
+            'maintenance': status.get('maintenance'),
             'gatherChoices': status.get('gatherChoices') or {},
             'liveAvailable': bool(live.get('available')), 'liveStale': bool(live.get('stale')), 'bots': rows}
 

@@ -109,6 +109,27 @@ const ControllerLogic = (() => {
         if (d.error) bits.push(d.error);
         return { tone: !p.online ? 'bad' : d.dryRun || d.error ? 'warn' : 'ok', text: bits.join(' · ') };
     };
+    // Server maintenance banner (daemon status.maintenance; 2004Scape-Botting learnings/server-maintenance.md).
+    const clockIn = (ms, tz) => {
+        try { return `${new Date(ms).toLocaleTimeString('en-GB', { timeZone: tz || 'UTC', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}`; }
+        catch { return new Date(ms).toISOString().slice(11, 19); }
+    };
+    const maintenanceBanner = (m, now) => {
+        if (!m || typeof m !== 'object') return null;
+        const n = Number.isFinite(now) ? now : Date.now();
+        const tz = m.tz || 'UTC';
+        if (m.hold || m.active) {
+            const bits = [`Server maintenance: ${m.reason || 'logins are held'}`];
+            if (Number.isFinite(m.since)) bits.push(`since ${clockIn(m.since, tz)} (${tz})`);
+            if (Number.isFinite(m.resumeAt)) bits.push(`logins resume from ${clockIn(m.resumeAt, tz)}, staggered over ${Math.round((m.staggerMs || 0) / 1000)} s`);
+            bits.push('run requests wait as blocked and start by themselves afterwards; running routines log out and resume');
+            return bits.join(' · ');
+        }
+        if (Number.isFinite(m.lastResumeAt) && m.staggerMs && n < m.lastResumeAt + m.staggerMs) {
+            return `Server maintenance over: staggered relogs until ${clockIn(m.lastResumeAt + m.staggerMs, tz)} (${tz})`;
+        }
+        return null;
+    };
     // Account filter (All / Bots / Regular), persisted like the live map's ?show=; plus an
     // independent "assigned / online only" toggle.
     const SHOWS = ['all', 'bots', 'regular'];
@@ -173,7 +194,7 @@ const ControllerLogic = (() => {
         }
     };
     return { MAX_DURATION_S, DURATION_PARTS, isDuration, splitDuration, durationText, durationTotal, durationError, checkDuration, durationRange,
-        routineById, defaults, validateArgs, commonEligible, tone, desiredText, ago, heartbeat, validShow, initialShow, withShow, visible, isActive, label, modesFor, showLog, frameNote, dangerOf, optionLabel, dangerConfirm, allowedValues, valueText, offReasons, pickValue, parseSet };
+        routineById, defaults, validateArgs, commonEligible, tone, desiredText, ago, heartbeat, maintenanceBanner, validShow, initialShow, withShow, visible, isActive, label, modesFor, showLog, frameNote, dangerOf, optionLabel, dangerConfirm, allowedValues, valueText, offReasons, pickValue, parseSet };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = ControllerLogic;
 
@@ -191,6 +212,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
     const daemonLine = document.getElementById('ctl-daemon');
     const authLine = document.getElementById('ctl-auth');
     const pauseLine = document.getElementById('ctl-pause');
+    const maintLine = document.getElementById('ctl-maint');
     const flash = document.getElementById('ctl-flash');
     const empty = document.getElementById('ctl-empty');
     const bulk = document.getElementById('ctl-bulk');
@@ -655,6 +677,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         authLine.className = `note ${auth.canWrite ? 'tone-ok' : 'tone-warn'}`;
         pauseLine.hidden = !(payload.fleet && payload.fleet.pause);
         pauseLine.textContent = 'Fleet-wide pause (focus.json) is latched: the controller starts nothing until the owner resolves it on the workstation.';
+        const maint = L.maintenanceBanner(payload.maintenance, payload.now);
+        if (maintLine) { maintLine.hidden = !maint; maintLine.textContent = maint || ''; }
         if (payload.registryError) say(`Registry from the daemon was rejected: ${payload.registryError}`, true);
         const sig = JSON.stringify(payload.registry);
         if (sig !== registrySig) registrySig = sig;

@@ -215,6 +215,51 @@ class StatusTests(unittest.TestCase):
         self.assertEqual(controller.read_frames(frames), {})
         self.assertEqual(controller.read_frames(Path(tmp.name) / 'missing.json'), {})
 
+    def test_status_carries_an_allowlisted_maintenance_banner(self):
+        raw = status_doc(maintenance={'active': True, 'hold': True, 'phase': 'down', 'reason': 'weekly restart window (Mon 02:55 America/Los_Angeles): server down',
+                                      'since': 1793008500000, 'resumeAt': None, 'lastResumeAt': None, 'staggerMs': 120000, 'reachable': False,
+                                      'nextWeekly': 1793613300000, 'tz': 'America/Los_Angeles', 'extra': 'dropped', 'phaseX': 1})
+        shaped = controller.shape_status(raw, 7)
+        self.assertEqual(shaped['maintenance'], {'active': True, 'hold': True, 'phase': 'down',
+                                                 'reason': 'weekly restart window (Mon 02:55 America/Los_Angeles): server down',
+                                                 'since': 1793008500000, 'resumeAt': None, 'lastResumeAt': None, 'staggerMs': 120000,
+                                                 'reachable': False, 'nextWeekly': 1793613300000, 'tz': 'America/Los_Angeles'})
+        bad = controller.shape_status(status_doc(maintenance={'active': 'yes', 'phase': 'rm -rf', 'reason': 5, 'since': -1, 'reachable': 'no'}), 7)['maintenance']
+        self.assertEqual((bad['active'], bad['phase'], bad['reason'], bad['since'], bad['reachable']), (False, None, None, None, None))
+        self.assertIsNone(controller.shape_status(status_doc(), 7)['maintenance'])
+        self.assertIsNone(controller.shape_status(status_doc(maintenance='x'), 7)['maintenance'])
+
+    @unittest.skipUnless(shutil.which('node'), 'node not installed')
+    def test_maintenance_banner_text_in_bot_controller_js(self):
+        script = Path(__file__).with_name('bot_controller.js')
+        probe = """
+const L = require(process.argv[1]);
+const t = Date.UTC(2026, 9, 26, 9, 58, 0);   // 02:58 PDT
+console.log(JSON.stringify([
+  L.maintenanceBanner(null, t),
+  L.maintenanceBanner({active: false, hold: false}, t),
+  L.maintenanceBanner({active: true, hold: true, phase: 'settling', reason: 'weekly restart window: server back, settling until 03:02:49', since: Date.UTC(2026, 9, 26, 9, 55), resumeAt: Date.UTC(2026, 9, 26, 10, 2, 49), staggerMs: 120000, tz: 'America/Los_Angeles'}, t),
+  L.maintenanceBanner({active: false, hold: false, lastResumeAt: Date.UTC(2026, 9, 26, 10, 2, 49), staggerMs: 120000, tz: 'America/Los_Angeles'}, Date.UTC(2026, 9, 26, 10, 3, 30)),
+  L.maintenanceBanner({active: false, hold: false, lastResumeAt: Date.UTC(2026, 9, 26, 10, 2, 49), staggerMs: 120000, tz: 'America/Los_Angeles'}, Date.UTC(2026, 9, 26, 10, 9)),
+]));
+"""
+        result = subprocess.run(['node', '-e', probe, str(script)], capture_output=True, text=True, timeout=20, check=True)
+        got = json.loads(result.stdout)
+        self.assertEqual(got[0], None)
+        self.assertEqual(got[1], None)
+        self.assertIn('Server maintenance: weekly restart window: server back, settling until 03:02:49', got[2])
+        self.assertIn('since 02:55:00 (America/Los_Angeles)', got[2])
+        self.assertIn('logins resume from 03:02:49, staggered over 120 s', got[2])
+        self.assertEqual(got[3], 'Server maintenance over: staggered relogs until 03:04:49 (America/Los_Angeles)')
+        self.assertEqual(got[4], None)
+
+    def test_view_passes_the_maintenance_banner_through(self):
+        status = controller.shape_status(status_doc(maintenance={'active': True, 'hold': True, 'phase': 'window', 'reason': 'manual: test'}), 7)
+        status.update({'available': True, 'ageMs': 0, 'online': True, 'error': None})
+        page = controller.view(ACCOUNTS, {'bots': []}, status, {'bots': {}}, {'canWrite': False})
+        self.assertEqual(page['maintenance']['reason'], 'manual: test')
+        self.assertIsNone(controller.view(ACCOUNTS, {'bots': []}, controller.read_status(None), {'bots': {}}, {'canWrite': False})['maintenance'])
+
     def test_read_status_reports_heartbeat(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
