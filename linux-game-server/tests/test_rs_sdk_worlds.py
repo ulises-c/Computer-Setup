@@ -107,6 +107,162 @@ class WorldComposeTests(unittest.TestCase):
         self.assertEqual(service["container_name"], "rs-sdk-world-${WORLD_ID:?set by world.sh}")
 
 
+class IsolatedWorldTests(unittest.TestCase):
+    """The test world on its own servers and a copy of world 1's data (world.sh test up --isolated)."""
+
+    def setUp(self):
+        self.text = (WORLDS / "isolated-compose.yml").read_text()
+        self.service = yaml.safe_load(self.text)["services"]["world"]
+        self.env = self.service["environment"]
+        self.main = compose_env(ROOT / "rs-sdk/docker-compose.yml", "rs-sdk")
+        self.world_sh = (SCAPE / "world.sh").read_text()
+
+    def isolated_ports(self):
+        return {key: int(re.search(rf'"\$\{{{key}:=(\d+)\}}"', self.world_sh).group(1))
+                for key in ("ISOLATED_LOGIN_PORT", "ISOLATED_FRIEND_PORT", "ISOLATED_LOGGER_PORT")}
+
+    def test_never_mounts_world_1s_data(self):
+        body = "\n".join(line for line in self.text.splitlines() if not line.lstrip().startswith("#"))
+        self.assertNotIn("RS_SDK_DATA_DIR", body)
+        data = [v for v in self.service["volumes"] if v["target"] == "/opt/server/data"]
+        self.assertEqual([v["source"] for v in data], ["${WORLD_ISOLATED_DATA_DIR:?set by world.sh}"])
+        self.assertIn('[[ "$(realpath "$data")" != "$(realpath "$RS_SDK_DATA_DIR")" ]]', self.world_sh)
+
+    def test_runs_its_own_login_friend_and_logger_servers(self):
+        self.assertEqual(self.env["EASY_STARTUP"], "true")
+        self.assertEqual(self.env["LOGIN_SERVER"], "true")
+        for key in ("LOGIN_PORT", "FRIEND_PORT", "LOGGER_PORT"):
+            self.assertEqual(self.env[key], f"${{WORLD_ISOLATED_{key}:?set by world.sh}}")
+        ports = self.isolated_ports()
+        world_1 = {int(self.main[key]) for key in ("LOGIN_PORT", "FRIEND_PORT", "LOGGER_PORT")}
+        taken = {43594, 43500, 43501, 45099, 8888, 8898, 43510, 43511, 45109, 43512, 8889,
+                 8098, 8100, 8096, 8097, 8099, 9000, 3000, 9443, 9444, 9447}
+        configured = {row[key] for row in worlds.load_config() for key in worlds.FIELDS[3:]}
+        for name, port in ports.items():
+            self.assertNotIn(port, world_1 | taken | configured, name)
+        self.assertEqual(len(set(ports.values())), 3)
+
+    def test_gameplay_matches_world_1_and_the_exchange_is_its_own(self):
+        for key in ("NODE_MEMBERS", "NODE_XPRATE", "NODE_INFINITE_RUN", "NODE_RANDOM_EVENTS", "NODE_TICKRATE",
+                    "WEBSITE_REGISTRATION", "DB_BACKEND", "GE_DATABASE"):
+            self.assertEqual(self.env[key], self.main[key], key)
+        self.assertEqual(self.env["GE_ENABLED"], "true")
+
+    def test_always_a_guarded_test_world_that_never_restarts_itself(self):
+        self.assertEqual(self.env["WORLD_ISOLATED"], "true")
+        self.assertEqual(self.env["WORLD_ALLOWLIST_ENABLED"], "true")
+        self.assertEqual(self.service["restart"], "no")
+        self.assertIn("computer-setup.rs-sdk.world-mode=isolated", self.service["labels"])
+        self.assertEqual(self.service["cap_drop"], ["ALL"])
+        self.assertIn("no-new-privileges:true", self.service["security_opt"])
+        self.assertEqual(self.service["container_name"], "rs-sdk-world-${WORLD_ID:?set by world.sh}")
+        self.assertIn('[[ "$W_ROLE" == test ]] || die', self.world_sh)
+
+    def test_entrypoint_runs_the_images_own_start_only_on_a_marked_copy(self):
+        text = (WORLDS / "world-entrypoint.sh").read_text()
+        branch = text.split('if [[ "${WORLD_ISOLATED:-}" == true ]]; then', 1)[1].split("\nfi\n", 1)[0]
+        self.assertIn("[[ -f /opt/server/data/ISOLATED-COPY ]]", branch)
+        self.assertIn('"${LOGIN_PORT:-43510}" != 43510', branch)
+        self.assertLess(branch.index("ISOLATED-COPY"), branch.index("bun /opt/world/world-node.js /opt"))
+        self.assertLess(branch.index("world-node.js /opt"), branch.index("exec /opt/server/entrypoint.sh"))
+
+    def test_down_skips_world_1s_login_table_and_keeps_the_copy_unless_wiped(self):
+        down = self.world_sh.split("cmd_down() {", 1)[1].split("\ncmd_role()", 1)[0]
+        isolated = down.index('[[ "$mode" == isolated ]] && { log')
+        self.assertLess(isolated, down.index("login-release.js"))
+        self.assertIn("--wipe) wipe=true", down)
+        self.assertIn("isolated_wipe", down)
+        self.assertIn('"$RS_SDK_DATA_DIR":/src:ro', self.world_sh)
+
+    def test_world_list_marks_it_isolated_and_never_hoppable(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp)
+        (tmp / "100.role").write_text("live\n")
+        def inspect(name):
+            labels = {"computer-setup.rs-sdk.world-mode": "isolated"} if name == "rs-sdk-world-100" else {}
+            return {"Image": "sha256:x", "Config": {"Labels": labels},
+                    "State": {"Status": "running", "Health": {"Status": "healthy"}}}
+        saved = worlds.inspect, worlds.http_json, worlds.image_tags, worlds.image_labels
+        self.addCleanup(lambda: setattr(worlds, "inspect", saved[0]) or setattr(worlds, "http_json", saved[1])
+                        or setattr(worlds, "image_tags", saved[2]) or setattr(worlds, "image_labels", saved[3]))
+        worlds.inspect = inspect
+        worlds.http_json = lambda url: {"count": 1}
+        worlds.image_tags = lambda image: []
+        worlds.image_labels = lambda image: {}
+        by_id = {w["id"]: w for w in worlds.world_list(tmp, host="game.example.ts.net")["worlds"]}
+        self.assertEqual(by_id[100]["mode"], "isolated")
+        self.assertFalse(by_id[100]["hoppable"])
+        self.assertIn("thrown away", by_id[100]["note"])
+        self.assertEqual(by_id[1]["mode"], "shared")
+        self.assertTrue(by_id[1]["hoppable"])
+
+
+@unittest.skipUnless(shutil.which("sqlite3"), "needs the sqlite3 command line")
+class IsolatedCopyTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.src = self.tmp / "world1"
+        (self.src / "players/main").mkdir(parents=True)
+        (self.src / "players/main/player_one.sav").write_bytes(b"\x20\x04save")
+        db = sqlite3_connect(self.src / "db.sqlite")
+        db.execute("PRAGMA journal_mode=WAL")
+        db.executescript("""
+            CREATE TABLE account (id INTEGER PRIMARY KEY, username TEXT);
+            CREATE TABLE account_login (account_id INT, profile TEXT, logged_in INT, login_time TEXT,
+                                        logged_out INT, logout_time TEXT);
+            INSERT INTO account VALUES (1, 'player_one'), (2, 'player_two');
+            INSERT INTO account_login VALUES (1, 'main', 10, '2026-10-26 20:00:00', 0, NULL),
+                                             (2, 'main', 0, NULL, 10, '2026-10-26 19:00:00');
+        """)
+        db.commit()
+        self.writer = db  # kept open: the copy must read a live WAL database
+        self.addCleanup(db.close)
+        market = sqlite3_connect(self.src / "market.sqlite")
+        market.executescript("CREATE TABLE offers (id INTEGER PRIMARY KEY); INSERT INTO offers VALUES (7);")
+        market.commit()
+        market.close()
+        self.dst = self.tmp / "100.isolated"
+        self.dst.mkdir()
+
+    def copy(self):
+        return subprocess.run(["sh", str(WORLDS / "isolated-copy.sh"), str(self.src), str(self.dst)],
+                              capture_output=True, text=True)
+
+    def test_copies_dbs_and_saves_and_logs_nobody_in(self):
+        result = self.copy()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("2 accounts, 1 saves", result.stdout)
+        data = self.dst / "data"
+        self.assertTrue((data / "ISOLATED-COPY").is_file())
+        self.assertFalse((self.dst / "data.new").exists())
+        self.assertEqual((data / "players/main/player_one.sav").read_bytes(), b"\x20\x04save")
+        copy = sqlite3_connect(data / "db.sqlite")
+        self.assertEqual(copy.execute("SELECT count(*) FROM account_login WHERE logged_in != 0").fetchone()[0], 0)
+        self.assertEqual(copy.execute("SELECT logged_out FROM account_login WHERE account_id = 2").fetchone()[0], 10)
+        copy.close()
+        self.assertEqual(sqlite3_connect(data / "market.sqlite").execute("SELECT id FROM offers").fetchone()[0], 7)
+        # world 1's own database is untouched
+        self.assertEqual(self.writer.execute("SELECT logged_in FROM account_login WHERE account_id = 1").fetchone()[0], 10)
+
+    def test_a_new_copy_replaces_the_old_one(self):
+        self.assertEqual(self.copy().returncode, 0)
+        (self.dst / "data/players/main/stale.sav").write_bytes(b"old")
+        self.assertEqual(self.copy().returncode, 0)
+        self.assertFalse((self.dst / "data/players/main/stale.sav").exists())
+
+    def test_refuses_a_source_without_a_database(self):
+        (self.src / "db.sqlite").rename(self.src / "elsewhere.sqlite")
+        result = self.copy()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.dst / "data").exists())
+
+
+def sqlite3_connect(path):
+    import sqlite3
+    return sqlite3.connect(path)
+
+
 class CandidateComposeTests(unittest.TestCase):
     def test_candidates_never_move_world_1s_tags(self):
         text = (WORLDS / "candidate-compose.yml").read_text()
@@ -266,7 +422,8 @@ class ScriptTests(unittest.TestCase):
     def test_shellcheck(self):
         if not shutil.which("shellcheck"):
             self.skipTest("shellcheck not installed")
-        result = subprocess.run(["shellcheck", str(SCAPE / "world.sh"), str(WORLDS / "world-entrypoint.sh")],
+        result = subprocess.run(["shellcheck", str(SCAPE / "world.sh"), str(WORLDS / "world-entrypoint.sh"),
+                                 str(WORLDS / "isolated-copy.sh")],
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout)
 

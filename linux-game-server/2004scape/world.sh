@@ -9,7 +9,16 @@ set -euo pipefail
 #   world.sh up ID [IMAGE] [--allow-content-change]
 #   world.sh down ID [--countdown SECONDS] logs everyone out (countdown on that world only)
 #   world.sh test up [IMAGE] [...]         the test world (100) on IMAGE, default: latest candidate
-#   world.sh test down
+#   world.sh test up --isolated [IMAGE] [--reuse-copy]
+#                                          the test world with its OWN login/friend/logger servers
+#                                          and its OWN data: a fresh copy of world 1's (db.sqlite and
+#                                          market.sqlite by SQLite online backup, players/), made at
+#                                          every isolated start; --reuse-copy plays on the last copy.
+#                                          For candidates that cannot share saves with world 1
+#                                          (new save format, migrations, content). World 1's data is
+#                                          never mounted; progress there is thrown away.
+#   world.sh test down [--wipe]            the copy is kept until the next isolated start (--wipe
+#                                          deletes it now)
 #   world.sh role ID live|test             switch a world's role (restarts it if it runs)
 #   world.sh allow ID list|add|remove NAME the world's login allowlist (test role)
 #   world.sh compat IMAGE                  would IMAGE share saves safely with world 1?
@@ -39,6 +48,8 @@ readonly CANDIDATE_REPO=computer-setup/rs-sdk
 : "${WORLD_COUNTDOWN_SECONDS:=120}"
 : "${WORLD_HEALTH_TIMEOUT:=600}"
 : "${HISCORE_FIX_IMAGE:=python:3.14-alpine}"
+# An isolated test world's own login, friend and logger servers (world 1's are 43510/45109/43511).
+: "${ISOLATED_LOGIN_PORT:=43610}" "${ISOLATED_FRIEND_PORT:=45110}" "${ISOLATED_LOGGER_PORT:=43611}"
 
 log() { printf '%s %s\n' "$(date '+%F %T %Z')" "$*"; }
 die() { log "error: $*" >&2; exit 1; }
@@ -85,10 +96,48 @@ read_row() {
   export W_ID W_NODE W_ROLE W_WEB W_MGMT W_GAME W_GW W_GWPUB W_HTTPS_WEB W_HTTPS_GW
 }
 
+# world_compose ID shared|isolated ARGS...
 world_compose() {
-  local id="$1"
-  shift
-  docker compose -p "rs-sdk-world-$id" --project-directory "$WORLDS_DIR" -f "$WORLDS_DIR/world-compose.yml" "$@"
+  local id="$1" file=world-compose.yml
+  [[ "$2" == isolated ]] && file="isolated-compose.yml"
+  shift 2
+  docker compose -p "rs-sdk-world-$id" --project-directory "$WORLDS_DIR" -f "$WORLDS_DIR/$file" "$@"
+}
+
+# --- isolated test world: its own copy of world 1's data ---------------------------
+isolated_root() { printf '%s/%s.isolated' "$STATE_DIR" "$1"; }
+
+mode_of() {
+  local mode
+  mode="$(docker inspect -f '{{index .Config.Labels "computer-setup.rs-sdk.world-mode"}}' "$(container_of "$1")" 2>/dev/null)" || mode=""
+  [[ "$mode" == isolated ]] && printf 'isolated' || printf 'shared'
+}
+
+export_isolated_env() {
+  WORLD_ISOLATED_DATA_DIR="$(isolated_root "$1")/data"
+  export WORLD_ISOLATED_DATA_DIR WORLD_ISOLATED_LOGIN_PORT="$ISOLATED_LOGIN_PORT" WORLD_ISOLATED_FRIEND_PORT="$ISOLATED_FRIEND_PORT" \
+    WORLD_ISOLATED_LOGGER_PORT="$ISOLATED_LOGGER_PORT"
+}
+
+# Fresh copy of world 1's data (consistent while world 1 runs; see isolated-copy.sh),
+# made as root in a throwaway container of IMAGE with world 1's data mounted read-only.
+isolated_copy() {
+  local id="$1" image="$2" root
+  root="$(isolated_root "$id")"
+  install -d -m 700 "$root"
+  log "world $id: copying world 1's data into $root/data (world 1 keeps running; its data is mounted read-only)"
+  docker run --rm --network none --entrypoint sh \
+    -v "$RS_SDK_DATA_DIR":/src:ro -v "$root":/dst -v "$WORLDS_DIR/isolated-copy.sh":/isolated-copy.sh:ro \
+    "$image" /isolated-copy.sh /src /dst </dev/null
+}
+
+isolated_wipe() {
+  local id="$1" image="$2" root
+  root="$(isolated_root "$id")"
+  [[ -d "$root" ]] || return 0
+  docker run --rm --network none --entrypoint sh -v "$root":/dst "$image" -c 'rm -rf /dst/data /dst/data.new' </dev/null
+  rmdir "$root" 2>/dev/null || true
+  log "world $id: isolated data copy deleted"
 }
 
 players_on() {
@@ -158,11 +207,13 @@ sys.exit(0 if any(k.endswith(":" + port) for k in (data.get("Web") or {})) else 
 
 # --- up / down --------------------------------------------------------------------
 cmd_up() {
-  local id="$1" image="" allow=() id_img
+  local id="$1" image="" allow=() id_img isolated=false reuse=false
   shift
   while (($#)); do
     case "$1" in
       --allow-content-change) allow+=(--allow-content-change) ;;
+      --isolated) isolated=true ;;
+      --reuse-copy) reuse=true ;;
       -*) die "unknown option $1" ;;
       *) image="$1" ;;
     esac
@@ -173,6 +224,11 @@ cmd_up() {
   local container
   container="$(container_of "$id")"
   ! is_running "$container" || die "world $id is already running ($container); world.sh down $id first"
+  $reuse && ! $isolated && die "--reuse-copy is for --isolated"
+  if $isolated; then
+    cmd_up_isolated "$id" "$image" "$reuse"
+    return
+  fi
   if [[ "$W_ROLE" == live ]]; then
     local main
     main="$(main_image)" || die "cannot tell which image world 1 runs"
@@ -203,27 +259,77 @@ cmd_up() {
   while IFS= read -r line; do export "${line?}"; done < <(worlds env "$id")
   export WORLD_IMAGE="$id_img"
   log "world $id: starting $container on $image"
-  world_compose "$id" up -d --no-build --force-recreate </dev/null
+  world_compose "$id" shared up -d --no-build --force-recreate </dev/null
   wait_healthy "$container" || die "world $id did not become healthy; see: docker logs $container"
   ensure_serve "$W_HTTPS_WEB" "$W_WEB"
   ensure_serve "$W_HTTPS_GW" "$W_GWPUB"
   log "world $id is up ($W_ROLE): web 127.0.0.1:$W_WEB (tailnet :$W_HTTPS_WEB), gateway :$W_GWPUB (tailnet :$W_HTTPS_GW), node $W_NODE"
 }
 
+# The test world on its own servers and its own copy of world 1's data. No compat
+# check: nothing is shared with world 1, which is the point (a new save format,
+# migrations or content can be tried on real accounts).
+cmd_up_isolated() {
+  local id="$1" image="$2" reuse="$3" container id_img root data
+  container="$(container_of "$id")"
+  [[ "$W_ROLE" == test ]] || die "world $id is $W_ROLE: only a test world runs isolated (world.sh role $id test)"
+  [[ -n "$image" ]] || image="$(latest_candidate)" || die "no candidate built yet: world.sh candidate build, or name an image"
+  id_img="$(image_id "$image")" || die "no such image: $image"
+  if check_compat "$id_img" >/dev/null 2>&1; then
+    log "world $id: note: $image could share saves with world 1; isolated anyway as asked"
+  else
+    log "world $id: $image cannot share saves with world 1 (world.sh compat $image); isolated, so that is fine"
+  fi
+  local port
+  for port in "$W_WEB" "$W_MGMT" "$W_GAME" "$W_GW" "$W_GWPUB" "$ISOLATED_LOGIN_PORT" "$ISOLATED_FRIEND_PORT" "$ISOLATED_LOGGER_PORT"; do
+    ! listening "$port" || die "port $port is taken; world $id cannot start"
+  done
+  [[ "$(worlds allow "$id" list)" == "(empty"* ]] \
+    && log "warning: world $id's allowlist is empty: nobody can log in (world.sh allow $id add NAME)"
+  root="$(isolated_root "$id")"
+  data="$root/data"
+  if [[ "$reuse" == true && -d "$data" ]]; then
+    log "world $id: playing on with the existing copy ($root/data)"
+  else
+    isolated_copy "$id" "$image" || die "world $id not started: the data copy failed"
+  fi
+  # Never world 1's data, whatever the paths look like.
+  [[ "$(realpath "$data")" != "$(realpath "$RS_SDK_DATA_DIR")" ]] || die "refusing: the isolated data dir is world 1's"
+  install -d "$STATE_DIR/$id" "$STATE_DIR/$id/save-backups"
+  chmod 777 "$STATE_DIR/$id" "$STATE_DIR/$id/save-backups"
+  printf '%s\n' "$id_img" >"$STATE_DIR/$id.image"
+  printf 'isolated\n' >"$STATE_DIR/$id.mode"
+  local line
+  while IFS= read -r line; do export "${line?}"; done < <(worlds env "$id")
+  unset RS_SDK_DATA_DIR
+  export WORLD_IMAGE="$id_img"
+  export_isolated_env "$id"
+  log "world $id: starting $container ISOLATED on $image (login server :$ISOLATED_LOGIN_PORT, data $data)"
+  world_compose "$id" isolated up -d --no-build --force-recreate </dev/null
+  wait_healthy "$container" || die "world $id did not become healthy; see: docker logs $container"
+  ensure_serve "$W_HTTPS_WEB" "$W_WEB"
+  ensure_serve "$W_HTTPS_GW" "$W_GWPUB"
+  log "world $id is up ISOLATED (test, never hoppable): web 127.0.0.1:$W_WEB (tailnet :$W_HTTPS_WEB), gateway :$W_GWPUB (tailnet :$W_HTTPS_GW), node $W_NODE"
+  log "world $id: progress there is a throwaway copy; world.sh test down keeps the copy until the next isolated start (--wipe deletes it)"
+}
+
 cmd_down() {
-  local id="$1" countdown=""
+  local id="$1" countdown="" wipe=false
   shift
   while (($#)); do
     case "$1" in
       --countdown) countdown="${2:?}"; shift ;;
+      --wipe) wipe=true ;;
       *) die "unknown option $1" ;;
     esac
     shift
   done
   read_row "$id"
   [[ "$id" != 1 ]] || die "world 1 goes down only through maintenance.sh or promote"
-  local container players
+  local container players mode ran_image
   container="$(container_of "$id")"
+  mode="$(mode_of "$id")"
+  ran_image="$(docker inspect -f '{{.Image}}' "$container" 2>/dev/null)" || ran_image="$(main_image)"
   if is_running "$container"; then
     players="$(players_on "$W_WEB")"
     docker update --restart=no "$container" >/dev/null
@@ -259,7 +365,18 @@ cmd_down() {
     while IFS= read -r line; do export "${line?}"; done < <(worlds env "$id")
     WORLD_IMAGE="$(docker inspect -f '{{.Image}}' "$container")"
     export WORLD_IMAGE
-    world_compose "$id" down </dev/null
+    export_isolated_env "$id"
+    world_compose "$id" "$mode" down </dev/null
+  fi
+  rm -f "$STATE_DIR/$id.mode"
+  if [[ "$mode" == isolated ]] || [[ -d "$(isolated_root "$id")" ]]; then
+    # Its own login server stopped with it; world 1's login table never saw it.
+    if $wipe; then
+      isolated_wipe "$id" "$ran_image"
+    elif [[ -d "$(isolated_root "$id")/data" ]]; then
+      log "world $id: its isolated data copy is kept in $(isolated_root "$id")/data until the next 'test up --isolated' (fresh copy) or 'test down --wipe'"
+    fi
+    [[ "$mode" == isolated ]] && { log "world $id (isolated) is down"; return 0; }
   fi
   local left
   left="$(worlds logged-in "$W_NODE")" || die "cannot read the login table"
@@ -539,7 +656,11 @@ case "$command" in
     printf 'patch set: %s (%s)\n' "$(patch_set)" "$(cd "$GAME_DIR/rs-sdk" && printf '%s ' ./*.js)"
     printf 'updates: RS_SDK_UPDATES=%s (AUTO_UPDATE=%s applies to Lost City)\n' "${RS_SDK_UPDATES:-candidate}" "${AUTO_UPDATE:-true}"
     printf 'latest candidate: %s\n' "$(latest_candidate 2>/dev/null || echo none)"
-    printf 'test world %s allowlist: %s\n' "$TEST_WORLD" "$(worlds allow "$TEST_WORLD" list | tr '\n' ' ')" ;;
+    printf 'test world %s allowlist: %s\n' "$TEST_WORLD" "$(worlds allow "$TEST_WORLD" list | tr '\n' ' ')"
+    [[ -d "$(isolated_root "$TEST_WORLD")" ]] \
+      && printf 'test world %s isolated data copy: %s (%s)\n' "$TEST_WORLD" "$(isolated_root "$TEST_WORLD")/data" \
+           "$(docker exec "$(container_of "$TEST_WORLD")" grep '^copied_at=' /opt/server/data/ISOLATED-COPY 2>/dev/null || echo 'world down: kept until the next isolated start')"
+    true ;;
   up) flock -n "$WORLDS_LOCK" || die "another world.sh is running"; cmd_up "$@" ;;
   down) flock -n "$WORLDS_LOCK" || die "another world.sh is running"; cmd_down "$@" ;;
   test)
@@ -548,7 +669,7 @@ case "$command" in
     case "$sub" in
       up) cmd_up "$TEST_WORLD" "$@" ;;
       down) cmd_down "$TEST_WORLD" "$@" ;;
-      *) die "usage: world.sh test up [IMAGE] | test down" ;;
+      *) die "usage: world.sh test up [--isolated [--reuse-copy]] [IMAGE] | test down [--wipe]" ;;
     esac ;;
   role) flock -n "$WORLDS_LOCK" || die "another world.sh is running"; cmd_role "${1:?id}" "${2:?live|test}" ;;
   allow) worlds allow "$@" ;;

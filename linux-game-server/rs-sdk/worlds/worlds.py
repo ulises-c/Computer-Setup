@@ -12,7 +12,9 @@
 
 State lives in ~/.local/state/computer-setup/rs-sdk-worlds/ (WORLDS_STATE_DIR):
 <id>.role (override), <id>.image (what world.sh started), <id>.allowlist,
-<id>.countdown (deadline epoch while a world counts down), candidates.tsv.
+<id>.countdown (deadline epoch while a world counts down), <id>.mode (isolated
+while a test world runs on its own servers and data copy), <id>.isolated/data
+(that copy), candidates.tsv.
 """
 import json
 import os
@@ -173,6 +175,16 @@ def logged_in(data_dir, node):
         connection.close()
 
 
+def mode_of(row, info, state):
+    """'isolated' for a test world on its own login server and data copy, else 'shared'."""
+    labels = ((info or {}).get('Config') or {}).get('Labels') or {}
+    if labels.get('computer-setup.rs-sdk.world-mode') == 'isolated':
+        return 'isolated'
+    if not info and read_text(state / f"{row['id']}.mode") == 'isolated':
+        return 'isolated'
+    return 'shared'
+
+
 def utc_iso(epoch):
     return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(epoch)) if epoch else None
 
@@ -189,10 +201,13 @@ def describe(row, state, host):
     online = running and health == 'healthy'
     deadline = countdown_until(row['id'], state)
     labels = image_labels(image)
+    mode = mode_of(row, info, state) if row['id'] != 1 else 'shared'
     entry = {
         'id': row['id'],
         'node': row['node'],
         'role': role,
+        # isolated: its own accounts copy, login server and saves; nothing there reaches world 1.
+        'mode': mode,
         'online': online,
         'state': f'{status} · {health}' if health and running else status,
         'players': players,
@@ -203,7 +218,7 @@ def describe(row, state, host):
         'patches': labels.get('patches'),
         'allowlist': role == 'test',
         # Bots hop only between live worlds that are up; a test world never.
-        'hoppable': role == 'live' and online and deadline is None,
+        'hoppable': role == 'live' and mode == 'shared' and online and deadline is None,
         'web_url': f"https://{host}:{row['https_web']}/" if host else None,
         'gateway_url': f"wss://{host}:{row['https_gateway']}" if host else None,
         # bot.env SERVER / GATEWAY_URL for this world.
@@ -212,6 +227,8 @@ def describe(row, state, host):
     }
     if role == 'test':
         entry['allowlist_size'] = len(allowlist(row['id'], state))
+    if mode == 'isolated':
+        entry['note'] = 'isolated test copy of world 1: its own accounts and saves; progress there is thrown away'
     return entry
 
 
@@ -283,6 +300,8 @@ def main(argv):
                 tags = ','.join(entry['image_tags']) or (entry['image'] or '-')[:19]
                 players = '-' if entry['players'] is None else entry['players']
                 extra = f" allowlist={entry.get('allowlist_size', 0)}" if entry['role'] == 'test' else ''
+                if entry.get('mode') == 'isolated':
+                    extra += ' ISOLATED (own data copy; progress is thrown away)'
                 print(f"world {entry['id']:<4} node {entry['node']:<4} {entry['role']:<4} {entry['state']:<20} "
                       f"players={players:<4} image={tags}{extra}"
                       f"{' countdown→' + entry['countdown_until'] if entry['countdown_until'] else ''}")
