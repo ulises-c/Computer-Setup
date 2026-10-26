@@ -9,6 +9,12 @@ in [UNIFICATION.md](UNIFICATION.md).
 ## Unreleased — 2004Scape backup and maintenance safety
 
 ### Added
+- RS-SDK isolated test world: `world.sh test up --isolated [IMAGE]` runs world 100 on its own
+  login, friend and logger servers and on a consistent copy of world 1's data. Use it for
+  candidates that cannot share world 1's saves: a new save format, migrations or content.
+  World 1's data is never mounted. `test down` keeps the copy and `--wipe` deletes it. The
+  world is listed as isolated and is never hoppable. Runbook for upstream 1599b86:
+  `linux-game-server/rs-sdk/runbooks/promote-1599b86.md`.
 - RS-SDK worlds: extra engines share world 1's accounts, saves, banks and hiscores
   through its login, friend and logger servers and its Grand Exchange save ledger.
   Worlds are rows in `linux-game-server/rs-sdk/worlds/worlds.conf`; test world 100

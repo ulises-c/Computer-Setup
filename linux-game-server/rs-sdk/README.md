@@ -48,13 +48,25 @@ Several engines can share one set of accounts. World 1 (`rs-sdk-server`, node 10
   - The browser client's `/gateway` relay dials the world's own gateway port (upstream hard-codes world 1's 7780).
 - **Broadcasts and restarts are per world.** The friend server relays shutdown timers and broadcasts to one node id (`socketByWorld[nodeId]`), and `countdown.js` sends the node id of the container it runs in, so a test-world countdown never reaches world 1's players or the fleet. `world.sh down` counts down only when someone is on that world, waits for the engine's own logout, removes the container, and checks that the login table shows no account on its node (it sends `world_startup` for the node if one is left).
 - **Choosing a world.** A world is a pair of URLs: the web URL for the game client (`SERVER` in a bot's `bot.env`) and its own gateway for the SDK (`GATEWAY_URL`). The gateway takes no world parameter: it relays between the client and the SDK by account and authenticates through the shared login server, so a bot moves world by changing both. The world list is published every 15 seconds by the status timer at `https://<game-host>.<tailnet>.ts.net/rs-sdk-worlds.json` (id, node, role, online, players, countdown, image, `hoppable`, the URLs and `bot_env`); bots hop only to `hoppable` worlds. After a logout, the login server holds a 45-second hop timer before another world accepts the account (a login on the world the account left is never held). World 1's login server runs the timer; before `hop-timer-utc.js` reached it (2026-10-26) the timer lasted 7-8 hours for ordinary accounts. Staff accounts (staffmodlevel 2+) skip it.
+- **Isolated test world** (`world.sh test up --isolated [IMAGE] [--reuse-copy]`, `worlds/isolated-compose.yml`). This is for a candidate that cannot share world 1's data: a newer save format, new migrations or other content. World 100 then runs its own login, friend and logger servers (43610, 45110, 43611) on its own data dir, `<state>/100.isolated/data`.
+  - **The copy.** `worlds/isolated-copy.sh` makes it as root, in a network-less throwaway container of the image, with world 1's data mounted read-only:
+    - SQLite online backups of `db.sqlite` and `market.sqlite`, consistent while world 1 runs;
+    - the saves;
+    - an `ISOLATED-COPY` marker;
+    - nobody logged in.
+  - **Start.** The image's own entrypoint then backs up, migrates and converts the copy.
+  - **World 1's data is never mounted.** Three layers make sure of it: the compose file has no `RS_SDK_DATA_DIR`, `world.sh` compares real paths, and the entrypoint requires the marker.
+  - **Progress is thrown away.** Each `--isolated` start makes a fresh copy unless `--reuse-copy` is given. `test down` keeps the copy; `test down --wipe` deletes it.
+  - **Not a hop target.** The world list shows `mode: isolated`, and the world is never hoppable.
+  - **The exchange** runs on the copy's own ledger.
 - **Cost.** An idle world needs about what world 1 does without players; world 1 measured 700 MiB and 17% of one core with 61 players (Oct 2026) on a 30 GiB, 12-core host.
 
 ```sh
 bash linux-game-server/2004scape/world.sh status            # every world, the pin, candidates, allowlist
 bash linux-game-server/2004scape/world.sh allow 100 add NAME    # then restart the test world
 bash linux-game-server/2004scape/world.sh test up [IMAGE]       # default: the latest candidate
-bash linux-game-server/2004scape/world.sh test down
+bash linux-game-server/2004scape/world.sh test up --isolated [IMAGE] [--reuse-copy]   # own servers + a copy of world 1's data
+bash linux-game-server/2004scape/world.sh test down [--wipe]    # --wipe deletes the isolated copy
 bash linux-game-server/2004scape/world.sh compat IMAGE          # would IMAGE share saves safely?
 ```
 
@@ -66,6 +78,8 @@ World 1 is never updated in place by default (`RS_SDK_UPDATES=candidate` in `200
 - `world.sh promote [IMAGE] --now`: a 2-minute countdown on world 1, a copy of the data dir (`data.pre-promote`), then world 1 on the image; not healthy = data and image put back. It refuses while maintenance runs.
   - `--pre-start CMD` runs CMD (bash, `RS_SDK_DATA_DIR` set) once while the engine is stopped, after the data copy and before the new image starts; a failing CMD restores the data copy and the previous image. `--fix-hiscores` is the built-in hook: a dry run of `fix-hiscore-levels.py` before the countdown, then `--apply` as root in a network-less `python:3.14-alpine` container (`HISCORE_FIX_IMAGE`; it must be on the host, or the promotion stops before the countdown), backups in `~/.local/state/computer-setup/hiscore-fix/`.
 - `world.sh candidate build --source-ref COMMIT` builds a given upstream commit instead of the newest one (no fetch; a temporary worktree, so the checkout never moves). With world 1's own commit this is a fixes-only candidate: the same game plus the current patch scripts. A fresh build still takes the newest `oven/bun:debian` base and Debian packages (the upstream Dockerfile's floating tag), so for a fixes-only build add `--base-image <world 1's image>`: the patch layer is applied on that image instead (the restore scripts are idempotent), and runtime and OS stay byte-identical. The tag ends in `-on-<base id>`.
+
+Runbook for the 1599b86 update (save v10, two migrations, bank 576 / GE 12 slots): [runbooks/promote-1599b86.md](runbooks/promote-1599b86.md).
 
 Both refuse an image with another XP curve, record the image so maintenance keeps it (`rs-sdk.image`), and remind you to take the test world down. `RS_SDK_UPDATES=direct` restores the old in-place update; `notify` only reports.
 
