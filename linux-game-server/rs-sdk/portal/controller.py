@@ -59,7 +59,10 @@ MAX_BULK = 60
 # The daemon pushes every ~5 s; older than this means it is offline.
 HEARTBEAT_STALE_MS = 30_000
 STATES = {'idle', 'held', 'rejected', 'pending', 'blocked', 'foreign', 'starting', 'running', 'stopping', 'stopped',
-          'switching', 'finished', 'failed', 'done', 'expired', 'unknown', 'error'}
+          'switching', 'finished', 'failed', 'done', 'expired', 'unknown', 'error', 'reserved'}
+# Account reservations (bot repo scripts/reserve.sh): holder ids like 'hermes:<host>:<session>' or 'runner:<host>:<type>'.
+HOLDER = re.compile(r'^[A-Za-z0-9_.:@/+-]{1,100}$')
+AUTO_ORIGINS = {'run-bot', 'run-routine', 'player-client', 'player-run'}
 
 
 def account_type(name):
@@ -356,6 +359,18 @@ def shape_maintenance(value):
             'nextWeekly': _int(value.get('nextWeekly')), 'tz': _clean(value.get('tz'), 40)}
 
 
+def shape_reservation(value):
+    """Who holds the account (bot repo routines/lib/reservations.ts), allowlisted; None = free or malformed."""
+    if not isinstance(value, dict) or not (isinstance(value.get('holder'), str) and HOLDER.match(value['holder'])):
+        return None
+    times = {k: value.get(k) for k in ('since', 'expires')}
+    if not all(isinstance(t, str) and re.match(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$', t) for t in times.values()):
+        return None
+    return {'holder': value['holder'], 'label': _clean(value.get('label'), 160), 'host': _clean(value.get('host'), 40),
+            'purpose': _clean(value.get('purpose'), 200), **times,
+            'auto': value.get('auto') if value.get('auto') in AUTO_ORIGINS else None}
+
+
 def shape_status(raw, received_at):
     """Allowlisted daemon report; ValueError if it is not one."""
     if not isinstance(raw, dict) or raw.get('version') != 1 or not isinstance(raw.get('bots'), dict):
@@ -392,6 +407,7 @@ def shape_status(raw, received_at):
             'gather': {rid: cid for rid, cid in list((entry.get('gather') if isinstance(entry.get('gather'), dict) else {}).items())[:6]
                        if isinstance(rid, str) and ROUTINE_ID.match(rid) and isinstance(cid, str) and CHOICE_ID.match(cid)},
             'gates': _shape_list(entry.get('gates')), 'foreign': _shape_list(entry.get('foreign')),
+            'reservation': shape_reservation(entry.get('reservation')),
             'lastResult': _shape_result(entry.get('lastResult')), 'updatedAt': _int(entry.get('updatedAt')),
         }
     commit = daemon.get('commit')

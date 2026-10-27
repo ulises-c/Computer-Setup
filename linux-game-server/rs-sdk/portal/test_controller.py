@@ -253,6 +253,43 @@ console.log(JSON.stringify([
         self.assertEqual(got[3], 'Server maintenance over: staggered relogs until 03:04:49 (America/Los_Angeles)')
         self.assertEqual(got[4], None)
 
+    def test_reservation_is_allowlisted(self):
+        good = {'holder': 'hermes:host-a:session-1', 'label': 'trip agent', 'host': 'host-a', 'purpose': 'thieving trip',
+                'since': '2026-10-27T03:07:20.886Z', 'expires': '2026-11-03T03:07:20.886Z', 'auto': None, 'pid': 5, 'password': 'x'}
+        raw = status_doc()
+        raw['bots']['bot_wormlike']['reservation'] = good
+        raw['bots']['bot_wormlike']['state'] = 'reserved'
+        shaped = controller.shape_status(raw, 7)['bots']['bot_wormlike']
+        self.assertEqual(shaped['state'], 'reserved')
+        self.assertEqual(shaped['reservation'], {'holder': 'hermes:host-a:session-1', 'label': 'trip agent', 'host': 'host-a',
+                                                 'purpose': 'thieving trip', 'since': '2026-10-27T03:07:20.886Z',
+                                                 'expires': '2026-11-03T03:07:20.886Z', 'auto': None})
+        for bad in ('x', {'holder': 'bad holder <script>', 'since': good['since'], 'expires': good['expires']},
+                    {'holder': 'a:b', 'since': 'yesterday', 'expires': good['expires']}):
+            self.assertIsNone(controller.shape_reservation(bad))
+        self.assertEqual(controller.shape_reservation({**good, 'auto': 'rm -rf'})['auto'], None)
+        self.assertIsNone(controller.shape_status(status_doc(), 7)['bots']['bot_wormlike']['reservation'])
+
+    @unittest.skipUnless(shutil.which('node'), 'node not installed')
+    def test_reservation_text_in_bot_controller_js(self):
+        script = Path(__file__).with_name('bot_controller.js')
+        probe = """
+const L = require(process.argv[1]);
+const now = Date.UTC(2026, 9, 27, 3, 7, 0);
+console.log(JSON.stringify([
+  L.reservationText(null, now),
+  L.reservationText({holder: 'runner:host-a:skill', host: 'host-a', purpose: '24/7 skill runner', since: '2026-10-27T03:00:00.000Z', expires: '2026-10-27T05:07:00.000Z'}, now),
+  L.reservationText({holder: 'a:b', label: 'trip', host: 'h', purpose: 'p', since: '2026-10-27T03:00:00.000Z', expires: '2026-10-27T03:37:00.000Z', auto: 'run-bot'}, now),
+  L.tone('reserved'),
+]));
+"""
+        result = subprocess.run(['node', '-e', probe, str(script)], capture_output=True, text=True, timeout=20, check=True)
+        got = json.loads(result.stdout)
+        self.assertIsNone(got[0])
+        self.assertEqual(got[1], 'Reserved by runner:host-a:skill on host-a: 24/7 skill runner · since 2026-10-27 03:00Z · 2h left')
+        self.assertEqual(got[2], 'Reserved by a:b (trip) on h: p · since 2026-10-27 03:00Z · 30m left · auto-claim (run-bot)')
+        self.assertEqual(got[3], 'warn')
+
     def test_view_passes_the_maintenance_banner_through(self):
         status = controller.shape_status(status_doc(maintenance={'active': True, 'hold': True, 'phase': 'window', 'reason': 'manual: test'}), 7)
         status.update({'available': True, 'ageMs': 0, 'online': True, 'error': None})

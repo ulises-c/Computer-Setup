@@ -231,6 +231,7 @@ footer { margin-top: 32px; padding-top: 18px; border-top: 1px solid #68563866; c
 .ctl-field input { min-width: 0; }
 .ctl-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #ffe139; }
 .ctl-badge { font: bold 11px Arial, sans-serif; padding: 2px 6px; border-radius: 3px; border: 1px solid #685638; white-space: nowrap; color: #c5b99a; background: #0006; flex: none; }
+.ctl-holder { max-width: 16em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
 .ctl-summary .line { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; line-height: 18px; min-height: 18px; }
 .ctl-desired { color: #d9c9a0; }
 .ctl-message { font-size: 12px; }

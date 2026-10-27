@@ -83,7 +83,7 @@ const ControllerLogic = (() => {
     };
     const TONES = {
         running: 'ok', finished: 'ok', stopped: 'ok', done: 'ok', starting: 'busy', stopping: 'busy', switching: 'busy', pending: 'busy',
-        blocked: 'warn', foreign: 'warn', expired: 'warn', unknown: 'warn', held: 'muted', idle: 'muted', rejected: 'bad', failed: 'bad', error: 'bad',
+        blocked: 'warn', foreign: 'warn', reserved: 'warn', expired: 'warn', unknown: 'warn', held: 'muted', idle: 'muted', rejected: 'bad', failed: 'bad', error: 'bad',
     };
     const tone = state => TONES[state] || 'muted';
     // With the registry, duration args read as e.g. "1 h 40 min" instead of "6000".
@@ -113,6 +113,13 @@ const ControllerLogic = (() => {
     const clockIn = (ms, tz) => {
         try { return `${new Date(ms).toLocaleTimeString('en-GB', { timeZone: tz || 'UTC', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}`; }
         catch { return new Date(ms).toISOString().slice(11, 19); }
+    };
+    // Account reservation (bot repo scripts/reserve.sh): who holds the account, for what, until when. null = free.
+    const reservationText = (r, now) => {
+        if (!r || !r.holder) return null;
+        const until = Date.parse(r.expires);
+        const left = Number.isFinite(until) ? ago(until - now) : '?';
+        return `Reserved by ${r.holder}${r.label ? ` (${r.label})` : ''}${r.host ? ` on ${r.host}` : ''}: ${r.purpose || 'no purpose given'} · since ${String(r.since || '').slice(0, 16).replace('T', ' ')}Z · ${left} left${r.auto ? ` · auto-claim (${r.auto})` : ''}`;
     };
     const maintenanceBanner = (m, now) => {
         if (!m || typeof m !== 'object') return null;
@@ -194,7 +201,7 @@ const ControllerLogic = (() => {
         }
     };
     return { MAX_DURATION_S, DURATION_PARTS, isDuration, splitDuration, durationText, durationTotal, durationError, checkDuration, durationRange,
-        routineById, defaults, validateArgs, commonEligible, tone, desiredText, ago, heartbeat, maintenanceBanner, validShow, initialShow, withShow, visible, isActive, label, modesFor, showLog, frameNote, dangerOf, optionLabel, dangerConfirm, allowedValues, valueText, offReasons, pickValue, parseSet };
+        routineById, defaults, validateArgs, commonEligible, tone, desiredText, ago, heartbeat, maintenanceBanner, reservationText, validShow, initialShow, withShow, visible, isActive, label, modesFor, showLog, frameNote, dangerOf, optionLabel, dangerConfirm, allowedValues, valueText, offReasons, pickValue, parseSet };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = ControllerLogic;
 
@@ -490,7 +497,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         const kind = el('span', `ctl-badge ctl-type-${row.type === 'player' ? 'regular' : 'bot'}`, row.type === 'player' ? 'regular' : 'bot');
         const presence = el('span', 'ctl-badge');
         const state = el('span', 'ctl-badge');
-        head.append(check, name, kind, presence, state);
+        const holder = el('span', 'ctl-badge tone-warn ctl-holder', 'reserved');
+        holder.hidden = true;
+        head.append(check, name, kind, presence, state, holder);
         const activity = el('p', 'line ctl-activity');
         const desired = el('p', 'line ctl-desired');
         const message = el('p', 'line ctl-message');
@@ -521,7 +530,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         node.append(summary, detail);
         summary.addEventListener('click', () => setExpanded(row.username, !expanded.has(row.username)));
         detail.addEventListener('click', ev => ev.stopPropagation());
-        const card = { node, check, presence, state, activity, desired, message, info, formBox, detail, formSig: '', logBox, logPre, logSig: '',
+        const card = { node, check, presence, state, holder, activity, desired, message, info, formBox, detail, formSig: '', logBox, logPre, logSig: '',
             frameBox, frameButton, frameWhy, frameNote, frameSlot, row };
         cards.set(row.username, card);
         return card;
@@ -596,6 +605,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         if (c.client) rows.push(['Client', c.client === 'headless' ? 'headless, on the workstation' : 'browser view (this page)']);
         if (row.type !== 'player') rows.push(['Gates', c.gates && c.gates.length ? c.gates.join('; ') : 'none (read-only; cleared only on the workstation)']);
         if (c.foreign && c.foreign.length) rows.push(['Other controllers', c.foreign.join('; ')]);
+        const held = L.reservationText(c.reservation, Date.now());
+        rows.push(['Reservation', held || 'free (no agent or runner holds this account)']);
         if (c.lastResult) rows.push(['Last job', `${c.lastResult.kind} r${c.lastResult.rev}: ${c.lastResult.rc === 0 ? 'exit 0' : c.lastResult.rc === null ? 'no result' : `exit ${c.lastResult.rc}`} · ${L.ago(Date.now() - c.lastResult.endedAt)} ago`]);
         if (row.desired) rows.push(['Requested', `${L.desiredText(row.desired, payload.registry)} · by ${row.desired.by || '?'} · ${L.ago(Date.now() - row.desired.at)} ago`]);
         if (row.phase) rows.push(['Routine phase', `${row.routine}: ${row.phase}`]);
@@ -612,6 +623,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         const st = c ? c.state : 'no report';
         card.state.textContent = st;
         card.state.className = `ctl-badge tone-${L.tone(c && c.state)}`;
+        const held = L.reservationText(c && c.reservation, Date.now());
+        card.holder.hidden = !held;
+        card.holder.title = held || '';
+        card.holder.textContent = held ? `reserved: ${c.reservation.holder}` : 'reserved';
         card.activity.textContent = row.activity || (row.presence === 'offline' ? 'Offline' : '—');
         card.desired.textContent = L.desiredText(row.desired, payload.registry);
         card.message.textContent = c && c.message ? c.message : row.launchable ? '' : 'Not launchable from the controller';
