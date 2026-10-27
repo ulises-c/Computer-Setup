@@ -9,6 +9,17 @@ in [UNIFICATION.md](UNIFICATION.md).
 ## Unreleased — 2004Scape backup and maintenance safety
 
 ### Added
+- RS-SDK post-update acceptance gate: `world.sh promote IMAGE` refuses unless the newest
+  acceptance report recorded for that exact image id passed, covered the whole suite and
+  finished after the image was built; `--skip-acceptance REASON` overrides (logged in the worlds
+  state dir's `acceptance/skips.log`, ntfy at high priority). `world.sh acceptance record IMAGE
+  FILE|-` stores a report from the bot host's suite (2004Scape-Botting `scripts/acceptance.sh`:
+  login, walk, bank, trade, XP curve, hiscores pager, Strange-box calibration and every random
+  event solved by the fleet's solvers on isolated world 100) next to the candidate list, with an
+  ntfy summary; `world.sh acceptance IMAGE` runs test up --isolated, `ACCEPTANCE_RUNNER`, record,
+  test down --wipe. Report store and gate: `linux-game-server/rs-sdk/worlds/acceptance.py`.
+- An isolated test world now stops without the in-game countdown when its own friend server is
+  not running (the countdown relays through it) instead of refusing `test down`.
 - RS-SDK isolated test world: `world.sh test up --isolated [IMAGE]` runs world 100 on its own
   login, friend and logger servers and on a consistent copy of world 1's data. Use it for
   candidates that cannot share world 1's saves: a new save format, migrations or content.

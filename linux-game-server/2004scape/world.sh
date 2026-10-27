@@ -30,8 +30,17 @@ set -euo pipefail
 #                                          upstream build, so runtime and OS stay byte-identical
 #   world.sh candidate list
 #   world.sh promote [IMAGE] --next-window|--now [--yes] [--fix-hiscores | --pre-start CMD]
+#                    [--skip-acceptance REASON]
 #                                          put IMAGE (default: the test world's) on world 1;
-#                                          --now runs the hook while the engine is stopped
+#                                          --now runs the hook while the engine is stopped.
+#                                          Refused unless a PASSING acceptance report exists for
+#                                          that exact image id, newer than the image;
+#                                          --skip-acceptance overrides (logged and notified)
+#   world.sh acceptance IMAGE              test up --isolated IMAGE, run $ACCEPTANCE_RUNNER (the bot
+#                                          host's post-update suite; prints the report JSON), record
+#                                          the report, test down --wipe
+#   world.sh acceptance record IMAGE FILE|-  store a suite report for IMAGE (ntfy summary)
+#   world.sh acceptance list [IMAGE]       recorded reports
 #
 # A live world runs exactly world 1's image and is open to everyone; a test world
 # runs a candidate with its allowlist on and is never a hop target. Nothing here
@@ -82,8 +91,10 @@ notify() {
 }
 
 worlds() { python3 "$WORLDS_DIR/worlds.py" "$@"; }
+acceptance_py() { python3 "$WORLDS_DIR/acceptance.py" "$@"; }
 git_() { git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c protocol.ext.allow=never "$@"; }
 image_id() { docker image inspect -f '{{.Id}}' "$1" 2>/dev/null; }
+image_created() { docker image inspect -f '{{.Created}}' "$1" 2>/dev/null; }
 is_running() { [[ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" == true ]]; }
 container_of() { if [[ "$1" == 1 ]]; then printf '%s' "$MAIN_CONTAINER"; else printf 'rs-sdk-world-%s' "$1"; fi; }
 listening() { ss -ltnH | awk '{print $4}' | grep -Eq "[:.]$1\$"; }
@@ -344,10 +355,16 @@ cmd_down() {
         >"$STATE_DIR/$id.countdown.log" 2>&1 </dev/null &
       local helper=$!
       for _ in $(seq 1 30); do grep -qx announced "$STATE_DIR/$id.countdown.log" && break; sleep 1; done
-      grep -qx announced "$STATE_DIR/$id.countdown.log" \
-        || { kill "$helper" 2>/dev/null || true; rm -f "$STATE_DIR/$id.countdown"
-             die "world $id: countdown not announced: $(tr '\n' ' ' <"$STATE_DIR/$id.countdown.log")"; }
-      for _ in $(seq 1 $((countdown + 180))); do is_running "$container" || break; sleep 1; done
+      if grep -qx announced "$STATE_DIR/$id.countdown.log"; then
+        for _ in $(seq 1 $((countdown + 180))); do is_running "$container" || break; sleep 1; done
+      elif [[ "$mode" == isolated ]]; then
+        # A throwaway copy whose own friend server may not run (it relays the countdown): its players
+        # are test accounts, so stop without the warning rather than leave the test world up.
+        log "warning: world $id: countdown not announced ($(tr '\n' ' ' <"$STATE_DIR/$id.countdown.log")); isolated copy, stopping without it"
+      else
+        kill "$helper" 2>/dev/null || true; rm -f "$STATE_DIR/$id.countdown"
+        die "world $id: countdown not announced: $(tr '\n' ' ' <"$STATE_DIR/$id.countdown.log")"
+      fi
       kill "$helper" 2>/dev/null || true
       wait "$helper" 2>/dev/null || true
       is_running "$container" && log "warning: world $id still up after its countdown; stopping it (the engine saves on SIGTERM)"
@@ -499,7 +516,7 @@ PY
 
 # --- promote --------------------------------------------------------------------------
 cmd_promote() {
-  local image="" mode="" yes=false
+  local image="" mode="" yes=false skip_acceptance=""
   PRE_START=""
   while (($#)); do
     case "$1" in
@@ -508,6 +525,7 @@ cmd_promote() {
       --yes) yes=true ;;
       --pre-start) [[ -z "$PRE_START" ]] || die "one --pre-start/--fix-hiscores only"; PRE_START="${2:?--pre-start needs a command}"; shift ;;
       --fix-hiscores) [[ -z "$PRE_START" ]] || die "one --pre-start/--fix-hiscores only"; PRE_START=fix-hiscores ;;
+      --skip-acceptance) skip_acceptance="${2:-}"; [[ -n "${skip_acceptance// /}" && "$skip_acceptance" != -* ]] || die "--skip-acceptance needs a reason"; shift ;;
       -*) die "unknown option $1" ;;
       *) image="$1" ;;
     esac
@@ -529,6 +547,7 @@ cmd_promote() {
   id="$(image_id "$image")" || die "no such image: $image"
   main="$(main_image)" || die "cannot tell which image world 1 runs"
   [[ "$id" != "$main" ]] || die "world 1 already runs $image"
+  acceptance_gate "$id" "$skip_acceptance"
   # A promotion may bring new content, migrations or a newer save version (world 1
   # migrates at start and reads older saves); the XP curve must never change.
   base="$(fingerprint "$main")" || die "cannot fingerprint world 1's image"
@@ -643,6 +662,59 @@ start_main() {
   return 1
 }
 
+# --- acceptance (post-update suite) ---------------------------------------------------------
+# Promotion needs a passing report from the bot host's suite for this exact image id, finished
+# after the image was built (see rs-sdk/worlds/acceptance.py); --skip-acceptance REASON overrides.
+acceptance_gate() {
+  local id="$1" reason="$2" created verdict
+  created="$(image_created "$id")" || die "cannot read the build time of $id"
+  if verdict="$(acceptance_py check "$STATE_DIR" "$id" "$created")"; then
+    log "acceptance: $verdict"
+    return 0
+  fi
+  if [[ -n "$reason" ]]; then
+    acceptance_py skip "$STATE_DIR" "$id" "$reason"
+    log "acceptance: $verdict; SKIPPED by --skip-acceptance: $reason (logged in $STATE_DIR/acceptance/skips.log)"
+    notify "RS-SDK promotion WITHOUT acceptance" "$id: $verdict. Override reason: $reason" high
+    return 0
+  fi
+  die "refusing to promote: $verdict (run: world.sh acceptance $id, or record one with world.sh acceptance record; override: --skip-acceptance REASON)"
+}
+
+cmd_acceptance_record() {
+  local image="${1:?world.sh acceptance record IMAGE FILE|-}" src="${2:?world.sh acceptance record IMAGE FILE|-}" id line
+  id="$(image_id "$image")" || die "no such image: $image"
+  line="$(acceptance_py record "$STATE_DIR" "$id" "$src")" || die "acceptance report not recorded"
+  log "acceptance report recorded: $line"
+  if [[ "$line" == PASSED* ]]; then notify "RS-SDK acceptance passed" "$line" default
+  else notify "RS-SDK acceptance FAILED" "$line" high; fi
+}
+
+# test up --isolated IMAGE -> $ACCEPTANCE_RUNNER (stdout = the report JSON) -> record -> test down --wipe.
+# The suite runs on a bot host (never here): ACCEPTANCE_RUNNER (2004scape/.env) is the command that
+# reaches it, given ACCEPTANCE_IMAGE / ACCEPTANCE_WORLD in its environment.
+cmd_acceptance_run() {
+  local image="$1" id report rc=0
+  id="$(image_id "$image")" || die "no such image: $image"
+  [[ -n "${ACCEPTANCE_RUNNER:-}" ]] || die "ACCEPTANCE_RUNNER is not set (2004scape/.env): the command that runs the bot host's suite and prints its report JSON; without it run scripts/acceptance.sh --manage $id on the bot host"
+  ! is_running "$(container_of "$TEST_WORLD")" || die "world $TEST_WORLD is already up; take it down first (world.sh test down)"
+  read_row "$TEST_WORLD"
+  report="$(mktemp "$STATE_DIR/acceptance-run.XXXXXX")"
+  cmd_up "$TEST_WORLD" --isolated "$id"
+  log "acceptance: running the suite on world $TEST_WORLD ($id)"
+  ACCEPTANCE_IMAGE="$id" ACCEPTANCE_WORLD="$TEST_WORLD" bash -c "$ACCEPTANCE_RUNNER" >"$report" </dev/null || rc=$?
+  cmd_down "$TEST_WORLD" --wipe || log "warning: world $TEST_WORLD did not go down cleanly; check world.sh status"
+  # Subshell: a refused report must not skip the notification below.
+  if [[ -s "$report" ]] && (cmd_acceptance_record "$id" "$report"); then
+    rm -f "$report"
+    ((rc == 0)) || log "the suite exited $rc"
+    return "$rc"
+  fi
+  rm -f "$report"
+  notify "RS-SDK acceptance did not produce a report" "$id: suite exit $rc; world $TEST_WORLD taken down." high
+  die "the suite produced no valid report (exit $rc)"
+}
+
 # --- dispatch -----------------------------------------------------------------------------
 command="${1:-status}"
 shift || true
@@ -682,5 +754,13 @@ case "$command" in
       *) die "usage: world.sh candidate build [--if-new] [--source-ref COMMIT] | candidate list" ;;
     esac ;;
   promote) cmd_promote "$@" ;;
+  acceptance)
+    sub="${1:-}"; shift || true
+    case "$sub" in
+      record) cmd_acceptance_record "$@" ;;
+      list) acceptance_py list "$STATE_DIR" ${1:+"$(image_id "$1" || echo "$1")"} ;;
+      ""|-*) die "usage: world.sh acceptance IMAGE | acceptance record IMAGE FILE|- | acceptance list [IMAGE]" ;;
+      *) flock -n "$WORLDS_LOCK" || die "another world.sh is running"; cmd_acceptance_run "$sub" ;;
+    esac ;;
   *) die "unknown command: $command (see the header of $0)" ;;
 esac

@@ -39,7 +39,7 @@ STUB = textwrap.dedent(r'''
         image = resolve(args[-1])
         if not image:
             sys.exit(1)
-        print(image)
+        print("2026-10-26T13:45:52.925034851-07:00" if "Created" in fmt() else image)
     elif cmd == "inspect":
         if args[-1] != "rs-sdk-server":
             sys.exit(1)
@@ -107,6 +107,15 @@ class PromoteTests(unittest.TestCase):
                         XDG_STATE_HOME=str(self.tmp / "state"), WORLDS_STATE_DIR=str(self.tmp / "state/worlds"),
                         WORLD_COUNTDOWN_SECONDS="1", STUB_STATE=str(self.state), STUB_LOG=str(self.log),
                         STUB_FIX_IMAGE="python:3.14-alpine")
+        # The promote gate (test_rs_sdk_acceptance.py): a passing acceptance report for NEW.
+        report = self.tmp / "acceptance.json"
+        report.write_text(json.dumps({
+            "version": 1, "kind": "rs-sdk-acceptance", "runId": "r1", "startedAt": "2026-10-27T02:00:00Z",
+            "finishedAt": "2026-10-27T03:00:00Z", "image": NEW, "complete": True, "passed": True,
+            "checks": [{"id": "login", "status": "pass"}], "summary": {"pass": 1},
+        }))
+        subprocess.run(["python3", str(ROOT / "rs-sdk/worlds/acceptance.py"), "record", str(self.tmp / "state/worlds"), NEW, str(report)],
+                       check=True, capture_output=True)
 
     @staticmethod
     def make_db(path):

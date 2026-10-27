@@ -79,6 +79,16 @@ World 1 is never updated in place by default (`RS_SDK_UPDATES=candidate` in `200
   - `--pre-start CMD` runs CMD (bash, `RS_SDK_DATA_DIR` set) once while the engine is stopped, after the data copy and before the new image starts; a failing CMD restores the data copy and the previous image. `--fix-hiscores` is the built-in hook: a dry run of `fix-hiscore-levels.py` before the countdown, then `--apply` as root in a network-less `python:3.14-alpine` container (`HISCORE_FIX_IMAGE`; it must be on the host, or the promotion stops before the countdown), backups in `~/.local/state/computer-setup/hiscore-fix/`.
 - `world.sh candidate build --source-ref COMMIT` builds a given upstream commit instead of the newest one (no fetch; a temporary worktree, so the checkout never moves). With world 1's own commit this is a fixes-only candidate: the same game plus the current patch scripts. A fresh build still takes the newest `oven/bun:debian` base and Debian packages (the upstream Dockerfile's floating tag), so for a fixes-only build add `--base-image <world 1's image>`: the patch layer is applied on that image instead (the restore scripts are idempotent), and runtime and OS stay byte-identical. The tag ends in `-on-<base id>`.
 
+### Post-update acceptance
+
+`world.sh promote` refuses an image unless the newest acceptance report recorded for that exact image id passed, covered the whole suite and finished after the image was built. The suite lives in the bot repo (`2004Scape-Botting`, `docs/acceptance.md`): test bots (`bot_tester` + one allowlisted account) on world 100 isolated check login/logout, a walk, exact bank counts, a trade with exact counts on both sides, the XP curve, the hiscores pager, the Strange-box calibration and every random event this server has, spawned on `bot_tester` and solved by the fleet's production solvers, with an isolated fleet gate.
+
+- From the bot host: `scripts/acceptance.sh --manage IMAGE` = `test up --isolated IMAGE`, the suite, `world.sh acceptance record IMAGE -` here (ntfy summary), `test down --wipe`.
+- Here: `world.sh acceptance IMAGE` does the same when `ACCEPTANCE_RUNNER` in `2004scape/.env` names a command that runs the suite on a bot host and prints the report JSON (this host has no way into the bot hosts by default).
+- `world.sh acceptance list [IMAGE]`; reports in `~/.local/state/computer-setup/rs-sdk-worlds/acceptance/<image12>/`, index `acceptance.tsv` (next to `candidates.tsv`).
+- `promote ... --skip-acceptance REASON` overrides: logged in `acceptance/skips.log` and notified at high priority.
+- An isolated world 100 stops without the in-game countdown when its own friend server is not running (the countdown relays through it); a shared world 100 still refuses.
+
 Runbook for the 1599b86 update (save v10, two migrations, bank 576 / GE 12 slots): [runbooks/promote-1599b86.md](runbooks/promote-1599b86.md).
 
 Both refuse an image with another XP curve, record the image so maintenance keeps it (`rs-sdk.image`), and remind you to take the test world down. `RS_SDK_UPDATES=direct` restores the old in-place update; `notify` only reports.

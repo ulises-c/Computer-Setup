@@ -44,6 +44,17 @@ Isolated world 100 (`world.sh test up --isolated`, on a copy of world 1's data t
    World 1 should be healthy.
 3. Take world 100 down: `bash linux-game-server/2004scape/world.sh test down`. The owner's rule is that it stays offline until the next promotion test. Once world 1 is verified, delete the isolated copy with `world.sh test down --wipe`, because it holds account data. The next `test up --isolated` takes a fresh copy. Neither maintenance nor a candidate build starts world 100.
 
+## Post-update acceptance
+
+Before promoting, run the acceptance suite on the candidate (world 100 isolated, a fresh copy of world 1's data), from a fleet host, in the bot repo (`2004Scape-Botting`):
+
+```sh
+export RS_SDK_DIR=<the fleet SDK checkout>
+scripts/acceptance.sh --manage computer-setup/rs-sdk:candidate-1599b86fe93a-3fba49a2bcc4
+```
+
+It brings world 100 up isolated on the image, runs the suite (about 30-60 minutes; see the bot repo's `docs/acceptance.md`), records the report here (`world.sh acceptance list`) with an ntfy summary, and always takes world 100 down with `--wipe`. `promote` below refuses without a passing report for that image id; `--skip-acceptance REASON` overrides (logged and notified). Read the markdown report for any failure: a solver bug blocks promotion until fixed or explicitly skipped; a harness bug is fixed in the bot repo and the suite re-run.
+
 ## Promote
 
 Run on the game server, in `~/github/Computer-Setup`.
