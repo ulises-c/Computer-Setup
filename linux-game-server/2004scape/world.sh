@@ -696,7 +696,23 @@ cmd_acceptance_record() {
 cmd_acceptance_run() {
   local image="$1" id report rc=0
   id="$(image_id "$image")" || die "no such image: $image"
-  [[ -n "${ACCEPTANCE_RUNNER:-}" ]] || die "ACCEPTANCE_RUNNER is not set (2004scape/.env): the command that runs the bot host's suite and prints its report JSON; without it run scripts/acceptance.sh --manage $id on the bot host"
+  if [[ -z "${ACCEPTANCE_RUNNER:-}" ]]; then
+    # The documented flow: this host has no way into the bot hosts, so the bot host drives world 100.
+    cat >&2 <<EOM
+world.sh acceptance: ACCEPTANCE_RUNNER is not set (2004scape/.env), so this host does not run the suite
+itself. That is the normal setup. Run the post-update acceptance suite from the bot host; it brings
+world $TEST_WORLD up isolated on this image over ssh, runs the suite, records the report here and takes
+world $TEST_WORLD down again (--wipe):
+
+  cd <bot repo> && export BOT_HOLDER=<you> RS_SDK_DIR=<SDK fork>
+  scripts/acceptance.sh --manage $id
+
+Then check here: world.sh acceptance list $id
+(Optional: set ACCEPTANCE_RUNNER to a command that runs the suite on a bot host and prints its
+report JSON; world.sh acceptance IMAGE then does the whole flow from here.) Nothing was started.
+EOM
+    exit 2
+  fi
   ! is_running "$(container_of "$TEST_WORLD")" || die "world $TEST_WORLD is already up; take it down first (world.sh test down)"
   read_row "$TEST_WORLD"
   report="$(mktemp "$STATE_DIR/acceptance-run.XXXXXX")"

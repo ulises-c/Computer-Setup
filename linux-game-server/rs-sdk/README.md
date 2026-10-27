@@ -83,8 +83,8 @@ World 1 is never updated in place by default (`RS_SDK_UPDATES=candidate` in `200
 
 `world.sh promote` refuses an image unless the newest acceptance report recorded for that exact image id passed, covered the whole suite and finished after the image was built. The suite lives in the bot repo (`2004Scape-Botting`, `docs/acceptance.md`): test bots (`bot_tester` + one allowlisted account) on world 100 isolated check login/logout, a walk, exact bank counts, a trade with exact counts on both sides, the XP curve, the hiscores pager, the Strange-box calibration and every random event this server has, spawned on `bot_tester` and solved by the fleet's production solvers, with an isolated fleet gate.
 
-- From the bot host: `scripts/acceptance.sh --manage IMAGE` = `test up --isolated IMAGE`, the suite, `world.sh acceptance record IMAGE -` here (ntfy summary), `test down --wipe`.
-- Here: `world.sh acceptance IMAGE` does the same when `ACCEPTANCE_RUNNER` in `2004scape/.env` names a command that runs the suite on a bot host and prints the report JSON (this host has no way into the bot hosts by default).
+- **The documented way, from the bot host:** `scripts/acceptance.sh --manage IMAGE` = `test up --isolated IMAGE`, the suite, `world.sh acceptance record IMAGE -` here (ntfy summary), `test down --wipe`.
+- Here: `world.sh acceptance IMAGE` does the same only when `ACCEPTANCE_RUNNER` in `2004scape/.env` names a command that runs the suite on a bot host and prints the report JSON (this host has no way into the bot hosts by default). Unset (the normal setup), it starts nothing, prints the `--manage` command for that image id and exits 2.
 - `world.sh acceptance list [IMAGE]`; reports in `~/.local/state/computer-setup/rs-sdk-worlds/acceptance/<image12>/`, index `acceptance.tsv` (next to `candidates.tsv`).
 - `promote ... --skip-acceptance REASON` overrides: logged in `acceptance/skips.log` and notified at high priority.
 - An isolated world 100 stops without the in-game countdown when its own friend server is not running (the countdown relays through it); a shared world 100 still refuses.

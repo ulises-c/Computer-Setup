@@ -281,8 +281,11 @@ class PromoteGateTests(unittest.TestCase):
 
     def test_acceptance_run_without_a_runner_or_report_fails_and_leaves_the_world_down(self):
         no_runner = self.run_sh("acceptance", "cand")
-        self.assertNotEqual(no_runner.returncode, 0)
+        self.assertEqual(no_runner.returncode, 2)
         self.assertIn("ACCEPTANCE_RUNNER is not set", no_runner.stderr)
+        # The documented flow instead: the bot host's --manage for this exact image id.
+        self.assertIn(f"scripts/acceptance.sh --manage {NEW}", no_runner.stderr)
+        self.assertIn("Nothing was started", no_runner.stderr)
         self.assertFalse(any(c[0] == "compose" for c in self.calls()))
         broken = self.run_sh("acceptance", "cand", ACCEPTANCE_RUNNER="echo not-json; exit 3")
         self.assertNotEqual(broken.returncode, 0)
