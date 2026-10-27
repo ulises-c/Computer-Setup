@@ -47,7 +47,9 @@ class LiveShapingTests(unittest.TestCase):
                          (live.ORIGIN_X, live.ORIGIN_Z, live.MAP_WIDTH, live.MAP_HEIGHT))
 
     def test_ticks_param(self):
-        self.assertEqual(live.ticks_param({}), 5)
+        self.assertEqual(live.ticks_param({}), 1)          # every game tick by default
+        self.assertEqual(live.ticks_param({'ticks': ['1']}), 1)
+        self.assertEqual(live.ticks_param({'ticks': ['1000']}), 1000)
         self.assertEqual(live.ticks_param({'ticks': ['25']}), 25)
         for bad in ('0', '-1', 'x', '1001', '1e3'):
             with self.assertRaises(ValueError):
@@ -59,6 +61,7 @@ class LiveShapingTests(unittest.TestCase):
                                           {'routine': 'mining', 'args': ['copper-tin-sw-varrock', '180'], 'client': True}, xp, 0.0,
                                           motion=motion)
         later = frame()
+        later['tick'] = 550   # 30 s later
         later['skills'][0]['experience'] = 435
         entry = live_publish.reduce_state('bot_hoofs', later, {'botStatus': 'active', 'stateAge': 120},
                                           {'routine': 'mining', 'args': ['copper-tin-sw-varrock'], 'client': True}, xp, 30.0,
@@ -179,6 +182,35 @@ class LiveShapingTests(unittest.TestCase):
         self.assertEqual(xp.update('b', skills(160), 120.0), {'Mining': 50})
         self.assertEqual(xp.rates('b', 120.0), {'Mining': 1800})
 
+    def test_motion_uses_game_ticks_at_a_per_tick_period(self):
+        motion = live_publish.Motion()
+        self.assertIsNone(motion.update('w', 3200, 3200, 0, 0.0, tick=100))
+        # Walking one tile per tick, published every tick with a jittery clock.
+        for i, at in enumerate((0.55, 1.25, 1.8, 2.45), 1):
+            self.assertEqual(motion.update('w', 3200 + i, 3200, 0, at, tick=100 + i)['state'], 'walking')
+        # Two game ticks fell in one publish period: still walking (judged by ticks, not seconds).
+        self.assertEqual(motion.update('w', 3206, 3200, 0, 3.0, tick=106), {'state': 'walking', 'tiles': 3})
+        # Re-reading the same game frame keeps the verdict instead of reporting 'still'.
+        self.assertEqual(motion.update('w', 3206, 3200, 0, 3.6, tick=106)['state'], 'walking')
+        for i in range(1, 4):   # running: two tiles per tick
+            got = motion.update('w', 3206 + 2 * i, 3200, 0, 3.6 + 0.6 * i, tick=106 + i)
+        self.assertEqual(got, {'state': 'running', 'tiles': 6})
+        for i in range(1, 4):   # stopped for the whole window
+            got = motion.update('w', 3212, 3200, 0, 6.0 + 0.6 * i, tick=109 + i)
+        self.assertEqual(got['state'], 'still')
+        self.assertEqual(motion.update('w', 3212, 3200, 1, 8.4, tick=113)['state'], 'teleported')   # stairs
+        self.assertEqual(motion.update('w', 2964, 3378, 1, 9.0, tick=114)['state'], 'teleported')
+
+    def test_xp_history_is_thinned_at_a_per_tick_period(self):
+        xp = live_publish.XpTracker()
+        skills = lambda n: [{'name': 'Mining', 'experience': n}]
+        for i in range(500):                      # 300 s of per-tick samples, +1 XP each
+            gained = xp.update('b', skills(1000 + i), i * 0.6)
+        self.assertLessEqual(len(xp.history['b']), 300 / live_publish.XP_SAMPLE_S + 2)
+        self.assertEqual(xp.latest['b'], (499 * 0.6, {'Mining': 1499}))   # rates use the current frame
+        self.assertTrue(99 <= gained['Mining'] <= 100)                # ~60 s of +1/tick
+        self.assertTrue(5900 <= xp.rates('b', 499 * 0.6)['Mining'] <= 6050)   # 6000 XP/h
+
     def test_player_animation_names(self):
         info = player_anims.anim_info
         self.assertEqual(info(625)['action'], 'Mining')
@@ -271,6 +303,147 @@ class WorldPresenceTests(unittest.TestCase):
         self.assertEqual(live.norm_name('BOT_TESTER'), 'bot tester')
         self.assertEqual(live_publish.world_url({'a': {'SERVER': 'game.example:9445'}}), 'https://game.example:9445')
         self.assertEqual(live_publish.world_url({}, 'http://x:1/'), 'http://x:1')
+
+    def test_publisher_reads_bot_states_concurrently_within_one_tick(self):
+        import time as _time
+        with tempfile.TemporaryDirectory() as tmp:
+            sdk = Path(tmp) / 'sdk'
+            names = [f'bot_{i:02d}' for i in range(36)]
+            for bot in names:
+                (sdk / 'bots' / bot).mkdir(parents=True)
+                (sdk / 'bots' / bot / 'bot.env').write_text(
+                    f'BOT_USERNAME={bot}\nPASSWORD={SECRET}\nSERVER=game.example:9445\nGATEWAY_URL=wss://game.example:9446\n')
+            lock, active, calls = threading.Lock(), [0, 0], []
+
+            def fetch(url, headers=None):
+                with lock:
+                    calls.append(url)
+                    active[0] += 1
+                    active[1] = max(active[1], active[0])
+                try:
+                    if url.endswith('/playerpositions'):
+                        return 200, []
+                    if url.endswith('/status'):
+                        return 200, {'bots': {name: {'status': 'active'} for name in names}}
+                    _time.sleep(0.05)                     # ~ a real /state read
+                    return 200, {'botStatus': 'active', 'stateAge': 10, 'state': frame(name=url.rsplit('/', 1)[1])}
+                finally:
+                    with lock:
+                        active[0] -= 1
+            publisher = live_publish.Publisher(sdk, Path(tmp) / 'botting', 1, fetch=fetch)
+            self.addCleanup(publisher.pool.shutdown)
+            started = _time.monotonic()
+            raw = publisher.snapshot()
+            elapsed = _time.monotonic() - started
+            self.assertLess(elapsed, 0.6)                 # sequential would take 36 x 50 ms = 1.8 s
+            self.assertGreater(active[1], 1)
+            self.assertLessEqual(active[1], live_publish.STATE_WORKERS)
+            self.assertEqual(sorted(u.rsplit('/', 1)[1] for u in calls if '/state/' in u), names)   # one read per bot
+            self.assertEqual(sum(u.endswith('/status') for u in calls), 1)
+            self.assertEqual(sum(u.endswith('/playerpositions') for u in calls), 1)
+            self.assertEqual({b['presence'] for b in raw['bots']}, {'controlled'})
+            self.assertEqual(raw['intervalMs'], 600)
+            self.assertEqual(publisher.timeout, 0.5)       # per-request timeout under the 600 ms period
+            self.assertAlmostEqual(live_publish.Publisher(sdk, Path(tmp), 5, fetch=fetch).timeout, 2.4)
+
+    def test_publisher_failed_or_slow_reads_do_not_block_the_tick(self):
+        import time as _time
+        with tempfile.TemporaryDirectory() as tmp:
+            publisher, calls, _ = self.make_publisher(tmp)
+            self.addCleanup(publisher.pool.shutdown)
+            inner = publisher.fetch
+
+            def fetch(url, headers=None):
+                if url.endswith('/state/bot_tester'):
+                    raise OSError('timed out')
+                return inner(url, headers)
+            publisher.fetch, publisher.timeout = fetch, 0.5
+            release = threading.Event()
+
+            def slow_fleet(url, headers=None):
+                release.wait(5)
+                return 200, {'docs': []}
+            publisher.remote = live_publish.RemoteCards('https://fleet.example:9447', 'ro-token', fetch=slow_fleet)
+            started = _time.monotonic()
+            raw = publisher.snapshot()
+            self.assertLess(_time.monotonic() - started, 1.5)   # waits one request timeout for the cards at most
+            release.set()
+            self.assertEqual({b['username']: b['status'] for b in raw['bots']}['bot_tester'], 'unknown')
+
+    def test_keepalive_fetch_reuses_connections_and_survives_server_closes(self):
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        connections = []
+
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = 'HTTP/1.1'
+
+            def setup(self):
+                super().setup()
+                connections.append(self.client_address)
+
+            def do_GET(self):
+                code, body = (404, b'not json') if self.path == '/missing' else (200, json.dumps(
+                    {'path': self.path, 'auth': self.headers.get('Authorization')}).encode())
+                self.send_response(code)
+                self.send_header('Content-Length', str(len(body)))
+                if self.path == '/close':
+                    self.send_header('Connection', 'close')
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+        httpd = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        self.addCleanup(httpd.server_close)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        self.addCleanup(httpd.shutdown)
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        fetch = live_publish.KeepAlive(2.0)
+        for i in range(5):
+            self.assertEqual(fetch(base + f'/state/bot_{i}', {'Authorization': 'Bearer x'}),
+                             (200, {'path': f'/state/bot_{i}', 'auth': 'Bearer x'}))
+        self.assertEqual(len(connections), 1)                       # one connection for five reads
+        self.assertEqual(fetch(base + '/missing'), (404, None))
+        self.assertEqual(fetch(base + '/close')[0], 200)            # server closes it ...
+        self.assertEqual(fetch(base + '/status')[0], 200)           # ... the next read reconnects
+        self.assertEqual(len(connections), 2)
+        next(iter(fetch.local.conns.values())).sock.close()        # a dead idle connection ...
+        self.assertEqual(fetch(base + '/status')[0], 200)           # ... is retried once on a new one
+        self.assertEqual(len(connections), 3)
+        fetch.close()
+        with self.assertRaises(ValueError):
+            fetch('file:///etc/passwd')
+
+    def test_publisher_runs_on_tick_boundaries_and_never_overlaps(self):
+        clock = [0.0]
+        sleeps, starts, running = [], [], [0]
+        durations = iter([0.2, 0.9, 0.1, 0.3])
+
+        class Fake(live_publish.Publisher):
+            def snapshot(self):
+                running[0] += 1
+                assert running[0] == 1, 'snapshots overlapped'
+                starts.append(round(clock[0], 3))
+                clock[0] += next(durations)
+                running[0] -= 1
+                return {'ok': True}
+        publisher = Fake(Path('/nonexistent'), Path('/nonexistent'), 1)
+        self.addCleanup(publisher.pool.shutdown)
+        lines = []
+
+        def sink(line):
+            lines.append(line)
+            if len(lines) == 4:
+                raise StopIteration
+
+        def sleep(seconds):
+            sleeps.append(round(seconds, 3))
+            clock[0] += seconds
+        with self.assertRaises(StopIteration):
+            publisher.run(sink, clock=lambda: clock[0], sleep=sleep)
+        # 0.0 -> sleeps to 0.6; 0.6 overruns to 1.5 -> next starts at once; then back on the grid.
+        self.assertEqual(starts, [0.0, 0.6, 1.5, 2.1])
+        self.assertEqual(sleeps, [0.4, 0.5])
 
     def test_publisher_flags_ghosts_lists_humans_and_keeps_last_known_stats(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -477,9 +650,11 @@ class LiveHTTPTests(unittest.TestCase):
         with urlopen(base + '/rs-sdk/api/live') as response:
             payload = json.loads(response.read())
             self.assertEqual(response.headers['Content-Type'], 'application/json')
-        self.assertEqual((payload['ticks'], payload['refreshMs']), (5, 3000))
+        self.assertEqual((payload['ticks'], payload['refreshMs']), (1, 600))
         with urlopen(base + '/rs-sdk/live-map') as response:
-            self.assertIn('data-refresh-ms="3000"', response.read().decode())
+            page = response.read().decode()
+            self.assertIn('data-refresh-ms="600"', page)
+            self.assertIn('refreshed every 1 game ticks (0.6 s)', page)
         self.assertEqual(payload['bots'][0]['username'], 'bot_a')
         with urlopen(base + '/rs-sdk/live-map.js') as response:
             self.assertIn('text/javascript', response.headers['Content-Type'])

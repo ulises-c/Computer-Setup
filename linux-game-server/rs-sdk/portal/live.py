@@ -28,11 +28,11 @@ import time
 from player_anims import anim_info
 
 TICK_MS = 600
-DEFAULT_TICKS = 5
+DEFAULT_TICKS = 1   # the live map refreshes every game tick by default
 MAX_TICKS = 1000
 MAX_LINE = 2 * 1024 * 1024
 MAX_BOTS = 200
-# Stale after 3 publish periods, but never sooner than 12 s (4 default periods) to ride out SSH hiccups.
+# Stale after 3 publish periods, but never sooner than 12 s, to ride out SSH hiccups at any period.
 STALE_FLOOR_MS = 12_000
 NAME = re.compile(r'^[A-Za-z0-9_ -]{1,12}$')
 TOKEN = re.compile(r'^[A-Za-z0-9_.:+-]{1,40}$')
@@ -62,7 +62,7 @@ def show_param(params):
 
 
 def ticks_param(params):
-    """Refresh period in game ticks from ?ticks=N (default 10 = ~6 s); ValueError if invalid."""
+    """Refresh period in game ticks from ?ticks=N (default 1 = every 600 ms tick); ValueError if invalid."""
     raw = params.get('ticks', [str(DEFAULT_TICKS)])[0]
     if not raw.isdigit():
         raise ValueError('ticks')

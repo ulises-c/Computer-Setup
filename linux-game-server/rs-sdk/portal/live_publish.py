@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Publish the bot fleet's live state to the portal's live map (runs on the bot workstation).
 
-Every N game ticks (default 5 = ~3 s; never faster, to keep the gateway at no
-more than one request per bot per 3 s) this:
+Every N game ticks (default 1 = 600 ms, so the live map moves tick by tick) this:
 
 1. asks the gateway's unauthenticated GET /status which bots are connected, and
    the game web server's unauthenticated GET /playerpositions who is actually in
@@ -10,7 +9,10 @@ more than one request per bot per 3 s) this:
    cards the other bot hosts pushed (read-only token, at most every 5 s);
 2. for each connected bot, reads GET /state/<bot> with that bot's own SDK
    credentials from <sdk>/bots/<bot>/bot.env (sent as a Bearer header; a plain
-   HTTP read - no WebSocket session, no observer/controller, no actions);
+   HTTP read - no WebSocket session, no observer/controller, no actions). The
+   reads run concurrently on a small bounded pool (STATE_WORKERS) with a
+   per-request timeout under the period, so ~35 bots fit in one tick; that is
+   one read per bot per period, the same as the gateway's own frame rate;
 3. reduces each frame to an allowlist (position, HP, skills, inventory,
    equipment, combat, a few system messages), adds activity from local routine
    processes, the routines' own status files (bot_journal/activity/<bot>.json,
@@ -27,24 +29,39 @@ more than one request per bot per 3 s) this:
 
 Credentials never leave this machine: they are only used in the request
 headers to the gateway and are not part of any snapshot.
+Snapshots are scheduled on tick boundaries (started + period); a snapshot that
+overruns starts the next one at once, and two snapshots never run together.
 Python 3.9 compatible (macOS /usr/bin/python3).
 """
 import argparse
+from concurrent.futures import ThreadPoolExecutor
+import http.client
 import json
 import os
 from pathlib import Path
 import re
 import shlex
+import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 
 TICK_MS = 600
-MIN_TICKS = 5
-DEFAULT_TICKS = 5
+MIN_TICKS = 1
+DEFAULT_TICKS = 1
+# Concurrent GET /state reads: bounded so the gateway never sees more than this many at once.
+STATE_WORKERS = 12
+# Per-request timeout for the periodic reads: under the period (min 0.5 s, max 5 s).
+TIMEOUT_SHARE = 0.8
+TIMEOUT_MIN_S, TIMEOUT_MAX_S = 0.5, 5.0
+# Movement is judged over the last few game ticks (by the frames' own tick counter).
+MOTION_WINDOW_TICKS = 3
+# XP history keeps at most one sample per this many seconds (plus the latest), whatever the period.
+XP_SAMPLE_S = 3.0
 ROUTINE = re.compile(r'--env-file=\S*/bots/([A-Za-z0-9_-]{1,12})/bot\.env\s+\S*/routines/([A-Za-z0-9_.-]{1,40})\.ts\b(.*)')
 RUNNER = re.compile(r'src/lite/runner\.ts\s+([A-Za-z0-9_-]{1,12})\b')
 TOKEN = re.compile(r'^[A-Za-z0-9_.:+-]{1,40}$')
@@ -63,6 +80,7 @@ LAST_GOOD_KEYS = ('displayName', 'tick', 'player', 'skills', 'inventory', 'equip
 FLEET_URL = 'https://<game-server>.<tailnet>.ts.net:9447'
 REMOTE_POLL_S = 5.0
 REMOTE_MAX_AGE_S = 60.0
+FETCH_ERRORS = (OSError, ValueError, http.client.HTTPException)
 LEVEL_UP = re.compile(r'^(?:@\w{3}@)?Congratulations, you just advanced (?:a|an) ([a-z]+(?: [a-z]+)?) level\.$')
 
 
@@ -92,6 +110,56 @@ def get_json(url, headers=None, timeout=5.0):
             return exc.code, None
 
 
+class KeepAlive:
+    """GET -> (status, JSON body) over persistent HTTP(S) connections, one per pool thread and host.
+
+    At a per-tick period the publisher makes ~60 reads a second; a fresh TLS handshake for each
+    would cost far more (here and in the TLS proxy in front of the gateway) than the reads."""
+    def __init__(self, timeout, limit=8 * 1024 * 1024):
+        self.timeout, self.limit = timeout, limit
+        self.local = threading.local()
+
+    def close(self):
+        """Close this thread's connections."""
+        for conn in self.local.__dict__.pop('conns', {}).values():
+            conn.close()
+
+    def __call__(self, url, headers=None):
+        parts = urllib.parse.urlsplit(url)
+        if parts.scheme not in ('http', 'https'):
+            raise ValueError('unsupported URL scheme')
+        key = (parts.scheme, parts.netloc)
+        path = (parts.path or '/') + ('?' + parts.query if parts.query else '')
+        conns = self.local.__dict__.setdefault('conns', {})
+        while True:
+            conn, reused = conns.pop(key, None), True
+            if conn is None:
+                kind = http.client.HTTPSConnection if parts.scheme == 'https' else http.client.HTTPConnection
+                conn, reused = kind(parts.netloc, timeout=self.timeout), False
+            try:
+                conn.request('GET', path, headers=dict(headers or {}, Connection='keep-alive'))
+                response = conn.getresponse()
+                data = response.read()
+            except (OSError, http.client.HTTPException) as exc:
+                conn.close()
+                if reused and not isinstance(exc, (socket.timeout, TimeoutError)):
+                    continue          # the server closed an idle connection: retry once on a new one
+                raise
+            if response.will_close:
+                conn.close()
+            else:
+                conns[key] = conn
+            break
+        if len(data) > self.limit:
+            raise ValueError('response too large')
+        try:
+            return response.status, json.loads(data)
+        except ValueError:
+            if response.status >= 400:
+                return response.status, None
+            raise
+
+
 def norm_name(name):
     """Account/display name key: 'bot_moondrop', 'Bot Moondrop' and 'bot  moondrop' all match."""
     return re.sub(r'[\s_]+', ' ', name).strip().lower() if isinstance(name, str) else ''
@@ -113,7 +181,7 @@ def world_players(base, fetch=None):
         return None, 'no game web server configured (SERVER= in bot.env or --world)'
     try:
         code, body = (fetch or get_json)(base + '/playerpositions')
-    except (OSError, ValueError) as exc:
+    except FETCH_ERRORS as exc:
         return None, f'/playerpositions unreachable ({exc.__class__.__name__})'
     if code != 200 or not isinstance(body, list):
         return None, f'/playerpositions answered HTTP {code}'
@@ -179,44 +247,76 @@ def fleet_state(botting):
 
 
 class XpTracker:
-    """Per-skill XP gained in the last minute, and XP/hour over the last five minutes."""
+    """Per-skill XP gained in the last minute, and XP/hour over the last five minutes.
+
+    History keeps one sample per XP_SAMPLE_S (so it stays small at a per-tick period);
+    both figures compare against the latest frame."""
     def __init__(self, window=XP_WINDOW_S, rate_window=XP_RATE_WINDOW_S):
         self.window, self.rate_window = window, rate_window
         self.history = {}
+        self.latest = {}
 
     def update(self, bot, skills, now):
         current = {s.get('name'): s.get('experience') for s in skills
                    if isinstance(s, dict) and isinstance(s.get('experience'), (int, float))}
         samples = [entry for entry in self.history.get(bot, []) if now - entry[0] <= self.rate_window]
-        samples.append((now, current))
+        if not samples or now - samples[-1][0] >= XP_SAMPLE_S:
+            samples.append((now, current))
         self.history[bot] = samples
-        oldest = next(values for at, values in samples if now - at <= self.window)
+        self.latest[bot] = (now, current)
+        oldest = next((values for at, values in samples if now - at <= self.window), current)
         return {name: int(xp - oldest[name]) for name, xp in current.items()
                 if name in oldest and xp > oldest[name]}
 
     def rates(self, bot, now):
         """{skill: XP per hour} over the rate window, once it spans at least 30 s."""
         samples = self.history.get(bot) or []
-        if len(samples) < 2 or now - samples[0][0] < XP_RATE_MIN_SPAN_S:
+        if not samples or bot not in self.latest or now - samples[0][0] < XP_RATE_MIN_SPAN_S:
             return {}
-        (start, oldest), (_, current) = samples[0], samples[-1]
+        (start, oldest), (_, current) = samples[0], self.latest[bot]
         span = max(now - start, XP_RATE_MIN_SPAN_S)
         return {name: int(round((xp - oldest[name]) * 3600 / span)) for name, xp in current.items()
                 if name in oldest and xp > oldest[name]}
 
 
 class Motion:
-    """Movement between successive frames: still / walking / running / teleported, plus recent animation."""
-    def __init__(self):
-        self.last = {}
+    """Movement over the last few game ticks: still / walking / running / teleported, plus recent animation.
+
+    Uses the frames' own game tick counter when present (exact at any publish period:
+    a re-read of the same frame keeps the previous verdict), else wall-clock time."""
+    def __init__(self, window=MOTION_WINDOW_TICKS):
+        self.window = window
+        self.history = {}
+        self.result = {}
         self.anims = {}
 
-    def update(self, bot, x, z, level, now):
-        prev = self.last.get(bot)
-        self.last[bot] = (x, z, level, now)
-        if prev is None or not all(isinstance(v, int) for v in (x, z, prev[0], prev[1])):
+    def update(self, bot, x, z, level, now, tick=None):
+        if not all(isinstance(v, int) and not isinstance(v, bool) for v in (x, z)):
             return None
-        ticks = max(1.0, (now - prev[3]) / (TICK_MS / 1000.0))
+        tick = tick if isinstance(tick, int) and not isinstance(tick, bool) else None
+        samples = self.history.get(bot) or []
+        if samples and tick is not None and samples[-1][4] == tick:
+            return self.result.get(bot)      # same game frame as last time: nothing new to judge
+        if samples and samples[-1][2] != level:
+            samples = samples[-1:]           # changed plane: judge against the last sample only
+        sample = (x, z, level, now, tick)
+        older = samples[-self.window:]
+        # Reference: the oldest earlier sample within the window (in ticks, or in seconds without a
+        # tick), else the previous sample however old it is.
+        if tick is not None and all(s[4] is not None for s in older):
+            recent = [s for s in older if 0 < tick - s[4] <= self.window]
+        else:
+            recent = [s for s in older if now - s[3] <= self.window * TICK_MS / 1000.0 + 0.3]
+        recent = recent or older[-1:]
+        self.history[bot] = recent + [sample]
+        if not recent:
+            self.result.pop(bot, None)
+            return None
+        prev = recent[0]
+        if tick is not None and prev[4] is not None:
+            ticks = max(1.0, float(tick - prev[4]))
+        else:
+            ticks = max(1.0, (now - prev[3]) / (TICK_MS / 1000.0))
         tiles = max(abs(x - prev[0]), abs(z - prev[1]))
         if level != prev[2] or tiles > 2 * ticks + 3:
             state = 'teleported'
@@ -224,7 +324,8 @@ class Motion:
             state = 'still'
         else:
             state = 'running' if tiles / ticks > 1.3 else 'walking'
-        return {'state': state, 'tiles': tiles}
+        self.result[bot] = {'state': state, 'tiles': tiles}
+        return self.result[bot]
 
     def anim(self, bot, anim_id, now):
         """The current animation, or the last one seen within ANIM_MEMORY_S (with its age)."""
@@ -331,7 +432,7 @@ class RemoteCards:
         self.at = now
         try:
             code, body = self.fetch(self.url + '/v1/docs/activity', {'Authorization': 'Bearer ' + self.token})
-        except (OSError, ValueError):
+        except FETCH_ERRORS:
             return self.cached   # pushedAt ages out on its own
         if code == 200 and isinstance(body, dict) and isinstance(body.get('docs'), list):
             self.cached = {d['name']: d['body'] for d in body['docs'][:500]
@@ -416,7 +517,8 @@ def reduce_state(username, state, meta, local, xp, now, focus=None, motion=None,
         'xpRate': xp.rates(username, now),
     })
     motion = motion or Motion()
-    entry['activity']['motion'] = motion.update(username, player.get('worldX'), player.get('worldZ'), player.get('level'), now)
+    entry['activity']['motion'] = motion.update(username, player.get('worldX'), player.get('worldZ'), player.get('level'), now,
+                                                state.get('tick'))
     entry['activity']['anim'] = motion.anim(username, player.get('animId'), now)
     tick = state.get('tick') if isinstance(state.get('tick'), int) else 0
     # system messages only (type 0, no sender): never relay other players' chat
@@ -431,11 +533,16 @@ def reduce_state(username, state, meta, local, xp, now, focus=None, motion=None,
 
 
 class Publisher:
-    def __init__(self, sdk, botting, ticks, gateway=None, world=None, cache=None, fetch=None, remote=None):
+    def __init__(self, sdk, botting, ticks, gateway=None, world=None, cache=None, fetch=None, remote=None,
+                 workers=STATE_WORKERS):
         self.sdk, self.botting, self.ticks = sdk, botting, ticks
         self.remote = remote
         self.gateway, self.world = gateway, world
-        self.fetch = fetch or get_json
+        period = ticks * TICK_MS / 1000.0
+        self.timeout = min(TIMEOUT_MAX_S, max(TIMEOUT_MIN_S, period * TIMEOUT_SHARE))
+        self.fetch = fetch or KeepAlive(self.timeout)
+        # One bounded pool for the period's reads; snapshots themselves never overlap (see run()).
+        self.pool = ThreadPoolExecutor(max_workers=max(1, workers), thread_name_prefix='live-read')
         self.xp = XpTracker()
         self.motion = Motion()
         # Last controlled snapshot per bot (allowlisted fields only, never credentials),
@@ -482,36 +589,60 @@ class Publisher:
                 found[env['BOT_USERNAME']] = env
         return found
 
+    def _status(self, gateway):
+        try:
+            code, body = self.fetch(gateway + '/status')
+            if code == 200 and isinstance(body, dict) and isinstance(body.get('bots'), dict):
+                return body['bots'], True
+        except FETCH_ERRORS:
+            pass
+        return {}, False
+
+    def _state(self, gateway, username, password, status):
+        """(meta, state) from one GET /state/<bot> read (runs on the pool)."""
+        meta, state = {'botStatus': status}, None
+        try:
+            code, body = self.fetch(gateway + '/state/' + urllib.parse.quote(username),
+                                    {'Authorization': 'Bearer ' + password})
+            if code == 200 and isinstance(body, dict):
+                meta = {'botStatus': body.get('botStatus') or status, 'stateAge': body.get('stateAge')}
+                state = body.get('state')
+        except FETCH_ERRORS:
+            meta['botStatus'] = 'unknown'
+        return meta, state
+
     def snapshot(self):
         now = time.time()
         bots = self.bots()
         gateway = self.gateway or next((http_base(env['GATEWAY_URL']) for env in bots.values() if env.get('GATEWAY_URL')), None)
-        players, world_error = world_players(world_url(bots, self.world), self.fetch)
-        in_world = {norm_name(p['name']): p for p in players or []}
-        statuses, gateway_ok = {}, False
-        if gateway:
-            try:
-                code, body = self.fetch(gateway + '/status')
-                if code == 200 and isinstance(body, dict) and isinstance(body.get('bots'), dict):
-                    statuses, gateway_ok = body['bots'], True
-            except (OSError, ValueError):
-                pass
+        # Once per period, concurrently: the world list, the gateway's /status and (at most every
+        # REMOTE_POLL_S, never waited on for longer than one request timeout) the other hosts' cards.
+        world_job = self.pool.submit(world_players, world_url(bots, self.world), self.fetch)
+        status_job = self.pool.submit(self._status, gateway) if gateway else None
+        remote_job = self.pool.submit(self.remote.cards, now) if self.remote else None
         local = processes()
         fleet = fleet_state(self.botting)
-        remote_cards = self.remote.cards(now) if self.remote else {}
+        statuses, gateway_ok = status_job.result() if status_job else ({}, False)
+        # Every connected bot's /state, concurrently on the bounded pool.
+        reads = {}
+        for username, env in bots.items():
+            status = (statuses.get(username) or {}).get('status')
+            if gateway_ok and status and status != 'dead':
+                reads[username] = self.pool.submit(self._state, gateway, username, env['PASSWORD'], status)
+        players, world_error = world_job.result()
+        in_world = {norm_name(p['name']): p for p in players or []}
+        remote_cards = {}
+        if remote_job:
+            try:
+                remote_cards = remote_job.result(timeout=self.timeout)
+            except Exception:   # still in flight (it updates its cache when done) or failed
+                remote_cards = self.remote.cached
         entries = []
         for username, env in bots.items():
             status = (statuses.get(username) or {}).get('status')
             meta, state = {'botStatus': status or ('offline' if gateway_ok else 'unknown')}, None
-            if gateway_ok and status and status != 'dead':
-                try:
-                    code, body = self.fetch(gateway + '/state/' + urllib.parse.quote(username),
-                                          {'Authorization': 'Bearer ' + env['PASSWORD']})
-                    if code == 200 and isinstance(body, dict):
-                        meta = {'botStatus': body.get('botStatus') or status, 'stateAge': body.get('stateAge')}
-                        state = body.get('state')
-                except (OSError, ValueError):
-                    meta['botStatus'] = 'unknown'
+            if username in reads:
+                meta, state = reads[username].result()
             if meta['botStatus'] == 'dead':
                 meta['botStatus'] = 'offline'
             procs = local.get(username)
@@ -572,15 +703,24 @@ class Publisher:
         entry['displayName'] = entry.get('displayName') or seen['name']
         return entry
 
-    def run(self, sink, once=False):
+    def run(self, sink, once=False, clock=time.monotonic, sleep=time.sleep):
+        """Publish one snapshot per period, on tick boundaries.
+
+        A snapshot that overruns its period starts the next one immediately (and the
+        schedule re-anchors there); snapshots run one at a time, never overlapping."""
         period = self.ticks * TICK_MS / 1000.0
+        due = clock()
         while True:
-            started = time.monotonic()
             line = json.dumps(self.snapshot(), separators=(',', ':')) + '\n'
             sink(line)
             if once:
                 return
-            time.sleep(max(0.5, period - (time.monotonic() - started)))
+            due += period
+            now = clock()
+            if now < due:
+                sleep(due - now)
+            else:
+                due = now
 
 
 def ssh_sink_factory(host, receiver):
@@ -605,7 +745,7 @@ def ssh_sink_factory(host, receiver):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--ticks', type=int, default=DEFAULT_TICKS,
-                        help=f'Publish period in game ticks (600 ms each; default and minimum {MIN_TICKS})')
+                        help=f'Publish period in game ticks (600 ms each; default {DEFAULT_TICKS}, minimum {MIN_TICKS})')
     parser.add_argument('--sdk', type=Path, default=Path.home() / 'github/rs-sdk-fork')
     parser.add_argument('--botting', type=Path, default=Path.home() / 'forgejo/2004Scape-Botting')
     parser.add_argument('--gateway', help='Gateway HTTP base URL (default: GATEWAY_URL from the bots\' bot.env)')
@@ -620,7 +760,7 @@ def main():
                         help='Read-only fleet service token (portal:ro); missing = no cards from other hosts')
     args = parser.parse_args()
     if args.ticks < MIN_TICKS:
-        parser.error(f'--ticks must be at least {MIN_TICKS} (one gateway request per bot per {MIN_TICKS * TICK_MS / 1000:g} s at most)')
+        parser.error(f'--ticks must be at least {MIN_TICKS} (one gateway read per bot per tick at most)')
     remote = None
     try:
         token = args.fleet_token_file.expanduser().read_text().strip()

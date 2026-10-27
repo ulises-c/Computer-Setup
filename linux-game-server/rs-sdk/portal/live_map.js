@@ -35,7 +35,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = LiveLogic;
     const root = document.getElementById('live');
     if (!root) return;
     const api = root.dataset.api;
-    const refreshMs = Math.max(600, Number(root.dataset.refreshMs) || 6000);
+    const refreshMs = Math.max(600, Number(root.dataset.refreshMs) || 600);
     const viewport = document.getElementById('live-map');
     const canvas = document.getElementById('live-canvas');
     const image = document.getElementById('live-image');

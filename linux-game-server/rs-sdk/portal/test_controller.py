@@ -502,6 +502,7 @@ class ControllerHTTPTests(unittest.TestCase):
         self.assertIn("script-src 'self'", headers['Content-Security-Policy'])
         self.assertIn("connect-src 'self'", headers['Content-Security-Policy'])
         self.assertIn(b'src="/rs-sdk/bot-controller.js"', body)
+        self.assertIn(b'data-refresh-ms="3000"', body)   # its own poll, not the live map's per-tick default
         self.assertNotIn(b'<script>', body)
         _, headers, _ = self.get('/rs-sdk/bot-controller.js')
         self.assertIn('text/javascript', headers['Content-Type'])

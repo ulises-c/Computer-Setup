@@ -5,10 +5,10 @@ set -euo pipefail
 # LaunchAgent that streams redacted fleet snapshots to the portal over SSH.
 # The script is copied out of the checkout so branch switches can't break it.
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-SSH_HOST="${1:?usage: install-live-publisher.sh <game-server-ssh-alias> [TICKS>=5]}"
-TICKS="${2:-5}"
+SSH_HOST="${1:?usage: install-live-publisher.sh <game-server-ssh-alias> [TICKS>=1]}"
+TICKS="${2:-1}"
 [[ "$SSH_HOST" =~ ^[a-zA-Z0-9_-]+$ ]] || { printf 'error: use an SSH alias\n' >&2; exit 1; }
-[[ "$TICKS" =~ ^[0-9]+$ && "$TICKS" -ge 5 ]] || { printf 'error: TICKS must be an integer >= 5 (600 ms each)\n' >&2; exit 1; }
+[[ "$TICKS" =~ ^[0-9]+$ && "$TICKS" -ge 1 ]] || { printf 'error: TICKS must be an integer >= 1 (600 ms each)\n' >&2; exit 1; }
 [[ "$(uname -s)" == Darwin ]] || { printf 'error: this publisher installer is for the bot workstation Mac\n' >&2; exit 1; }
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/../../../macos-server/lib.sh"

@@ -21,6 +21,9 @@ import live
 from snapshot_policy import read_policy
 
 BASE = '/rs-sdk'
+# The bot controller page keeps its own 3 s poll: its data changes only when the workstation's
+# controller daemon exchanges state (every 5 s), so the live map's per-tick default would only add load.
+CONTROLLER_POLL_MS = 3000
 STYLE = Path(__file__).with_name('theme.css').read_text()
 LIVE_SCRIPT = Path(__file__).with_name('live_map.js').read_bytes()
 CONTROLLER_SCRIPT = Path(__file__).with_name('bot_controller.js').read_bytes()
@@ -393,7 +396,7 @@ class Portal:
         body = f'''<div class="eyebrow">RS-SDK / Fleet control</div><h1>Bot controller</h1>
 <p>Assign a routine from the registry to each account, or stop (in-game logout) or hold it. <b>Bots</b> are the fleet; <b>Regular</b> are your own accounts stored with <code>scripts/player.sh setup</code> on the workstation, which may run the non-fleet routines only. The workstation’s controller daemon applies these requests within a few seconds, re-checks them, and never starts a bot that has a fleet pause, a per-bot latch or a local stop, or one that another agent is controlling. No AI model is involved.</p>
 <p class="note"><b>Headless</b> runs start a client on the workstation and always log out at the end; the card shows the job’s live log. <b>Browser view</b> runs use the real game client embedded in this page as the account’s only client: the routine attaches to it and nothing logs it out. That session lives only while this page and its game view stay open. <code>?show=bots</code> or <code>?show=regular</code> links straight to a filtered list.</p>
-<div id="ctl" class="ctl" data-api="{api}" data-post="{api}/desired" data-frame="{api}/frame" data-show-initial="{show}" data-refresh-ms="{live.DEFAULT_TICKS * live.TICK_MS}">
+<div id="ctl" class="ctl" data-api="{api}" data-post="{api}/desired" data-frame="{api}/frame" data-show-initial="{show}" data-refresh-ms="{CONTROLLER_POLL_MS}">
 <p id="ctl-daemon" class="note live-status">Loading controller state…</p>
 <p id="ctl-auth" class="note"></p>
 <p id="ctl-pause" class="note live-ghosts" hidden></p>

@@ -26,7 +26,7 @@ card and game client stay unchanged. The portal offers:
   bots flagged when they are in the world with no SDK controller, other players
   by name only) and every bot account on the game's own world
   map, with HP, combat level, skills/XP, inventory, equipment and current activity,
-  refreshed every 5 game ticks (~3 s; `?ticks=N` changes it). See [Live map](#live-map).
+  refreshed every game tick (600 ms; `?ticks=N` changes it). See [Live map](#live-map).
 - **Bot controller** (`/rs-sdk/bot-controller/`): the only page that changes
   anything. The owner assigns a registry routine per bot (or Stop / Hold), and the
   workstation's no-LLM controller daemon applies it. See [Bot controller](#bot-controller).
@@ -355,12 +355,23 @@ live_publish.py --host <alias> ──ssh stdin──▶ live.py receive ─▶ ~
   Collapse all*. The expanded set lives in `sessionStorage`, and cards are
   updated in place on every refresh so expansion, focus and scroll survive it.
 - **Freshness.** The receiver stamps snapshots with the server clock; the API
-  marks data stale after 3 publish periods (min 12 s) and the page says so.
+  marks data stale after 3 publish periods, but never sooner than 12 s (so an
+  SSH hiccup at the per-tick rate is not flagged), and the page says so.
   Offline accounts from `accounts.sqlite` (not retired) are listed too.
 - **Refresh rate.** The page polls `/rs-sdk/api/live?ticks=N` every N × 600 ms
-  (default 5, `?ticks=N` on `/rs-sdk/live-map`, 1–1000). The publisher's own
-  period is `install-live-publisher.sh <alias> [TICKS]` (minimum and default 5);
-  polling faster than the publisher only re-reads the same snapshot.
+  (default 1 = every game tick, `?ticks=N` on `/rs-sdk/live-map`, 1–1000; the
+  next poll starts only after the previous one finished). The publisher's own
+  period is `install-live-publisher.sh <alias> [TICKS]` (default and minimum 1);
+  polling faster than the publisher only re-reads the same snapshot. To fit a
+  tick, the publisher reads the connected bots' `GET /state` concurrently on a
+  bounded pool (12 workers, per-request timeout 0.8 × period, at least 0.5 s),
+  reads `/status` and `/playerpositions` once per period and the fleet
+  service's activity cards at most every 5 s. Snapshots run on tick
+  boundaries, one at a time; one that overruns starts the next at once. The
+  gateway still sees one read per bot per period, now every 600 ms. Movement (still/walking/
+  running/teleported) is judged over the frames' last 3 game ticks by their
+  own tick counter, and XP history keeps one sample per 3 s, so both are
+  independent of the period. The bot controller page keeps its own 3 s poll.
 - **Map.** `install.sh` renders `assets/worldmap.png` (2 px/tile) and
   `assets/worldmap.json` (labels) from the game server's own `/worldmap.jag` with
   `worldmap.py`, a port of the web client's MapView ground layer on the same
