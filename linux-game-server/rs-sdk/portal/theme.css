@@ -301,17 +301,37 @@ footer { margin-top: 32px; padding-top: 18px; border-top: 1px solid #68563866; c
   .ctl-duration-boxes { grid-template-columns: repeat(2, minmax(0, 1fr)); flex-basis: 100%; max-width: none; }
   .ctl-duration-sum { padding-bottom: 0; }
 }
-/* Central bank page (/rs-sdk/central-bank/) */
-.cb-items th[scope="row"] { text-align: left; white-space: nowrap; }
+/* Central bank page (/rs-sdk/central-bank/): the item table is a light parchment sheet with black text (owner:
+   "make it black text"); every colour pair below keeps WCAG AA contrast (>= 4.5:1) on it. */
+.cb-sheet { margin: 14px 0 0; padding: 4px 10px 10px; overflow-x: auto; background: #f3ead2; border: 1px solid #a68c58; box-shadow: 0 2px 6px #0008; color: #000; }
+.cb-sheet table { color: #000; }
+.cb-sheet th, .cb-sheet td { color: #000; border-bottom-color: #c9b583; vertical-align: middle; padding: 8px 10px; }
+.cb-sheet thead th { background: #e2d3a8; color: #000; font-weight: bold; letter-spacing: .3px; }
+.cb-sheet thead th[data-sort] { cursor: pointer; user-select: none; }
+.cb-sheet thead th[data-sort]:hover, .cb-sheet thead th[data-sort]:focus-visible { background: #d6c38f; outline: none; }
+.cb-sheet thead th[aria-sort="descending"]::after { content: " \25BC"; font-size: 9px; }
+.cb-sheet thead th[aria-sort="ascending"]::after { content: " \25B2"; font-size: 9px; }
+.cb-sheet tbody tr:nth-child(even) { background: #ebe0c2; }
+.cb-sheet tbody tr:hover { background: #fff8e2; }
+.cb-items th[scope="row"] { text-align: left; white-space: nowrap; font-size: 13px; text-transform: none; letter-spacing: 0; background: transparent; }
 .cb-items .num, .cb-items td.num { text-align: right; white-space: nowrap; }
-.cb-items tr.cb-gone { opacity: .6; }
-.cb-toggle { display: inline-flex; border: 1px solid #685638; background: #090a07dd; margin-right: 8px; vertical-align: middle; }
-.cb-toggle button { font: bold 12px Arial, sans-serif; color: #c5b99a; background: transparent; border: 0; border-left: 1px solid #685638; padding: 5px 14px; cursor: pointer; }
+.cb-items tr.cb-gone th, .cb-items tr.cb-gone td { color: #444; }
+.cb-item { display: inline-flex; align-items: center; gap: 8px; color: #000; font-weight: bold; text-decoration: none; }
+.cb-item:hover span, .cb-item:focus-visible span { text-decoration: underline; }
+.cb-item:focus-visible { outline: 2px solid #000; outline-offset: 2px; }
+.cb-icon { width: 32px; height: 32px; flex: none; object-fit: contain; image-rendering: pixelated; }
+.cb-noicon { display: inline-flex; align-items: center; justify-content: center; border: 1px dashed #8a7444; color: #000; font: bold 14px Georgia, serif; }
+.cb-price { display: block; }
+.cb-sub { display: block; font-size: 11px; color: #333; }
+.cb-note { margin: 8px 2px 0; font-size: 12px; color: #000; }
+.cb-toggle { display: inline-flex; border: 1px solid #6b5530; background: #fffaf0; margin-right: 8px; vertical-align: middle; }
+.cb-toggle button { font: bold 12px Arial, sans-serif; color: #000; background: transparent; border: 0; border-left: 1px solid #6b5530; padding: 5px 12px; cursor: pointer; }
 .cb-toggle button:first-child { border-left: 0; }
-.cb-toggle button:hover:not(:disabled) { color: #ffe139; background: #29251b; }
+.cb-toggle button:hover:not(:disabled) { background: #f0dfae; }
 .cb-toggle button:disabled { cursor: default; }
-.cb-toggle button.cb-sell[aria-pressed="true"] { color: #1a1205; background: var(--gold); }
-.cb-toggle button.cb-keep[aria-pressed="true"] { color: #f0dba4; background: #3b4a2a; }
-.cb-toggle button[aria-pressed="false"]:disabled { opacity: .45; }
-.cb-pending { font-size: 12px; color: #ffcf8a; font-style: italic; }
-.cb-by { font-size: 12px; color: #9d927a; }
+.cb-toggle button.cb-sell[aria-pressed="true"] { color: #000; background: #e0b440; }
+.cb-toggle button.cb-keep[aria-pressed="true"] { color: #fff; background: #2f5d2a; }
+.cb-toggle button.cb-alch[aria-pressed="true"] { color: #fff; background: #5b3b8c; }
+.cb-toggle button[aria-pressed="false"]:disabled { color: #555; }
+.cb-pending { font-size: 12px; color: #7a3b00; font-style: italic; }
+.cb-by { display: block; margin-top: 2px; font-size: 11px; color: #333; }

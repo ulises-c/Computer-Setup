@@ -465,21 +465,36 @@ the store, the HTTP routes and the JS logic.
 ## Central bank
 
 `/rs-sdk/central-bank/` shows what the fleet's central bank account holds and lets the owner
-mark each item **Sell** or **Keep** (default Keep). Producers hand their surplus finished items
-(today the smith's products) to that account; it passes the items marked Sell to the trader bots,
-who sell them at a general store. Design and roles: the bot repo's `docs/central-bank.md`.
+decide per item: **Sell**, **Keep** (default) or **Alch**. Producers hand their surplus finished
+items (today the smith's products) to that account; it passes the items marked Sell to the trader
+bots, who sell each kind at the shop that pays best (the general store or a specialty shop that
+stocks it). **Alch is a placeholder:** no bot alchs yet and nature runes are not buyable by the
+fleet, so the bots treat Alch exactly like Keep until an alcher exists. Design and roles: the bot
+repo's `docs/central-bank.md`; shop prices: its `docs/economy.md`.
 
 The page shows:
 
 - the bank account's state (receiving at its hub or not, heartbeat age, when its bank was last
   counted, coins) and a warning when the workstation's data is older than 60 s;
-- one row per item: count, store value each and in total, kind (surplus product, material,
-  consumable), the mark with when it was set, and a Sell / Keep toggle; a change shows as
-  *pending* until the workstation has applied it, and a rejected change (someone else changed the
-  item since the page loaded) is reported at the top; All / Sell / Keep filters with counts and a
-  total value line;
-- the traders (state, stock to sell, coins), their recent sales with per-item totals, and the
-  bank's recent handovers in and out.
+- the item table, black text on a light sheet, one row per item: icon and name (a link to the
+  item's page on this portal's 2004Scape wiki, new tab), count, value each and in total, the buy
+  price (what a shop charges at its normal stock = the value), **best sell now** (the best shop on
+  the merchant's route and its offer for one unit at that shop's current stock; the tooltip names
+  a better shop off the route, e.g. Taverley's two-handed sword shop), low and high alch (gross,
+  plus the value net of the runes per cast at shop prices), kind, and a Sell / Keep / Alch toggle
+  with when the decision was made; column headers sort (default: value, high first) and carry
+  tooltips; a change shows as *pending* until the workstation has applied it, and a rejected change
+  (someone else changed the item since the page loaded) is reported at the top; All / Sell / Keep /
+  Alch filters with counts and a total value line;
+- the traders (state, stock to sell, coins), their recent sales (item, price, shop) with per-item
+  totals, and the bank's recent handovers in and out.
+
+**Icons** are the wiki's own inventory pictures: the exchange (below) copies each listed item's
+`<Name>.png` from the game server's wiki image cache (`~/forgejo/2004Scape-Wiki/images/osrs`,
+`--wiki-images`; a PNG under 64 KiB, checked) into `$PORTAL_LIVE_DIR/item-icons/`, and the portal
+serves them at `/rs-sdk/central-bank/icons/<Name>.png` (same origin, so the page CSP stays
+`img-src 'self'`). An icon the cache lacks is recorded as a wanted wiki image, the same lazy queue
+the scraped wiki uses; the row shows the item's initial until it arrives.
 
 Data flow (the bot controller's pattern): the portal writes only the owner's pending edits,
 `$PORTAL_CONTROLLER_DIR/central-bank-wanted.json` (+ `central-bank-audit.jsonl`). The bridge on the
@@ -488,7 +503,8 @@ bot workstation (`2004Scape-Botting/tools/central-bank.ts bridge`, launchd
 `ssh <game-server> python3 …/portal/central_bank.py exchange`, which:
 
 - stores the bridge's status, allowlisted, as `$PORTAL_LIVE_DIR/central-bank-status.json`
-  (read-only in the container): holdings, values, marks, traders, sales, edit results;
+  (read-only in the container): holdings, values, prices, marks, traders, sales, edit results,
+  and copies the item icons;
 - prints the pending edits back. The bridge applies them to the fleet service's designations doc
   (compare-and-swap on the doc version, plus a per-item check against the mark the page showed) and
   reports the applied revision in its next status, which retires the edits here.
@@ -497,7 +513,7 @@ Writes (`POST /rs-sdk/api/central-bank/designation`, `{item, policy, expectAt}`)
 owner identity, origin, JSON body and CSRF token as the controller, only for items in the bank's
 list, rate-limited to 60 per minute and audited. The page has the live map's CSP exception
 (`script-src 'self'; connect-src 'self'`) and no frames. Tests: `test_central_bank.py` (status
-shaping, the store, the exchange, the HTTP routes and the JS logic).
+shaping, the store, the exchange and icon copy, the HTTP routes and the JS logic).
 
 ## Install
 

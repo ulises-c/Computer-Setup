@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Central bank page (/rs-sdk/central-bank/): the owner marks each item the fleet's central bank account
-holds as Sell or Keep. No LLM; same trust model as the bot controller (controller.py, README.md).
+holds as Sell, Keep or Alch ('alch' is a placeholder the bots treat as Keep until an alcher exists). No LLM; same trust model as the bot controller (controller.py, README.md).
 
     workstation: bun tools/central-bank.ts bridge          (2004Scape-Botting repo, launchd agent)
       every ~10 s:  page status JSON | ssh game-server python3 central_bank.py exchange
@@ -11,11 +11,18 @@ applied revision back in the next status, which retires them here. The portal on
 CONTROLLER_DIR/central-bank-wanted.json (+ central-bank-audit.jsonl); `exchange` (run on the host, outside
 the container) stores the status allowlisted as LIVE_DIR/central-bank-status.json, which the container
 mounts read-only, so the page can never forge what the bank holds.
+
+Item icons: `exchange` also copies each listed item's inventory icon from the wiki's own image cache
+(WIKI_ROOT/images/osrs/<Name>.png, already fetched there; validated PNG, size-capped) into
+LIVE_DIR/item-icons/, which the portal serves at /rs-sdk/central-bank/icons/<Name>.png. An icon the cache
+lacks is recorded as a wanted wiki image by the portal (the same lazy queue the scraped wiki uses).
 """
 import argparse
 import json
+import os
 from pathlib import Path
 import re
+from urllib.parse import quote
 import sys
 import threading
 import time
@@ -24,7 +31,7 @@ import controller
 
 ITEM = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 '()+-]{0,39}$")
 BOT = controller.BOT
-POLICIES = ('sell', 'keep')
+POLICIES = ('sell', 'keep', 'alch')
 CLASSES = ('surplus', 'material', 'consumable')
 STATES = ('collecting', 'away', 'absent')
 MAX_ITEMS = 400
@@ -33,6 +40,34 @@ MAX_STATUS = 512 * 1024
 STALE_MS = 60_000
 BY = re.compile(r'^[A-Za-z0-9._%+@:-]{1,120}$')
 STORE_ID = re.compile(r'^[a-z0-9-]{1,40}$')
+SHOP_NAME = re.compile(r"^[A-Za-z0-9 '()+.,-]{1,60}$")
+SHOP_KINDS = ('general', 'specialty')
+ICON = re.compile(r"^[A-Z0-9][A-Za-z0-9_'()+-]{0,44}\.png$")
+ICON_MAX = 64 * 1024
+PNG_MAGIC = b'\x89PNG\r\n\x1a\n'
+WIKI_BASE = '/rs-sdk/wiki/2004scape/w/'
+ICON_BASE = '/rs-sdk/central-bank/icons/'
+
+
+def icon_file(name):
+    """The wiki's inventory icon file for an item name ('Steel 2h sword' -> 'Steel_2h_sword.png'; arrows use the
+    5-arrow stack picture), or None for a name that can't be one."""
+    if not isinstance(name, str) or not ITEM.match(name):
+        return None
+    title = name[0].upper() + name[1:]
+    if re.search(r' arrows?$', title):
+        title = re.sub(r' arrows?$', ' arrow', title) + ' 5'
+    file = title.replace(' ', '_') + '.png'
+    return file if ICON.match(file) else None
+
+
+def wiki_href(name):
+    """The item's page on the portal's own 2004Scape wiki (this game's items; same origin)."""
+    return WIKI_BASE + quote(name.replace(' ', '_'), safe="/:(),'!*@$;-._~")
+
+
+def valid_png(data):
+    return isinstance(data, (bytes, bytearray)) and 8 < len(data) <= ICON_MAX and data[:8] == PNG_MAGIC
 
 
 def _int(value, low=0, high=1 << 53):
@@ -48,6 +83,14 @@ def _counts(value, limit=60):
         if isinstance(name, str) and ITEM.match(name) and _int(count) is not None:
             out[name] = count
     return out
+
+
+def _quote(q):
+    """One shop offer {shop, shopName, price, stock, routed, hubTiles}, or None."""
+    if not isinstance(q, dict) or not isinstance(q.get('shop'), str) or not STORE_ID.match(q['shop']) or _int(q.get('price')) is None:
+        return None
+    return {'shop': q['shop'], 'shopName': q['shopName'] if isinstance(q.get('shopName'), str) and SHOP_NAME.match(q['shopName']) else q['shop'],
+            'price': q['price'], 'stock': _int(q.get('stock')), 'routed': q.get('routed') is True, 'hubTiles': _int(q.get('hubTiles'))}
 
 
 def shape_status(raw, received_at):
@@ -67,6 +110,11 @@ def shape_status(raw, received_at):
             'policyAt': _int(row.get('policyAt')) or 0,
             'policyBy': row['policyBy'] if isinstance(row.get('policyBy'), str) and BY.match(row['policyBy']) else None,
             'class': row.get('class') if row.get('class') in CLASSES else None,
+            'buy': _int(row.get('buy')),
+            'sell': _quote(row.get('sell')),
+            'bestAnywhere': _quote(row.get('bestAnywhere')),
+            'lowAlch': _int(row.get('lowAlch')),
+            'highAlch': _int(row.get('highAlch')),
         })
     des = raw.get('designations') if isinstance(raw.get('designations'), dict) else {}
 
@@ -97,6 +145,14 @@ def shape_status(raw, received_at):
         if isinstance(row, dict) and _int(row.get('rev'), 1) is not None and isinstance(row.get('item'), str) and ITEM.match(row['item']):
             results.append({'rev': row['rev'], 'item': row['item'], 'ok': row.get('ok') is True, 'at': _int(row.get('at')) or 0,
                             'error': controller._clean(row.get('error'), 160) if row.get('ok') is not True else None})
+    alch = raw.get('alch') if isinstance(raw.get('alch'), dict) else {}
+    cost = alch.get('castCost') if isinstance(alch.get('castCost'), dict) else {}
+    shops = []
+    for row in (raw.get('shops') if isinstance(raw.get('shops'), list) else [])[:30]:
+        if isinstance(row, dict) and isinstance(row.get('id'), str) and STORE_ID.match(row['id']) and isinstance(row.get('name'), str) and SHOP_NAME.match(row['name']):
+            shops.append({'id': row['id'], 'name': row['name'], 'kind': row.get('kind') if row.get('kind') in SHOP_KINDS else None,
+                          'routed': row.get('routed') is True, 'hubTiles': _int(row.get('hubTiles')),
+                          'measured': controller._clean(row.get('measured'), 120) if isinstance(row.get('measured'), str) else ''})
     return {
         'receivedAt': received_at,
         'generatedAt': _int(raw.get('generatedAt')) or 0,
@@ -115,6 +171,8 @@ def shape_status(raw, received_at):
         'sales': sales,
         'soldTotals': totals,
         'results': results,
+        'alch': {'castCost': {'low': _int(cost.get('low')), 'high': _int(cost.get('high'))}, 'natureBuyable': alch.get('natureBuyable') is True},
+        'shops': shops,
     }
 
 
@@ -171,14 +229,14 @@ class Store:
             return empty_wanted()
 
     def apply(self, request, status, login):
-        """Validate one Sell/Keep change from the page and record it. Returns (http status, body)."""
+        """Validate one Sell/Keep/Alch change from the page and record it. Returns (http status, body)."""
         if self.dir is None:
             return 503, {'error': 'Central bank writes are not configured on this portal.'}
         if not isinstance(request, dict) or set(request) - {'item', 'policy', 'expectAt'}:
             return 400, {'error': 'Expected {item, policy, expectAt}.'}
         item, policy, expect_at = request.get('item'), request.get('policy'), request.get('expectAt')
         if policy not in POLICIES:
-            return 400, {'error': 'policy must be sell or keep'}
+            return 400, {'error': 'policy must be sell, keep or alch'}
         if not isinstance(item, str) or not ITEM.match(item):
             return 400, {'error': 'not an item name'}
         if _int(expect_at) is None:
@@ -223,19 +281,70 @@ def view(status, wanted, auth):
     items = []
     for i in status.get('items', []):
         p = waiting.get(i['name'].lower())
+        icon = icon_file(i['name'])
         items.append({**i, 'total': i['count'] * i['value'] if i.get('value') is not None else None,
-                      'pending': p['policy'] if p else None, 'pendingRev': p['rev'] if p else None})
+                      'pending': p['policy'] if p else None, 'pendingRev': p['rev'] if p else None,
+                      'icon': ICON_BASE + quote(icon) if icon else None, 'wiki': wiki_href(i['name'])})
     return {
         'available': bool(status.get('available')), 'stale': bool(status.get('stale')), 'ageMs': status.get('ageMs'),
         'bank': status.get('bank'), 'items': items, 'designations': status.get('designations'),
         'received': status.get('received', []), 'handedOut': status.get('handedOut', []),
         'traders': status.get('traders', []), 'sales': status.get('sales', []), 'soldTotals': status.get('soldTotals', []),
         'results': status.get('results', []), 'auth': auth,
+        'alch': status.get('alch') or {'castCost': {'low': None, 'high': None}, 'natureBuyable': False}, 'shops': status.get('shops', []),
     }
 
 
-def exchange(stream_in, stream_out, wanted_dir, status_dir, clock=time.time):
-    """Host side of the bridge's ssh call: store its status, answer with the pending edits."""
+def read_icon(directory, file):
+    """Bytes of a stored item icon, or None (unknown name, missing, or not a small PNG)."""
+    if directory is None or not isinstance(file, str) or not ICON.match(file):
+        return None
+    try:
+        dir_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            fd = os.open(file, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=dir_fd)
+        finally:
+            os.close(dir_fd)
+        with os.fdopen(fd, 'rb') as stream:
+            data = stream.read(ICON_MAX + 1)
+    except OSError:
+        return None
+    return bytes(data) if valid_png(data) else None
+
+
+def sync_icons(names, wiki_images, icon_dir):
+    """Copy each item's icon from the wiki image cache into icon_dir when it is missing there or changed (host
+    side, every exchange). Returns the files copied."""
+    copied = []
+    if not wiki_images or not Path(wiki_images).is_dir():
+        return copied
+    target = Path(icon_dir)
+    for name in names:
+        file = icon_file(name)
+        if file is None:
+            continue
+        src = Path(wiki_images) / file
+        try:
+            if not src.is_file() or src.is_symlink() or src.stat().st_size > ICON_MAX:
+                continue
+            dst = target / file
+            if dst.is_file() and dst.stat().st_size == src.stat().st_size:
+                continue
+            data = src.read_bytes()
+        except OSError:
+            continue
+        if not valid_png(data):
+            continue
+        target.mkdir(parents=True, exist_ok=True)
+        tmp = target / (file + '.tmp')
+        tmp.write_bytes(data)
+        tmp.replace(dst)
+        copied.append(file)
+    return copied
+
+
+def exchange(stream_in, stream_out, wanted_dir, status_dir, clock=time.time, wiki_images=None):
+    """Host side of the bridge's ssh call: store its status, copy the listed items' icons, answer with the pending edits."""
     data = stream_in.read(MAX_STATUS + 1)
     applied = None
     if data.strip():
@@ -250,6 +359,10 @@ def exchange(stream_in, stream_out, wanted_dir, status_dir, clock=time.time):
                 Path(status_dir).mkdir(parents=True, exist_ok=True)
                 controller.write_atomic(Path(status_dir) / 'central-bank-status.json', status)
                 applied = status['designations']['appliedRev']
+                try:
+                    sync_icons([i['name'] for i in status['items']], wiki_images, Path(status_dir) / 'item-icons')
+                except OSError as exc:
+                    print(f'central bank exchange: icons not copied ({exc.__class__.__name__})', file=sys.stderr)
     try:
         wanted = parse_wanted(controller.read_json(Path(wanted_dir) / 'central-bank-wanted.json', 256 * 1024))
     except (OSError, ValueError):
@@ -265,9 +378,11 @@ def main():
     base = Path.home() / '.local/share/rs-sdk-portal'
     ex.add_argument('--wanted-dir', type=Path, default=base / 'controller')
     ex.add_argument('--status-dir', type=Path, default=base / 'live')
+    ex.add_argument('--wiki-images', type=Path, default=Path.home() / 'forgejo/2004Scape-Wiki/images/osrs',
+                    help="The wiki's image cache to copy item icons from (missing = no icons)")
     args = parser.parse_args()
     if args.command == 'exchange':
-        exchange(sys.stdin.buffer, sys.stdout, args.wanted_dir, args.status_dir)
+        exchange(sys.stdin.buffer, sys.stdout, args.wanted_dir, args.status_dir, wiki_images=args.wiki_images)
 
 
 if __name__ == '__main__':

@@ -231,6 +231,8 @@ class Portal:
         # bridge's status arrives beside live.json (read-only mount, written on the host by central_bank.py exchange).
         self.bank = central_bank.Store(controller_dir)
         self.bank_status_path = live_path.with_name('central-bank-status.json') if live_path else None
+        # Item icons copied there by the same exchange (central_bank.sync_icons).
+        self.bank_icons_dir = live_path.with_name('item-icons') if live_path else None
         self.game_url = game_url.rstrip('/')
         self.homepage_url = homepage_url.rstrip('/')
         self.wanted = Wanted(wanted)
@@ -415,22 +417,41 @@ class Portal:
             return 400, {'error': 'Body is not JSON.'}
         return self.bank.apply(request, self.bank_status(), self.auth.login(headers))
 
+    def bank_icon(self, file):
+        """Bytes of one item icon, or None; a missing icon is asked of the wiki's lazy image queue."""
+        data = central_bank.read_icon(self.bank_icons_dir, file)
+        if data is None and central_bank.ICON.match(file or ''):
+            self.wanted.record('osrs', 'image', file)
+        return data
+
     def bank_page(self):
         api = f'{BASE}/api/central-bank'
         body = f'''<div class="eyebrow">RS-SDK / Fleet economy</div><h1>Central bank</h1>
-<p>Everything the fleet’s central bank account holds. Producers (today the smith) hand their surplus finished items to it, and new accounts hand over their spare starter kit through the courier. Mark each item <b>Sell</b> to have the bank pass it to the trader bots, who sell it at the general store, or <b>Keep</b> to leave it in the bank. Items are kept until you mark them.</p>
+<p>Everything the fleet’s central bank account holds. Producers (today the smith) hand their surplus finished items to it, and new accounts hand over their spare starter kit through the courier. Decide per item: <b>Sell</b> (the bank passes it to the trader bots, who sell it at the shop that pays best), <b>Keep</b> (it stays in the bank) or <b>Alch</b> (set aside for High Level Alchemy; a placeholder for now: no bot alchs yet, so Alch items stay in the bank like Keep). Items are kept until you decide.</p>
 <div id="cb" class="cb" data-api="{api}" data-post="{api}/designation" data-refresh-ms="{CENTRAL_BANK_POLL_MS}">
 <p id="cb-status" class="note live-status">Loading the central bank…</p>
 <p id="cb-auth" class="note"></p>
 <p id="cb-flash" class="note ctl-flash" role="status" hidden></p>
-<div class="live-toolbar"><div id="cb-filter" class="live-filter" role="group" aria-label="Show items"><button type="button" data-show="all" aria-pressed="true">All <span class="n"></span></button><button type="button" data-show="sell" aria-pressed="false">Sell <span class="n"></span></button><button type="button" data-show="keep" aria-pressed="false">Keep <span class="n"></span></button></div><p id="cb-summary" class="note"></p></div>
-<table class="cb-items"><thead><tr><th scope="col">Item</th><th scope="col" class="num">Count</th><th scope="col" class="num">Value each</th><th scope="col" class="num">Total</th><th scope="col">Kind</th><th scope="col">Sell or keep</th></tr></thead><tbody id="cb-items"></tbody></table>
+<div class="live-toolbar"><div id="cb-filter" class="live-filter" role="group" aria-label="Show items"><button type="button" data-show="all" aria-pressed="true">All <span class="n"></span></button><button type="button" data-show="sell" aria-pressed="false">Sell <span class="n"></span></button><button type="button" data-show="keep" aria-pressed="false">Keep <span class="n"></span></button><button type="button" data-show="alch" aria-pressed="false">Alch <span class="n"></span></button></div><p id="cb-summary" class="note"></p></div>
+<div class="cb-sheet"><table class="cb-items"><thead><tr>
+<th scope="col" data-sort="name" title="Item name: click it to open its page on the 2004Scape wiki (new tab)">Item</th>
+<th scope="col" class="num" data-sort="count" title="How many the central bank holds">Count</th>
+<th scope="col" class="num" data-sort="value" title="The item’s value (this server’s item data): what a shop charges at its normal stock, and the base for every price on this row">Value</th>
+<th scope="col" class="num" data-sort="total" title="Count × value">Total</th>
+<th scope="col" class="num" data-sort="buy" title="What buying one from a shop costs at its normal stock (= the value)">Buy</th>
+<th scope="col" class="num" data-sort="sell" title="What the best shop the merchant visits pays for ONE unit right now, at that shop’s current stock (each unit sold lowers its offer until its stock drains back, about one unit a minute)">Best sell now</th>
+<th scope="col" class="num" data-sort="lowAlch" title="Low Level Alchemy: 40 % of the value (Magic 21)">Low alch</th>
+<th scope="col" class="num" data-sort="highAlch" title="High Level Alchemy: 60 % of the value (Magic 55)">High alch</th>
+<th scope="col" title="Surplus product, material or consumable">Kind</th>
+<th scope="col" title="Sell, Keep or Alch (Alch acts as Keep until a bot alchs)">Decision</th>
+</tr></thead><tbody id="cb-items"></tbody></table>
+<p id="cb-alch-note" class="cb-note"></p></div>
 <p id="cb-empty" class="note" hidden></p>
 <h2>Traders</h2><div id="cb-traders"></div>
 <h2>Recent sales</h2><div id="cb-sales"></div>
 <h2>Recent handovers</h2><div id="cb-moves"></div>
 </div>
-<p class="note">Counts come from the bank account’s own bank view, pushed by the workstation every few seconds. A change you make shows as <i>pending</i> until the workstation has written it to the fleet service; the bank reads the marks before each handover to the traders, and a trader takes only items it can sell. Writes need the owner’s Tailscale identity; every change is audited.</p>
+<p class="note">Counts come from the bank account’s own bank view, pushed by the workstation every few seconds. A change you make shows as <i>pending</i> until the workstation has written it to the fleet service; the bank reads the marks before each handover to the traders, and a trader takes only items it can sell. Shop prices are measured on this server (general store and specialty shops; the bot repo’s docs/economy.md); icons come from the wiki’s image cache. Writes need the owner’s Tailscale identity; every change is audited.</p>
 <script src="{BASE}/central-bank.js" defer></script>'''
         return layout('Central bank', body, footer='Companion · central bank: marks are applied by the workstation bridge; no free-form commands.')
 
@@ -483,7 +504,7 @@ class Portal:
             cards = [
                 ('01 / LIVE', 'Live map', BASE + '/live-map', 'Where every bot is right now, with stats, inventory, equipment and current activity.'),
                 ('02 / CONTROL', 'Bot controller', BASE + '/bot-controller/', 'Start, stop or hold registry routines per bot; the workstation daemon applies them safely.'),
-                ('03 / ECONOMY', 'Central bank', BASE + '/central-bank/', 'What the fleet’s central bank holds; mark each item to sell or keep.'),
+                ('03 / ECONOMY', 'Central bank', BASE + '/central-bank/', 'What the fleet’s central bank holds; decide per item: sell, keep or alch.'),
                 ('04 / ACCOUNTS', 'Account Database', BASE + '/accounts', 'Account status, purpose, logins and recorded deaths. Credentials stay private.'),
                 ('05 / PERFORMANCE', 'Benchmarks', BASE + '/benchmarks', 'Compare full runs, timings and routine versions. Inspect individual steps.'),
                 ('06 / THIS GAME', '2004Scape Wiki', BASE + '/wiki/2004scape', WIKIS['2004scape'][2]),
@@ -773,6 +794,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == BASE + '/api/central-bank':
             data = json.dumps(portal.bank_json(self.headers), separators=(',', ':')).encode('utf-8')
             self.send_plain(200, data, 'application/json', 'no-store', "default-src 'none'; frame-ancestors 'none'; sandbox")
+            return
+        if path.startswith(BASE + '/central-bank/icons/'):
+            data = portal.bank_icon(unquote(path[len(BASE + '/central-bank/icons/'):]))
+            if data is None:
+                self.send_error(404)
+                return
+            self.send_plain(200, data, 'image/png', 'public, max-age=3600', "default-src 'none'; sandbox")
             return
         if path == BASE + '/central-bank.js':
             self.send_plain(200, CENTRAL_BANK_SCRIPT, 'text/javascript; charset=utf-8', 'no-cache', "default-src 'none'")

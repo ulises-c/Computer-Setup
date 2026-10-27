@@ -24,7 +24,9 @@ def bridge_status(**extra):
         'generatedAt': now,
         'bank': {'bot': 'bot_bank', 'state': 'collecting', 'at': now, 'hub': 'Varrock west', 'holdingsAt': now, 'coins': 25},
         'items': [
-            {'name': 'Steel sword', 'count': 14, 'value': 325, 'policy': 'keep', 'policyAt': 0, 'policyBy': None, 'class': 'surplus'},
+            {'name': 'Steel sword', 'count': 14, 'value': 325, 'policy': 'keep', 'policyAt': 0, 'policyBy': None, 'class': 'surplus',
+             'buy': 325, 'sell': {'shop': 'varrock-swordshop', 'shopName': 'Varrock Swordshop', 'price': 195, 'stock': 4, 'routed': True, 'hubTiles': 40},
+             'bestAnywhere': None, 'lowAlch': 130, 'highAlch': 195},
             {'name': 'Iron platebody', 'count': 0, 'value': 560, 'policy': 'sell', 'policyAt': 1000, 'policyBy': 'portal:owner@example.com', 'class': 'surplus'},
             {'name': 'Bronze axe', 'count': 1, 'value': 16, 'policy': 'keep', 'policyAt': 0, 'policyBy': None, 'class': None},
         ],
@@ -35,6 +37,8 @@ def bridge_status(**extra):
         'sales': [{'at': now, 'bot': 'bot_staid', 'item': 'Steel sword', 'price': 130, 'store': 'varrock-general'}],
         'soldTotals': [{'item': 'Steel sword', 'count': 1, 'coins': 130}],
         'results': [],
+        'alch': {'castCost': {'low': 32, 'high': 40}, 'natureBuyable': False},
+        'shops': [{'id': 'varrock-general', 'name': 'Varrock General Store', 'kind': 'general', 'routed': True, 'hubTiles': 35, 'measured': '40 % - 3 %/unit'}],
     }
     doc.update(extra)
     return doc
@@ -59,6 +63,28 @@ class ShapeTests(unittest.TestCase):
         self.assertEqual(s['receivedAt'], 7)
         with self.assertRaises(ValueError):
             central_bank.shape_status([], 1)
+
+    def test_prices_quotes_and_alch_are_shaped(self):
+        raw = bridge_status()
+        raw['items'][0]['sell']['shopName'] = '<script>'
+        raw['items'][0]['bestAnywhere'] = {'shop': '../x', 'price': 9}
+        raw['items'][1].update(policy='alch', sell={'shop': 'varrock-general', 'price': 'lots'})
+        raw['shops'].append({'id': 'Bad Id', 'name': 'x'})
+        s = central_bank.shape_status(raw, 1)
+        row = s['items'][0]
+        self.assertEqual((row['buy'], row['lowAlch'], row['highAlch']), (325, 130, 195))
+        self.assertEqual(row['sell'], {'shop': 'varrock-swordshop', 'shopName': 'varrock-swordshop', 'price': 195, 'stock': 4, 'routed': True, 'hubTiles': 40})
+        self.assertIsNone(row['bestAnywhere'])
+        self.assertEqual((s['items'][1]['policy'], s['items'][1]['sell']), ('alch', None))
+        self.assertEqual(s['alch'], {'castCost': {'low': 32, 'high': 40}, 'natureBuyable': False})
+        self.assertEqual([x['id'] for x in s['shops']], ['varrock-general'])
+
+    def test_icon_and_wiki_names(self):
+        self.assertEqual(central_bank.icon_file('Steel 2h sword'), 'Steel_2h_sword.png')
+        self.assertEqual(central_bank.icon_file('bronze arrow'), 'Bronze_arrow_5.png')
+        self.assertIsNone(central_bank.icon_file('../etc/passwd'))
+        self.assertEqual(central_bank.wiki_href("Wizard's hat"), "/rs-sdk/wiki/2004scape/w/Wizard's_hat")
+        self.assertEqual(central_bank.wiki_href('Steel 2h sword'), '/rs-sdk/wiki/2004scape/w/Steel_2h_sword')
 
     def test_bad_policy_and_counts_fall_back(self):
         raw = bridge_status()
@@ -96,6 +122,14 @@ class StoreTests(unittest.TestCase):
         audit = (self.dir / 'central-bank-audit.jsonl').read_text().splitlines()
         self.assertEqual(len(audit), 2)
         self.assertEqual(json.loads(audit[0])['by'], OWNER)
+
+    def test_alch_is_a_decision(self):
+        status, body = self.store.apply({'item': 'Steel sword', 'policy': 'alch', 'expectAt': 0}, self.status, OWNER)
+        self.assertEqual((status, body['edit']['policy']), (200, 'alch'))
+        row = next(i for i in central_bank.view(self.status, self.store.read(), {})['items'] if i['name'] == 'Steel sword')
+        self.assertEqual(row['pending'], 'alch')
+        self.assertEqual((row['icon'], row['wiki']), ('/rs-sdk/central-bank/icons/Steel_sword.png', '/rs-sdk/wiki/2004scape/w/Steel_sword'))
+        self.assertEqual(central_bank.parse_wanted(json.loads(json.dumps(self.store.read())))['edits']['steel sword']['policy'], 'alch')
 
     def test_rejects_unknown_items_and_bad_requests(self):
         cases = [({'item': 'Rune scimitar', 'policy': 'sell', 'expectAt': 0}, 400), ({'item': 'Steel sword', 'policy': 'burn', 'expectAt': 0}, 400),
@@ -140,6 +174,27 @@ class ExchangeTests(unittest.TestCase):
             central_bank.exchange(io.BytesIO(b'[1,2]'), out, wanted_dir, status_dir)
             self.assertEqual(len(json.loads(out.getvalue())['edits']), 2)
             self.assertEqual(json.loads((status_dir / 'central-bank-status.json').read_text())['receivedAt'], 9000)
+
+
+PNG = b'\x89PNG\r\n\x1a\n' + b'\x00' * 32
+
+
+class IconTests(unittest.TestCase):
+    def test_exchange_copies_valid_icons_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wiki, wanted_dir, status_dir = Path(tmp) / 'wiki', Path(tmp) / 'controller', Path(tmp) / 'live'
+            wiki.mkdir(); wanted_dir.mkdir()
+            (wiki / 'Steel_sword.png').write_bytes(PNG)
+            (wiki / 'Iron_platebody.png').write_bytes(b'<html>not a png</html>')
+            (wiki / 'Bronze_axe.png').write_bytes(PNG + b'\x00' * central_bank.ICON_MAX)
+            central_bank.exchange(io.BytesIO(json.dumps(bridge_status()).encode()), io.StringIO(), wanted_dir, status_dir, wiki_images=wiki)
+            self.assertEqual(sorted(p.name for p in (status_dir / 'item-icons').iterdir()), ['Steel_sword.png'])
+            self.assertEqual(central_bank.read_icon(status_dir / 'item-icons', 'Steel_sword.png'), PNG)
+            for bad in ('../central-bank-status.json', 'Iron_platebody.png', 'x.png', ''):
+                self.assertIsNone(central_bank.read_icon(status_dir / 'item-icons', bad))
+            # No wiki checkout: the exchange still works, just without icons.
+            central_bank.exchange(io.BytesIO(json.dumps(bridge_status()).encode()), io.StringIO(), wanted_dir, Path(tmp) / 'live2', wiki_images=Path(tmp) / 'none')
+            self.assertFalse((Path(tmp) / 'live2' / 'item-icons').exists())
 
 
 class CentralBankHTTPTests(unittest.TestCase):
@@ -207,6 +262,17 @@ class CentralBankHTTPTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, 501)
         caught.exception.close()
 
+    def test_icons_are_served_and_missing_ones_wanted(self):
+        (self.root / 'live' / 'item-icons').mkdir()
+        (self.root / 'live' / 'item-icons' / 'Steel_sword.png').write_bytes(PNG)
+        status, headers, body = self.get('/rs-sdk/central-bank/icons/Steel_sword.png')
+        self.assertEqual((status, headers['Content-Type'], body), (200, 'image/png', PNG))
+        for path in ('/rs-sdk/central-bank/icons/Iron_platebody.png', '/rs-sdk/central-bank/icons/..%2Flive.json', '/rs-sdk/central-bank/icons/'):
+            with self.assertRaises(HTTPError) as caught:
+                self.get(path)
+            self.assertEqual(caught.exception.code, 404, path)
+            caught.exception.close()
+
     def test_redirect_without_slash(self):
         with self.assertRaises(HTTPError) as caught:
             class NoRedirect(__import__('urllib.request').request.HTTPRedirectHandler):
@@ -229,17 +295,31 @@ const items = [
   {name: 'Iron platebody', count: 0, value: 560, policy: 'sell', pending: null},
   {name: 'Mystery', count: 2, value: null, policy: 'keep', pending: null},
 ];
+items.push({name: 'Steel 2h sword', count: 3, value: 1000, total: 3000, policy: 'alch', pending: null, lowAlch: 400, highAlch: 600,
+  sell: {shop: 'varrock-general', shopName: 'Varrock General Store', price: 400, stock: 0, routed: true},
+  bestAnywhere: {shop: 'gaius-two-handed-shop', shopName: "Gaius' Two-Handed Shop (Taverley)", price: 600, routed: false}});
 console.log(JSON.stringify([L.counts(items), L.visible(items, 'sell').map(i => i.name), L.summary(items), L.ago(30000), L.ago(600000),
-  L.bankLine({available: false}, 0).text, L.bankLine({available: true, stale: false, bank: {bot: 'bot_bank', state: 'collecting', at: 1000, hub: 'Varrock west', holdingsAt: 0, coins: 0}}, 6000).text, L.kindText('surplus'), L.kindText(null)]));
+  L.bankLine({available: false}, 0).text, L.bankLine({available: true, stale: false, bank: {bot: 'bot_bank', state: 'collecting', at: 1000, hub: 'Varrock west', holdingsAt: 0, coins: 0}}, 6000).text, L.kindText('surplus'), L.kindText(null),
+  L.sortItems(items, 'value', 'desc').map(i => i.name), L.sortItems(items, 'name', 'asc').map(i => i.name), L.visible(items, 'alch').map(i => i.name),
+  L.sellText(items[3]), L.alchText(600, 40), L.alchNote({castCost: {low: 32, high: 40}, natureBuyable: false}), L.sellText(items[2]).price]));
 """
         out = json.loads(subprocess.run(['node', '-e', probe, str(script)], capture_output=True, text=True, timeout=20, check=True).stdout)
-        self.assertEqual(out[0], {'all': 3, 'sell': 2, 'keep': 1})
+        self.assertEqual(out[0], {'all': 4, 'sell': 2, 'keep': 1, 'alch': 1})
         self.assertEqual(out[1], ['Steel sword', 'Iron platebody'])
-        self.assertEqual(out[2], '2 kinds held, worth 4,550 gp at store value (+1 without a known value); marked Sell: 2 kinds (4,550 gp).')
+        self.assertEqual(out[2], '3 kinds held, worth 7,550 gp at store value (+1 without a known value); marked Sell: 2 kinds (4,550 gp); marked Alch: 1 kinds (3,000 gp).')
         self.assertEqual((out[3], out[4]), ('30 s ago', '10 min ago'))
         self.assertIn('has not reported', out[5])
         self.assertEqual(out[6], 'bot_bank is at the Varrock west bank, receiving (heartbeat 5 s ago).')
         self.assertEqual((out[7], out[8]), ('Surplus product', 'Other'))
+        self.assertEqual(out[9], ['Steel 2h sword', 'Iron platebody', 'Steel sword', 'Mystery'])   # by value, unknown last
+        self.assertEqual(out[10], ['Iron platebody', 'Mystery', 'Steel 2h sword', 'Steel sword'])
+        self.assertEqual(out[11], ['Steel 2h sword'])
+        self.assertEqual(out[12]['price'], '400 gp')
+        self.assertEqual(out[12]['where'], 'Varrock General Store (stock 0)')
+        self.assertIn('not on the merchant', out[12]['title'])
+        self.assertEqual(out[13], {'price': '600 gp', 'net': 'net 560'})
+        self.assertIn('Nature runes are not buyable', out[14])
+        self.assertEqual(out[15], '?')
 
 
 if __name__ == '__main__':
