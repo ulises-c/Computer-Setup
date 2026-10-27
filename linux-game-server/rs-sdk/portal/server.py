@@ -16,6 +16,7 @@ import time
 from typing import cast
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
 
+import central_bank
 import controller
 import live
 from snapshot_policy import read_policy
@@ -27,6 +28,9 @@ CONTROLLER_POLL_MS = 3000
 STYLE = Path(__file__).with_name('theme.css').read_text()
 LIVE_SCRIPT = Path(__file__).with_name('live_map.js').read_bytes()
 CONTROLLER_SCRIPT = Path(__file__).with_name('bot_controller.js').read_bytes()
+CENTRAL_BANK_SCRIPT = Path(__file__).with_name('central_bank.js').read_bytes()
+# The central bank page's poll: its status changes only when the workstation bridge pushes (every ~10 s).
+CENTRAL_BANK_POLL_MS = 5000
 WIKIS = {
     '2004scape': ('2004Scape Wiki', '2004scape-wiki.sqlite', 'This game, one page per thing: server data, bot observations and wiki context selected by the deployment policy at publication time.'),
     'rs-sdk': ('RS-SDK Wiki', 'rs-sdk-wiki.sqlite', 'Server-specific knowledge generated from RS-SDK. Search only the local game wiki.'),
@@ -42,7 +46,7 @@ def layout(title, body, wiki=False, footer='Companion · no database downloads o
     theme = 'wiki-page' if wiki else 'game-page'
     menu_title = 'Wiki navigation' if wiki else 'Game tools'
     note = 'Read-only article cache' if wiki else 'Account state is not live presence.'
-    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)} · RS-SDK</title><style>{STYLE}</style></head><body class="{theme}"><div class="world"><header><nav><a class="brand" href="{BASE}/">RS-SDK / companion</a><a href="{BASE}/live-map">Live map</a><a href="{BASE}/bot-controller/">Bot controller</a><a href="{BASE}/accounts">Accounts</a><a href="{BASE}/benchmarks">Benchmarks</a><a href="{BASE}/wiki">Wikis</a></nav></header><div class="page-layout"><aside class="tool-menu"><h2>{menu_title}</h2><a href="{BASE}/">Companion home</a><a href="{BASE}/live-map">Live map</a><a href="{BASE}/bot-controller/">Bot controller</a><a href="{BASE}/accounts">Account Database</a><a href="{BASE}/benchmarks">Benchmarks</a><a href="{BASE}/wiki/2004scape">2004Scape Wiki</a><a href="{BASE}/wiki/rs-sdk">RS-SDK Wiki</a><a href="{BASE}/wiki/scraped">Scraped Wiki</a><p>{note}</p></aside><main>{body}<footer>{footer}</footer></main></div></div></body></html>'''
+    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)} · RS-SDK</title><style>{STYLE}</style></head><body class="{theme}"><div class="world"><header><nav><a class="brand" href="{BASE}/">RS-SDK / companion</a><a href="{BASE}/live-map">Live map</a><a href="{BASE}/bot-controller/">Bot controller</a><a href="{BASE}/central-bank/">Central bank</a><a href="{BASE}/accounts">Accounts</a><a href="{BASE}/benchmarks">Benchmarks</a><a href="{BASE}/wiki">Wikis</a></nav></header><div class="page-layout"><aside class="tool-menu"><h2>{menu_title}</h2><a href="{BASE}/">Companion home</a><a href="{BASE}/live-map">Live map</a><a href="{BASE}/bot-controller/">Bot controller</a><a href="{BASE}/central-bank/">Central bank</a><a href="{BASE}/accounts">Account Database</a><a href="{BASE}/benchmarks">Benchmarks</a><a href="{BASE}/wiki/2004scape">2004Scape Wiki</a><a href="{BASE}/wiki/rs-sdk">RS-SDK Wiki</a><a href="{BASE}/wiki/scraped">Scraped Wiki</a><p>{note}</p></aside><main>{body}<footer>{footer}</footer></main></div></div></body></html>'''
 
 
 @contextmanager
@@ -223,6 +227,10 @@ class Portal:
         # Fleet-bot logins for the owner's browser view (controller.py exchange, mode 600; read-only mount).
         self.controller_frames_path = live_path.with_name('controller-frames.json') if live_path else None
         self.auth = controller.Auth(owner_login, public_origin)
+        # Central bank page: the owner's pending Sell/Keep edits share the controller's writable mount; the
+        # bridge's status arrives beside live.json (read-only mount, written on the host by central_bank.py exchange).
+        self.bank = central_bank.Store(controller_dir)
+        self.bank_status_path = live_path.with_name('central-bank-status.json') if live_path else None
         self.game_url = game_url.rstrip('/')
         self.homepage_url = homepage_url.rstrip('/')
         self.wanted = Wanted(wanted)
@@ -386,6 +394,46 @@ class Portal:
         self.controller.audit_frame(account, self.auth.login(headers))
         return 200, {'ok': True, 'account': account, 'url': url}
 
+    def bank_status(self):
+        return central_bank.read_status(self.bank_status_path)
+
+    def bank_json(self, headers):
+        allowed, reason = self.auth.can_write(headers)
+        login = self.auth.login(headers)
+        auth = {'login': login, 'canWrite': allowed and self.bank.dir is not None,
+                'reason': reason if not allowed else (None if self.bank.dir is not None else 'Writes are not configured on this portal.'),
+                'csrf': self.auth.token(login) if allowed else None}
+        return central_bank.view(self.bank_status(), self.bank.read(), auth)
+
+    def bank_write(self, headers, body):
+        error = self.auth.check_write(headers)
+        if error:
+            return 403, {'error': error}
+        try:
+            request = json.loads(body)
+        except ValueError:
+            return 400, {'error': 'Body is not JSON.'}
+        return self.bank.apply(request, self.bank_status(), self.auth.login(headers))
+
+    def bank_page(self):
+        api = f'{BASE}/api/central-bank'
+        body = f'''<div class="eyebrow">RS-SDK / Fleet economy</div><h1>Central bank</h1>
+<p>Everything the fleet’s central bank account holds. Producers (today the smith) hand their surplus finished items to it, and new accounts hand over their spare starter kit through the courier. Mark each item <b>Sell</b> to have the bank pass it to the trader bots, who sell it at the general store, or <b>Keep</b> to leave it in the bank. Items are kept until you mark them.</p>
+<div id="cb" class="cb" data-api="{api}" data-post="{api}/designation" data-refresh-ms="{CENTRAL_BANK_POLL_MS}">
+<p id="cb-status" class="note live-status">Loading the central bank…</p>
+<p id="cb-auth" class="note"></p>
+<p id="cb-flash" class="note ctl-flash" role="status" hidden></p>
+<div class="live-toolbar"><div id="cb-filter" class="live-filter" role="group" aria-label="Show items"><button type="button" data-show="all" aria-pressed="true">All <span class="n"></span></button><button type="button" data-show="sell" aria-pressed="false">Sell <span class="n"></span></button><button type="button" data-show="keep" aria-pressed="false">Keep <span class="n"></span></button></div><p id="cb-summary" class="note"></p></div>
+<table class="cb-items"><thead><tr><th scope="col">Item</th><th scope="col" class="num">Count</th><th scope="col" class="num">Value each</th><th scope="col" class="num">Total</th><th scope="col">Kind</th><th scope="col">Sell or keep</th></tr></thead><tbody id="cb-items"></tbody></table>
+<p id="cb-empty" class="note" hidden></p>
+<h2>Traders</h2><div id="cb-traders"></div>
+<h2>Recent sales</h2><div id="cb-sales"></div>
+<h2>Recent handovers</h2><div id="cb-moves"></div>
+</div>
+<p class="note">Counts come from the bank account’s own bank view, pushed by the workstation every few seconds. A change you make shows as <i>pending</i> until the workstation has written it to the fleet service; the bank reads the marks before each handover to the traders, and a trader takes only items it can sell. Writes need the owner’s Tailscale identity; every change is audited.</p>
+<script src="{BASE}/central-bank.js" defer></script>'''
+        return layout('Central bank', body, footer='Companion · central bank: marks are applied by the workstation bridge; no free-form commands.')
+
     def controller_page(self, params=None):
         api = f'{BASE}/api/controller'
         show = (params or {}).get('show', [''])[0]
@@ -435,14 +483,15 @@ class Portal:
             cards = [
                 ('01 / LIVE', 'Live map', BASE + '/live-map', 'Where every bot is right now, with stats, inventory, equipment and current activity.'),
                 ('02 / CONTROL', 'Bot controller', BASE + '/bot-controller/', 'Start, stop or hold registry routines per bot; the workstation daemon applies them safely.'),
-                ('03 / ACCOUNTS', 'Account Database', BASE + '/accounts', 'Account status, purpose, logins and recorded deaths. Credentials stay private.'),
-                ('04 / PERFORMANCE', 'Benchmarks', BASE + '/benchmarks', 'Compare full runs, timings and routine versions. Inspect individual steps.'),
-                ('05 / THIS GAME', '2004Scape Wiki', BASE + '/wiki/2004scape', WIKIS['2004scape'][2]),
-                ('06 / SERVER KNOWLEDGE', 'RS-SDK Wiki', BASE + '/wiki/rs-sdk', WIKIS['rs-sdk'][2]),
-                ('07 / EXTERNAL KNOWLEDGE', 'Scraped Wiki', BASE + '/wiki/scraped', WIKIS['scraped'][2]),
-                ('08 / GAME', 'Play', self.game_url + '/', 'Open the browser client. Your human and bot accounts share this SDK world.'),
-                ('09 / RANKINGS', 'HiScores', self.game_url + '/hiscores', 'Browse the game server’s player rankings.'),
-                ('10 / TRADING', 'Grand Exchange', self.game_url + '/market.html', 'Open the server’s market and trading page.'),
+                ('03 / ECONOMY', 'Central bank', BASE + '/central-bank/', 'What the fleet’s central bank holds; mark each item to sell or keep.'),
+                ('04 / ACCOUNTS', 'Account Database', BASE + '/accounts', 'Account status, purpose, logins and recorded deaths. Credentials stay private.'),
+                ('05 / PERFORMANCE', 'Benchmarks', BASE + '/benchmarks', 'Compare full runs, timings and routine versions. Inspect individual steps.'),
+                ('06 / THIS GAME', '2004Scape Wiki', BASE + '/wiki/2004scape', WIKIS['2004scape'][2]),
+                ('07 / SERVER KNOWLEDGE', 'RS-SDK Wiki', BASE + '/wiki/rs-sdk', WIKIS['rs-sdk'][2]),
+                ('08 / EXTERNAL KNOWLEDGE', 'Scraped Wiki', BASE + '/wiki/scraped', WIKIS['scraped'][2]),
+                ('09 / GAME', 'Play', self.game_url + '/', 'Open the browser client. Your human and bot accounts share this SDK world.'),
+                ('10 / RANKINGS', 'HiScores', self.game_url + '/hiscores', 'Browse the game server’s player rankings.'),
+                ('11 / TRADING', 'Grand Exchange', self.game_url + '/market.html', 'Open the server’s market and trading page.'),
             ]
             body = '<div class="eyebrow">2004SCAPE / RS-SDK WORLD</div><h1>RS-SDK Companion</h1><p>Play, inspect your accounts, compare runs and explore what the bots know.</p><div class="grid">'
             body += ''.join(f'<a class="card" href="{esc(url)}"><small>{tag}</small><b>{title} ↗</b><p>{description}</p></a>' for tag, title, url, description in cards)
@@ -454,6 +503,10 @@ class Portal:
             raise Redirect(BASE + '/bot-controller/')
         if path == BASE + '/bot-controller/':
             return 200, self.controller_page(params)
+        if path == BASE + '/central-bank':
+            raise Redirect(BASE + '/central-bank/')
+        if path == BASE + '/central-bank/':
+            return 200, self.bank_page()
         if path == BASE + '/accounts':
             q = params.get('q', [''])[0][:200]
             page = int(params.get('page', ['1'])[0])
@@ -717,6 +770,13 @@ class Handler(BaseHTTPRequestHandler):
             data = json.dumps(portal.controller_json(self.headers), separators=(',', ':')).encode('utf-8')
             self.send_plain(200, data, 'application/json', 'no-store', "default-src 'none'; frame-ancestors 'none'; sandbox")
             return
+        if path == BASE + '/api/central-bank':
+            data = json.dumps(portal.bank_json(self.headers), separators=(',', ':')).encode('utf-8')
+            self.send_plain(200, data, 'application/json', 'no-store', "default-src 'none'; frame-ancestors 'none'; sandbox")
+            return
+        if path == BASE + '/central-bank.js':
+            self.send_plain(200, CENTRAL_BANK_SCRIPT, 'text/javascript; charset=utf-8', 'no-cache', "default-src 'none'")
+            return
         if path == BASE + '/bot-controller.js':
             self.send_plain(200, CONTROLLER_SCRIPT, 'text/javascript; charset=utf-8', 'no-cache', "default-src 'none'")
             return
@@ -762,7 +822,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Referrer-Policy', 'no-referrer')
         frame_policy = "; frame-src 'self'" if path == BASE + '/wiki/scraped/article' or path.startswith(BASE + '/wiki/scraped/w/') else ''
-        if path in (BASE + '/live-map', BASE + '/bot-controller/'):
+        if path in (BASE + '/live-map', BASE + '/bot-controller/', BASE + '/central-bank/'):
             # The only scripted pages: their own static script and same-origin JSON requests.
             frame_policy = "; script-src 'self'; connect-src 'self'"
         if path == BASE + '/bot-controller/':
@@ -776,7 +836,7 @@ class Handler(BaseHTTPRequestHandler):
         url = urlsplit(self.path)
         path = url.path if url.path == BASE or url.path.startswith(BASE + '/') else BASE + url.path
         portal = cast(PortalHTTPServer, self.server).portal
-        if path not in (BASE + '/api/controller/desired', BASE + '/api/controller/frame'):
+        if path not in (BASE + '/api/controller/desired', BASE + '/api/controller/frame', BASE + '/api/central-bank/designation'):
             # Everything else stays read-only, as before the controller existed.
             self.send_error(501, 'Unsupported method')
             return
@@ -791,6 +851,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == BASE + '/api/controller/frame':
                 status, payload = portal.controller_frame(self.headers, body)
+            elif path == BASE + '/api/central-bank/designation':
+                status, payload = portal.bank_write(self.headers, body)
             else:
                 status, payload = portal.controller_write(self.headers, body)
         except OSError:

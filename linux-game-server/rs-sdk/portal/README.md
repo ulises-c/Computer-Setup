@@ -462,6 +462,43 @@ The page has the same CSP exception as the live map
 `test_controller.py` covers registry and run validation, status shaping, auth/CSRF,
 the store, the HTTP routes and the JS logic.
 
+## Central bank
+
+`/rs-sdk/central-bank/` shows what the fleet's central bank account holds and lets the owner
+mark each item **Sell** or **Keep** (default Keep). Producers hand their surplus finished items
+(today the smith's products) to that account; it passes the items marked Sell to the trader bots,
+who sell them at a general store. Design and roles: the bot repo's `docs/central-bank.md`.
+
+The page shows:
+
+- the bank account's state (receiving at its hub or not, heartbeat age, when its bank was last
+  counted, coins) and a warning when the workstation's data is older than 60 s;
+- one row per item: count, store value each and in total, kind (surplus product, material,
+  consumable), the mark with when it was set, and a Sell / Keep toggle; a change shows as
+  *pending* until the workstation has applied it, and a rejected change (someone else changed the
+  item since the page loaded) is reported at the top; All / Sell / Keep filters with counts and a
+  total value line;
+- the traders (state, stock to sell, coins), their recent sales with per-item totals, and the
+  bank's recent handovers in and out.
+
+Data flow (the bot controller's pattern): the portal writes only the owner's pending edits,
+`$PORTAL_CONTROLLER_DIR/central-bank-wanted.json` (+ `central-bank-audit.jsonl`). The bridge on the
+bot workstation (`2004Scape-Botting/tools/central-bank.ts bridge`, launchd
+`net.computer-setup.rs-central-bank-bridge`) runs every ~10 s
+`ssh <game-server> python3 …/portal/central_bank.py exchange`, which:
+
+- stores the bridge's status, allowlisted, as `$PORTAL_LIVE_DIR/central-bank-status.json`
+  (read-only in the container): holdings, values, marks, traders, sales, edit results;
+- prints the pending edits back. The bridge applies them to the fleet service's designations doc
+  (compare-and-swap on the doc version, plus a per-item check against the mark the page showed) and
+  reports the applied revision in its next status, which retires the edits here.
+
+Writes (`POST /rs-sdk/api/central-bank/designation`, `{item, policy, expectAt}`) need the same
+owner identity, origin, JSON body and CSRF token as the controller, only for items in the bank's
+list, rate-limited to 60 per minute and audited. The page has the live map's CSP exception
+(`script-src 'self'; connect-src 'self'`) and no frames. Tests: `test_central_bank.py` (status
+shaping, the store, the exchange, the HTTP routes and the JS logic).
+
 ## Install
 
 Copy this directory to the game server's Computer-Setup checkout (or deploy the

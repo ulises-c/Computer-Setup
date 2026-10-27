@@ -301,3 +301,17 @@ footer { margin-top: 32px; padding-top: 18px; border-top: 1px solid #68563866; c
   .ctl-duration-boxes { grid-template-columns: repeat(2, minmax(0, 1fr)); flex-basis: 100%; max-width: none; }
   .ctl-duration-sum { padding-bottom: 0; }
 }
+/* Central bank page (/rs-sdk/central-bank/) */
+.cb-items th[scope="row"] { text-align: left; white-space: nowrap; }
+.cb-items .num, .cb-items td.num { text-align: right; white-space: nowrap; }
+.cb-items tr.cb-gone { opacity: .6; }
+.cb-toggle { display: inline-flex; border: 1px solid #685638; background: #090a07dd; margin-right: 8px; vertical-align: middle; }
+.cb-toggle button { font: bold 12px Arial, sans-serif; color: #c5b99a; background: transparent; border: 0; border-left: 1px solid #685638; padding: 5px 14px; cursor: pointer; }
+.cb-toggle button:first-child { border-left: 0; }
+.cb-toggle button:hover:not(:disabled) { color: #ffe139; background: #29251b; }
+.cb-toggle button:disabled { cursor: default; }
+.cb-toggle button.cb-sell[aria-pressed="true"] { color: #1a1205; background: var(--gold); }
+.cb-toggle button.cb-keep[aria-pressed="true"] { color: #f0dba4; background: #3b4a2a; }
+.cb-toggle button[aria-pressed="false"]:disabled { opacity: .45; }
+.cb-pending { font-size: 12px; color: #ffcf8a; font-style: italic; }
+.cb-by { font-size: 12px; color: #9d927a; }
