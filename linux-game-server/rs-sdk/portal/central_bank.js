@@ -60,6 +60,8 @@ if (typeof module !== 'undefined') module.exports = CentralBankLogic;
     const api = root.dataset.api, post = root.dataset.post, refreshMs = Number(root.dataset.refreshMs) || 5000;
     const $ = id => document.getElementById(id);
     let data = null, show = 'all', busy = new Set(), lastResultRev = 0;
+    // Edits this page made that were still pending at the last refresh (item -> policy), to confirm them when applied.
+    const waiting = new Map();
     const el = (tag, attrs = {}, ...kids) => {
         const e = document.createElement(tag);
         for (const [k, v] of Object.entries(attrs)) {
@@ -84,7 +86,7 @@ if (typeof module !== 'undefined') module.exports = CentralBankLogic;
                 body: JSON.stringify({ item: item.name, policy, expectAt: item.policyAt || 0 }) });
             const body = await r.json().catch(() => ({}));
             if (!r.ok) flash(`${item.name}: ${body.error || `HTTP ${r.status}`}`, true);
-            else flash(`${item.name} → ${policy === 'sell' ? 'Sell' : 'Keep'}: pending until the workstation applies it (usually within 10 s).`, false);
+            else { waiting.set(item.name, policy); flash(`${item.name} → ${policy === 'sell' ? 'Sell' : 'Keep'}: pending until the workstation applies it (usually within 10 s).`, false); }
         } catch (e) { flash(`${item.name}: could not reach the portal (${e.message}).`, true); }
         busy.delete(item.name);
         await load();
@@ -142,6 +144,14 @@ if (typeof module !== 'undefined') module.exports = CentralBankLogic;
             ...(data.received || []).map(r => [r.at, 'received from', r.from, r.items]),
             ...(data.handedOut || []).map(r => [r.at, 'handed to', r.to, r.items]),
         ].sort((a, b) => b[0] - a[0]).map(([at, dir, who, items]) => [time(at), dir, who, itemsText(items)])));
+        const done = [];
+        for (const [name, policy] of waiting) {
+            const i = data.items.find(x => x.name === name);
+            if (!i || i.pending) continue;
+            waiting.delete(name);
+            if (i.policy === policy) done.push(`${name} is now marked ${policy === 'sell' ? 'Sell' : 'Keep'}`);
+        }
+        if (done.length) flash(`${done.join('; ')}.`, false);
         const failed = (data.results || []).filter(r => !r.ok && r.rev > lastResultRev);
         if (failed.length) { flash(`Not applied: ${failed.map(r => `${r.item} (${r.error})`).join('; ')}`, true); }
         lastResultRev = Math.max(lastResultRev, ...(data.results || []).map(r => r.rev), 0);
