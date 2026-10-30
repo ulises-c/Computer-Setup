@@ -367,8 +367,7 @@ class Portal:
         return f'{parts.scheme}://{parts.netloc}'
 
     def controller_frame(self, headers, body):
-        """Owner-only: the real game client's URL for one account's browser view. Fleet bots get their
-        login filled in (owner decision); regular accounts get the login screen. Never logged."""
+        """Owner-only game URL; requested browser runs receive their stored login. Never logged."""
         error = self.auth.check_write(headers)
         if error:
             return 403, {'error': error}
@@ -379,6 +378,10 @@ class Portal:
         account = request.get('account') if isinstance(request, dict) else None
         if not self.controller.frame_rate.allow():
             return 429, {'error': 'Too many requests; wait a minute.'}
+        with self.controller.lock:
+            return self._controller_frame_locked(headers, account)
+
+    def _controller_frame_locked(self, headers, account):
         rows = {r['username']: r for r in self.controller_json(headers)['bots']}
         row = rows.get(account) if isinstance(account, str) else None
         if row is None or not row['launchable']:
@@ -386,15 +389,17 @@ class Portal:
         offer = row['frame']
         if not offer['offered']:
             return 409, {'error': offer['reason'] or 'The browser view is not available for this account.'}
-        if row['type'] == 'player':
+        if not offer['login']:
             url = controller.frame_url(self.game_url, row['displayName'])
         else:
-            password = controller.read_frames(self.controller_frames_path).get(account) if self.controller_frames_path else None
-            if not password:
-                return 409, {'error': 'The workstation has not sent this bot\u2019s login yet; it does within a few seconds of a Browser view start.', 'retry': True}
-            url = controller.frame_url(self.game_url, account, password)
+            entry = row.get('desired') or {}
+            credential = controller.read_frames(self.controller_frames_path).get(account) if self.controller_frames_path else None
+            if (entry.get('action') != 'run' or entry.get('mode') != 'browser' or not credential
+                    or credential['rev'] != entry.get('rev')):
+                return 409, {'error': 'The workstation has not sent this account\u2019s login yet; it does within a few seconds of a Browser view start.', 'retry': True}
+            url = controller.frame_url(self.game_url, credential['username'], credential['password'])
         self.controller.audit_frame(account, self.auth.login(headers))
-        return 200, {'ok': True, 'account': account, 'url': url}
+        return 200, {'ok': True, 'account': account, 'url': url, 'login': offer['login']}
 
     def bank_status(self):
         return central_bank.read_status(self.bank_status_path)
@@ -471,6 +476,12 @@ class Portal:
 <p id="ctl-pause" class="note live-ghosts" hidden></p>
 <p id="ctl-maint" class="note live-ghosts" role="status" hidden></p>
 <p id="ctl-flash" class="note ctl-flash" role="status" hidden></p>
+<section id="ctl-activity" class="ctl-bulk"><h2>Start an activity</h2>
+<label>Category <select id="ctl-category" aria-label="Category"></select></label>
+<label>Activity <select id="ctl-group" aria-label="Activity"></select></label>
+<label>Method <select id="ctl-method" aria-label="Method"></select></label>
+<fieldset id="ctl-activity-accounts"><legend>Eligible accounts</legend></fieldset>
+<div id="ctl-activity-form" class="ctl-form"></div></section>
 <div class="live-toolbar"><div id="ctl-filter" class="live-filter" role="group" aria-label="Show accounts">{filters}</div>
 <div class="live-bulk"><button id="ctl-active" type="button" aria-pressed="false">Assigned / online only</button><button id="ctl-expand-all" type="button">Expand all</button><button id="ctl-collapse-all" type="button">Collapse all</button><button id="ctl-select-none" type="button">Clear selection</button></div></div>
 <details id="ctl-bulk" class="ctl-bulk"><summary>Bulk action on <span id="ctl-selected">0</span> selected accounts (headless only)</summary><div id="ctl-bulk-form" class="ctl-form"></div></details>

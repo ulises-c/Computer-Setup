@@ -81,6 +81,18 @@ const ControllerLogic = (() => {
         if (!rows.length) return [];
         return rows.map(r => r.eligible || []).reduce((acc, list) => acc.filter(id => list.includes(id)));
     };
+    const activityCatalog = (registry, rows) => {
+        const available = new Set(rows.filter(r => r.launchable).flatMap(r => r.eligible || []));
+        const groups = [];
+        for (const spec of (registry?.routines || [])) {
+            if (!available.has(spec.id) || spec.hidden || spec.enabled === false) continue;
+            const category = spec.category || 'misc', group = spec.group || spec.label;
+            let entry = groups.find(g => g.category === category && g.group === group);
+            if (!entry) { entry = { category, group, methods: [] }; groups.push(entry); }
+            entry.methods.push({ id: spec.id, label: spec.method || spec.label });
+        }
+        return groups;
+    };
     const TONES = {
         running: 'ok', finished: 'ok', stopped: 'ok', done: 'ok', starting: 'busy', stopping: 'busy', switching: 'busy', pending: 'busy',
         blocked: 'warn', foreign: 'warn', reserved: 'warn', expired: 'warn', unknown: 'warn', held: 'muted', idle: 'muted', rejected: 'bad', failed: 'bad', error: 'bad',
@@ -157,7 +169,8 @@ const ControllerLogic = (() => {
     // Headless always; the browser view only for session routines and one account at a time.
     const modesFor = (spec, count) => (spec && spec.runner === 'session' && count === 1 ? ['headless', 'browser'] : ['headless']);
     const showLog = row => !!(row && row.controller && Array.isArray(row.controller.log) && row.controller.log.length);
-    const frameNote = row => `${row.type === 'player' ? `Log in as ${row.displayName || row.username} in the game view below (your password never touches the portal).` : 'The game view logs this bot in by itself.'} `
+    const frameNeedsOpen = slot => !slot.firstChild;
+    const frameNote = (row, openedWithLogin = !!row.frame?.login) => `${row.type === 'player' && !openedWithLogin ? `Log in as ${row.displayName || row.username} in the game view below.${row.frame?.login ? ' This existing view cannot log in automatically; log in here or close and reopen the game view.' : ''}` : 'The game view logs this account in by itself.'} `
         + 'This game client is the account\u2019s only client and lives only while this page and its game view stay open: log out in the game before closing it, or the server keeps the player in the world for a few minutes.';
     // Dangerous routines (registry `danger`): a warning next to the routine and an explicit confirm before Start.
     const dangerOf = spec => (spec && typeof spec.danger === 'string' && spec.danger.trim() ? spec.danger : null);
@@ -201,7 +214,7 @@ const ControllerLogic = (() => {
         }
     };
     return { MAX_DURATION_S, DURATION_PARTS, isDuration, splitDuration, durationText, durationTotal, durationError, checkDuration, durationRange,
-        routineById, defaults, validateArgs, commonEligible, tone, desiredText, ago, heartbeat, maintenanceBanner, reservationText, validShow, initialShow, withShow, visible, isActive, label, modesFor, showLog, frameNote, dangerOf, optionLabel, dangerConfirm, allowedValues, valueText, offReasons, pickValue, parseSet };
+        routineById, defaults, validateArgs, commonEligible, activityCatalog, tone, desiredText, ago, heartbeat, maintenanceBanner, reservationText, validShow, initialShow, withShow, visible, isActive, label, modesFor, showLog, frameNote, frameNeedsOpen, dangerOf, optionLabel, dangerConfirm, allowedValues, valueText, offReasons, pickValue, parseSet };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = ControllerLogic;
 
@@ -285,6 +298,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         // Keep what the owner picked across rebuilds (registry or per-account choices changed).
         const prevPick = container.querySelector('select[aria-label="Routine"]')?.value;
         const prevValues = Object.fromEntries([...container.querySelectorAll('.ctl-fields [name]')].map(i => [i.name, i.value]));
+        const prevMode = container.querySelector('select[name="mode"]')?.value;
+        const durationValues = () => Object.fromEntries([...container.querySelectorAll('.ctl-duration')].map(n => [n.querySelector('input[type="hidden"]').name, Object.fromEntries([...n.querySelectorAll('[data-part]')].map(i => [i.dataset.part, i.value]))]));
+        const prevDurations = durationValues();
         container.replaceChildren();
         const registry = payload.registry;
         const form = el('form', 'ctl-actions');
@@ -315,7 +331,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
             choices: spec && row.controller && row.controller.gather && payload.gatherChoices ? payload.gatherChoices[row.controller.gather[spec.id]] : null,
         }));
         const offFor = spec => { const accs = accountsFor(spec); return (a, chosen) => (a.type === 'enum' ? L.offReasons(a, chosen, accs) : {}); };
-        const renderFields = (kept) => {
+        const renderFields = (kept, durations = {}) => {
             // A kept duration is its total seconds (hidden input); an unparsable one falls back to the default.
             const kept0 = a => { const v = kept && kept[a.name] !== undefined ? String(kept[a.name]) : ''; return /^\d{1,7}$/.test(v) ? Number(v) : L.defaults(L.routineById(registry, pick.value))[a.name]; };
             fields.replaceChildren();
@@ -330,8 +346,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
             danger.hidden = !warn;
             danger.textContent = warn ? `\u26a0 Dangerous: ${warn}` : '';
             const values = L.defaults(spec);
-            const modes = L.modesFor(spec, opts.single ? 1 : 2);
-            const keep = modePick.value;
+            const modes = L.modesFor(spec, opts.activity ? botsOf().length : opts.single ? 1 : 2);
+            const keep = modePick.value || prevMode;
             modePick.replaceChildren(...modes.map(m => { const o = el('option', '', m === 'browser' ? 'Browser view (game in this page)' : 'Headless (workstation client, logs out at the end)'); o.value = m; return o; }));
             modePick.value = modes.includes(keep) ? keep : 'headless';
             modeLabel.hidden = modes.length < 2;
@@ -339,7 +355,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
             const off = offFor(spec);
             for (const a of spec ? spec.args : []) {
                 if (L.isDuration(a)) {
-                    const box = durationField(a, kept0(a), () => setDisabled(container));
+                    const box = durationField(a, kept0(a), () => setDisabled(container), durations[a.name]);
                     fields.append(box.node);
                     inputs[a.name] = box.input;
                     continue;
@@ -363,7 +379,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
                     chosen[a.name] = input.value;
                     // A later arg may depend on this one: re-render the fields, keeping what still applies.
                     if (spec.args.some(b => b.valuesBy && b.valuesBy.arg === a.name) || spec.gather) {
-                        input.addEventListener('change', () => renderFields(Object.fromEntries(Object.entries(inputs).map(([k, i]) => [k, i.value]))));
+                        input.addEventListener('change', () => renderFields(Object.fromEntries(Object.entries(inputs).map(([k, i]) => [k, i.value])), durationValues()));
                     }
                 } else {
                     input = el('input');
@@ -375,10 +391,11 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
                 fields.append(label);
                 inputs[a.name] = input;
             }
+            setDisabled(container);
         };
         pick.addEventListener('change', () => renderFields());
         if (prevPick && eligible.includes(prevPick)) pick.value = prevPick;
-        renderFields(prevPick === pick.value ? prevValues : undefined);
+        renderFields(prevPick === pick.value ? prevValues : undefined, prevPick === pick.value ? prevDurations : undefined);
         const button = (label, action, cls) => {
             const b = el('button', cls, label);
             b.type = 'button';
@@ -405,12 +422,13 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         };
         const buttons = el('div', 'ctl-buttons');
         if (eligible.length) {
+            if (opts.activity) pick.hidden = true;
             form.append(pick, danger, fields, notes, modeLabel, desc);
             buttons.append(button('Start', 'run', 'ctl-start'));
         } else {
             form.append(el('p', 'ctl-desc', opts.noneText || 'No registry routine is launchable for this bot.'));
         }
-        buttons.append(button('Stop', 'stop', 'ctl-stop'), button('Hold', 'hold', 'ctl-hold'), button('Clear request', 'clear', 'ctl-clear'));
+        if (!opts.activity) buttons.append(button('Stop', 'stop', 'ctl-stop'), button('Hold', 'hold', 'ctl-hold'), button('Clear request', 'clear', 'ctl-clear'));
         form.append(buttons, errors);
         form.addEventListener('submit', ev => ev.preventDefault());
         container.append(form);
@@ -420,7 +438,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
     // Days / Hours / Minutes / Seconds boxes for a duration arg; the hidden input (name = the arg) holds the total
     // seconds that validateArgs and the request use. Carries on change (blur, Enter, spinner): 90 min -> 1 h 30 min.
     let durationIds = 0;
-    function durationField(a, value, onState) {
+    function durationField(a, value, onState, rawParts) {
         const id = `ctl-dur-${++durationIds}`;
         const node = el('fieldset', 'ctl-duration');
         node.append(el('legend', '', a.label));
@@ -467,7 +485,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
             b.addEventListener('input', () => update(false));
             b.addEventListener('change', () => update(true));
         }
-        show(L.splitDuration(value));
+        show(rawParts || L.splitDuration(value));
         update(false);
         return { node, input };
     }
@@ -539,7 +557,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
     // ---- browser view (the real game client in an iframe; URL from the owner-only endpoint) ----
     async function openFrame(name, retries) {
         const card = cards.get(name);
-        if (!card || !canWrite()) return;
+        if (!card || !canWrite() || !L.frameNeedsOpen(card.frameSlot) || card.frameButton.dataset.busy) return;
         setExpanded(name, true);
         card.frameButton.disabled = true;
         card.frameButton.dataset.busy = '1';
@@ -558,7 +576,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
                     frame.referrerPolicy = 'no-referrer';
                     frame.src = out.url;
                     card.frameSlot.replaceChildren(frame);
-                    card.frameNote.textContent = L.frameNote(card.row);
+                    card.frameAutoLogin = out.login === true;
+                    card.frameNote.textContent = L.frameNote(card.row, card.frameAutoLogin);
                     card.frameNote.hidden = false;
                     card.node.classList.add('has-frame');
                     card.frameWhy.textContent = '';
@@ -651,6 +670,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         // Game view: offered per the portal's rules; an open frame is never torn down by a refresh.
         const frame = row.frame || { offered: false, reason: 'Not available.' };
         const isOpen = !!card.frameSlot.firstChild;
+        if (isOpen) card.frameNote.textContent = L.frameNote(row, card.frameAutoLogin);
         card.frameBox.hidden = !row.launchable && !isOpen;
         card.frameButton.hidden = !frame.offered && !isOpen;
         card.frameButton.disabled = !canWrite();
@@ -683,6 +703,64 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         setDisabled(bulkForm);
     }
 
+    const categoryPick = document.getElementById('ctl-category');
+    const groupPick = document.getElementById('ctl-group');
+    const methodPick = document.getElementById('ctl-method');
+    const activityAccounts = document.getElementById('ctl-activity-accounts');
+    const activityForm = document.getElementById('ctl-activity-form');
+    const activitySelected = new Set();
+    let activitySig = '', activityFormSig = '';
+    function options(select, items, placeholder) {
+        const current = select.value;
+        const signature = JSON.stringify(items);
+        if (select.dataset.options === signature) return;
+        select.dataset.options = signature;
+        const blank = el('option', '', placeholder); blank.value = '';
+        select.replaceChildren(blank, ...items.map(([value, text]) => { const o = el('option', '', text); o.value = value; return o; }));
+        select.value = items.some(([value]) => value === current) ? current : '';
+    }
+    function renderActivity() {
+        if (!payload) return;
+        const catalog = L.activityCatalog(payload.registry, payload.bots);
+        options(categoryPick, [...new Set(catalog.map(g => g.category))].map(c => [c, ({skills:'Skills', quests:'Quests', misc:'Miscellaneous'})[c] || c]), 'Choose category');
+        options(groupPick, catalog.filter(g => g.category === categoryPick.value).map(g => [g.group, g.group]), 'Choose activity');
+        const group = catalog.find(g => g.category === categoryPick.value && g.group === groupPick.value);
+        options(methodPick, (group?.methods || []).map(m => [m.id, m.label]), 'Choose method');
+        const id = methodPick.value;
+        const rows = payload.bots.filter(r => id && r.launchable && r.eligible.includes(id));
+        for (const name of activitySelected) if (!rows.some(r => r.username === name)) activitySelected.delete(name);
+        const sig = JSON.stringify([id, rows.map(r => [r.username, L.label(r), r.type]), [...activitySelected]]);
+        if (sig !== activitySig) {
+            activitySig = sig;
+            const legend = el('legend', '', 'Eligible accounts');
+            activityAccounts.replaceChildren(legend, ...rows.map(row => {
+                const label = el('label', 'ctl-field');
+                const input = el('input'); input.type = 'checkbox'; input.checked = activitySelected.has(row.username);
+                input.setAttribute('aria-label', `Activity account ${L.label(row)}`);
+                input.addEventListener('change', () => { if (input.checked) activitySelected.add(row.username); else activitySelected.delete(row.username); renderActivity(); });
+                label.append(input, document.createTextNode(L.label(row))); return label;
+            }));
+            if (!rows.length) activityAccounts.append(el('p', 'ctl-desc', id ? 'No eligible accounts.' : 'Choose a method first.'));
+        }
+        const selectedRows = () => payload.bots.filter(r => activitySelected.has(r.username) && r.launchable && r.eligible.includes(methodPick.value));
+        const chosen = selectedRows();
+        activityForm.hidden = !id || !chosen.length;
+        if (id && chosen.length) {
+            const formSig = `${registrySig}|${id}|${chosen.map(r => r.username).join(',')}|${choicesSig(chosen)}`;
+            if (formSig !== activityFormSig) {
+                activityFormSig = formSig;
+                buildForm(activityForm, [id], () => selectedRows().map(r => r.username), { activity: true, accountsOf: selectedRows });
+            }
+            setDisabled(activityForm);
+        }
+    }
+    for (const pick of [categoryPick, groupPick, methodPick]) pick.addEventListener('change', () => {
+        if (pick === categoryPick) { groupPick.value = ''; methodPick.value = ''; }
+        if (pick === groupPick) methodPick.value = '';
+        activitySelected.clear();
+        renderActivity();
+    });
+
     function render() {
         const hb = L.heartbeat(payload);
         daemonLine.textContent = hb.text;
@@ -706,7 +784,15 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
             if (list.children[index] !== card.node) list.insertBefore(card.node, list.children[index] || null);
             if (!card.node.hidden) shown++;
         });
-        for (const [name, card] of cards) if (!seen.has(name)) { card.node.remove(); cards.delete(name); }
+        for (const [name, card] of cards) if (!seen.has(name)) {
+            if (card.frameSlot.firstChild) {
+                card.node.hidden = false;
+                shown++;
+                card.check.disabled = true;
+                for (const button of card.formBox.querySelectorAll('button')) button.disabled = true;
+                card.message.textContent = 'Account missing from the latest report; the open game view remains connected.';
+            } else { card.node.remove(); cards.delete(name); }
+        }
         empty.hidden = shown > 0;
         empty.textContent = payload.bots.length ? (show === 'regular' && !payload.bots.some(r => r.type === 'player')
             ? 'No regular accounts yet: on the workstation run scripts/player.sh setup \'Your Name\' (it asks for the password there).' : 'No account matches this filter.') : 'No accounts known yet.';
@@ -717,6 +803,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Controller
         }
         activeButton.setAttribute('aria-pressed', String(activeOnly));
         renderBulk();
+        renderActivity();
     }
 
     async function poll() {

@@ -424,9 +424,11 @@ workstation (`2004Scape-Botting/tools/bot-controller.ts`, launchd
 
 - stores the daemon's status, allowlisted, as `$PORTAL_LIVE_DIR/controller-status.json`
   (read-only in the container);
-- writes the fleet-bot logins the daemon sends for browser-view requests (`frames`) to
-  `$PORTAL_LIVE_DIR/controller-frames.json` (mode 600, read-only in the container), never into
-  the status;
+- writes the fleet and regular account browser-view login bundles (`frames`, each containing revision,
+  username and password from the daemon) to `$PORTAL_LIVE_DIR/controller-frames.json` (mode 600,
+  read-only in the container), never into the status. The endpoint uses the username and password
+  from the same validated bundle, matches its revision to the current request, and rejects older
+  entries without a username; mixed protocol versions cannot auto-login;
 - prints `$PORTAL_CONTROLLER_DIR/desired.json` back to the daemon.
 
 The daemon's report includes the routine registry. The portal validates requests

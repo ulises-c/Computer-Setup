@@ -54,6 +54,26 @@ def status_doc(**extra):
 
 
 class RegistryTests(unittest.TestCase):
+    def test_activity_metadata_survives_status_validation_and_rejects_bad_values(self):
+        raw = json.loads(json.dumps(REGISTRY))
+        raw['routines'][0].update(category='skills', group='Mining', method='Copper and tin')
+        status = controller.shape_status(status_doc(registry=raw), 1)
+        entry = status['registry']['routines'][0]
+        self.assertEqual((entry['category'], entry['group'], entry['method']), ('skills', 'Mining', 'Copper and tin'))
+        self.assertEqual(status['registry']['routines'][1]['category'], 'misc')
+        for key, value in [('category', 'bad'), ('group', ''), ('method', 'a\nb'), ('group', 'x' * 61)]:
+            bad = json.loads(json.dumps(raw))
+            bad['routines'][0][key] = value
+            with self.assertRaises(ValueError):
+                controller.parse_registry(bad)
+
+    def test_activity_first_controls_render_before_accounts(self):
+        import server
+        page = server.Portal.controller_page(self=None)
+        self.assertLess(page.index('id="ctl-activity"'), page.index('id="ctl-bots"'))
+        for field in ('ctl-category', 'ctl-group', 'ctl-method', 'ctl-activity-accounts', 'ctl-activity-form'):
+            self.assertIn(f'id="{field}"', page)
+
     def test_registry_parses_and_rejects_unsafe_entries(self):
         reg = controller.parse_registry(REGISTRY)
         self.assertEqual([r['id'] for r in reg['routines']], ['mining', 'chickens', 'pioneer-fish', 'onboard', 'scavenge', 'thieving'])
@@ -204,12 +224,13 @@ class StatusTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         desired_dir, status_dir = Path(tmp.name) / 'controller', Path(tmp.name) / 'live'
-        doc = status_doc(frames={'bot_wormlike': FLEET_PASSWORD, 'player_cantpvm': 'never', 'bot_x;y': 'bad', 'bot_apehood': 'x' * 65})
+        doc = status_doc(frames={'bot_wormlike': {'rev': 1, 'username': 'bot_wormlike', 'password': FLEET_PASSWORD}, 'player_cantpvm': {'rev': 2, 'username': 'Cant Pvm', 'password': 'fake player&password'}, 'bot_x;y': {'rev': 1, 'password': 'bad'}, 'bot_apehood': {'rev': 1, 'password': 'x' * 65}})
         controller.exchange(io.BytesIO(json.dumps(doc).encode()), io.StringIO(), desired_dir, status_dir, clock=lambda: 1000)
         self.assertNotIn(FLEET_PASSWORD, (status_dir / 'controller-status.json').read_text())
+        self.assertNotIn('fake player&password', (status_dir / 'controller-status.json').read_text())
         frames = status_dir / 'controller-frames.json'
         self.assertEqual(frames.stat().st_mode & 0o777, 0o600)
-        self.assertEqual(controller.read_frames(frames), {'bot_wormlike': FLEET_PASSWORD})
+        self.assertEqual(controller.read_frames(frames), {'bot_wormlike': {'rev': 1, 'username': 'bot_wormlike', 'password': FLEET_PASSWORD}, 'player_cantpvm': {'rev': 2, 'username': 'Cant Pvm', 'password': 'fake player&password'}})
         # The next report without frames clears them.
         controller.exchange(io.BytesIO(json.dumps(status_doc()).encode()), io.StringIO(), desired_dir, status_dir, clock=lambda: 1001)
         self.assertEqual(controller.read_frames(frames), {})
@@ -471,7 +492,7 @@ class ControllerHTTPTests(unittest.TestCase):
         raw['bots'][PLAYER] = {'type': 'player', 'displayName': 'Cant Pvm', 'presence': 'absent', 'state': 'idle'}
         raw['bots']['bot_apehood'] = {'state': 'running', 'client': 'headless'}
         controller.write_atomic(root / 'live' / 'controller-status.json', controller.shape_status(raw, int(time.time() * 1000)))
-        controller.write_atomic(root / 'live' / 'controller-frames.json', {'bot_wormlike': FLEET_PASSWORD, 'bot_apehood': FLEET_PASSWORD})
+        controller.write_atomic(root / 'live' / 'controller-frames.json', {'bot_wormlike': {'rev': 2, 'username': 'bot_wormlike', 'password': FLEET_PASSWORD}, 'bot_apehood': {'rev': 3, 'username': 'bot_apehood', 'password': FLEET_PASSWORD}, PLAYER: {'rev': 1, 'username': 'Cant Pvm', 'password': 'fake player&password'}})
         http = server.PortalHTTPServer(('127.0.0.1', 0), server.Handler)
         self.addCleanup(http.server_close)
         http.portal = server.Portal(Path('/nonexistent'), 'https://game.example', 'https://home.example', live_path=root / 'live' / 'live.json',
@@ -495,6 +516,59 @@ class ControllerHTTPTests(unittest.TestCase):
         except HTTPError as error:
             with error:
                 return error.code, json.loads(error.read() or b'{}')
+
+    def test_frame_rejects_stale_and_legacy_credentials_until_matching_revision(self):
+        _, _, body = self.get('/rs-sdk/api/controller', {'Tailscale-User-Login': OWNER})
+        owner = {'Tailscale-User-Login': OWNER, 'Origin': ORIGIN, 'Content-Type': 'application/json', 'X-CSRF-Token': json.loads(body)['auth']['csrf']}
+        request = {'action': 'run', 'bots': [PLAYER], 'routine': 'mining', 'args': {}, 'mode': 'browser'}
+        self.assertEqual(self.post(request, owner)[0], 200)
+        rev = json.loads((self.root / 'controller' / 'desired.json').read_text())['bots'][PLAYER]['rev']
+        path = self.root / 'live' / 'controller-frames.json'
+        frame = lambda: self.post({'account': PLAYER}, owner, '/rs-sdk/api/controller/frame')
+        for old in ('fake old password', {'rev': rev, 'password': 'fake old password'}, {'rev': rev - 1, 'username': 'Cant Pvm', 'password': 'fake old password'}, {'rev': True, 'username': 'Cant Pvm', 'password': 'fake old password'}):
+            controller.write_atomic(path, {PLAYER: old})
+            status, out = frame()
+            self.assertEqual(status, 409)
+            self.assertTrue(out['retry'])
+            self.assertNotIn('fake old password', json.dumps(out))
+        controller.write_atomic(path, {PLAYER: {'rev': rev, 'username': 'Cant Pvm', 'password': 'fake new password'}})
+        self.assertEqual(frame()[0], 200)
+        self.assertEqual(self.post(request, owner)[0], 200)
+        status, out = frame()
+        self.assertEqual(status, 409)
+        self.assertTrue(out['retry'])
+
+    def test_frame_bundle_rejects_nonprintable_and_wrong_identities(self):
+        for password in ('fake\n', 'fake\r', 'fake\x00', 'faké', ''):
+            self.assertEqual(controller.shape_frames({PLAYER: {'rev': 1, 'username': 'Cant Pvm', 'password': password}}), {})
+        for account, username in ((PLAYER, 'Bad\n'), ('bot_wormlike', 'bot_apehood'), (PLAYER, ''), (PLAYER, 'bad<script>')):
+            self.assertEqual(controller.shape_frames({account: {'rev': 1, 'username': username, 'password': 'fake'}}), {})
+
+    def test_split_status_and_frame_rotation_uses_bundle_identity(self):
+        _, _, body = self.get('/rs-sdk/api/controller', {'Tailscale-User-Login': OWNER})
+        owner = {'Tailscale-User-Login': OWNER, 'Origin': ORIGIN, 'Content-Type': 'application/json', 'X-CSRF-Token': json.loads(body)['auth']['csrf']}
+        request = {'action': 'run', 'bots': [PLAYER], 'routine': 'mining', 'args': {}, 'mode': 'browser'}
+        self.assertEqual(self.post(request, owner)[0], 200)
+        rev = json.loads((self.root / 'controller' / 'desired.json').read_text())['bots'][PLAYER]['rev']
+        path = self.root / 'live' / 'controller-frames.json'
+        frame = lambda: self.post({'account': PLAYER}, owner, '/rs-sdk/api/controller/frame')
+        controller.write_atomic(path, {PLAYER: {'rev': rev, 'username': 'New Person', 'password': 'fake new'}})
+        status, out = frame()
+        self.assertEqual(status, 200)
+        self.assertIn('bot=New%20Person', out['url'])
+        self.assertIn('password=fake%20new', out['url'])
+        _, _, public = self.get('/rs-sdk/api/controller')
+        self.assertNotIn('fake new', public.decode())
+
+    def test_frame_revision_must_be_a_safe_positive_integer(self):
+        self.assertEqual(controller.shape_frames({PLAYER: {'rev': 1 << 53, 'password': 'fake'}}), {})
+
+    def test_existing_manual_frame_explains_how_to_attach(self):
+        script = Path(__file__).with_name('bot_controller.js')
+        probe = "const L=require(process.argv[1]); console.log(L.frameNote({type:'player',displayName:'Test',frame:{login:true}}, false));"
+        note = subprocess.run(['node', '-e', probe, str(script)], capture_output=True, text=True, check=True).stdout
+        self.assertIn('log in', note.lower())
+        self.assertIn('reopen', note.lower())
 
     def test_page_api_and_writes(self):
         status, headers, body = self.get('/rs-sdk/bot-controller/')
@@ -559,6 +633,7 @@ class ControllerHTTPTests(unittest.TestCase):
         for headers in ({}, {'Tailscale-User-Login': OWNER}):
             _, _, body = self.get('/rs-sdk/api/controller', headers)
             self.assertNotIn(FLEET_PASSWORD.encode(), body)
+            self.assertNotIn(b'fake player&password', body)
             self.assertNotIn(b'password', body.lower())
             rows = {r['username']: r for r in json.loads(body)['bots']}
             self.assertEqual(rows[PLAYER]['type'], 'player')
@@ -582,10 +657,23 @@ class ControllerHTTPTests(unittest.TestCase):
             status, out = frame('bot_wormlike', headers)
             self.assertEqual(status, 403, name)
             self.assertNotIn(FLEET_PASSWORD, json.dumps(out), name)
+            status, out = frame(PLAYER, headers)
+            self.assertEqual(status, 403, name)
+            self.assertNotIn('fake player&password', json.dumps(out), name)
         # Regular account: the client's login screen, no password, the stored in-game name verbatim.
         status, out = frame(PLAYER, owner)
         self.assertEqual(status, 200, out)
         self.assertEqual(out['url'], self.game + '/bot?bot=Cant%20Pvm')
+        # After a browser run request, use the stored login and display name, not the slug.
+        self.assertEqual(self.post({'action': 'run', 'bots': [PLAYER], 'routine': 'mining', 'args': {}, 'mode': 'browser'}, owner)[0], 200)
+        status, out = frame(PLAYER, owner)
+        self.assertEqual(status, 200, out)
+        self.assertEqual(out['url'], self.game + '/bot?bot=Cant%20Pvm&password=fake%20player%26password')
+        frames_path = self.root / 'live' / 'controller-frames.json'
+        controller.write_atomic(frames_path, {'bot_wormlike': {'rev': 2, 'username': 'bot_wormlike', 'password': FLEET_PASSWORD}, 'bot_apehood': {'rev': 3, 'username': 'bot_apehood', 'password': FLEET_PASSWORD}})
+        status, out = frame(PLAYER, owner)
+        self.assertEqual(status, 409)
+        self.assertTrue(out['retry'])
         # Fleet bot: only with a browser-view run requested; then the login is filled in.
         status, out = frame('bot_wormlike', owner)
         self.assertEqual(status, 409, out)
@@ -603,6 +691,7 @@ class ControllerHTTPTests(unittest.TestCase):
         audit = (self.root / 'controller' / 'audit.jsonl').read_text()
         self.assertIn('"frame"', audit)
         self.assertNotIn(FLEET_PASSWORD, audit)
+        self.assertNotIn('fake player&password', audit)
 
 
 class DurationTests(unittest.TestCase):
@@ -706,6 +795,19 @@ console.log(JSON.stringify(out));
 
 class ControllerJSTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which('node'), 'node not installed')
+    def test_activity_catalog_only_offers_eligible_visible_methods(self):
+        script = Path(__file__).with_name('bot_controller.js')
+        probe = """const L = require(process.argv[1]);
+const reg = {routines: [
+ {id:'a', category:'skills', group:'Thieving', method:'Pickpocket', label:'A'},
+ {id:'b', category:'skills', group:'Thieving', method:'Stalls', label:'B'},
+ {id:'c', category:'quests', group:'Quest', method:'Quest', label:'C'},
+ {id:'d', category:'skills', group:'Thieving', method:'Hidden', hidden:true, label:'D'}]};
+console.log(JSON.stringify(L.activityCatalog(reg, [{launchable:true, eligible:['a','b','d']}, {launchable:false, eligible:['c']}])));"""
+        result = subprocess.run(['node', '-e', probe, str(script)], capture_output=True, text=True, timeout=20, check=True)
+        self.assertEqual(json.loads(result.stdout), [{'category': 'skills', 'group': 'Thieving', 'methods': [{'id': 'a', 'label': 'Pickpocket'}, {'id': 'b', 'label': 'Stalls'}]}])
+
+    @unittest.skipUnless(shutil.which('node'), 'node not installed')
     def test_view_logic_in_bot_controller_js(self):
         script = Path(__file__).with_name('bot_controller.js')
         probe = """
@@ -728,6 +830,8 @@ const out = {
   byType: [['all', 'bots', 'regular'].map(s => L.visible({type: 'bot'}, s)), ['all', 'bots', 'regular'].map(s => L.visible({type: 'player'}, s))],
   shows: [L.initialShow('?show=regular', 'bots'), L.initialShow('?show=nope', 'bots'), L.initialShow('', 'junk'), L.withShow('?a=1', 'bots')],
   frameLines: L.frameNote({type: 'player', displayName: 'Cant Pvm'}),
+  autoFrame: L.frameNote({type: 'player', displayName: 'Cant Pvm', frame: {login: true}}),
+  frameNeedsOpen: [L.frameNeedsOpen({firstChild: null}), L.frameNeedsOpen({firstChild: {}})],
   modes: [L.modesFor({runner: 'session'}, 1), L.modesFor({runner: 'session'}, 2), L.modesFor({runner: 'chickens-247'}, 1)],
   logShown: [L.showLog({controller: {log: ['a']}}), L.showLog({controller: {log: []}}), L.showLog({})],
   danger: [L.dangerOf(L.routineById(reg, 'thieving')), L.dangerOf(mining), L.dangerOf(null), L.dangerOf({danger: '  '})],
@@ -756,6 +860,9 @@ console.log(JSON.stringify(out));
         self.assertEqual(got['byType'], [[True, True, False], [True, False, True]])
         self.assertEqual(got['shows'], ['regular', 'bots', 'all', '?a=1&show=bots'])
         self.assertIn('only while this page', got['frameLines'])
+        self.assertNotIn('password never touches the portal', got['autoFrame'])
+        self.assertIn('logs', got['autoFrame'])
+        self.assertEqual(got['frameNeedsOpen'], [True, False])
         self.assertEqual(got['modes'], [['headless', 'browser'], ['headless'], ['headless']])
         self.assertEqual(got['logShown'], [True, False, False])
         self.assertEqual((got['set'], got['broken']), (['bot_a'], []))

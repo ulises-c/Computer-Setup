@@ -236,7 +236,14 @@ def parse_registry(raw):
         if gather is not None and (gather not in GATHER_SKILLS or r['runner'] != 'session' or r.get('routine') != 'gather'
                                    or tuple(a['name'] for a in args) != GATHER_ARGS or any(a['type'] != 'enum' for a in args[:3]) or args[3]['type'] != 'int'):
             raise ValueError(f'{rid}: gather (session routine gather with args {", ".join(GATHER_ARGS)})')
+        category = r.get('category', 'misc')
+        if category not in ('skills', 'quests', 'misc'):
+            raise ValueError(f'{rid}: category')
+        for key in ('group', 'method'):
+            if key in r and (not _text(r[key], 60) or not r[key].strip()):
+                raise ValueError(f'{rid}: {key}')
         entry = {'id': rid, 'label': r['label'], 'description': r.get('description') or '', 'runner': r['runner'],
+                 'category': category, 'group': r.get('group', 'Misc'), 'method': r.get('method', r['label']),
                  'safeStart': r.get('safeStart') is True, 'enabled': r.get('enabled') is not False, 'allowBots': allow,
                  'denyBots': deny, 'allowPlayers': players, 'danger': danger, 'fixedArgs': list(fixed), 'args': args,
                  'hidden': hidden, 'gather': gather}
@@ -455,12 +462,16 @@ def shape_choices(raw):
 
 
 def shape_frames(raw):
-    """Fleet-bot logins for the owner's browser view ({bot: password}), sent by the daemon only for bots
-    with a browser-view run requested. Regular accounts never have one (the owner types it in the frame)."""
+    """Validated daemon logins, bound to the revision it validated. Legacy strings fail closed."""
     if not isinstance(raw, dict):
         return {}
-    return {bot: pw for bot, pw in list(raw.items())[:300]
-            if isinstance(bot, str) and BOT.match(bot) and isinstance(pw, str) and 0 < len(pw) <= MAX_PASSWORD and TEXT.match(pw)}
+    return {bot: {'rev': entry['rev'], 'username': entry['username'], 'password': entry['password']} for bot, entry in list(raw.items())[:300]
+            if isinstance(bot, str) and (BOT.fullmatch(bot) or PLAYER.fullmatch(bot)) and isinstance(entry, dict)
+            and _int(entry.get('rev'), 1, (1 << 53) - 1) is not None
+            and isinstance(entry.get('username'), str)
+            and (entry['username'] == bot if BOT.fullmatch(bot) else DISPLAY.fullmatch(entry['username']))
+            and isinstance(entry.get('password'), str)
+            and 0 < len(entry['password']) <= MAX_PASSWORD and TEXT.fullmatch(entry['password'])}
 
 
 def read_frames(path):
@@ -695,7 +706,7 @@ def frame_offer(name, kind, launchable, desired_entry, report):
     if kind == 'player':
         if not (report and report.get('displayName')):
             return {'offered': False, 'login': False, 'reason': 'The daemon has not reported this account yet.'}
-        return {'offered': True, 'login': False, 'reason': None}
+        return {'offered': True, 'login': bool(desired_entry and desired_entry.get('action') == 'run' and desired_entry.get('mode') == 'browser'), 'reason': None}
     if desired_entry and desired_entry.get('action') == 'run' and desired_entry.get('mode') == 'browser':
         return {'offered': True, 'login': True, 'reason': None}
     return {'offered': False, 'login': False, 'reason': 'Start a routine in Browser view mode to open the game for this bot.'}
