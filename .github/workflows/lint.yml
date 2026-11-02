@@ -117,9 +117,12 @@ jobs:
         env:
           PRIVACY_DENYLIST: ${{ secrets.PRIVACY_DENYLIST }}
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          # A pull_request run checks out GitHub's synthetic merge commit, which
+          # never lands as such; scan the branch's own commits instead.
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           if [[ -z "$BASE" || "$BASE" =~ ^0+$ ]]; then BASE="$(git rev-list --max-parents=0 HEAD | tail -1)"; fi
-          python3 scripts/check-privacy.py --range "$BASE..HEAD"
+          python3 scripts/check-privacy.py --range "$BASE..$HEAD_SHA"
 
       - name: Test the privacy check
         run: |

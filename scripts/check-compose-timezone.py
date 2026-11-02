@@ -44,15 +44,17 @@ def main():
     files = tracked_files(repo)
     compose_files = sorted(f for f in files if COMPOSE_RE.search(f))
 
-    env = dict(os.environ)
-    for rel in compose_files:
-        for name in REQUIRED_VAR_RE.findall((repo / rel).read_text()):
-            env[name] = "/dummy"
-
     failures = []
     with tempfile.TemporaryDirectory() as tmp:
         scratch = Path(tmp)
         build_scratch(repo, files, scratch)
+        # Required variables can name a required env_file, so the stand-in must exist.
+        dummy = scratch / "dummy"
+        dummy.touch()
+        env = dict(os.environ)
+        for rel in compose_files:
+            for name in REQUIRED_VAR_RE.findall((repo / rel).read_text()):
+                env[name] = str(dummy)
         for rel in compose_files:
             directory = (scratch / rel).parent
             example, dotenv = directory / ".env.example", directory / ".env"

@@ -11,6 +11,9 @@ services:
       context: ${CANDIDATE_SOURCE:?set by world.sh}
       dockerfile: server/Dockerfile
     image: ${CANDIDATE_UPSTREAM_TAG:?set by world.sh}
+    env_file:
+      - path: ../../../server-base/timezone.env
+        required: true
     network_mode: none
     entrypoint: ["/bin/true"]
     restart: "no"
@@ -31,6 +34,9 @@ services:
         computer-setup.rs-sdk.patches: ${CANDIDATE_PATCHES:?set by world.sh}
         computer-setup.rs-sdk.base: ${CANDIDATE_BASE_IMAGE:-rs_sdk_upstream}
     image: ${CANDIDATE_TAG:?set by world.sh}
+    env_file:
+      - path: ../../../server-base/timezone.env
+        required: true
     network_mode: none
     entrypoint: ["/bin/true"]
     restart: "no"
