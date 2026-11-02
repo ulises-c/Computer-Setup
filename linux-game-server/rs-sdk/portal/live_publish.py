@@ -77,7 +77,6 @@ COUNT_KEY = re.compile(r'^[A-Za-z][A-Za-z0-9_]{0,23}$')
 WORLD_NAME = re.compile(r'^[A-Za-z0-9_ -]{1,12}$')
 MAX_WORLD_PLAYERS = 2000
 LAST_GOOD_KEYS = ('displayName', 'tick', 'player', 'skills', 'inventory', 'equipment')
-FLEET_URL = 'https://<game-server>.<tailnet>.ts.net:9447'
 REMOTE_POLL_S = 5.0
 REMOTE_MAX_AGE_S = 60.0
 FETCH_ERRORS = (OSError, ValueError, http.client.HTTPException)
@@ -755,7 +754,9 @@ def main():
     parser.add_argument('--host', help='SSH alias of the game server; omit to print snapshots to stdout')
     parser.add_argument('--receiver', default='github/Computer-Setup/linux-game-server/rs-sdk/portal/live.py')
     parser.add_argument('--once', action='store_true', help='Publish one snapshot and exit')
-    parser.add_argument('--fleet-url', default=FLEET_URL, help='Fleet service base URL (activity cards pushed by other bot hosts)')
+    parser.add_argument('--fleet-url', help='Fleet service base URL (activity cards pushed by other bot hosts; default: --fleet-url-file)')
+    parser.add_argument('--fleet-url-file', type=Path, default=Path.home() / '.config/rs-fleet/url',
+                        help='File holding the fleet service base URL; missing = no cards from other hosts')
     parser.add_argument('--fleet-token-file', type=Path, default=Path.home() / '.config/rs-fleet/portal-token',
                         help='Read-only fleet service token (portal:ro); missing = no cards from other hosts')
     args = parser.parse_args()
@@ -763,8 +764,9 @@ def main():
         parser.error(f'--ticks must be at least {MIN_TICKS} (one gateway read per bot per tick at most)')
     remote = None
     try:
+        url = args.fleet_url or args.fleet_url_file.expanduser().read_text().strip()
         token = args.fleet_token_file.expanduser().read_text().strip()
-        remote = RemoteCards(args.fleet_url, token) if token else None
+        remote = RemoteCards(url, token) if url and token else None
     except OSError:
         pass
     publisher = Publisher(args.sdk.expanduser(), args.botting.expanduser(), args.ticks,

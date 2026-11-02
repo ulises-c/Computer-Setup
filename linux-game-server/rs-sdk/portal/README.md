@@ -388,6 +388,11 @@ bash linux-game-server/rs-sdk/portal/install-live-publisher.sh <game-server-ssh-
 python3 linux-game-server/rs-sdk/portal/live_publish.py --once   # one snapshot to stdout
 ```
 
+Cards from the other bot hosts need the fleet service URL
+(`https://<game-server>.<tailnet>.ts.net:9447`) in `~/.config/rs-fleet/url` and the
+`portal:ro` token in `~/.config/rs-fleet/portal-token` (both mode 600); without
+either, the map shows this workstation's bots only.
+
 ## Bot controller
 
 `/rs-sdk/bot-controller/` lists every fleet bot and the owner's regular accounts (the

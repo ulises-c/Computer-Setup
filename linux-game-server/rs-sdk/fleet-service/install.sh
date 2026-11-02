@@ -17,8 +17,10 @@ ENV_FILE="$ENV_DIR/service.env"
 mkdir -p "$DATA_DIR" "$ENV_DIR"
 chmod 700 "$DATA_DIR" "$ENV_DIR"
 umask 077
-# One token per bot host, plus a read-only one for the portal.
-HOSTS=(bot-workstation bot-host-2 bot-host-3 portal:ro)
+# One token per bot host (FLEET_HOSTS, space-separated; kept private), plus a
+# read-only one for the portal. Hosts already in service.env keep their tokens.
+read -ra HOSTS <<< "${FLEET_HOSTS:-}"
+HOSTS+=(portal:ro)
 python3 - "$ENV_FILE" "${HOSTS[@]}" <<'PY'
 import os, re, secrets, sys
 path, hosts = sys.argv[1], sys.argv[2:]

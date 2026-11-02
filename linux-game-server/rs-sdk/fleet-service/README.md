@@ -25,8 +25,9 @@ bash linux-game-server/rs-sdk/fleet-service/uninstall.sh   # stop and remove the
 docker logs rs-fleet-service
 ```
 
-`install.sh` keeps existing tokens and adds a token for any missing bot
-host (plus `portal:ro`). Each bot host keeps its own token in
+`install.sh` keeps existing tokens and adds a token for any missing bot host
+named in `FLEET_HOSTS` (space-separated, e.g. `FLEET_HOSTS='host-a host-b' bash …/install.sh`)
+plus `portal:ro`. Each bot host keeps its own token in
 `~/.config/rs-fleet/token` (mode 600). Copy it there without printing it.
 
 `fleet-service.js` is generated. Don't edit it. To update it, run this in the bot repo:

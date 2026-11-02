@@ -59,9 +59,15 @@ resolve_sources() {
   fi
   resolve_2004scape_sources
   # Fleet service (rs-sdk/fleet-service): its SQLite gets the online .backup like every *.sqlite.
-  [[ -d "$BACKUP_FLEET_SERVICE_DATA_DIR" ]] && CANDIDATES+=("$BACKUP_FLEET_SERVICE_DATA_DIR")
+  # It lives in the data dir fleet-service/install.sh recorded in its .env.
+  local fleet_env="$HOST_DIR/rs-sdk/fleet-service/.env" fleet_data=""
+  if [[ -f "$fleet_env" ]]; then
+    fleet_data="$(env_value "$fleet_env" FLEET_DATA_DIR)"
+  fi
+  if [[ -n "$fleet_data" && -d "$fleet_data" ]]; then
+    CANDIDATES+=("$fleet_data")
+  fi
 }
-BACKUP_FLEET_SERVICE_DATA_DIR=/home/<username>/.local/share/rs-fleet-service/data
 
 # 2004Scape state only: the engine/content/client checkouts come back from the
 # bootstrap's revision clone. The engine scans the RS-SDK data dir for SQLite;
