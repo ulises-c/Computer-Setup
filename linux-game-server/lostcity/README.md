@@ -2,6 +2,16 @@
 
 This is the vanilla LostCityRS server, separate from the RS-SDK fork. The upstream `Server` repository is an interactive launcher that clones Engine-TS, Content, and Client-TS into its working directory. This deployment keeps that runtime and all save/config data under `~/games/lost-city/runtime` (`LOSTCITY_RUNTIME_DIR`), outside Git, and starts Engine directly under Compose so it can run unattended.
 
+Lost City is **not started by default**: `serve.sh` and `2004scape/activate.sh` bring up only RS-SDK. The stopped container's `unless-stopped` policy keeps it down across reboots, and weekly maintenance leaves a stopped stack alone. Its runtime data stays in place and in the nightly backup. To run it again:
+
+```sh
+docker compose --project-directory linux-game-server/lostcity -f linux-game-server/lostcity/docker-compose.yml up -d
+tailscale serve --bg --https=9444 http://127.0.0.1:8888
+sudo ufw allow in on <lan-iface> from <lan-cidr> to any port 8888 proto tcp comment 'Lost City web LAN'
+```
+
+The next `serve.sh` run switches port 9444 off again (it is in `RETIRED_PORTS`), and `activate.sh` refuses to run while Lost City holds its ports.
+
 ## Setup and access
 
 Run the combined setup from the Computer-Setup checkout:

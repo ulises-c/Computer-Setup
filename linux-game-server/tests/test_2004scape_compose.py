@@ -119,12 +119,21 @@ class ComposeSafetyTests(unittest.TestCase):
     def test_tailnet_routes_use_separate_root_ports(self):
         serve_conf = (ROOT / "serve.conf").read_text()
         for route in (
-            '"9444 / http://127.0.0.1:8888"',
             '"9445 / http://127.0.0.1:8080"',
             '"9446 / http://127.0.0.1:7781"',
         ):
             with self.subTest(route=route):
                 self.assertIn(route, serve_conf)
+
+    def test_lost_city_is_not_started_by_default(self):
+        serve_conf = (ROOT / "serve.conf").read_text()
+        compose_dirs = next(line for line in serve_conf.splitlines() if line.startswith("COMPOSE_DIRS="))
+        self.assertNotIn("lostcity", compose_dirs)
+        self.assertNotIn("http://127.0.0.1:8888", serve_conf)
+        self.assertIn("RETIRED_PORTS=(3443 9444)", serve_conf)
+        activate = (ROOT / "2004scape" / "activate.sh").read_text()
+        self.assertNotIn("8888/rs2.cgi", activate)
+        self.assertNotIn("lostcity/.env", activate)
 
 
 if __name__ == "__main__":

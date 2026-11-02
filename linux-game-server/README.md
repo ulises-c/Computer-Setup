@@ -84,7 +84,7 @@ no `homepage`, `glances` or similar name that the NAS host already owns.
 | Cockpit (host service) | `127.0.0.1:9090` | `/cockpit/` |
 | Portainer | `127.0.0.1:9000` | `:9443` (fallback) |
 | Dragonwilds status JSON | `127.0.0.1:8096` | not served (this Homepage only) |
-| Optional Lost City web client | host TCP `8888` | `:9444/rs2.cgi` |
+| Lost City web client (not started by default) | host TCP `8888` | `:9444/rs2.cgi` (manual) |
 | Optional RS-SDK web client | host TCP `8080` | `:9445/` |
 | Optional RS-SDK gateway | host TCP `7781` | `:9446` |
 | Watchtower | no listener | updates images daily at 03:00 |
@@ -141,7 +141,8 @@ The first command initializes the vanilla world (revision 254 by default) and
 builds the RS-SDK image but leaves both services stopped. The second command is
 an explicit activation step: it requires active UFW with default-deny inbound
 and an SSH allow rule, adds only home-LAN and `tailscale0` rules, then starts the
-Compose services and publishes Tailscale Serve endpoints. It does not enable
+RS-SDK Compose services (Lost City stays stopped unless started by hand, see
+[`lostcity/README.md`](lostcity/README.md)) and publishes Tailscale Serve endpoints. It does not enable
 UFW, change the default policy, configure Funnel, or add router port forwarding.
 The web apps need separate Tailscale HTTPS ports because they use root-relative
 paths; access URLs and raw game/gateway ports are listed in the linked guide.

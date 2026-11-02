@@ -2,7 +2,7 @@
 
 This directory hosts two independent game stacks on the game server:
 
-- `lostcity/`: vanilla LostCityRS 2004Scape, revision 254 by default.
+- `lostcity/`: vanilla LostCityRS 2004Scape, revision 254 by default. Set up but not started by default; see `lostcity/README.md` to run it.
 - `rs-sdk/`: the separate RS-SDK fork, with its own engine, web client, accounts, and bot gateway.
 
 They do not share source trees or save data. The Lost City checkout is in `~/github/Server`; RS-SDK is in `~/github/rs-sdk`. Runtime state is stored outside the Git checkout under `~/games/`.
@@ -11,11 +11,11 @@ They do not share source trees or save data. The Lost City checkout is in `~/git
 
 1. Run `bash linux-game-server/2004scape/setup.sh`. It performs the one-time interactive Lost City Engine setup, builds the RS-SDK image from the cloned checkout, and leaves both game services stopped. The vanilla revision defaults to 254; edit `linux-game-server/lostcity/.env` before setup to choose another upstream-supported revision.
 2. Review the setup output and ensure the world configuration exists under `~/games/lost-city/runtime/engine/`.
-3. Run `bash linux-game-server/2004scape/activate.sh` as the normal (non-root) user. It refuses to proceed unless UFW is active with default-deny inbound and an SSH allow rule. It adds only LAN-subnet rules and tailnet-interface rules, then starts the Compose projects and applies the existing managed Tailscale Serve configuration. It does not enable UFW, change the default policy, touch SSH, or configure Funnel.
+3. Run `bash linux-game-server/2004scape/activate.sh` as the normal (non-root) user. It refuses to proceed unless UFW is active with default-deny inbound and an SSH allow rule. It adds only LAN-subnet rules and tailnet-interface rules, then starts the RS-SDK Compose projects (not Lost City) and applies the existing managed Tailscale Serve configuration. It does not enable UFW, change the default policy, touch SSH, or configure Funnel.
 
 ## Access scope
 
-LAN traffic is allowed only from `LAN_CIDR` on `LAN_IFACE`, both set in this directory's gitignored `.env` (copied from `.env.example` by `setup.sh`; activation refuses to run while either is empty). Tailscale HTTPS frontends use ports 9444 (Lost City), 9445 (RS-SDK web), and 9446 (RS-SDK gateway), bound to `tailscale0`. The web apps use root-relative routes, so they get separate HTTPS ports rather than subpaths. Raw game/gateway ports are allowed on LAN and `tailscale0` only after the activation script confirms a listener is present. Internal ports are never opened: Lost City's login, logger, friend and management servers (43500, 43501, 45099, 8898), and RS-SDK's (43510, 43511, 45109, 8899), its telemetry (43512), its hiscores (8889) and its internal gateway (7780). Both engines use host networking, so RS-SDK's internal servers are moved off Lost City's defaults; otherwise RS-SDK would log in against Lost City's login server. `activate.sh` refuses to start while any of these ports is taken.
+LAN traffic is allowed only from `LAN_CIDR` on `LAN_IFACE`, both set in this directory's gitignored `.env` (copied from `.env.example` by `setup.sh`; activation refuses to run while either is empty). Tailscale HTTPS frontends use ports 9445 (RS-SDK web) and 9446 (RS-SDK gateway); 9444 is reserved for Lost City when it is started by hand, bound to `tailscale0`. The web apps use root-relative routes, so they get separate HTTPS ports rather than subpaths. Raw game/gateway ports are allowed on LAN and `tailscale0` only after the activation script confirms a listener is present. Internal ports are never opened: Lost City's login, logger, friend and management servers (43500, 43501, 45099, 8898), and RS-SDK's (43510, 43511, 45109, 8899), its telemetry (43512), its hiscores (8889) and its internal gateway (7780). Both engines use host networking, so RS-SDK's internal servers are moved off Lost City's defaults; otherwise RS-SDK would log in against Lost City's login server. `activate.sh` refuses to start while any of these ports is taken.
 
 Compose uses host networking with no `ports:` mappings so UFW can enforce the source restrictions; Docker-published ports can bypass UFW. No router port forwarding is configured. Tailscale Serve (not Funnel) is tailnet-only.
 

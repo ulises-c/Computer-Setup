@@ -111,6 +111,13 @@ in [UNIFICATION.md](UNIFICATION.md).
   N"; a name search highlights the player and links its rank to its page.
   Equipment, Bank and Lava Maze Runite are fixed top-N boards and get no pager.
 
+### Changed
+- Lost City (vanilla 2004Scape) is no longer started by default on the game server: `serve.sh`
+  leaves `lostcity` out of its compose set and switches off Tailscale Serve port 9444, and
+  `activate.sh` only opens and verifies RS-SDK. The stack files, runtime data, backup coverage and
+  weekly maintenance (which skips stopped stacks) are unchanged; `lostcity/README.md` has the manual
+  start.
+
 ### Fixed
 - RS-SDK hiscores kept levels from the wrong XP curve (2026-10-26): for nine
   hours the server ran an image with the fork's level/10 curve, so logouts wrote
