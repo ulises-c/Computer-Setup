@@ -1,0 +1,171 @@
+x-darkan-hardening: &hardening
+  init: true
+  network_mode: host
+  restart: unless-stopped
+  user: "${DARKAN_UID:?Set DARKAN_UID in .env}:${DARKAN_GID:?Set DARKAN_GID in .env}"
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  env_file:
+    - path: ../../server-base/timezone.env
+      required: true
+  logging:
+    driver: local
+    options:
+      max-size: 10m
+      max-file: "3"
+
+x-darkan-server-env: &server-env
+  DEBUG: "false"
+  SERVER_NAME: ${DARKAN_SERVER_NAME:-Darkan}
+  LOBBY_PORT: ${DARKAN_LOBBY_PORT:?Set DARKAN_LOBBY_PORT in .env}
+  LOBBY_API_PORT: ${DARKAN_LOBBY_API_PORT:?Set DARKAN_LOBBY_API_PORT in .env}
+  LOBBY_OWNER: ${DARKAN_LOBBY_OWNER:?Set DARKAN_LOBBY_OWNER in .env}
+  SOCIAL_GATEWAY_TOKEN: ${DARKAN_SOCIAL_GATEWAY_TOKEN:?Run setup.sh to generate DARKAN_SOCIAL_GATEWAY_TOKEN}
+  OFFICIAL_WORLD_MAX: "99"
+  BOT_IP_WHITELIST: ${DARKAN_BOT_IP_WHITELIST:-}
+  AUTO_UPDATE: "false"
+
+services:
+  darkan-mongo:
+    <<: *hardening
+    image: mongo:7.0.45
+    container_name: darkan-mongo
+    command:
+      - --bind_ip
+      - 127.0.0.1
+      - --port
+      - ${DARKAN_MONGO_PORT:?Set DARKAN_MONGO_PORT in .env}
+      - --auth
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: darkan
+      MONGO_INITDB_ROOT_PASSWORD: ${DARKAN_MONGO_PASSWORD:?Run setup.sh to generate DARKAN_MONGO_PASSWORD}
+    labels:
+      # A database major/minor update must go through a dump, not a silent pull.
+      - com.centurylinklabs.watchtower.enable=false
+    volumes:
+      - type: bind
+        source: ${DARKAN_DATA_DIR:?Set DARKAN_DATA_DIR in .env}/mongo
+        target: /data/db
+        bind:
+          create_host_path: false
+    stop_grace_period: 60s
+    healthcheck:
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --port
+        - ${DARKAN_MONGO_PORT}
+        - --eval
+        - db.adminCommand('ping').ok
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  darkan-lobby:
+    <<: *hardening
+    build:
+      context: .
+      dockerfile: Dockerfile
+      additional_contexts:
+        darkan_src: ${DARKAN_SOURCE_DIR:?Set DARKAN_SOURCE_DIR in .env}
+      args:
+        DARKAN_SOURCE_COMMIT: ${DARKAN_SOURCE_REF:?Set DARKAN_SOURCE_REF in .env}
+    image: computer-setup/darkan:local
+    container_name: darkan-lobby
+    command: [lobby]
+    labels:
+      # Locally built image: nothing to pull; updates go through setup.sh.
+      - com.centurylinklabs.watchtower.enable=false
+    depends_on:
+      darkan-mongo:
+        condition: service_healthy
+    environment:
+      <<: *server-env
+      MONGO_URI: mongodb://darkan:${DARKAN_MONGO_PASSWORD}@127.0.0.1:${DARKAN_MONGO_PORT}/darkan-lobby?authSource=admin
+      MEM_CACHE: "true"
+      CACHE_SOURCE_PATH: /opt/darkan/cache-source
+      CACHE_BUILD_PATH: /state/cache
+      WORLD_LOGIN_TOKEN_SECRET: ${DARKAN_WORLD_LOGIN_TOKEN_SECRET:?Run setup.sh to generate DARKAN_WORLD_LOGIN_TOKEN_SECRET}
+      API_KEY: ${DARKAN_API_KEY:?Run setup.sh to generate DARKAN_API_KEY}
+      DARKAN_JAVA_OPTS: ${DARKAN_LOBBY_JAVA_OPTS:--Xms1G -Xmx4G -XX:+UseG1GC}
+    volumes:
+      - type: bind
+        source: ${DARKAN_DATA_DIR}/lobby
+        target: /state
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${DARKAN_SOURCE_DIR}/cache-source
+        target: /opt/darkan/cache-source
+        read_only: true
+        bind:
+          create_host_path: false
+    stop_grace_period: 60s
+    healthcheck:
+      test: [CMD-SHELL, 'curl -fsS "http://127.0.0.1:$$LOBBY_API_PORT/health" >/dev/null']
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      # The first start packs the whole cache (a few minutes).
+      start_period: 900s
+
+  darkan-world:
+    <<: *hardening
+    image: computer-setup/darkan:local
+    container_name: darkan-world
+    command: [world]
+    labels:
+      - com.centurylinklabs.watchtower.enable=false
+    depends_on:
+      darkan-lobby:
+        condition: service_healthy
+    environment:
+      <<: *server-env
+      MONGO_URI: mongodb://darkan:${DARKAN_MONGO_PASSWORD}@127.0.0.1:${DARKAN_MONGO_PORT}/darkan-world-${DARKAN_WORLD_ID:-1}?authSource=admin
+      # Serve the lobby's packed build (read-only) instead of packing a second copy.
+      CACHE_SOURCE_PATH: ""
+      CACHE_PATH: /opt/darkan/cache/
+      SOCIAL_GATEWAY_URL: ws://127.0.0.1:${DARKAN_LOBBY_API_PORT}/social/ws
+      WORLD_ID: ${DARKAN_WORLD_ID:-1}
+      WORLD_NAME: ${DARKAN_WORLD_NAME:-Darkan}
+      WORLD_ACTIVITY: ${DARKAN_WORLD_ACTIVITY:-}
+      WORLD_PORT: ${DARKAN_WORLD_PORT:?Set DARKAN_WORLD_PORT in .env}
+      WORLD_HOST: 127.0.0.1
+      WORLD_PUBLIC_HOST: ${DARKAN_PUBLIC_HOST:?Set DARKAN_PUBLIC_HOST in .env}
+      WORLD_MEMBERS: "true"
+      WORLD_BOTS_ALLOWED: ${DARKAN_BOTS_ALLOWED:-true}
+      WORLD_LOOTSHARE: "true"
+      WORLD_COUNTRY: USA
+      WORLD_XP_RATE: ${DARKAN_XP_RATE:-1}
+      WORLD_DROP_MODIFIER: ${DARKAN_DROP_MODIFIER:-1.0}
+      DARKAN_JAVA_OPTS: ${DARKAN_WORLD_JAVA_OPTS:--Xms1G -Xmx4G -XX:+UseG1GC -XX:MaxGCPauseMillis=200}
+    volumes:
+      - type: bind
+        source: ${DARKAN_DATA_DIR}/world
+        target: /state
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${DARKAN_DATA_DIR}/lobby/cache
+        target: /opt/darkan/cache
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${DARKAN_SOURCE_DIR}/cache-source
+        target: /opt/darkan/cache-source
+        read_only: true
+        bind:
+          create_host_path: false
+    # Matches the in-game update countdown the world runs before it exits.
+    stop_grace_period: 120s
+    healthcheck:
+      test: [CMD, bash, -c, 'exec 3<>"/dev/tcp/127.0.0.1/$$WORLD_PORT"']
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 300s
