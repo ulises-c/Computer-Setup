@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Opens the Darkan lobby and world ports to the LAN and tailnet only, checks
-# they are free, and starts the stack built by setup.sh.
+# Opens the Darkan lobby and world ports on tailscale0 only, refuses to start
+# while any other rule would let the LAN or the internet in, checks the ports
+# are free, and starts the stack built by setup.sh.
 # Usage: bash linux-game-server/darkan/activate.sh
 set -euo pipefail
 
@@ -20,14 +21,11 @@ env_get() {
   printf '%s' "${line#*=}"
 }
 
-lan_iface="$(env_get LAN_IFACE)"
-lan_cidr="$(env_get LAN_CIDR)"
 lobby_port="$(env_get DARKAN_LOBBY_PORT)"
 world_port="$(env_get DARKAN_WORLD_PORT)"
 api_port="$(env_get DARKAN_LOBBY_API_PORT)"
 mongo_port="$(env_get DARKAN_MONGO_PORT)"
 public_host="$(env_get DARKAN_PUBLIC_HOST)"
-[[ -n "$lan_iface" && -n "$lan_cidr" ]] || { printf 'error: set LAN_IFACE and LAN_CIDR in %s\n' "$env_file" >&2; exit 2; }
 docker image inspect computer-setup/darkan:local >/dev/null 2>&1 || { printf 'error: image not built; run setup.sh\n' >&2; exit 2; }
 
 ufw_status="$(sudo ufw status verbose)"
@@ -37,9 +35,9 @@ ufw_status="$(sudo ufw status verbose)"
   exit 2
 }
 ufw_rules="$(sudo ufw status)"
-for port in "$api_port" "$mongo_port"; do
-  if grep -E "^$port(/tcp)?[[:space:]].*ALLOW" <<<"$ufw_rules" >/dev/null; then
-    printf 'error: internal port %s has a UFW allow rule; remove it first\n' "$port" >&2
+for port in "$lobby_port" "$world_port" "$api_port" "$mongo_port"; do
+  if grep -E "^$port(/tcp)?[[:space:]]" <<<"$ufw_rules" | grep 'ALLOW' | grep -v 'on tailscale0' >/dev/null; then
+    printf 'error: port %s has a UFW allow rule outside tailscale0; remove it first\n' "$port" >&2
     exit 2
   fi
 done
@@ -54,7 +52,6 @@ for port in "$lobby_port" "$world_port" "$api_port" "$mongo_port"; do
 done
 
 for port in "$lobby_port" "$world_port"; do
-  sudo ufw allow in on "$lan_iface" from "$lan_cidr" to any port "$port" proto tcp comment 'Darkan LAN'
   sudo ufw allow in on tailscale0 to any port "$port" proto tcp comment 'Darkan tailnet'
 done
 

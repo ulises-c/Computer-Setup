@@ -305,3 +305,64 @@
             - field: last_backup
               label: Last backup
               format: relativeDate
+    - "Darkan: 2012 server":
+        id: darkan-server
+        icon: mdi-sword-cross-#f59e0b
+        description: Self-hosted Darkan (build 727) lobby + world · own accounts · tailnet only
+        siteMonitor: http://127.0.0.1:4040/health
+        server: my-docker
+        container: darkan-world
+        widget:
+          type: customapi
+          url: http://127.0.0.1:8097/darkan-status.json
+          refreshInterval: 15000
+          display: list
+          mappings:
+            - field: status
+              label: World
+              format: text
+            - field: software_summary
+              label: Software
+              format: text
+            - field: rules_summary
+              label: Rules
+              format: text
+            - field: uptime_display
+              label: Uptime
+              format: text
+            - field: cpu_summary
+              label: CPU · 1 core / 24h
+              format: text
+            - field: memory_summary
+              label: Memory · 24h
+              format: text
+            - field: sample_window
+              label: Coverage
+              format: text
+            - field: process_summary
+              label: Process
+              format: text
+            - field: players_summary
+              label: Players
+              format: text
+            - field: connect_lan
+              label: Tailnet
+              format: text
+            - field: image_built
+              label: Image built
+              format: relativeDate
+            - field: storage_summary
+              label: Data
+              format: text
+            - field: maintenance_summary
+              label: Updates
+              format: text
+            - field: access_summary
+              label: Access
+              format: text
+            - field: backup_status
+              label: Backup
+              format: text
+            - field: last_backup
+              label: Last backup
+              format: relativeDate

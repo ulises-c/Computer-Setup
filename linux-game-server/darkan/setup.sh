@@ -54,14 +54,6 @@ for key in DARKAN_MONGO_PASSWORD DARKAN_SOCIAL_GATEWAY_TOKEN DARKAN_WORLD_LOGIN_
   fill_if_blank "$key" "$(openssl rand -hex 32)"
 done
 
-shared_env="$darkan_dir/../2004scape/.env"
-if [[ -f "$shared_env" ]]; then
-  for key in LAN_IFACE LAN_CIDR; do
-    value="$(grep -E "^$key=" "$shared_env" | tail -n1 || true)"
-    [[ -z "${value#*=}" ]] || fill_if_blank "$key" "${value#*=}"
-  done
-fi
-
 if [[ "$(env_get DARKAN_PUBLIC_HOST)" == *'<'* ]]; then
   command -v tailscale >/dev/null || { printf 'error: set DARKAN_PUBLIC_HOST in %s\n' "$env_file" >&2; exit 2; }
   dns_name="$(tailscale status --json | python3 -c 'import json, sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))')"

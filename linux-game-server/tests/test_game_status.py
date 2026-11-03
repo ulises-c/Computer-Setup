@@ -161,6 +161,66 @@ class RsSdkTests(unittest.TestCase):
         self.assertEqual(result['players_summary'], '? online · accounts unknown')
 
 
+class DarkanTests(unittest.TestCase):
+    ENV = {'DARKAN_SOURCE_DIR': '/nonexistent', 'DARKAN_SOURCE_REF': 'a' * 40, 'DARKAN_WORLD_ID': '1',
+           'DARKAN_PUBLIC_HOST': 'game.example.ts.net', 'DARKAN_LOBBY_PORT': '43620',
+           'DARKAN_WORLD_PORT': '43621', 'DARKAN_LOBBY_API_PORT': '4040', 'DARKAN_MONGO_PORT': '27027'}
+
+    def info(self, status='running'):
+        return {'Id': 'f' * 64, 'RestartCount': 0,
+                'State': {'Status': status, 'StartedAt': '2026-10-21T08:00:00.1Z', 'Health': {'Status': 'healthy'}},
+                'Config': {'Env': ['WORLD_XP_RATE=1', 'WORLD_DROP_MODIFIER=1.0', 'WORLD_MEMBERS=true',
+                                   'WORLD_BOTS_ALLOWED=true']}}
+
+    def outputs(self, api_address):
+        return {
+            ('ss', '-ltnH'): f'LISTEN 0 128 {api_address}:4040 *:*\nLISTEN 0 128 *:43621 *:*',
+            ('docker', 'image', 'inspect', '-f', '{{.Created}}', 'computer-setup/darkan:local'):
+                '2026-11-02T23:30:00.5Z',
+            ('docker', 'image', 'inspect', '-f', '{{index .Config.Labels "org.opencontainers.image.revision"}}',
+             'computer-setup/darkan:local'): 'b' * 40,
+        }
+
+    def collect(self, api_address='127.0.0.1', status='running',
+                counts: 'str | None' = '{"accounts": 1, "players": 2, "bytes": 2048}'):
+        outputs = self.outputs(api_address)
+
+        def run(cmd, timeout=5):
+            if cmd[:3] == ['docker', 'exec', 'darkan-mongo']:
+                self.assertNotIn('PASSWORD=', ' '.join(cmd))
+                return counts
+            return outputs.get(tuple(cmd))
+        worldlist = [{'metadata': {'number': 1}, 'offline': False, 'playersOnline': 3}]
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(game_status, 'inspect', return_value=self.info(status)), \
+                mock.patch.object(game_status, 'run', side_effect=run), \
+                mock.patch.object(game_status, 'http_json', return_value=worldlist), \
+                mock.patch.object(game_status, 'resources', return_value={}):
+            return game_status.darkan(dict(self.ENV, DARKAN_DATA_DIR=tmp), Path(tmp) / 'h.json', 'boot')
+
+    def test_card_reads_lobby_world_list_and_mongo_counts(self):
+        result = self.collect()
+        self.assertEqual(result['status'], 'running · healthy')
+        self.assertEqual(result['players_summary'], '3 online · 1 account · 2 player saves')
+        self.assertEqual(result['rules_summary'], 'members · 1× XP · 1.0× drops · bots allowed')
+        self.assertEqual(result['connect_lan'], 'game.example.ts.net:43620 lobby · world 1 :43621 (listening)')
+        self.assertEqual(result['access_summary'], 'tailnet only · no LAN rule · API loopback')
+        self.assertEqual(result['maintenance_summary'], 'manual · pinned aaaaaaa · image not rebuilt')
+        self.assertEqual(result['image_built'], '2026-11-02T23:30:00Z')
+        self.assertTrue(result['storage_summary'].startswith('Mongo 2.0 KiB · cache '))
+        self.assertEqual(result['backup_status'], 'not in the backup set')
+        json.dumps(result, allow_nan=False)
+
+    def test_wildcard_api_listener_is_flagged(self):
+        self.assertEqual(self.collect(api_address='0.0.0.0')['access_summary'],
+                         'tailnet only · no LAN rule · API EXPOSED')
+
+    def test_stopped_world_is_not_queried(self):
+        result = self.collect(status='exited', counts=None)
+        self.assertEqual(result['status'], 'exited')
+        self.assertEqual(result['players_summary'], '? online · accounts unknown')
+
+
 class DeploymentTests(unittest.TestCase):
     def test_status_nginx_is_loopback_only_and_started_by_serve(self):
         compose = (ROOT / '2004scape' / 'docker-compose.yml').read_text()

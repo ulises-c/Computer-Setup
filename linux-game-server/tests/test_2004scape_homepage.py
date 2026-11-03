@@ -56,6 +56,19 @@ class HomepageCardTests(unittest.TestCase):
         generated = (ROOT / "homepage" / "config" / "services.yaml").read_text()
         self.assertIn(self.lostcity.strip(), generated)
         self.assertIn(self.rs_sdk.strip(), generated)
+        self.assertIn(card(self.services, '"Darkan: 2012 server"').strip(), generated)
+
+    def test_darkan_card_reads_every_field_the_producer_writes(self):
+        darkan = card(self.services, '"Darkan: 2012 server"')
+        self.assertIn("url: http://127.0.0.1:8097/darkan-status.json", darkan)
+        self.assertIn("container: darkan-world", darkan)
+        fields = [line.split("field: ", 1)[1] for line in darkan.splitlines() if "field: " in line]
+        source = (ROOT / "2004scape" / "game_status.py").read_text()
+        for field in fields:
+            with self.subTest(field=field):
+                self.assertIn(f"'{field}'" if f"'{field}'" in source else f"{field}=", source)
+        labels = [line for line in darkan.splitlines() if "label: " in line]
+        self.assertEqual(len(labels), len([line for line in self.rs_sdk.splitlines() if "label: " in line]))
 
 
 if __name__ == "__main__":

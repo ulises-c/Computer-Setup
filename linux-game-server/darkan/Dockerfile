@@ -18,6 +18,13 @@ COPY --from=darkan_src migration migration
 COPY --from=darkan_src plugins plugins
 COPY --from=darkan_src data data
 COPY --from=darkan_src cache-source/gamevals cache-source/gamevals
+# Host networking would otherwise put the admin API on every interface,
+# tailscale0 included (Tailscale's netfilter rules accept tailnet traffic
+# ahead of UFW). Only the world, on loopback, needs it.
+RUN f=lobby/src/main/kotlin/org/darkan/lobby/Lobby.kt \
+    && grep -qF 'embeddedServer(Netty, port = EnvVars.lobbyApiPort,' "$f" \
+    || { printf 'error: lobby API bind patch no longer matches upstream %s\n' "$f" >&2; exit 1; }; \
+    sed -i 's/embeddedServer(Netty, port = EnvVars.lobbyApiPort,/embeddedServer(Netty, host = "127.0.0.1", port = EnvVars.lobbyApiPort,/' "$f"
 RUN --mount=type=cache,target=/root/.gradle \
     ./gradlew --no-daemon --console=plain :lobby:shadowJar :world:shadowJar \
     && cp lobby/build/libs/lobby-server-*.jar /lobby-server.jar \
