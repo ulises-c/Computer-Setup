@@ -212,6 +212,8 @@ class DarkanTests(unittest.TestCase):
         json.dumps(result, allow_nan=False)
 
     def test_wildcard_api_listener_is_flagged(self):
+        self.assertEqual(self.collect(api_address='[::ffff:127.0.0.1]')['access_summary'],
+                         'tailnet only · no LAN rule · API loopback')
         self.assertEqual(self.collect(api_address='0.0.0.0')['access_summary'],
                          'tailnet only · no LAN rule · API EXPOSED')
 

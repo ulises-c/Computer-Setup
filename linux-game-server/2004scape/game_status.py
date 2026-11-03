@@ -419,7 +419,7 @@ def darkan(env, history, boot):
     counts = mongo_counts(env.get('DARKAN_MONGO_PORT', ''), world_id) if running else None
 
     api = listen_addresses(api_port)
-    api_state = ('loopback' if api and api <= {'127.0.0.1', '::1'} else 'EXPOSED' if api else 'down')
+    api_state = ('loopback' if api and api <= {'127.0.0.1', '::1', '::ffff:127.0.0.1'} else 'EXPOSED' if api else 'down')
     bots = 'bots allowed' if world_env.get('WORLD_BOTS_ALLOWED') == 'true' else 'no bots'
     members = 'members' if world_env.get('WORLD_MEMBERS', 'true') == 'true' else 'free-to-play'
     world_state = 'listening' if listening(world_port) else 'down'
