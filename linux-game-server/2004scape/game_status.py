@@ -7,10 +7,12 @@ Resource history (24h CPU/memory) reuses the Dragonwilds sampler and lives in
 the private .metrics/ directory, outside what nginx serves.
 """
 import calendar
+from datetime import datetime
 import fcntl
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import sqlite3
 import subprocess
@@ -354,6 +356,15 @@ def rs_sdk(source, data, history, boot, window):
     return result
 
 
+def timestamp_epoch(value):
+    """Docker image times carry nanoseconds and either Z or the daemon's local offset."""
+    match = re.fullmatch(r'(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.\d+)?(Z|[+-]\d\d:\d\d)', value or '')
+    if not match:
+        return None
+    offset = '+00:00' if match[2] == 'Z' else match[2]
+    return int(datetime.fromisoformat(match[1] + offset).timestamp())
+
+
 def listen_addresses(port):
     output = run(['ss', '-ltnH']) or ''
     addresses = set()
@@ -434,7 +445,7 @@ def darkan(env, history, boot):
         accounts=counts.get('accounts') if counts else None,
         connect_lan=(f"{env.get('DARKAN_PUBLIC_HOST', '?')}:{lobby_port} lobby · "
                      f"world {world_id} :{world_port} ({world_state})"),
-        image_built=utc_iso(iso_epoch(built)) if built else '',
+        image_built=utc_iso(timestamp_epoch(built)) if built else '',
         storage_summary=(f"Mongo {format_bytes(counts.get('bytes')) if counts else 'unknown'} · "
                          f"cache {format_bytes(du_bytes(data / 'lobby' / 'cache'))} · "
                          f"{format_bytes(result['data_bytes'])} total"),

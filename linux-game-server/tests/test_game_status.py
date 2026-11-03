@@ -176,7 +176,7 @@ class DarkanTests(unittest.TestCase):
         return {
             ('ss', '-ltnH'): f'LISTEN 0 128 {api_address}:4040 *:*\nLISTEN 0 128 *:43621 *:*',
             ('docker', 'image', 'inspect', '-f', '{{.Created}}', 'computer-setup/darkan:local'):
-                '2026-11-02T23:30:00.5Z',
+                '2026-11-02T15:30:00.759408185-08:00',
             ('docker', 'image', 'inspect', '-f', '{{index .Config.Labels "org.opencontainers.image.revision"}}',
              'computer-setup/darkan:local'): 'b' * 40,
         }
