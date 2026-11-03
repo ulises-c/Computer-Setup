@@ -82,6 +82,27 @@ HOST_ALIAS="homepc" REMOTE_HOST="<server-ip>" REMOTE_USER="<username>" PORT="22"
 
 ---
 
+### `add_truenas_host.sh`
+
+Configures an SSH alias for a TrueNAS host when you can authorize keys through the TrueNAS web UI but cannot initially log in over SSH to install one.
+
+**What it does:**
+- Creates a dedicated Ed25519 key or safely reuses the named key (refuses incomplete key pairs)
+- Adds an idempotent SSH config block without changing unrelated host entries
+- Prints the public key and pauses while you add it to the TrueNAS user's authorized keys in the web UI
+- Tests public-key login and reports the `ssh <alias>` command
+
+It does not request or transmit your TrueNAS password. Never share the private key; only add the `.pub` key in TrueNAS.
+
+**Usage:**
+```bash
+bash add_truenas_host.sh
+# or pre-fill inputs via env vars:
+HOST_ALIAS="nas" REMOTE_HOST="<server-ip>" REMOTE_USER="<username>" PORT="22" KEY_NAME="nas" bash add_truenas_host.sh
+```
+
+---
+
 ### `git-add-ssh-signer.sh`
 
 Registers an SSH public key as a trusted Git commit signer and optionally configures a specific repo to sign with it.
