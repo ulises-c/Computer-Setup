@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write the status JSON behind the Lost City and RS-SDK Homepage cards.
+"""Write the status JSON behind the Lost City, RS-SDK and Darkan Homepage cards.
 
 Run by 2004scape-status.timer every 15 seconds; safe to run by hand. Each stack
 gets its own document in status/, served by this directory's loopback nginx.
@@ -7,10 +7,12 @@ Resource history (24h CPU/memory) reuses the Dragonwilds sampler and lives in
 the private .metrics/ directory, outside what nginx serves.
 """
 import calendar
+from datetime import datetime
 import fcntl
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import sqlite3
 import subprocess
@@ -354,6 +356,107 @@ def rs_sdk(source, data, history, boot, window):
     return result
 
 
+def timestamp_epoch(value):
+    """Docker image times carry nanoseconds and either Z or the daemon's local offset."""
+    match = re.fullmatch(r'(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.\d+)?(Z|[+-]\d\d:\d\d)', value or '')
+    if not match:
+        return None
+    offset = '+00:00' if match[2] == 'Z' else match[2]
+    return int(datetime.fromisoformat(match[1] + offset).timestamp())
+
+
+def listen_addresses(port):
+    output = run(['ss', '-ltnH']) or ''
+    addresses = set()
+    for line in output.splitlines():
+        fields = line.split()
+        if len(fields) >= 4:
+            address, _, listen_port = fields[3].rpartition(':')
+            if listen_port == str(port):
+                addresses.add(address.strip('[]'))
+    return addresses
+
+
+def mongo_counts(port, world_id):
+    """Counts through the container's own credentials; no secret is read or passed here."""
+    if not (port.isdecimal() and world_id.isdecimal()):
+        return None
+    script = ("db.getSiblingDB('admin').auth('darkan', process.env.MONGO_INITDB_ROOT_PASSWORD);"
+              "const l = db.getSiblingDB('darkan-lobby'), w = db.getSiblingDB('darkan-world-" + world_id + "');"
+              "print(JSON.stringify({accounts: l.accounts.countDocuments(), players: w.players.countDocuments(),"
+              " bytes: l.stats().totalSize + w.stats().totalSize}))")
+    output = run(['docker', 'exec', 'darkan-mongo', 'mongosh', '--quiet', '--port', port, '--eval', script],
+                 timeout=15)
+    try:
+        counts = json.loads(output.splitlines()[-1]) if output else None
+    except (ValueError, IndexError):
+        return None
+    return counts if isinstance(counts, dict) else None
+
+
+def darkan(env, history, boot):
+    world = inspect('darkan-world')
+    data = Path(env['DARKAN_DATA_DIR'])
+    world_id = env.get('DARKAN_WORLD_ID', '1')
+    ref = env.get('DARKAN_SOURCE_REF', '')
+    updates = f'manual · pinned {ref[:7] or "?"}'
+    result = common(world, history, boot, None, data, data / 'world', (updates, ''))
+    world_env = dict(item.partition('=')[::2] for item in ((world or {}).get('Config') or {}).get('Env') or [])
+    running = result['status'].startswith('running')
+
+    services = []
+    for name in ('lobby', 'mongo'):
+        state, _ = server_state(inspect(f'darkan-{name}'))
+        services.append(f'{name} {state}')
+    result['process_summary'] = f"{' · '.join(services)} · {result['process_summary']}"
+
+    sha, date = git_head(env.get('DARKAN_SOURCE_DIR', ''))
+    built = run(['docker', 'image', 'inspect', '-f', '{{.Created}}', 'computer-setup/darkan:local'])
+    revision = run(['docker', 'image', 'inspect', '-f',
+                    '{{index .Config.Labels "org.opencontainers.image.revision"}}', 'computer-setup/darkan:local'])
+    if sha and ref and not ref.startswith(sha):
+        updates += ' · checkout drifted'
+    if revision and ref and revision != ref:
+        updates += ' · image not rebuilt'
+
+    lobby_port = env.get('DARKAN_LOBBY_PORT', '?')
+    world_port = env.get('DARKAN_WORLD_PORT', '?')
+    api_port = env.get('DARKAN_LOBBY_API_PORT', '4040')
+    worlds = http_json(f'http://127.0.0.1:{api_port}/worldlist') if running else None
+    entry = next((w for w in worlds if isinstance(w, dict)
+                  and str((w.get('metadata') or {}).get('number')) == world_id), None) \
+        if isinstance(worlds, list) else None
+    online = entry.get('playersOnline') if entry and not entry.get('offline') else None
+    counts = mongo_counts(env.get('DARKAN_MONGO_PORT', ''), world_id) if running else None
+
+    api = listen_addresses(api_port)
+    api_state = ('loopback' if api and api <= {'127.0.0.1', '::1', '::ffff:127.0.0.1'} else 'EXPOSED' if api else 'down')
+    bots = 'bots allowed' if world_env.get('WORLD_BOTS_ALLOWED') == 'true' else 'no bots'
+    members = 'members' if world_env.get('WORLD_MEMBERS', 'true') == 'true' else 'free-to-play'
+    world_state = 'listening' if listening(world_port) else 'down'
+    result.update(
+        software_summary=f'build 727 · {sha or "?"} ({date or "?"}) · image {(built or "?")[:10]}',
+        rules_summary=(f"{members} · {world_env.get('WORLD_XP_RATE', '?')}× XP · "
+                       f"{world_env.get('WORLD_DROP_MODIFIER', '?')}× drops · {bots}"),
+        players_summary=(f"{online if online is not None else '?'} online · "
+                         + (f"{plural(counts.get('accounts', 0), 'account')} · "
+                            f"{plural(counts.get('players', 0), 'player save')}"
+                            if counts else 'accounts unknown')),
+        accounts=counts.get('accounts') if counts else None,
+        connect_lan=(f"{env.get('DARKAN_PUBLIC_HOST', '?')}:{lobby_port} lobby · "
+                     f"world {world_id} :{world_port} ({world_state})"),
+        image_built=utc_iso(timestamp_epoch(built)) if built else '',
+        storage_summary=(f"Mongo {format_bytes(counts.get('bytes')) if counts else 'unknown'} · "
+                         f"cache {format_bytes(du_bytes(data / 'lobby' / 'cache'))} · "
+                         f"{format_bytes(result['data_bytes'])} total"),
+        maintenance_summary=updates,
+        access_summary=f'tailnet only · no LAN rule · API {api_state}',
+        backup_status='not in the backup set',
+        last_backup='',
+    )
+    return result
+
+
 def world_list():
     """rs-sdk/worlds/worlds.py's machine-readable world list (None if it cannot be built)."""
     import importlib.util
@@ -417,6 +520,9 @@ def main():
                           metrics / 'rs-sdk-history.json', boot, maintenance(settings, 'rs-sdk', state_dir))
             card['worlds_summary'] = worlds_summary(worlds)
             publish(status_dir / 'rs-sdk-status.json', card)
+        darkan_env = read_env(GAME / 'darkan' / '.env')
+        if darkan_env.get('DARKAN_DATA_DIR'):
+            publish(status_dir / 'darkan-status.json', darkan(darkan_env, metrics / 'darkan-history.json', boot))
 
 
 if __name__ == '__main__':
