@@ -1,0 +1,104 @@
+# The test world in ISOLATED mode (`2004scape/world.sh test up --isolated`):
+# its own login, friend and logger servers (EASY_STARTUP, on their own ports)
+# and its own data dir, a fresh copy of world 1's data made by isolated-copy.sh.
+# World 1's data dir is never mounted here; nothing it does reaches world 1.
+# Use it for candidates world 1's saves cannot be shared with (a newer save
+# format, database migrations, content changes): the copy is migrated and
+# played on, then thrown away. Progress made here never reaches world 1.
+#
+# The image's own entrypoint runs (database backup + migrations, save symlink,
+# gateway, engine) after world-node.js has added the allowlist.
+# Gameplay settings must match world 1's compose service (tests enforce it).
+services:
+  world:
+    image: ${WORLD_IMAGE:?set by world.sh}
+    container_name: rs-sdk-world-${WORLD_ID:?set by world.sh}
+    init: true
+    network_mode: host
+    restart: "no"
+    labels:
+      - com.centurylinklabs.watchtower.enable=false
+      - computer-setup.rs-sdk.world=${WORLD_ID}
+      - computer-setup.rs-sdk.world-role=${WORLD_ROLE:?set by world.sh}
+      - computer-setup.rs-sdk.world-mode=isolated
+    env_file:
+      - path: ../../../server-base/timezone.env
+        required: true
+    entrypoint: ["/bin/bash", "/opt/world/world-entrypoint.sh"]
+    command: []
+    environment:
+      WORLD_ID: ${WORLD_ID}
+      NODE_ID: ${WORLD_NODE_ID:?set by world.sh}
+      WORLD_ROLE: ${WORLD_ROLE}
+      WORLD_ISOLATED: "true"
+      # Guards (world-node.js). The allowlist is always on; there is no other
+      # world on this login server to be exclusive with or taken over by.
+      WORLD_ALLOWLIST_ENABLED: "true"
+      WORLD_LOGIN_ALLOWLIST: ${WORLD_LOGIN_ALLOWLIST:-}
+      WORLD_EXCLUSIVE_LOGIN: "false"
+      WORLD_TAKEOVER_WATCH: "false"
+      WORLD_SAVE_BACKUP_DIR: /opt/world-state/save-backups
+      BUG_REPORTS_FILE: /opt/world-state/bug-reports.jsonl
+      GE_DATABASE: /opt/server/data/market.sqlite
+      # Its own copy of the exchange ledger, so the exchange can be tried here.
+      GE_ENABLED: "true"
+      BUILD_STARTUP: "false"
+      BUILD_STARTUP_UPDATE: "false"
+      DB_BACKEND: sqlite
+      EASY_STARTUP: "true"
+      LOGIN_SERVER: "true"
+      FRIEND_SERVER: "true"
+      LOGIN_HOST: 127.0.0.1
+      LOGIN_PORT: ${WORLD_ISOLATED_LOGIN_PORT:?set by world.sh}
+      FRIEND_HOST: 127.0.0.1
+      FRIEND_PORT: ${WORLD_ISOLATED_FRIEND_PORT:?set by world.sh}
+      LOGGER_HOST: 127.0.0.1
+      LOGGER_PORT: ${WORLD_ISOLATED_LOGGER_PORT:?set by world.sh}
+      NODE_MEMBERS: "true"
+      NODE_PORT: ${WORLD_GAME_PORT:?}
+      NODE_XPRATE: "1"
+      NODE_INFINITE_RUN: "false"
+      NODE_RANDOM_EVENTS: "true"
+      NODE_TICKRATE: "600"
+      WEBSITE_REGISTRATION: "false"
+      WEB_PORT: ${WORLD_WEB_PORT:?}
+      WEB_MANAGEMENT_PORT: ${WORLD_MANAGEMENT_PORT:?}
+      GATEWAY_URL: http://127.0.0.1:${WORLD_GATEWAY_PORT:?}
+      AGENT_PORT: ${WORLD_GATEWAY_PORT}
+      GATEWAY_PUBLIC_PORT: ${WORLD_GATEWAY_PUBLIC_PORT:?}
+      GATEWAY_HOSTNAME: 0.0.0.0
+    volumes:
+      - type: bind
+        source: ${WORLD_ISOLATED_DATA_DIR:?set by world.sh}
+        target: /opt/server/data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${WORLD_STATE_DIR:?set by world.sh}
+        target: /opt/world-state
+        bind:
+          create_host_path: false
+      - type: bind
+        source: .
+        target: /opt/world
+        read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 120s
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
+    healthcheck:
+      test:
+        - CMD
+        - bun
+        - -e
+        - "fetch('http://127.0.0.1:' + process.env.WEB_PORT + '/engine-status').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 180s

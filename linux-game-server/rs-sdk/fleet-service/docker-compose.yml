@@ -1,0 +1,48 @@
+# Fleet service (source of truth for the bot fleet): gate, pins, accounts, append-only data.
+# Tailnet only: published on loopback, exposed by `tailscale serve --https=9447` (install.sh).
+services:
+  fleet-service:
+    image: rs-fleet-service:local
+    build: .
+    container_name: rs-fleet-service
+    user: "${FLEET_UID:?Run fleet-service/install.sh}:${FLEET_GID:?Run fleet-service/install.sh}"
+    restart: unless-stopped
+    env_file:
+      - path: ../../../server-base/timezone.env
+        required: true
+      # FLEET_TOKENS (host=token,...). Outside git, mode 600 (install.sh creates it).
+      - path: ${FLEET_ENV_FILE:?Run fleet-service/install.sh}
+        required: true
+    ports:
+      - "127.0.0.1:8100:8100"
+    volumes:
+      - type: bind
+        source: ${FLEET_DATA_DIR:?Run fleet-service/install.sh}
+        target: /data
+        read_only: false
+        bind:
+          create_host_path: false
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:8100/healthz').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    labels:
+      - com.centurylinklabs.watchtower.enable=false
+    logging:
+      driver: local
+      options:
+        max-size: 5m
+        max-file: "2"

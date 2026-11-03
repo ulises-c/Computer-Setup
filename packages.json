@@ -377,6 +377,14 @@
     "description": "HTTP client — usually pre-installed; required by various install scripts"
   },
   {
+    "name": "sqlite3",
+    "tags": ["server-base"],
+    "package_manager": { "ubuntu": "apt", "server": "apt" },
+    "priority": "medium",
+    "optional": false,
+    "description": "SQLite CLI — the restic backups stage live game databases with its online .backup and verify them on restore"
+  },
+  {
     "name": "wget",
     "tags": ["networking", "server-base"],
     "package_manager": { "ubuntu": "apt", "arch": "yay", "server": "apt" },

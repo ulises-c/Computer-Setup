@@ -6,6 +6,155 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com). Remaining
 work lives in [TODO.md](TODO.md); the design rationale for the unified layout is
 in [UNIFICATION.md](UNIFICATION.md).
 
+## Unreleased — 2004Scape backup and maintenance safety
+
+### Added
+- RS-SDK post-update acceptance gate: `world.sh promote IMAGE` refuses unless the newest
+  acceptance report recorded for that exact image id passed, covered the whole suite and
+  finished after the image was built; `--skip-acceptance REASON` overrides (logged in the worlds
+  state dir's `acceptance/skips.log`, ntfy at high priority). `world.sh acceptance record IMAGE
+  FILE|-` stores a report from the bot host's suite (2004Scape-Botting `scripts/acceptance.sh`:
+  login, walk, bank, trade, XP curve, hiscores pager, Strange-box calibration and every random
+  event solved by the fleet's solvers on isolated world 100) next to the candidate list, with an
+  ntfy summary; `world.sh acceptance IMAGE` runs test up --isolated, `ACCEPTANCE_RUNNER`, record,
+  test down --wipe. Report store and gate: `linux-game-server/rs-sdk/worlds/acceptance.py`.
+- An isolated test world now stops without the in-game countdown when its own friend server is
+  not running (the countdown relays through it) instead of refusing `test down`.
+- RS-SDK isolated test world: `world.sh test up --isolated [IMAGE]` runs world 100 on its own
+  login, friend and logger servers and on a consistent copy of world 1's data. Use it for
+  candidates that cannot share world 1's saves: a new save format, migrations or content.
+  World 1's data is never mounted. `test down` keeps the copy and `--wipe` deletes it. The
+  world is listed as isolated and is never hoppable. Runbook for upstream 1599b86:
+  `linux-game-server/rs-sdk/runbooks/promote-1599b86.md`.
+- RS-SDK worlds: extra engines share world 1's accounts, saves, banks and hiscores
+  through its login, friend and logger servers and its Grand Exchange save ledger.
+  Worlds are rows in `linux-game-server/rs-sdk/worlds/worlds.conf`; test world 100
+  runs a candidate image on demand (`2004scape/world.sh test up|down`) with an
+  allowlist, an exclusive-login check, a save backup before every login, a takeover
+  watch, and a refusal to start on an image with another XP curve, save format or
+  migrations. Countdowns stay on their own world. The world list is published as
+  `/rs-sdk-worlds.json` for world-hopping bots.
+- RS-SDK updates build a candidate (upstream + patch scripts) and notify instead of
+  updating world 1 (`RS_SDK_UPDATES=candidate`); world 1 changes only on
+  `world.sh promote --next-window` (weekly maintenance, with backup and rollback) or
+  `--now` (2-minute countdown, data copy and rollback).
+- `world.sh candidate build --source-ref COMMIT [--base-image IMAGE]` (a fixes-only
+  candidate: world 1's own upstream commit, the patch layer on world 1's image so the
+  bun runtime and Debian packages do not move with the floating base tag) and
+  `world.sh promote --now --pre-start CMD | --fix-hiscores`: a hook that runs once
+  while world 1's engine is stopped, after the data copy; a failure restores the data
+  and the previous image. `--fix-hiscores` applies `fix-hiscore-levels.py` as root in
+  a network-less container.
+- World 1 promoted (2026-10-26, 2-minute countdown) to a fixes-only candidate: its own
+  upstream commit and image plus the five patch scripts (original XP curve and client
+  timing, hiscore pager, hiscore pruning, UTC hop timer). Only the two patched engine
+  files and the rebuilt client bundle differ from the previous image. The hiscore repair
+  ran during the downtime (5 rows relevelled, 2 rows under level 15 deleted).
+- `hop-timer-utc.js`: the login server read the stored UTC logout time as Pacific
+  time, so the 45-second hop timer between worlds lasted 7-8 hours. On world 1 since
+  the 2026-10-26 promotion.
+- Server-authoritative RS-SDK wiki: the game server owns the scraped store,
+  SQLite databases, image/stylesheet queues and shared request pacing. Existing
+  bot wiki commands forward over SSH without local-fetch fallback. User timers
+  drain requests and publish the three sanitized wiki snapshots locally; a
+  server-authority marker rejects stale full uploads. The Mac publishes only
+  account/benchmark projections and allowlisted observation/guide inputs.
+  Capacity failures retain portal requests for retry, publication releases
+  database locks before filesystem/subprocess work, and timers and interactive
+  commands share one private input configuration. Frozen transfer verified
+  database contents, Git history and LFS objects, retained private rollback
+  archives, and left both game containers and Dragonwilds running unchanged.
+  Nightly off-host backup coverage and a natural-reboot check remain in TODO.
+- RS-SDK's Homepage card opens a Linux-game-server companion at `/rs-sdk/`, with
+  searchable account metadata, benchmark summaries/step timings and cached wiki
+  text, plus Play, HiScores and Grand Exchange links. A separate source-Mac sync
+  publishes allowlisted read-only SQLite views every two minutes, excluding
+  passwords and private host/notes/error fields; neither game nor bot/wiki source
+  code is modified (normal SQLite WAL shared-memory coordination still applies).
+  The portal matches RS-SDK's parchment/stone Grand Exchange and compact HiScores
+  theme. Wiki pages have a lightweight OSRS/MediaWiki-style reader with contents,
+  headings, lists and tables, without a separate MediaWiki stack. RS-SDK Wiki
+  and Scraped Wiki have separate search pages and physical SQLite snapshot
+  databases; their searches, pagination and article links never mix collections.
+  The source scraper cache remains unchanged. Live account
+  presence/world/server lookup is tracked in TODO, not inferred from lifecycle
+  status. See `linux-game-server/rs-sdk/portal/README.md`.
+- Scraped Wiki articles gain an **original view** (clean text view kept): the
+  cached article HTML with its cached stylesheets and images, sanitized with
+  nh3/tinycss2, rewritten to local assets only and shown in a script-free
+  sandboxed frame under its own CSP. Missing images are placeholders; nothing is
+  fetched. The source-Mac sync sends cached rasters/CSS as content-addressed,
+  validated blobs and only those the server lacks. The portal is now built as a
+  small local image with two pinned dependencies. CSS fidelity is deliberately
+  conservative and script-driven page parts do not work.
+- Live nightly game backups include CRC-checked 2004Scape player-save copies.
+  Restore verification requires explicit state coverage and compares Lost City's
+  staged SQLite database against a private copy of stopped live data, including
+  WAL transactions, without creating live sidecars.
+- Weekly 2004Scape maintenance counts down in game, shuts down before the existing
+  03:00 backup, verifies the restored state, applies pending updates and restarts.
+  Failed or interrupted updates retain rollback state; other nights remain live.
+  Requires rerunning the backup installer and installing the maintenance timer.
+- Lost City and RS-SDK Homepage cards match the Dragonwilds card: a 15-second
+  status producer (`2004scape/game_status.py`, loopback nginx on 8097) reports
+  container health, software and gameplay rules, 24h CPU/memory, players and
+  accounts (read-only SQLite), saves, LAN address, maintenance window and backup.
+  RS-SDK adds bot, SDK-client and gateway rows. The cards are styled apart: Lost
+  City shows the mirrored 2004 login art and logo, RS-SDK the Lava Maze art,
+  scanlines, a robot icon and a BOT SERVER tag. Requires
+  `fetch-assets.sh linux-game-server` and `sudo bash
+  linux-game-server/2004scape/install-status-timer.sh`.
+- RS-SDK hiscore lists get Top/Prev/Next under the ranked table
+  (`linux-game-server/rs-sdk/hiscore-pages.js`, applied in the image layer like
+  `restore-xp.js`): 21 ranks a page, as the rank search already showed,
+  keeping category, profile and a searched name, ends greyed out, "Ranks X–Y of
+  N"; a name search highlights the player and links its rank to its page.
+  Equipment, Bank and Lava Maze Runite are fixed top-N boards and get no pager.
+
+### Changed
+- Lost City (vanilla 2004Scape) is no longer started by default on the game server: `serve.sh`
+  leaves `lostcity` out of its compose set and switches off Tailscale Serve port 9444, and
+  `activate.sh` only opens and verifies RS-SDK. The stack files, runtime data, backup coverage and
+  weekly maintenance (which skips stopped stacks) are unchanged; `lostcity/README.md` has the manual
+  start.
+
+### Fixed
+- RS-SDK hiscores kept levels from the wrong XP curve (2026-10-26): for nine
+  hours the server ran an image with the fork's level/10 curve, so logouts wrote
+  inflated skill levels, and the login server never deletes a skill row (it only
+  writes at level 15+), so rows that fall under 15 on the original curve, and
+  every offline account, would have kept them. `hiscore-prune.js` makes a save
+  delete the row of any skill under 15; `fix-hiscore-levels.py` is the one-off
+  repair (dry run by default; `--apply` refuses while the engine runs, backs up
+  first, recomputes levels from stored XP with the engine's table and deletes
+  rows under 15). Tested on a copy of the live database: 69 of 95 skill rows
+  relevelled, 2 deleted, a rerun finds nothing. Built as
+  `computer-setup/rs-sdk:original-hiscores` on the running original-client
+  image; not deployed yet (waiting for a test world). The main Dockerfile
+  applies both scripts, so the next maintenance rebuild ships them.
+- 2004Scape maintenance misreported a passed restore check as failed
+  (2026-10-26): `game-backup-restore-check.service` is unloaded by systemd as
+  soon as it finishes (no timer references it), so its
+  `ExecMainStartTimestamp` read back empty, `date -d ""` turned that into
+  midnight, the run looked older than the shutdown, the check ran a second
+  time, passed again, and the run died "failed; games restarted on their current
+  code". Maintenance now only reads a start time while systemd reports one: a
+  unit found idle is simply started, a run in progress from before the shutdown
+  is waited out, then rerun.
+- That failure path restarted RS-SDK on whatever `computer-setup/rs-sdk:local`
+  pointed at, an image from before the original-gameplay deploy (a playtest had
+  recreated the container from its own compose override on
+  `:original-gameplay`, never moving `:local`), so the server ran 9 hours on
+  pre-original gameplay. Every start by maintenance (normal restart, failure
+  restart, abort trap, rollback, `--resume`) now retags the stack's compose tag
+  to the image its container ran before the countdown (recorded in
+  `~/.local/state/computer-setup/2004scape-maintenance/<stack>.image`), and
+  refuses to start if that image is gone; only a healthy update replaces it with
+  the newly built image. Lost City gets the same pin on
+  `computer-setup/lostcity:node24`. A tag that differs from the running image is
+  logged as a WARNING on every run (`--check` too) and sent to ntfy once per
+  drift.
+
 ## Unreleased — Shared server base and cross-linked dashboards
 
 ### Added

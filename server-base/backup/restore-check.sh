@@ -7,22 +7,53 @@ set -Eeuo pipefail
 # integrity_check, and that staged files with a .sha256 sidecar match it.
 #
 # Usage: sudo bash server-base/backup/restore-check.sh <host-dir> [--second] [--keep]
-#   <host-dir>  linux-server, linux-game-server or linux-pi (its backup/.env is used)
-#   --second    check SECOND_RESTIC_REPOSITORY instead of the primary
-#   --keep      leave the restored tree in place for inspection
+#                                                      [--compare-live <dir>]...
+#                                                      [--compare-sqlite <live-db> <staged-relative-path>]...
+#                                                      [--compare-lostcity-config <runtime-dir>]...
+#   <host-dir>      linux-server, linux-game-server or linux-pi (its backup/.env is used)
+#   --second        check SECOND_RESTIC_REPOSITORY instead of the primary
+#   --keep          leave the restored tree in place for inspection
+#   --compare-live  require this exact snapshot source and compare it completely
+#                   with live files. Only meaningful while writers are stopped.
+#   --compare-sqlite compare a staged SQLite database's SQL dump with stopped live data.
+#   --compare-lostcity-config require .env or world.json and compare all present configuration.
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 trap 'printf "error: restore-check stopped at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
 log() { printf '[restore-check] %s\n' "$*"; }
 
 host_dir="" second=false keep=false
-for arg in "$@"; do
-  case "$arg" in
+compare_live=()
+compare_sqlite=()
+lostcity_config=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     --second) second=true ;;
     --keep) keep=true ;;
-    -*) die "unknown option: $arg" ;;
-    *) host_dir="$arg" ;;
+    --compare-live)
+      [[ $# -ge 2 ]] || die "--compare-live needs a directory"
+      [[ "$2" =~ ^/[[:alnum:]_./-]+$ && "$2" != *//* && "$2" != */./* && "$2" != */. && "$2" != */../* && "$2" != */.. && "$2" != */ ]] \
+        || die "--compare-live needs a plain absolute path: $2"
+      compare_live+=("$2")
+      shift ;;
+    --compare-sqlite)
+      [[ $# -ge 3 ]] || die "--compare-sqlite needs a live database and staged relative path"
+      [[ "$2" =~ ^/[[:alnum:]_./-]+$ && "$2" != *//* && "$2" != */./* && "$2" != */. && "$2" != */../* && "$2" != */.. && "$2" != */ ]] \
+        || die "--compare-sqlite needs a plain absolute live path"
+      [[ "$3" =~ ^[[:alnum:]_-][[:alnum:]_./-]*$ && "$3" != *//* && "$3" != */./* && "$3" != */. && "$3" != */../* && "$3" != */.. && "$3" != */ ]] \
+        || die "--compare-sqlite needs a plain staged relative path"
+      compare_sqlite+=("$2" "$3")
+      shift 2 ;;
+    --compare-lostcity-config)
+      [[ $# -ge 2 ]] || die "--compare-lostcity-config needs a runtime directory"
+      [[ "$2" =~ ^/[[:alnum:]_./-]+$ && "$2" != *//* && "$2" != */./* && "$2" != */. && "$2" != */../* && "$2" != */.. && "$2" != */ ]] \
+        || die "--compare-lostcity-config needs a plain absolute path"
+      lostcity_config+=("$2")
+      shift ;;
+    -*) die "unknown option: $1" ;;
+    *) host_dir="$1" ;;
   esac
+  shift
 done
 [[ -n "$host_dir" ]] || die "usage: $0 <host-dir> [--second] [--keep]"
 [[ "$EUID" -eq 0 ]] || die "run with sudo (repositories are reached as root)"
@@ -141,6 +172,86 @@ while IFS= read -r -d '' sidecar; do
   sums=$((sums + 1))
 done <"$scan_list"
 log "checksummed staged copies verified: $sums"
+
+for runtime in ${lostcity_config[@]+"${lostcity_config[@]}"}; do
+  [[ -f "$runtime/engine/.env" || -f "$runtime/engine/data/config/world.json" ]] \
+    || die "Lost City has neither .env nor world.json configuration"
+  for config in "$runtime/engine/.env" "$runtime/engine/data/config"; do
+    if [[ -e "$config" || -L "$config" || -e "$scratch$config" || -L "$scratch$config" ]]; then
+      compare_live+=("$config")
+    fi
+  done
+done
+
+for live in ${compare_live[@]+"${compare_live[@]}"}; do
+  paths="$(jq -r --arg d "$live" '.[-1].paths[] | select(. == $d)' <<<"$snapshot_json")" \
+    || die "cannot read the paths of snapshot $snapshot"
+  [[ -n "$paths" ]] || die "snapshot $snapshot has no exact source for $live"
+  n=0
+  while IFS= read -r path; do
+    rc=0
+    diff -r --no-dereference -q -- "$scratch$path" "$path" >/dev/null 2>&1 || rc=$?
+    case "$rc" in
+      0) ;;
+      1) die "restored $path differs from the live copy" ;;
+      *) die "cannot compare restored $path with the live copy" ;;
+    esac
+    n=$((n + 1))
+  done <<<"$paths"
+  log "identical to the live copy: $n snapshot path(s) under $live"
+done
+
+if (( ${#compare_sqlite[@]} )); then
+  python3 - "$staging_root" "${compare_sqlite[@]}" <<'PY'
+import contextlib
+import itertools
+import os
+import pathlib
+import shutil
+import sqlite3
+import stat
+import sys
+import tempfile
+
+staging = pathlib.Path(sys.argv[1])
+
+def private_copy(source, target):
+    descriptor = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(descriptor, 'rb') as stream:
+        before = os.fstat(stream.fileno())
+        if not stat.S_ISREG(before.st_mode):
+            raise ValueError('SQLite comparison requires regular database files')
+        with target.open('xb') as output:
+            shutil.copyfileobj(stream, output)
+        after = os.fstat(stream.fileno())
+        if (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+            raise ValueError('live SQLite files changed during stopped-state comparison')
+
+try:
+    for live, relative in zip(sys.argv[2::2], sys.argv[3::2]):
+        restored = staging / relative
+        for path in (pathlib.Path(live), restored):
+            if not path.is_file() or path.resolve() != path:
+                raise ValueError("SQLite comparison requires regular, non-symlinked database paths")
+        # SQLite may create SHM even with mode=ro; open only private copies,
+        # retaining the WAL so committed transactions are not lost.
+        with tempfile.TemporaryDirectory(dir=staging.parent) as temporary:
+            local = pathlib.Path(temporary) / 'live.sqlite'
+            private_copy(pathlib.Path(live), local)
+            for suffix in ('-wal', '-journal'):
+                sidecar = pathlib.Path(live + suffix)
+                if sidecar.exists() or sidecar.is_symlink():
+                    private_copy(sidecar, pathlib.Path(str(local) + suffix))
+            with contextlib.closing(sqlite3.connect(local.as_uri() + '?mode=ro', uri=True)) as original, \
+                 contextlib.closing(sqlite3.connect(restored.as_uri() + '?mode=ro', uri=True)) as copy:
+                if any(a != b for a, b in itertools.zip_longest(original.iterdump(), copy.iterdump())):
+                    raise ValueError("staged SQLite database differs from stopped live data")
+        print('[restore-check] staged SQLite database identical to stopped live data')
+except (OSError, ValueError, sqlite3.Error) as error:
+    print(f'error: SQLite live comparison failed: {error}', file=sys.stderr)
+    sys.exit(1)
+PY
+fi
 
 log "PASSED: snapshot $snapshot restores completely"
 [[ "$keep" == true ]] && log "restored tree kept at $scratch"

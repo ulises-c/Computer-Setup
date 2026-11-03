@@ -7,6 +7,9 @@ set -euo pipefail
 # plan and touches nothing; --verify renders and checks the units without root
 # and without installing.
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+# The shared engine files (restore-check.sh) sit next to the real setup.sh, not
+# next to a host's symlink to it.
+ENGINE_DIR="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" &>/dev/null && pwd)"
 HOST_DIR="$(dirname -- "$SCRIPT_DIR")"
 MODE=install
 unit="$(sed -n 's/^BACKUP_UNIT=//p' "$SCRIPT_DIR/sources.sh")"
@@ -60,6 +63,14 @@ if [[ -f "$HOST_DIR/forgejo/.env" ]]; then
     fi
   fi
 fi
+BACKUP_LOSTCITY_RUNTIME_DIR=""
+BACKUP_RS_SDK_DATA_DIR=""
+if [[ -f "$HOST_DIR/lostcity/.env" ]]; then
+  BACKUP_LOSTCITY_RUNTIME_DIR="$(read_env_value "$HOST_DIR/lostcity/.env" LOSTCITY_RUNTIME_DIR)" || exit 1
+fi
+if [[ -f "$HOST_DIR/rs-sdk/.env" ]]; then
+  BACKUP_RS_SDK_DATA_DIR="$(read_env_value "$HOST_DIR/rs-sdk/.env" RS_SDK_DATA_DIR)" || exit 1
+fi
 [[ "$prefix" =~ ^[a-z][a-z-]*$ ]] || { printf 'error: bad BACKUP_UNIT in %s/sources.sh\n' "$SCRIPT_DIR" >&2; exit 1; }
 
 case "${1:-}" in
@@ -85,6 +96,26 @@ if ! [[ "$BACKUP_FORGEJO_DATA_PATH" =~ ^/[[:alnum:]_./-]+$ && "$BACKUP_FORGEJO_D
   printf 'error: invalid FORGEJO_DATA_PATH in %s/forgejo/.env\n' "$HOST_DIR" >&2
   exit 1
 fi
+valid_game_path() {
+  [[ -z "$1" ]] || [[ "$1" =~ ^/[[:alnum:]_./-]+$ && "$1" != *//* && "$1" != */./* && "$1" != */. && "$1" != */../* && "$1" != */.. && "$1" != */ ]]
+}
+valid_game_path "$BACKUP_LOSTCITY_RUNTIME_DIR" \
+  || { printf 'error: invalid LOSTCITY_RUNTIME_DIR in %s/lostcity/.env\n' "$HOST_DIR" >&2; exit 1; }
+valid_game_path "$BACKUP_RS_SDK_DATA_DIR" \
+  || { printf 'error: invalid RS_SDK_DATA_DIR in %s/rs-sdk/.env\n' "$HOST_DIR" >&2; exit 1; }
+# A host's optional <prefix>-restore-check.service runs the bundle's restore-check;
+# these are the live trees it compares the restore with (game data, checked
+# while the weekly maintenance has the games stopped).
+RESTORE_CHECK_TEMPLATE="$SCRIPT_DIR/$prefix-restore-check.service.template"
+RESTORE_COMPARE_ARGS=""
+if [[ -n "$BACKUP_LOSTCITY_RUNTIME_DIR" ]]; then
+  for state in server.json engine/data/players; do
+    RESTORE_COMPARE_ARGS+=" --compare-live $BACKUP_LOSTCITY_RUNTIME_DIR/$state"
+  done
+  RESTORE_COMPARE_ARGS+=" --compare-lostcity-config $BACKUP_LOSTCITY_RUNTIME_DIR"
+  RESTORE_COMPARE_ARGS+=" --compare-sqlite $BACKUP_LOSTCITY_RUNTIME_DIR/engine/db.sqlite lostcity/db.sqlite.sqlitebak"
+fi
+[[ -z "$BACKUP_RS_SDK_DATA_DIR" ]] || RESTORE_COMPARE_ARGS+=" --compare-live $BACKUP_RS_SDK_DATA_DIR"
 if [[ "$MODE" == install ]]; then
   [[ $EUID -eq 0 ]] || { printf 'error: run with sudo: sudo bash %s\n' "$0" >&2; exit 1; }
   [[ -f "$SCRIPT_DIR/.env" ]] || { printf 'error: create %s/.env before installing\n' "$SCRIPT_DIR" >&2; exit 1; }
@@ -113,7 +144,11 @@ render_unit() {
     -e "s|@BACKUP_SAVE_SCRIPT_SHA256@|$BUNDLE_SAVE_SCRIPT_SHA256|g" \
     -e "s|@BACKUP_DRAGONWILDS_INSTALL_DIR@|$BACKUP_DRAGONWILDS_INSTALL_DIR|g" \
     -e "s|@BACKUP_FORGEJO_DATA_PATH@|$BACKUP_FORGEJO_DATA_PATH|g" \
+    -e "s|@BACKUP_LOSTCITY_RUNTIME_DIR@|$BACKUP_LOSTCITY_RUNTIME_DIR|g" \
+    -e "s|@BACKUP_RS_SDK_DATA_DIR@|$BACKUP_RS_SDK_DATA_DIR|g" \
     -e "s|@BACKUP_STATUS_JSON@|$STATE_DIR/backup-status.json|g" \
+    -e "s|@RESTORE_CHECK_SCRIPT@|$BUNDLE_DIR/restore-check.sh|g" \
+    -e "s|@RESTORE_COMPARE_ARGS@|$RESTORE_COMPARE_ARGS|g" \
     "$src" > "$tmp/$dest"
 }
 
@@ -122,18 +157,24 @@ render_unit() {
 render_and_verify() {
   bash -n "$SCRIPT_DIR/backup.sh"
   bash -n "$SCRIPT_DIR/sources.sh"
+  bash -n "$ENGINE_DIR/restore-check.sh"
+  local -a units=("$prefix.service" "$prefix-failure.service")
   render_unit "$SCRIPT_DIR/$prefix.service.template" "$prefix.service"
   render_unit "$SCRIPT_DIR/$prefix-failure.service.template" "$prefix-failure.service"
+  if [[ -f "$RESTORE_CHECK_TEMPLATE" ]]; then
+    render_unit "$RESTORE_CHECK_TEMPLATE" "$prefix-restore-check.service"
+    units+=("$prefix-restore-check.service")
+  fi
   # Placeholders are paired @NAME@ tokens; a lone @ (foo@.service) is legitimate.
   local rc=0
-  grep -nE '@[A-Za-z0-9_]+@' "$tmp/$prefix.service" "$tmp/$prefix-failure.service" || rc=$?
+  grep -nE '@[A-Za-z0-9_]+@' "${units[@]/#/$tmp/}" || rc=$?
   case "$rc" in
     0) printf 'error: unrendered template placeholder in the units above\n' >&2; exit 1 ;;
     1) ;;
     *) printf 'error: cannot scan the rendered units for placeholders\n' >&2; exit 1 ;;
   esac
   if command -v systemd-analyze >/dev/null; then
-    systemd-analyze verify "$tmp/$prefix.service" "$tmp/$prefix-failure.service" "$SCRIPT_DIR/$prefix.timer"
+    systemd-analyze verify "${units[@]/#/$tmp/}" "$SCRIPT_DIR/$prefix.timer"
   else
     printf 'warning: systemd-analyze not found; units not verified\n' >&2
   fi
@@ -144,6 +185,7 @@ install_bundle() {
   install -d -o root -g root -m 755 "$STATE_DIR"
   install -o root -g root -m 755 "$SCRIPT_DIR/backup.sh" "$BUNDLE_DIR/backup.sh"
   install -o root -g root -m 644 "$SCRIPT_DIR/sources.sh" "$BUNDLE_DIR/sources.sh"
+  install -o root -g root -m 755 "$ENGINE_DIR/restore-check.sh" "$BUNDLE_DIR/restore-check.sh"
   install -o root -g root -m 600 "$SCRIPT_DIR/.env" "$BUNDLE_DIR/.env"
   if [[ -f "$BUNDLE_SAVE_SOURCE" ]]; then
     install -o root -g root -m 644 "$BUNDLE_SAVE_SOURCE" "$BUNDLE_SAVE_TARGET"
@@ -156,7 +198,9 @@ if [[ "$MODE" == dry-run ]]; then
   printf '[dry-run] (not run: --verify renders and checks the units without installing)\n'
   printf '[dry-run] render %s.service and %s-failure.service, then systemd-analyze verify them\n' "$prefix" "$prefix"
   printf '[dry-run] install them into /etc/systemd/system/\n'
-  printf '[dry-run] install root-owned backup executor bundle into %s\n' "$BUNDLE_DIR"
+  printf '[dry-run] install root-owned backup executor bundle (with restore-check.sh) into %s\n' "$BUNDLE_DIR"
+  [[ ! -f "$RESTORE_CHECK_TEMPLATE" ]] \
+    || printf '[dry-run] render and install %s-restore-check.service (compare-live:%s)\n' "$prefix" "${RESTORE_COMPARE_ARGS:- none}"
   printf '[dry-run] install %s as /etc/systemd/system/%s.timer\n' "$SCRIPT_DIR/$prefix.timer" "$prefix"
   printf '[dry-run] systemctl daemon-reload\n'
   printf '[dry-run] systemctl enable --now %s.timer\n' "$prefix"
@@ -174,6 +218,9 @@ install_bundle
 install -o root -g root -m 644 "$tmp/$prefix.service" "/etc/systemd/system/$prefix.service"
 install -o root -g root -m 644 "$tmp/$prefix-failure.service" "/etc/systemd/system/$prefix-failure.service"
 install -o root -g root -m 644 "$SCRIPT_DIR/$prefix.timer" "/etc/systemd/system/$prefix.timer"
+if [[ -f "$tmp/$prefix-restore-check.service" ]]; then
+  install -o root -g root -m 644 "$tmp/$prefix-restore-check.service" "/etc/systemd/system/$prefix-restore-check.service"
+fi
 systemctl daemon-reload
 systemctl enable --now "$prefix.timer"
 printf 'Installed and enabled %s.timer\n' "$prefix"

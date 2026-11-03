@@ -1,0 +1,14 @@
+*
+!Dockerfile
+!requirements.txt
+!server.py
+!original.py
+!theme.css
+!snapshot_policy.py
+!live.py
+!player_anims.py
+!live_map.js
+!controller.py
+!bot_controller.js
+!central_bank.py
+!central_bank.js

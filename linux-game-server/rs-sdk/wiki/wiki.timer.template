@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule server wiki @ACTION@
+
+[Timer]
+OnCalendar=@SCHEDULE@
+Persistent=true
+RandomizedDelaySec=15
+Unit=rs-sdk-wiki-@ACTION@.service
+
+[Install]
+WantedBy=timers.target

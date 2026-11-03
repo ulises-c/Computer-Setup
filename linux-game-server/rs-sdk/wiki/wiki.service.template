@@ -1,0 +1,9 @@
+[Unit]
+Description=Server wiki @ACTION@
+
+[Service]
+Type=oneshot
+Environment=@PATH@
+ExecStart=@EXEC@
+TimeoutStartSec=infinity
+UMask=0077

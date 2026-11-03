@@ -1,0 +1,53 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Controller duration DOM regression</title>
+<div id="ctl" data-api="/fake" data-post="/fake" data-refresh-ms="3000"></div>
+<div id="ctl-bots"></div><div id="ctl-daemon"></div><div id="ctl-auth"></div><div id="ctl-pause"></div>
+<div id="ctl-flash"></div><div id="ctl-empty"></div><details id="ctl-bulk"></details><div id="ctl-bulk-form"></div>
+<div id="ctl-selected"></div><div id="ctl-filter"></div><button id="ctl-active"></button>
+<select id="ctl-category"></select><select id="ctl-group"></select><select id="ctl-method"></select>
+<fieldset id="ctl-activity-accounts"></fieldset><div id="ctl-activity-form"></div>
+<button id="ctl-expand-all"></button><button id="ctl-collapse-all"></button><button id="ctl-select-none"></button>
+<pre id="result">RUNNING</pre>
+<script>
+const routine = {id:'example', label:'Example', description:'', runner:'session', args:[
+  {name:'kind', label:'Kind', type:'enum', values:['a','b'], default:'a'},
+  {name:'choice', label:'Choice', type:'enum', values:['x','y'], default:'x', valuesBy:{arg:'kind', map:{a:['x'],b:['x','y']}}},
+  {name:'seconds', label:'Duration', type:'int', unit:'seconds', min:60, max:604800, default:600}
+]};
+let state = {registry:{routines:[routine]}, auth:{canWrite:true,csrf:'test',login:'owner'}, bots:[
+ {username:'bot_example', type:'bot', presence:'offline', launchable:true, eligible:['example'], controller:{gather:{}}}
+], fleet:{pause:false}};
+window.fetch = async () => ({ok:true, json:async()=>state});
+window.setInterval = fn => { window.refreshController = fn; return 1; };
+</script>
+<script src="bot_controller.js"></script>
+<script>
+(async () => {
+  const result = document.getElementById('result');
+  try {
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const card = document.querySelector('.ctl-card');
+    const get = sel => card.querySelector(sel);
+    const setMinutes = value => { const i=get('[data-part="minutes"]'); i.value=value; i.dispatchEvent(new Event('input', {bubbles:true})); };
+    const assert = (ok, msg) => { if (!ok) throw new Error(msg); };
+    setMinutes('15');
+    state.registry = JSON.parse(JSON.stringify(state.registry));
+    state.registry.routines[0].description = 'changed';
+    const beforeRebuild = get('input[name="seconds"]');
+    window.refreshController();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert(get('input[name="seconds"]') !== beforeRebuild, 'registry change did not rebuild the form');
+    assert(get('[data-part="minutes"]').value === '15', 'rebuild did not preserve initial edit');
+    setMinutes('23');
+    const kind = get('select[name="kind"]'); kind.value='b'; kind.dispatchEvent(new Event('change', {bubbles:true}));
+    assert(get('[data-part="minutes"]').value === '23', 'enum change reverted the latest duration edit: ' + get('[data-part="minutes"]').value);
+    assert(get('input[name="seconds"]').value === '1380', 'hidden seconds not updated');
+    setMinutes('-1');
+    const kind2=get('select[name="kind"]'); kind2.value='a'; kind2.dispatchEvent(new Event('change', {bubbles:true}));
+    assert(get('[data-part="minutes"]').value === '-1', 'invalid raw duration was not preserved');
+    assert(get('.ctl-start').disabled, 'invalid duration did not disable Start');
+    result.textContent = 'PASS';
+  } catch (error) { result.textContent = 'FAIL: ' + error.stack; }
+})();
+</script>

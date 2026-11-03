@@ -94,3 +94,82 @@
   opacity: 0.9;
   pointer-events: none;
 }
+
+/* 2004Scape: one game world, two different servers. Lost City (vanilla, for
+   people) gets the original login-screen art in torchlight with the 2004 logo;
+   RS-SDK (the bot fork) gets the Lava Maze runite rocks behind cyan scanlines,
+   a BOT SERVER tag and console-style values. Art from fetch-assets.sh. */
+#lostcity-server { --accent: 251 191 36; }
+#rs-sdk-server { --accent: 34 211 238; }
+
+#lostcity-server .service-card,
+#rs-sdk-server .service-card {
+  isolation: isolate;
+}
+
+/* The game client draws title.jpg twice, the right copy mirrored, to frame its
+   archway; the two halves do the same here, beneath the card's content. */
+#lostcity-server .service-card::before,
+#lostcity-server .service-card::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgb(41 26 8 / 0.35), rgb(17 13 9 / 0.92) 55%),
+    url("/images/lostcity-title.jpg") right top / cover no-repeat;
+}
+
+#lostcity-server .service-card::before { left: 0; }
+#lostcity-server .service-card::after { right: 0; transform: scaleX(-1); }
+
+#lostcity-server .service-title { padding-right: 10rem; }
+
+#lostcity-server .service-title::after {
+  content: "";
+  position: absolute;
+  top: 1.4rem;
+  right: 0.75rem;
+  width: 8rem;
+  height: 2.6rem;
+  background: url("/images/runescape-logo.png") right center / contain no-repeat;
+  filter: drop-shadow(0 2px 4px rgb(0 0 0 / 0.6));
+  pointer-events: none;
+}
+
+#rs-sdk-server .service-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(0deg, rgb(34 211 238 / 0.07) 0 1px, transparent 1px 4px),
+    linear-gradient(180deg, rgb(6 24 32 / 0.45), rgb(5 12 20 / 0.93) 55%),
+    url("/images/rs-sdk-lava-maze.jpg") center top / cover no-repeat;
+}
+
+#rs-sdk-server .service-title { padding-right: 8rem; }
+
+#rs-sdk-server .service-title::after {
+  content: "BOT SERVER";
+  position: absolute;
+  top: 1.6rem;
+  right: 0.75rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid rgb(var(--accent) / 0.6);
+  border-radius: 0.25rem;
+  background: rgb(5 12 20 / 0.75);
+  box-shadow: 0 0 10px rgb(var(--accent) / 0.35);
+  color: rgb(var(--accent));
+  font: 600 0.65rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.14em;
+  pointer-events: none;
+}
+
+#rs-sdk-server .service-container .text-right {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}

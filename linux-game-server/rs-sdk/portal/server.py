@@ -1,0 +1,939 @@
+#!/usr/bin/env python3
+"""Read-only RS-SDK companion portal, independent of the bot/wiki checkouts."""
+import argparse
+from contextlib import closing, contextmanager
+from datetime import datetime, timezone
+from html import escape, unescape
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
+import hashlib
+import os
+from pathlib import Path
+import re
+import sqlite3
+import stat
+import time
+from typing import cast
+from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
+
+import central_bank
+import controller
+import live
+from snapshot_policy import read_policy
+
+BASE = '/rs-sdk'
+# The bot controller page keeps its own 3 s poll: its data changes only when the workstation's
+# controller daemon exchanges state (every 5 s), so the live map's per-tick default would only add load.
+CONTROLLER_POLL_MS = 3000
+STYLE = Path(__file__).with_name('theme.css').read_text()
+LIVE_SCRIPT = Path(__file__).with_name('live_map.js').read_bytes()
+CONTROLLER_SCRIPT = Path(__file__).with_name('bot_controller.js').read_bytes()
+CENTRAL_BANK_SCRIPT = Path(__file__).with_name('central_bank.js').read_bytes()
+# The central bank page's poll: its status changes only when the workstation bridge pushes (every ~10 s).
+CENTRAL_BANK_POLL_MS = 5000
+WIKIS = {
+    '2004scape': ('2004Scape Wiki', '2004scape-wiki.sqlite', 'This game, one page per thing: server data, bot observations and wiki context selected by the deployment policy at publication time.'),
+    'rs-sdk': ('RS-SDK Wiki', 'rs-sdk-wiki.sqlite', 'Server-specific knowledge generated from RS-SDK. Search only the local game wiki.'),
+    'scraped': ('Scraped Wiki', 'scraped-wiki.sqlite', 'Cached OSRS and RuneScape Wiki context selected by the deployment policy at publication time. Original documents and assets are not published.'),
+}
+
+
+def esc(value):
+    return escape(str(value) if value is not None else '—', quote=True)
+
+
+def layout(title, body, wiki=False, footer='Companion · no database downloads or background polling; bots are controlled only from the owner-only Bot controller page.'):
+    theme = 'wiki-page' if wiki else 'game-page'
+    menu_title = 'Wiki navigation' if wiki else 'Game tools'
+    note = 'Read-only article cache' if wiki else 'Account state is not live presence.'
+    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)} · RS-SDK</title><style>{STYLE}</style></head><body class="{theme}"><div class="world"><header><nav><a class="brand" href="{BASE}/">RS-SDK / companion</a><a href="{BASE}/live-map">Live map</a><a href="{BASE}/bot-controller/">Bot controller</a><a href="{BASE}/central-bank/">Central bank</a><a href="{BASE}/accounts">Accounts</a><a href="{BASE}/benchmarks">Benchmarks</a><a href="{BASE}/wiki">Wikis</a></nav></header><div class="page-layout"><aside class="tool-menu"><h2>{menu_title}</h2><a href="{BASE}/">Companion home</a><a href="{BASE}/live-map">Live map</a><a href="{BASE}/bot-controller/">Bot controller</a><a href="{BASE}/central-bank/">Central bank</a><a href="{BASE}/accounts">Account Database</a><a href="{BASE}/benchmarks">Benchmarks</a><a href="{BASE}/wiki/2004scape">2004Scape Wiki</a><a href="{BASE}/wiki/rs-sdk">RS-SDK Wiki</a><a href="{BASE}/wiki/scraped">Scraped Wiki</a><p>{note}</p></aside><main>{body}<footer>{footer}</footer></main></div></div></body></html>'''
+
+
+@contextmanager
+def read_db(path):
+    db = sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True, timeout=0.25)
+    db.row_factory = sqlite3.Row
+    try:
+        db.execute('PRAGMA query_only=ON')
+        db.execute('BEGIN')
+        if path.name in {wiki[1] for wiki in WIKIS.values()}:
+            try:
+                read_policy(db)
+            except (ValueError, TypeError, OverflowError) as exc:
+                raise sqlite3.DatabaseError('Unavailable wiki policy') from exc
+        yield db
+    finally:
+        db.close()
+
+
+def policy_note(db):
+    policy = read_policy(db)
+    if policy['mode'] == 'override':
+        return f'<p class="note">Date-preview override: {esc(policy["effectiveDate"])} · not the automatic deployment cutoff.</p>'
+    return ''
+
+
+def table(headers, rows, cell=esc):
+    return '<div class="scroll"><table><thead><tr>' + ''.join(f'<th>{cell(h)}</th>' for h in headers) + '</tr></thead><tbody>' + ''.join('<tr>' + ''.join(f'<td>{cell(v)}</td>' for v in row) + '</tr>' for row in rows) + '</tbody></table></div>'
+
+
+def curated_href(title):
+    return BASE + '/wiki/2004scape/w/' + quote(title.replace(' ', '_'), safe="/:(),'!*@$;-._~")
+
+
+def inline(text):
+    """Escaped text with the generated wiki's inline markdown: [label](wiki:Title) links to
+    its own pages (other links keep only their label), **bold**, *italics* and `code`."""
+    out = esc(text)
+    out = re.sub(r'\[([^\]]+)\]\(wiki:([^)\s]+)\)',
+                 lambda m: f'<a href="{esc(curated_href(unquote(unescape(m[2])).replace("_", " ")))}">{m[1]}</a>', out)
+    out = re.sub(r'\[([^\]]+)\]\([^)]*\)', r'\1', out)
+    out = re.sub(r'\*\*([^*]+)\*\*', r'<b>\1</b>', out)
+    out = re.sub(r'(?<![\w*])\*([^*\s][^*]*)\*(?![\w*])', r'<i>\1</i>', out)
+    return re.sub(r'`([^`]+)`', r'<code>\1</code>', out)
+
+
+def render_article(text, title, source):
+    fmt = inline if source == '2004scape' else esc
+    lines = text.strip().splitlines()
+    body = []
+    headings = []
+    index = 0
+    while index < len(lines):
+        line = lines[index].strip()
+        if not line:
+            index += 1
+            continue
+        heading = re.match(r'^(#{1,6})\s+(.+)$', line)
+        if heading:
+            index += 1
+            if len(heading[1]) == 1 and heading[2].casefold() == title.casefold():
+                continue
+            level = max(2, len(heading[1]))
+            anchor = f'section-{len(headings) + 1}'
+            headings.append((anchor, heading[2], level))
+            body.append(f'<h{level} id="{anchor}">{fmt(heading[2])}</h{level}>')
+            continue
+        if line.startswith('|'):
+            rows = []
+            while index < len(lines) and lines[index].strip().startswith('|'):
+                cells = [cell.strip() for cell in lines[index].strip().strip('|').split('|')]
+                if not all(re.fullmatch(r':?-+:?', cell) for cell in cells):
+                    rows.append(cells)
+                index += 1
+            if rows:
+                markup = table(rows[0], rows[1:], fmt)
+                if not body and source != 'rs-sdk':
+                    markup = markup.replace('class="scroll"', 'class="scroll wiki-infobox"', 1)
+                body.append(markup)
+            continue
+        if re.match(r'^[-*]\s+', line):
+            items = []
+            while index < len(lines):
+                item = re.match(r'^\s*[-*]\s+(.+)$', lines[index])
+                if not item:
+                    break
+                items.append(f'<li>{fmt(item[1])}</li>')
+                index += 1
+            body.append('<ul>' + ''.join(items) + '</ul>')
+            continue
+        paragraph = []
+        while index < len(lines):
+            line = lines[index].strip()
+            if not line or line.startswith('|') or re.match(r'^(#{1,6}\s+|[-*]\s+)', line):
+                break
+            paragraph.append(line)
+            index += 1
+        body.append('<p>' + fmt(' '.join(paragraph)) + '</p>')
+    if headings:
+        contents = '<details class="wiki-toc" open><summary>Contents</summary><ol>'
+        contents += ''.join(f'<li class="{"subsection" if level > 2 else "section"}"><a href="#{anchor}">{esc(re.sub(r"[*`]|\[([^\]]*)\]\([^)]*\)", r"\1", label))}</a></li>' for anchor, label, level in headings)
+        contents += '</ol></details>'
+        first_section = next(i for i, block in enumerate(body) if re.match(r'<h[2-6] ', block))
+        body.insert(first_section, contents)
+    return '<article class="wiki-content">' + ''.join(body) + '</article>'
+
+
+def article_href(collection, row):
+    if collection == '2004scape':
+        return curated_href(row['title'])
+    if collection == 'scraped' and row['source'] in ('osrs', 'rs3'):
+        import original
+        return original.page_href(row['source'], row['title'])
+    return f'{BASE}/wiki/{collection}/article?id={row["id"]}'
+
+
+def search_form(path, query, label=None):
+    return f'<form action="{BASE}/{path}"><input type="search" name="q" aria-label="Search {esc(label or path)}" placeholder="Search {esc(label or path)}…" value="{esc(query)}"><button>Search</button></form>'
+
+
+def pager(path, query, page, total):
+    def link(number, label):
+        return f'<a href="{BASE}/{path}?{esc(urlencode({"q": query, "page": number}))}">{label}</a>'
+    links = [link(page - 1, '← Previous')] if page > 1 else []
+    if page * 50 < total:
+        links.append(link(page + 1, 'Next →'))
+    return '<div class="pager">' + ''.join(links) + '</div>'
+
+
+UPSTREAM = {'osrs': 'oldschool.runescape.wiki', 'rs3': 'runescape.wiki'}
+WANTED_LIMIT = 5000
+
+
+class Redirect(Exception):
+    def __init__(self, location):
+        super().__init__(location)
+        self.location = location
+
+
+class Wanted:
+    """The portal's only writable state: pages and images someone asked for that
+    aren't cached. The source-side sync takes them and queues them in the wiki."""
+    def __init__(self, path):
+        self.path = path
+
+    def record(self, source, kind, key):
+        if self.path is None or source not in UPSTREAM or kind not in ('page', 'image'):
+            return False
+        try:
+            with closing(sqlite3.connect(self.path, timeout=0.25)) as db, db:
+                db.execute('CREATE TABLE IF NOT EXISTS wanted (source TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL, requested_at INTEGER NOT NULL, PRIMARY KEY (source, kind, key))')
+                if db.execute('SELECT count(*) FROM wanted').fetchone()[0] >= WANTED_LIMIT:
+                    return False
+                db.execute('INSERT OR IGNORE INTO wanted VALUES (?,?,?,?)', (source, kind, key, int(time.time() * 1000)))
+            return True
+        except (OSError, sqlite3.Error):
+            return False
+
+
+def split_route(path, prefix):
+    """(source, decoded rest) of /prefix/<source>/<rest>, or None."""
+    if not path.startswith(prefix):
+        return None
+    source, _, rest = path[len(prefix):].partition('/')
+    if source not in UPSTREAM or not rest:
+        return None
+    return source, unquote(rest)
+
+
+class Portal:
+    def __init__(self, root, game_url, homepage_url, wanted=None, live_path=None, controller_dir=None, owner_login=None, public_origin=None):
+        self.root = root
+        self.live_path = live_path
+        # Bot controller: desired state lives in its own writable mount; the daemon's status
+        # arrives beside live.json (read-only mount, written on the host by controller.py exchange).
+        self.controller = controller.Store(controller_dir)
+        self.controller_status_path = live_path.with_name('controller-status.json') if live_path else None
+        # Fleet-bot logins for the owner's browser view (controller.py exchange, mode 600; read-only mount).
+        self.controller_frames_path = live_path.with_name('controller-frames.json') if live_path else None
+        self.auth = controller.Auth(owner_login, public_origin)
+        # Central bank page: the owner's pending Sell/Keep edits share the controller's writable mount; the
+        # bridge's status arrives beside live.json (read-only mount, written on the host by central_bank.py exchange).
+        self.bank = central_bank.Store(controller_dir)
+        self.bank_status_path = live_path.with_name('central-bank-status.json') if live_path else None
+        # Item icons copied there by the same exchange (central_bank.sync_icons).
+        self.bank_icons_dir = live_path.with_name('item-icons') if live_path else None
+        self.game_url = game_url.rstrip('/')
+        self.homepage_url = homepage_url.rstrip('/')
+        self.wanted = Wanted(wanted)
+
+    def scraped_image(self, source, rest):
+        """Bytes and MIME of a cached upstream image, or None (recorded as wanted)."""
+        import original
+        path = original.image_path(rest)
+        if path is None:
+            raise ValueError('Invalid image path')
+        with read_db(self.root / 'scraped-wiki.sqlite') as db:
+            row = db.execute('SELECT sha256,mime,size FROM assets WHERE source=? AND url=? AND mime LIKE \'image/%\'', (source, '/images/' + path)).fetchone()
+        if row is None:
+            self.wanted.record(source, 'image', path)
+            return None
+        return self.asset(row['sha256'], row)
+
+    def known_titles(self, db):
+        pages = {(r['source'], r['title']) for r in db.execute('SELECT source,title FROM pages')}
+        if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='redirects'").fetchone():
+            pages |= {(r['source'], r['from_title']) for r in db.execute('SELECT source,from_title,to_title FROM redirects') if (r['source'], r['to_title']) in pages}
+        return pages
+
+    def find_page(self, db, source, title):
+        row = db.execute('SELECT id,title FROM pages WHERE source=? AND title=?', (source, title)).fetchone()
+        if row is None and db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='redirects'").fetchone():
+            row = db.execute('SELECT p.id,p.title FROM redirects r JOIN pages p ON p.source=r.source AND p.title=r.to_title WHERE r.source=? AND r.from_title=?', (source, title)).fetchone()
+        return row
+
+    def asset(self, digest, metadata=None):
+        if not re.fullmatch(r'[0-9a-f]{64}', digest):
+            raise ValueError('Invalid asset')
+        with read_db(self.root / 'scraped-wiki.sqlite') as db:
+            if metadata is None:
+                metadata = db.execute('SELECT mime,size FROM assets WHERE sha256=? AND source IN (\'osrs\',\'rs3\') LIMIT 1', (digest,)).fetchone()
+        if metadata is None or metadata['mime'] not in ('image/png', 'image/jpeg', 'image/gif', 'image/webp', 'text/css'):
+            raise ValueError('Missing asset')
+        root_fd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            directory_fd = os.open('assets', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd)
+            try:
+                fd = os.open(digest, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory_fd)
+            finally:
+                os.close(directory_fd)
+        finally:
+            os.close(root_fd)
+        with os.fdopen(fd, 'rb') as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= 16 * 1024 * 1024 or info.st_size != metadata['size']:
+                raise ValueError('Invalid asset size')
+            data = stream.read(16 * 1024 * 1024 + 1)
+        if hashlib.sha256(data).hexdigest() != digest:
+            raise ValueError('Invalid asset digest')
+        return data, metadata['mime']
+
+    def original_document(self, article_id):
+        import original
+        with read_db(self.root / 'scraped-wiki.sqlite') as db:
+            note = policy_note(db)
+            row = db.execute('SELECT source,raw_html,styles FROM pages WHERE id=? AND source IN (\'osrs\',\'rs3\')', (article_id,)).fetchone()
+            if row is None or not row['raw_html']:
+                return None
+            pages = self.known_titles(db)
+            assets = {(r['source'], r['url']): dict(r) for r in db.execute('SELECT source,url,sha256,mime,size FROM assets')}
+        by_hash = {r['sha256']: r for r in assets.values()}
+        body = original.document(row['raw_html'], row['styles'], row['source'], pages, assets,
+                                 lambda digest: self.asset(digest, by_hash.get(digest))[0])
+        return body.replace('<div class="mw-body-content">', '<div class="mw-body-content">' + note, 1)
+
+    def live_accounts(self):
+        """Usernames from the accounts snapshot (not retired), so offline bots still get a row."""
+        try:
+            with read_db(self.root / 'accounts.sqlite') as db:
+                return [row[0] for row in db.execute("SELECT username FROM accounts WHERE status != 'retired' ORDER BY username")]
+        except (OSError, sqlite3.Error):
+            return []
+
+    def live_json(self, params):
+        ticks = live.ticks_param(params)
+        return live.read_live(self.live_path, ticks=ticks, accounts=self.live_accounts())
+
+    def live_page(self, params):
+        ticks = live.ticks_param(params)
+        api = f'{BASE}/api/live?' + urlencode({'ticks': ticks})
+        show = live.show_param(params) or 'all'
+        filters = ''.join(
+            f'<button type="button" data-show="{value}" aria-pressed="{str(value == show).lower()}">{label} <span class="n"></span></button>'
+            for value, label in (('all', 'All'), ('bots', 'Bots'), ('players', 'Players')))
+        body = f'''<div class="eyebrow">RS-SDK / Live fleet</div><h1>Live map</h1>
+<p>Everyone online in the game world, and every bot account’s position, stats, inventory, equipment and current activity, refreshed every {ticks} game ticks ({ticks * live.TICK_MS / 1000:g} s). Change it with <code>?ticks=N</code>; <code>?show=bots</code> or <code>?show=players</code> links straight to a filtered view.</p>
+<div id="live" class="live" data-api="{esc(api)}" data-refresh-ms="{ticks * live.TICK_MS}" data-meta="{BASE}/assets/worldmap.json">
+<p id="live-ghosts" class="note live-ghosts" hidden></p>
+<p id="live-status" class="note live-status">Loading live data…</p>
+<p id="live-warning" class="note live-warning" hidden></p>
+<div class="live-toolbar"><div id="live-filter" class="live-filter" role="group" aria-label="Show on the map and in the list">{filters}</div>
+<div class="live-bulk"><button id="expand-all" type="button">Expand all</button><button id="collapse-all" type="button">Collapse all</button></div></div>
+<div class="live-map-frame"><div id="live-map" class="live-map"><div id="live-canvas" class="live-canvas"><img id="live-image" src="{BASE}/assets/worldmap.png" alt="2004Scape world map" draggable="false"></div></div>
+<div class="live-zoom"><button id="zoom-in" type="button" aria-label="Zoom in">+</button><button id="zoom-out" type="button" aria-label="Zoom out">−</button></div></div>
+<div id="live-bots" class="live-bots"></div><p id="live-empty" class="note" hidden></p></div>
+<p class="note">Positions and state come from the SDK gateway’s latest frame for each bot, read by the bot workstation with HTTP state requests and published here; who is in the world (including bots whose SDK client has disconnected, and other players by name only) comes from the game server’s public player list; nothing on this page can control, log in or message a bot. Activity combines the running routine, combat, dialogs and skills gaining XP. Underground areas appear in the map’s folded dungeon bands, as in the game’s own world map.</p>
+<script src="{BASE}/live-map.js" defer></script>'''
+        return layout('Live map', body, footer='Companion · the live map polls a read-only JSON snapshot; it has no controls.')
+
+    def controller_status(self):
+        return controller.read_status(self.controller_status_path)
+
+    def controller_json(self, headers):
+        allowed, reason = self.auth.can_write(headers)
+        login = self.auth.login(headers)
+        auth = {'login': login, 'canWrite': allowed and self.controller.dir is not None,
+                'reason': reason if not allowed else (None if self.controller.dir is not None else 'Writes are not configured on this portal.'),
+                'csrf': self.auth.token(login) if allowed else None}
+        return controller.view(self.live_accounts(), live.read_live(self.live_path, accounts=self.live_accounts()),
+                               self.controller_status(), self.controller.read(), auth)
+
+    def controller_write(self, headers, body):
+        error = self.auth.check_write(headers)
+        if error:
+            return 403, {'error': error}
+        try:
+            request = json.loads(body)
+        except ValueError:
+            return 400, {'error': 'Body is not JSON.'}
+        status = self.controller_status()
+        # Known bots: the accounts snapshot plus the bot folders the daemon reports from the workstation.
+        known = set(self.live_accounts()) | set(status.get('bots', {}))
+        return self.controller.apply(request, status.get('registry'), known, self.auth.login(headers))
+
+    def frame_origin(self):
+        """Origin of the game web server (the only thing the bot-controller page may frame)."""
+        parts = urlsplit(self.game_url)
+        return f'{parts.scheme}://{parts.netloc}'
+
+    def controller_frame(self, headers, body):
+        """Owner-only game URL; requested browser runs receive their stored login. Never logged."""
+        error = self.auth.check_write(headers)
+        if error:
+            return 403, {'error': error}
+        try:
+            request = json.loads(body)
+        except ValueError:
+            return 400, {'error': 'Body is not JSON.'}
+        account = request.get('account') if isinstance(request, dict) else None
+        if not self.controller.frame_rate.allow():
+            return 429, {'error': 'Too many requests; wait a minute.'}
+        with self.controller.lock:
+            return self._controller_frame_locked(headers, account)
+
+    def _controller_frame_locked(self, headers, account):
+        rows = {r['username']: r for r in self.controller_json(headers)['bots']}
+        row = rows.get(account) if isinstance(account, str) else None
+        if row is None or not row['launchable']:
+            return 400, {'error': 'Not a known, launchable account.'}
+        offer = row['frame']
+        if not offer['offered']:
+            return 409, {'error': offer['reason'] or 'The browser view is not available for this account.'}
+        if not offer['login']:
+            url = controller.frame_url(self.game_url, row['displayName'])
+        else:
+            entry = row.get('desired') or {}
+            credential = controller.read_frames(self.controller_frames_path).get(account) if self.controller_frames_path else None
+            if (entry.get('action') != 'run' or entry.get('mode') != 'browser' or not credential
+                    or credential['rev'] != entry.get('rev')):
+                return 409, {'error': 'The workstation has not sent this account\u2019s login yet; it does within a few seconds of a Browser view start.', 'retry': True}
+            url = controller.frame_url(self.game_url, credential['username'], credential['password'])
+        self.controller.audit_frame(account, self.auth.login(headers))
+        return 200, {'ok': True, 'account': account, 'url': url, 'login': offer['login']}
+
+    def bank_status(self):
+        return central_bank.read_status(self.bank_status_path)
+
+    def bank_json(self, headers):
+        allowed, reason = self.auth.can_write(headers)
+        login = self.auth.login(headers)
+        auth = {'login': login, 'canWrite': allowed and self.bank.dir is not None,
+                'reason': reason if not allowed else (None if self.bank.dir is not None else 'Writes are not configured on this portal.'),
+                'csrf': self.auth.token(login) if allowed else None}
+        return central_bank.view(self.bank_status(), self.bank.read(), auth)
+
+    def bank_write(self, headers, body):
+        error = self.auth.check_write(headers)
+        if error:
+            return 403, {'error': error}
+        try:
+            request = json.loads(body)
+        except ValueError:
+            return 400, {'error': 'Body is not JSON.'}
+        return self.bank.apply(request, self.bank_status(), self.auth.login(headers))
+
+    def bank_icon(self, file):
+        """Bytes of one item icon, or None; a missing icon is asked of the wiki's lazy image queue."""
+        data = central_bank.read_icon(self.bank_icons_dir, file)
+        if data is None and central_bank.ICON.match(file or ''):
+            self.wanted.record('osrs', 'image', file)
+        return data
+
+    def bank_page(self):
+        api = f'{BASE}/api/central-bank'
+        body = f'''<div class="eyebrow">RS-SDK / Fleet economy</div><h1>Central bank</h1>
+<p>Everything the fleet’s central bank account holds. Producers (today the smith) hand their surplus finished items to it, and new accounts hand over their spare starter kit through the courier. Decide per item: <b>Sell</b> (the bank passes it to the trader bots, who sell it at the shop that pays best), <b>Keep</b> (it stays in the bank) or <b>Alch</b> (set aside for High Level Alchemy; a placeholder for now: no bot alchs yet, so Alch items stay in the bank like Keep). Items are kept until you decide.</p>
+<div id="cb" class="cb" data-api="{api}" data-post="{api}/designation" data-refresh-ms="{CENTRAL_BANK_POLL_MS}">
+<p id="cb-status" class="note live-status">Loading the central bank…</p>
+<p id="cb-auth" class="note"></p>
+<p id="cb-flash" class="note ctl-flash" role="status" hidden></p>
+<div class="live-toolbar"><div id="cb-filter" class="live-filter" role="group" aria-label="Show items"><button type="button" data-show="all" aria-pressed="true">All <span class="n"></span></button><button type="button" data-show="sell" aria-pressed="false">Sell <span class="n"></span></button><button type="button" data-show="keep" aria-pressed="false">Keep <span class="n"></span></button><button type="button" data-show="alch" aria-pressed="false">Alch <span class="n"></span></button></div><p id="cb-summary" class="note"></p></div>
+<div class="cb-sheet"><table class="cb-items"><thead><tr>
+<th scope="col" data-sort="name" title="Item name: click it to open its page on the 2004Scape wiki (new tab)">Item</th>
+<th scope="col" class="num" data-sort="count" title="How many the central bank holds">Count</th>
+<th scope="col" class="num" data-sort="value" title="The item’s value (this server’s item data): what a shop charges at its normal stock, and the base for every price on this row">Value</th>
+<th scope="col" class="num" data-sort="total" title="Count × value">Total</th>
+<th scope="col" class="num" data-sort="buy" title="What buying one from a shop costs at its normal stock (= the value)">Buy</th>
+<th scope="col" class="num" data-sort="sell" title="What the best shop the merchant visits pays for ONE unit right now, at that shop’s current stock (each unit sold lowers its offer until its stock drains back, about one unit a minute)">Best sell now</th>
+<th scope="col" class="num" data-sort="lowAlch" title="Low Level Alchemy: 40 % of the value (Magic 21)">Low alch</th>
+<th scope="col" class="num" data-sort="highAlch" title="High Level Alchemy: 60 % of the value (Magic 55)">High alch</th>
+<th scope="col" title="Surplus product, material or consumable">Kind</th>
+<th scope="col" title="Sell, Keep or Alch (Alch acts as Keep until a bot alchs)">Decision</th>
+</tr></thead><tbody id="cb-items"></tbody></table>
+<p id="cb-alch-note" class="cb-note"></p></div>
+<p id="cb-empty" class="note" hidden></p>
+<h2>Traders</h2><div id="cb-traders"></div>
+<h2>Recent sales</h2><div id="cb-sales"></div>
+<h2>Recent handovers</h2><div id="cb-moves"></div>
+</div>
+<p class="note">Counts come from the bank account’s own bank view, pushed by the workstation every few seconds. A change you make shows as <i>pending</i> until the workstation has written it to the fleet service; the bank reads the marks before each handover to the traders, and a trader takes only items it can sell. Shop prices are measured on this server (general store and specialty shops; the bot repo’s docs/economy.md); icons come from the wiki’s image cache. Writes need the owner’s Tailscale identity; every change is audited.</p>
+<script src="{BASE}/central-bank.js" defer></script>'''
+        return layout('Central bank', body, footer='Companion · central bank: marks are applied by the workstation bridge; no free-form commands.')
+
+    def controller_page(self, params=None):
+        api = f'{BASE}/api/controller'
+        show = (params or {}).get('show', [''])[0]
+        show = show if show in ('all', 'bots', 'regular') else ''
+        filters = ''.join(
+            f'<button type="button" data-show="{value}" aria-pressed="{str(value == (show or "all")).lower()}">{label} <span class="n"></span></button>'
+            for value, label in (('all', 'All'), ('bots', 'Bots'), ('regular', 'Regular')))
+        body = f'''<div class="eyebrow">RS-SDK / Fleet control</div><h1>Bot controller</h1>
+<p>Assign a routine from the registry to each account, or stop (in-game logout) or hold it. <b>Bots</b> are the fleet; <b>Regular</b> are your own accounts stored with <code>scripts/player.sh setup</code> on the workstation, which may run the non-fleet routines only. The workstation’s controller daemon applies these requests within a few seconds, re-checks them, and never starts a bot that has a fleet pause, a per-bot latch or a local stop, or one that another agent is controlling. No AI model is involved.</p>
+<p class="note"><b>Headless</b> runs start a client on the workstation and always log out at the end; the card shows the job’s live log. <b>Browser view</b> runs use the real game client embedded in this page as the account’s only client: the routine attaches to it and nothing logs it out. That session lives only while this page and its game view stay open. <code>?show=bots</code> or <code>?show=regular</code> links straight to a filtered list.</p>
+<div id="ctl" class="ctl" data-api="{api}" data-post="{api}/desired" data-frame="{api}/frame" data-show-initial="{show}" data-refresh-ms="{CONTROLLER_POLL_MS}">
+<p id="ctl-daemon" class="note live-status">Loading controller state…</p>
+<p id="ctl-auth" class="note"></p>
+<p id="ctl-pause" class="note live-ghosts" hidden></p>
+<p id="ctl-maint" class="note live-ghosts" role="status" hidden></p>
+<p id="ctl-flash" class="note ctl-flash" role="status" hidden></p>
+<section id="ctl-activity" class="ctl-bulk"><h2>Start an activity</h2>
+<label>Category <select id="ctl-category" aria-label="Category"></select></label>
+<label>Activity <select id="ctl-group" aria-label="Activity"></select></label>
+<label>Method <select id="ctl-method" aria-label="Method"></select></label>
+<fieldset id="ctl-activity-accounts"><legend>Eligible accounts</legend></fieldset>
+<div id="ctl-activity-form" class="ctl-form"></div></section>
+<div class="live-toolbar"><div id="ctl-filter" class="live-filter" role="group" aria-label="Show accounts">{filters}</div>
+<div class="live-bulk"><button id="ctl-active" type="button" aria-pressed="false">Assigned / online only</button><button id="ctl-expand-all" type="button">Expand all</button><button id="ctl-collapse-all" type="button">Collapse all</button><button id="ctl-select-none" type="button">Clear selection</button></div></div>
+<details id="ctl-bulk" class="ctl-bulk"><summary>Bulk action on <span id="ctl-selected">0</span> selected accounts (headless only)</summary><div id="ctl-bulk-form" class="ctl-form"></div></details>
+<div id="ctl-bots" class="live-bots ctl-bots"></div><p id="ctl-empty" class="note" hidden></p></div>
+<p class="note">Presence and activity come from the live map’s snapshot; controller state from the daemon’s last report. Stop ends our job: a headless job logs out in-game (verified against the game’s player list); a browser-view job only stops the routine and leaves the session to the game view. Latches and local stops are shown here but can only be cleared by the owner on the workstation. Writes and the game view need the owner’s Tailscale identity; every change is audited.</p>
+<script src="{BASE}/bot-controller.js" defer></script>'''
+        return layout('Bot controller', body, footer='Companion · bot controller: requests are re-validated by the workstation daemon; no free-form commands.')
+
+    def render(self, path, params):
+        try:
+            status, body = self._render(path, params)
+            name = {'accounts': 'accounts.sqlite', 'benchmarks': 'benchmarks.sqlite', 'benchmark': 'benchmarks.sqlite'}.get(path.rsplit('/', 1)[-1])
+            if path.startswith(BASE + '/wiki/'):
+                collection = path[len(BASE + '/wiki/'):].split('/')[0]
+                if collection in WIKIS:
+                    name = WIKIS[collection][1]
+            if status == 200 and name:
+                stamp = datetime.fromtimestamp((self.root / name).stat().st_mtime, timezone.utc).astimezone()
+                freshness = ' · stale: workstation sync may be offline' if (datetime.now(timezone.utc) - stamp).total_seconds() > 600 else ''
+                body = body.replace('<footer>', f'<footer>Snapshot exported {stamp:%Y-%m-%d %H:%M:%S %Z}{freshness}<br>')
+            return status, body
+        except Redirect as redirect:
+            return 302, redirect.location
+        except ValueError:
+            return 400, layout('Invalid request', '<h1>Invalid request</h1><p>Use a positive page number.</p>')
+        except sqlite3.Error:
+            return 503, layout('Data unavailable', '<h1>Data temporarily unavailable</h1><p>The read-only snapshot is missing, busy or incompatible. Try again after the next sync.</p>')
+
+    def _render(self, path, params):
+        if path in ('/', BASE, BASE + '/'):
+            cards = [
+                ('01 / LIVE', 'Live map', BASE + '/live-map', 'Where every bot is right now, with stats, inventory, equipment and current activity.'),
+                ('02 / CONTROL', 'Bot controller', BASE + '/bot-controller/', 'Start, stop or hold registry routines per bot; the workstation daemon applies them safely.'),
+                ('03 / ECONOMY', 'Central bank', BASE + '/central-bank/', 'What the fleet’s central bank holds; decide per item: sell, keep or alch.'),
+                ('04 / ACCOUNTS', 'Account Database', BASE + '/accounts', 'Account status, purpose, logins and recorded deaths. Credentials stay private.'),
+                ('05 / PERFORMANCE', 'Benchmarks', BASE + '/benchmarks', 'Compare full runs, timings and routine versions. Inspect individual steps.'),
+                ('06 / THIS GAME', '2004Scape Wiki', BASE + '/wiki/2004scape', WIKIS['2004scape'][2]),
+                ('07 / SERVER KNOWLEDGE', 'RS-SDK Wiki', BASE + '/wiki/rs-sdk', WIKIS['rs-sdk'][2]),
+                ('08 / EXTERNAL KNOWLEDGE', 'Scraped Wiki', BASE + '/wiki/scraped', WIKIS['scraped'][2]),
+                ('09 / GAME', 'Play', self.game_url + '/', 'Open the browser client. Your human and bot accounts share this SDK world.'),
+                ('10 / RANKINGS', 'HiScores', self.game_url + '/hiscores', 'Browse the game server’s player rankings.'),
+                ('11 / TRADING', 'Grand Exchange', self.game_url + '/market.html', 'Open the server’s market and trading page.'),
+            ]
+            body = '<div class="eyebrow">2004SCAPE / RS-SDK WORLD</div><h1>RS-SDK Companion</h1><p>Play, inspect your accounts, compare runs and explore what the bots know.</p><div class="grid">'
+            body += ''.join(f'<a class="card" href="{esc(url)}"><small>{tag}</small><b>{title} ↗</b><p>{description}</p></a>' for tag, title, url, description in cards)
+            body += f'</div><p class="note">Read-only snapshots from the bot workstation, refreshed every two minutes while it is online. Browsing never starts bots, refreshes the wiki or changes game state.</p><a href="{esc(self.homepage_url)}/">← Back to Homepage</a>'
+            return 200, layout('Companion', body)
+        if path == BASE + '/live-map':
+            return 200, self.live_page(params)
+        if path == BASE + '/bot-controller':
+            raise Redirect(BASE + '/bot-controller/')
+        if path == BASE + '/bot-controller/':
+            return 200, self.controller_page(params)
+        if path == BASE + '/central-bank':
+            raise Redirect(BASE + '/central-bank/')
+        if path == BASE + '/central-bank/':
+            return 200, self.bank_page()
+        if path == BASE + '/accounts':
+            q = params.get('q', [''])[0][:200]
+            page = int(params.get('page', ['1'])[0])
+            if page < 1 or page > 1000000:
+                raise ValueError('page')
+            where = 'WHERE instr(lower(a.username || coalesce(a.purpose,\'\') || a.status), lower(?)) > 0'
+            with read_db(self.root / 'accounts.sqlite') as db:
+                total = db.execute(f'SELECT count(*) FROM accounts a {where}', (q,)).fetchone()[0]
+                rows = db.execute(f'''SELECT a.username, a.status, a.purpose, a.login_count,
+                    (SELECT count(*) FROM deaths d WHERE d.username=a.username),
+                    a.created_at, a.first_login_at, a.last_login_at
+                    FROM accounts a {where} ORDER BY a.username LIMIT 50 OFFSET ?''', (q, (page - 1) * 50)).fetchall()
+            body = f'<div class="eyebrow">RS-SDK / Account registry</div><h1>Account Database</h1><p>{total} matching accounts · credentials, private notes and host details are not published.</p>'
+            display_rows = [tuple(row[:5]) + tuple(value.replace('T', ' ').removesuffix('Z') if isinstance(value, str) else value for value in row[5:]) for row in rows]
+            account_table = table(('Account', 'Account state', 'Purpose', 'Logins', 'Deaths', 'Created (UTC)', 'First login (UTC)', 'Last login (UTC)'), display_rows)
+            body += search_form('accounts', q) + account_table.replace('class="scroll"', 'class="scroll account-table"', 1)
+            body += '<p class="note">Created / active / retired describe account lifecycle, not whether the player is currently online. Live presence and current world/server are planned.</p>'
+            return 200, layout('Accounts', body + pager('accounts', q, page, total))
+        if path == BASE + '/benchmarks':
+            q = params.get('q', [''])[0][:200]
+            page = int(params.get('page', ['1'])[0])
+            if not 1 <= page <= 1000000:
+                raise ValueError('page')
+            with read_db(self.root / 'benchmarks.sqlite') as db:
+                summary = db.execute('''SELECT benchmark, count(*),
+                    printf('%.1f%%',100.0*sum(success)/count(*)), min(CASE WHEN success=1 THEN total_ms END),
+                    round(avg(CASE WHEN success=1 THEN total_ms END)) FROM runs
+                    WHERE mode='full' GROUP BY benchmark ORDER BY benchmark''').fetchall()
+                total = db.execute('SELECT count(*) FROM runs WHERE instr(lower(benchmark || username), lower(?))>0', (q,)).fetchone()[0]
+                runs = db.execute('''SELECT id, benchmark, username, routine_sha, mode, started_at,
+                    success, total_ms, routine_ms, ticks FROM runs
+                    WHERE instr(lower(benchmark || username), lower(?))>0
+                    ORDER BY id DESC LIMIT 50 OFFSET ?''', (q, (page-1)*50)).fetchall()
+            body = '<h1>Benchmarks</h1><h2>Full-run summary</h2><p>Resume/dev segments are excluded. Times are milliseconds; averages and best times include successful runs only.</p>'
+            body += table(('Benchmark', 'Runs', 'Success', 'Best ms', 'Average ms'), summary)
+            body += f'<h2>Run history</h2><p>{total} matching runs · select a run for its step timings.</p>' + search_form('benchmarks', q)
+            body += '<div class="scroll"><table><tr>' + ''.join(f'<th>{h}</th>' for h in ('Run', 'Benchmark', 'Account', 'Routine', 'Mode', 'Started (UTC)', 'Result', 'Total ms', 'Routine ms', 'Ticks')) + '</tr>'
+            for row in runs:
+                values = list(row)[1:]
+                values[5] = 'Success' if row['success'] else 'Failed'
+                body += f'<tr><td><a href="{BASE}/benchmark?id={row["id"]}">#{row["id"]}</a></td>' + ''.join(f'<td>{esc(v)}</td>' for v in values) + '</tr>'
+            return 200, layout('Benchmarks', body + '</table></div>' + pager('benchmarks', q, page, total))
+        if path == BASE + '/benchmark':
+            run_id = int(params.get('id', ['0'])[0])
+            with read_db(self.root / 'benchmarks.sqlite') as db:
+                row = db.execute('SELECT benchmark, username, routine_sha, mode, started_at, finished_at, success, total_ms, routine_ms, ticks, steps FROM runs WHERE id=?', (run_id,)).fetchone()
+            if row is None:
+                return 404, layout('Run not found', '<h1>Run not found</h1>')
+            body = f'<a href="{BASE}/benchmarks">← Benchmarks</a><h1>Run #{run_id}</h1>' + table(('Field', 'Value'), [(k, row[k]) for k in row.keys() if k != 'steps'])
+            try:
+                steps = json.loads(row['steps'] or '[]')
+                step_rows = [(s.get('step'), s.get('ms'), s.get('ticks')) for s in steps if isinstance(s, dict)]
+            except (ValueError, TypeError):
+                step_rows = [('Step timings unavailable', None, None)]
+            return 200, layout('Benchmark run', body + '<h2>Step timings</h2>' + table(('Step', 'ms', 'Ticks'), step_rows))
+        if path == BASE + '/wiki':
+            body = '<h1>Choose a wiki</h1><p>Separate pages and databases. Choose which knowledge collection you want to search.</p><div class="grid">'
+            body += ''.join(f'<a class="card" href="{BASE}/wiki/{key}"><b>{title}</b><p>{description}</p></a>' for key, (title, _, description) in WIKIS.items())
+            return 200, layout('Wikis', body + '</div>', wiki=True)
+        wiki_path = path[len(BASE + '/wiki/'):] if path.startswith(BASE + '/wiki/') else ''
+        collection = wiki_path.removesuffix('/article')
+        wiki = WIKIS.get(collection)
+        if wiki and wiki_path == collection:
+            title, filename, description = wiki
+            q = params.get('q', [''])[0][:200]
+            page = int(params.get('page', ['1'])[0])
+            if not 1 <= page <= 1000000:
+                raise ValueError('page')
+            with read_db(self.root / filename) as db:
+                note = policy_note(db)
+                where = 'WHERE instr(lower(title),lower(?))>0 OR instr(lower(text),lower(?))>0'
+                total = db.execute(f'SELECT count(*) FROM pages {where}', (q, q)).fetchone()[0]
+                rows = db.execute(f'''SELECT id,source,title,substr(text,1,180) AS snippet FROM pages {where}
+                    ORDER BY title,source,id
+                    LIMIT 50 OFFSET ?''', (q, q, (page-1)*50)).fetchall()
+            body = note + f'<h1>{title}</h1><p class="note">{description}</p><p>{total} matching cached pages in this database. Browsing never fetches or refreshes upstream pages.</p>' + search_form('wiki/' + collection, q, title)
+            body += ''.join(f'<article><span class="eyebrow">{esc(r["source"])}</span><h2><a href="{esc(article_href(collection, r))}">{esc(r["title"])}</a></h2><p>{esc(r["snippet"])}</p></article>' for r in rows)
+            return 200, layout(title, body + pager('wiki/' + collection, q, page, total), wiki=True)
+        if path.startswith(BASE + '/wiki/2004scape/w/'):
+            raw = unquote(path[len(BASE + '/wiki/2004scape/w/'):])
+            title = ' '.join(raw.replace('_', ' ').split())
+            if not title or len(title) > 300 or any(ord(c) < 32 for c in title):
+                raise ValueError('title')
+            with read_db(self.root / '2004scape-wiki.sqlite') as db:
+                row = db.execute('SELECT id,title FROM pages WHERE title=?', (title,)).fetchone()
+            if row is None:
+                return 404, layout(title, f'<h1>{esc(title)}</h1><p>No generated page yet. <a href="{BASE}/wiki/2004scape?{esc(urlencode({"q": title}))}">Search this wiki</a>.</p>', wiki=True)
+            if row['title'].replace(' ', '_') != raw:
+                raise Redirect(curated_href(row['title']))
+            return self.article('2004scape', row['id'], params)
+        route = split_route(path, BASE + '/wiki/scraped/w/')
+        if route:
+            import original
+            source, raw = route
+            title = original.normalize_title(raw)
+            if title is None:
+                raise ValueError('title')
+            with read_db(self.root / 'scraped-wiki.sqlite') as db:
+                row = self.find_page(db, source, title)
+            if row is not None and row['title'].replace(' ', '_') != raw:
+                view = params.get('view', [''])[0]
+                raise Redirect(original.page_href(source, row['title']) + ('?view=clean' if view == 'clean' else ''))
+            if row is not None:
+                return self.article('scraped', row['id'], params)
+            return 404, self.not_scraped(source, title)
+        if wiki and wiki_path == collection + '/article' and collection == 'scraped':
+            import original
+            with read_db(self.root / 'scraped-wiki.sqlite') as db:
+                row = db.execute('SELECT source,title FROM pages WHERE id=?', (int(params.get('id', ['0'])[0]),)).fetchone()
+            if row is None or row['source'] not in UPSTREAM:
+                return 404, layout('Article not found', '<h1>Article not found</h1>', wiki=True)
+            raise Redirect(original.page_href(row['source'], row['title']) + ('?view=clean' if params.get('view', [''])[0] == 'clean' else ''))
+        if wiki and wiki_path == collection + '/article':
+            return self.article(collection, int(params.get('id', ['0'])[0]), params)
+        return 404, layout('Not found', '<h1>Not found</h1><p>This page does not exist.</p>')
+
+    def not_scraped(self, source, title):
+        import original
+        url = f'https://{UPSTREAM[source]}/w/{quote(title.replace(" ", "_"), safe="/:(),")}'
+        body = f'<a href="{BASE}/wiki/scraped">← Scraped Wiki</a><h1>{esc(title)}</h1><p>This {esc(source)} page hasn’t been scraped yet.</p>'
+        if original.fetchable_title(title) and self.wanted.record(source, 'page', title):
+            body += '<p>It has been requested: the workstation fetches it with its images within a few minutes while online (sync every two minutes, then at most five wiki requests a minute). Reload this page later.</p>'
+        elif original.fetchable_title(title):
+            body += '<p>Requests can’t be recorded right now; try again later.</p>'
+        else:
+            body += '<p>This kind of page (not an article) isn’t fetched on request.</p>'
+        body += f'<p>Original: <a href="{esc(url)}" rel="noreferrer">{esc(url)}</a></p>'
+        return layout(title, body, wiki=True)
+
+    def article(self, collection, article_id, params):
+        title, filename, _ = WIKIS[collection]
+        with read_db(self.root / filename) as db:
+            note = policy_note(db)
+            columns = {r[1] for r in db.execute('PRAGMA table_info(pages)')}
+            raw = 'raw_html' if collection == 'scraped' and 'raw_html' in columns else 'NULL AS raw_html'
+            extra = ',brief,categories' if collection == '2004scape' else ''
+            row = db.execute(f'SELECT source,title,text,fetched_at,revid,{raw}{extra} FROM pages WHERE id=?', (article_id,)).fetchone()
+        if row is None:
+            return 404, layout('Article not found', '<h1>Article not found</h1>', wiki=True)
+        revision_label = 'generator format' if collection == '2004scape' else 'revision'
+        body = note + f'<a href="{BASE}/wiki/{collection}">← {title}</a><h1>{esc(row["title"])}</h1><p>{title} · source: {esc(row["source"])} · {revision_label} {esc(row["revid"])}</p>'
+        if collection == '2004scape':
+            category = (json.loads(row['categories'] or '[]') or [''])[0]
+            osrs = None if category == 'guides' else re.sub(r' \((object|NPC|npcs|items|shops|quests|skills)\)$', '', row['title'])
+            if osrs:
+                try:
+                    with read_db(self.root / 'scraped-wiki.sqlite') as db:
+                        cached = self.find_page(db, 'osrs', osrs)
+                    if not cached:
+                        self.wanted.record('osrs', 'page', osrs)
+                except sqlite3.Error:
+                    pass
+            url = esc(curated_href(row['title']))
+            body += f'<p>Server reference data, bot observations and explicitly labelled OSRS excerpts. Historical applicability is provisional; see references and warnings.</p><p><a href="{url}">Article</a> · <a href="{url}?view=brief">Compact context</a></p>'
+            if params.get('view', [''])[0] == 'brief':
+                return 200, layout(row['title'], body + '<pre>' + esc(row['brief']) + '</pre>', wiki=True)
+        elif row['source'] in ('osrs', 'rs3'):
+            domain = 'oldschool.runescape.wiki' if row['source'] == 'osrs' else 'runescape.wiki'
+            url = f'https://{domain}/w/{quote(row["title"].replace(" ", "_"), safe="")}'
+            body += f'<p>Content from <a href="{esc(url)}" rel="noreferrer">{esc(domain)} · upstream article</a>, CC BY-NC-SA 3.0. Cached for personal use; uncached pages and images are requested from the workstation when opened.</p>'
+        else:
+            body += '<p>RS-SDK local knowledge · generated for this server. External wiki advice may describe later game versions.</p>'
+        if collection == 'scraped' and row['raw_html']:
+            import original
+            article_url = esc(original.page_href(row['source'], row['title']))
+            body += f'<p class="view-choice"><a href="{article_url}">Original view</a> · <a href="{article_url}?view=clean">Clean view</a></p>'
+            if params.get('view', ['original'])[0] != 'clean':
+                body += f'<iframe title="Cached original article" class="original-article" sandbox="allow-top-navigation-by-user-activation" referrerpolicy="no-referrer" src="{BASE}/wiki/scraped/document?id={article_id}"></iframe>'
+                return 200, layout(row['title'], body, wiki=True)
+        return 200, layout(row['title'], body + render_article(row['text'], row['title'], row['source']), wiki=True)
+
+
+class PortalHTTPServer(ThreadingHTTPServer):
+    portal: Portal
+    assets_dir = Path(__file__).with_name('assets')
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        url = urlsplit(self.path)
+        path = url.path if url.path == BASE or url.path.startswith(BASE + '/') else BASE + url.path
+        portal = cast(PortalHTTPServer, self.server).portal
+        document_path = BASE + '/wiki/scraped/document'
+        asset_path = BASE + '/wiki/scraped/asset/'
+        if path.startswith(asset_path):
+            try:
+                data, mime = portal.asset(path[len(asset_path):])
+                if not mime.startswith('image/'):
+                    raise ValueError('Not an image')
+            except (OSError, ValueError, sqlite3.Error):
+                self.send_error(404)
+                return
+            self.send_response(200)
+            self.send_header('Content-Type', mime)
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.send_header('Content-Security-Policy', "default-src 'none'; sandbox")
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        image_route = split_route(path, BASE + '/wiki/scraped/images/')
+        if path.startswith(BASE + '/wiki/scraped/images/'):
+            try:
+                found = portal.scraped_image(*image_route) if image_route else None
+                if found is None and image_route is None:
+                    raise ValueError('Invalid image route')
+            except (OSError, ValueError, sqlite3.Error):
+                self.send_error(404)
+                return
+            if found is not None:
+                data, mime = found
+                self.send_response(200)
+                self.send_header('Content-Type', mime)
+                self.send_header('Content-Length', str(len(data)))
+                self.send_header('Cache-Control', 'no-store')
+                self.send_header('X-Content-Type-Options', 'nosniff')
+                self.send_header('Content-Security-Policy', "default-src 'none'; sandbox")
+                self.end_headers()
+                self.wfile.write(data)
+                return
+        if path == BASE + '/wiki/scraped/missing.svg' or path.startswith(BASE + '/wiki/scraped/images/'):
+            data = b'<svg xmlns="http://www.w3.org/2000/svg" width="120" height="48" viewBox="0 0 120 48"><rect width="120" height="48" fill="#e8dfcc"/><text x="8" y="28" font-size="12" fill="#554426">Not cached</text></svg>'
+            self.send_response(200)
+            self.send_header('Content-Type', 'image/svg+xml')
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('Content-Security-Policy', "default-src 'none'; sandbox")
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        if path == document_path:
+            try:
+                body = portal.original_document(int(parse_qs(url.query).get('id', ['0'])[0]))
+            except (OSError, ValueError, RecursionError, sqlite3.Error):
+                body = None
+            if body is None:
+                self.send_error(404)
+                return
+            data = body.encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.send_header('Referrer-Policy', 'no-referrer')
+            self.send_header('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'self'; form-action 'none'; base-uri 'none'; sandbox allow-top-navigation-by-user-activation")
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        if path == BASE + '/api/live':
+            try:
+                data = json.dumps(portal.live_json(parse_qs(url.query)), separators=(',', ':')).encode('utf-8')
+                status = 200
+            except ValueError:
+                data, status = b'{"error":"ticks must be an integer from 1 to 1000"}', 400
+            self.send_plain(status, data, 'application/json', 'no-store', "default-src 'none'; frame-ancestors 'none'; sandbox")
+            return
+        if path == BASE + '/api/controller':
+            data = json.dumps(portal.controller_json(self.headers), separators=(',', ':')).encode('utf-8')
+            self.send_plain(200, data, 'application/json', 'no-store', "default-src 'none'; frame-ancestors 'none'; sandbox")
+            return
+        if path == BASE + '/api/central-bank':
+            data = json.dumps(portal.bank_json(self.headers), separators=(',', ':')).encode('utf-8')
+            self.send_plain(200, data, 'application/json', 'no-store', "default-src 'none'; frame-ancestors 'none'; sandbox")
+            return
+        if path.startswith(BASE + '/central-bank/icons/'):
+            data = portal.bank_icon(unquote(path[len(BASE + '/central-bank/icons/'):]))
+            if data is None:
+                self.send_error(404)
+                return
+            self.send_plain(200, data, 'image/png', 'public, max-age=3600', "default-src 'none'; sandbox")
+            return
+        if path == BASE + '/central-bank.js':
+            self.send_plain(200, CENTRAL_BANK_SCRIPT, 'text/javascript; charset=utf-8', 'no-cache', "default-src 'none'")
+            return
+        if path == BASE + '/bot-controller.js':
+            self.send_plain(200, CONTROLLER_SCRIPT, 'text/javascript; charset=utf-8', 'no-cache', "default-src 'none'")
+            return
+        if path == BASE + '/live-map.js':
+            self.send_plain(200, LIVE_SCRIPT, 'text/javascript; charset=utf-8', 'no-cache', "default-src 'none'")
+            return
+        if path in (BASE + '/assets/worldmap.png', BASE + '/assets/worldmap.json'):
+            name = path.rsplit('/', 1)[-1]
+            asset = cast(PortalHTTPServer, self.server).assets_dir / name
+            if not asset.is_file():
+                self.send_error(404)
+                return
+            mime = 'image/png' if name.endswith('.png') else 'application/json'
+            self.send_plain(200, asset.read_bytes(), mime, 'public, max-age=3600', "default-src 'none'; sandbox")
+            return
+        if path == BASE + '/assets/background2.jpg':
+            asset = cast(PortalHTTPServer, self.server).assets_dir / 'background2.jpg'
+            if not asset.is_file():
+                self.send_error(404)
+                return
+            data = asset.read_bytes()
+            self.send_response(200)
+            self.send_header('Content-Type', 'image/jpeg')
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Cache-Control', 'public, max-age=86400')
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        status, body = cast(PortalHTTPServer, self.server).portal.render(path, parse_qs(url.query))
+        if status == 302:
+            self.send_response(302)
+            self.send_header('Location', body)
+            self.send_header('Content-Length', '0')
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            return
+        data = body.encode('utf-8')
+        self.send_response(status)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Content-Length', str(len(data)))
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('Referrer-Policy', 'no-referrer')
+        frame_policy = "; frame-src 'self'" if path == BASE + '/wiki/scraped/article' or path.startswith(BASE + '/wiki/scraped/w/') else ''
+        if path in (BASE + '/live-map', BASE + '/bot-controller/', BASE + '/central-bank/'):
+            # The only scripted pages: their own static script and same-origin JSON requests.
+            frame_policy = "; script-src 'self'; connect-src 'self'"
+        if path == BASE + '/bot-controller/':
+            # The browser view: the real game client from the game web server, nothing else.
+            frame_policy += '; frame-src ' + cast(PortalHTTPServer, self.server).portal.frame_origin()
+        self.send_header('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" + frame_policy)
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_POST(self):
+        url = urlsplit(self.path)
+        path = url.path if url.path == BASE or url.path.startswith(BASE + '/') else BASE + url.path
+        portal = cast(PortalHTTPServer, self.server).portal
+        if path not in (BASE + '/api/controller/desired', BASE + '/api/controller/frame', BASE + '/api/central-bank/designation'):
+            # Everything else stays read-only, as before the controller existed.
+            self.send_error(501, 'Unsupported method')
+            return
+        try:
+            length = int(self.headers.get('Content-Length', ''))
+        except ValueError:
+            length = -1
+        if not 0 < length <= controller.MAX_BODY:
+            self.send_plain(413 if length > controller.MAX_BODY else 411, b'{"error":"body length"}', 'application/json', 'no-store', "default-src 'none'")
+            return
+        body = self.rfile.read(length)
+        try:
+            if path == BASE + '/api/controller/frame':
+                status, payload = portal.controller_frame(self.headers, body)
+            elif path == BASE + '/api/central-bank/designation':
+                status, payload = portal.bank_write(self.headers, body)
+            else:
+                status, payload = portal.controller_write(self.headers, body)
+        except OSError:
+            status, payload = 503, {'error': 'Could not record the request (storage unavailable).'}
+        self.send_plain(status, json.dumps(payload, separators=(',', ':')).encode('utf-8'), 'application/json', 'no-store',
+                        "default-src 'none'; frame-ancestors 'none'; sandbox")
+
+    def send_plain(self, status, data, mime, cache, csp):
+        self.send_response(status)
+        self.send_header('Content-Type', mime)
+        self.send_header('Content-Length', str(len(data)))
+        self.send_header('Cache-Control', cache)
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('Referrer-Policy', 'no-referrer')
+        self.send_header('Content-Security-Policy', csp)
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, format, *args):
+        pass
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--root', type=Path, default=Path(__file__).with_name('data'))
+    parser.add_argument('--game-url', required=True)
+    parser.add_argument('--homepage-url', required=True)
+    parser.add_argument('--port', type=int, default=8098)
+    parser.add_argument('--host', default='127.0.0.1')
+    parser.add_argument('--wanted', type=Path, help='Writable SQLite file for requested pages and images (omit to record nothing)')
+    parser.add_argument('--live', type=Path, help='Live fleet snapshot written by live.py receive (omit for no live data)')
+    parser.add_argument('--controller', type=Path, help='Writable directory for the bot controller desired state (omit: read-only controller page)')
+    parser.add_argument('--owner-login', default=os.environ.get('PORTAL_OWNER_LOGIN', ''), help='Tailscale login allowed to change controller state')
+    parser.add_argument('--public-origin', default=os.environ.get('PORTAL_PUBLIC_ORIGIN', ''), help='https://host of the portal as browsers see it (Origin check)')
+    args = parser.parse_args()
+    server = PortalHTTPServer((args.host, args.port), Handler)
+    server.portal = Portal(args.root.expanduser().resolve(), args.game_url, args.homepage_url,
+                           args.wanted.expanduser() if args.wanted else None,
+                           args.live.expanduser() if args.live else None,
+                           args.controller.expanduser() if args.controller else None, args.owner_login, args.public_origin)
+    server.serve_forever()
+
+
+if __name__ == '__main__':
+    main()
