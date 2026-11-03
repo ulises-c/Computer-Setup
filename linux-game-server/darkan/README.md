@@ -18,16 +18,16 @@ lives outside the checkout. Nothing here publishes Docker ports.
 
 ```sh
 bash linux-game-server/darkan/setup.sh      # .env, checkout, cache, image; starts nothing
-bash linux-game-server/darkan/activate.sh   # UFW (LAN + tailnet), port checks, compose up --wait
+bash linux-game-server/darkan/activate.sh   # UFW (tailnet only), port checks, compose up --wait
 ```
 
 `setup.sh` is idempotent and deterministic:
 
 - It creates `.env` from `.env.example` with mode 600. It fills in only the
   blank values: `DARKAN_UID`/`GID`, `DARKAN_LOBBY_OWNER` (the user that runs
-  it), the four secrets from `openssl rand -hex 32`, `LAN_IFACE`/`LAN_CIDR`
-  from `../2004scape/.env`, and `DARKAN_PUBLIC_HOST` (this host's Tailscale DNS
-  name, set only while the placeholder is still there).
+  it), the four secrets from `openssl rand -hex 32`, and `DARKAN_PUBLIC_HOST`
+  (this host's Tailscale DNS name, set only while the placeholder is still
+  there).
 - It clones `DARKAN_SOURCE_URL` if the checkout is missing. It refuses a
   checkout that has a different origin or local changes. It checks out
   `DARKAN_SOURCE_REF` detached; this must be a full commit id.
@@ -52,8 +52,8 @@ all three.
 | Service | Port | Exposure | Notes |
 | --- | --- | --- | --- |
 | `darkan-mongo` (`mongo:7.0.45`) | 27027 | `127.0.0.1` only, `--auth` | Databases `darkan-lobby` (accounts, clans) and `darkan-world-<id>` (players, hiscores, GE, logs) |
-| `darkan-lobby` | 43620 game/JS5, 4040 API | game: LAN + tailnet; API: internal | Packs `cache-source` into `lobby/cache` on the first start (a few minutes), then serves it from memory |
-| `darkan-world` | 43621 | LAN + tailnet | Reads the lobby's packed cache read-only. Joins the lobby over `ws://127.0.0.1:4040/social/ws` with the private gateway token |
+| `darkan-lobby` | 43620 game/JS5, 4040 API | game: tailnet; API: `127.0.0.1` only | Packs `cache-source` into `lobby/cache` on the first start (a few minutes), then serves it from memory |
+| `darkan-world` | 43621 | tailnet | Reads the lobby's packed cache read-only. Joins the lobby over `ws://127.0.0.1:4040/social/ws` with the private gateway token |
 
 - **The world.** It is world `DARKAN_WORLD_ID` (1), at 1× XP, with members on.
   `WORLD_BOTS_ALLOWED=true` sets the world-list flag that lets the Darkan
@@ -69,6 +69,53 @@ all three.
   `cache-source/gamevals` from the checkout; the multi-GB tree is never sent to
   the builder. At runtime the tree is bind-mounted read-only. The image's
   `data/world.json` is a symlink into the world's state directory.
+
+## Private by default
+
+Only devices on the tailnet can join. This is stricter than the RS-SDK and
+Lost City stacks, which also open their web ports to the LAN.
+
+- **Tailnet.** `activate.sh` adds UFW allow rules for 43620 and 43621 on
+  `tailscale0` only. It refuses to start while any rule allows one of the
+  four ports on another interface. The world list advertises the tailnet DNS
+  name, so a LAN rule would not help a client anyway.
+- **Tailscale and UFW.** Tailscale's own netfilter rules (`NetfilterMode`
+  on) accept tailnet traffic before UFW sees it. Every port bound to a
+  wildcard address on this host is therefore reachable from the whole
+  tailnet, whatever UFW says. Restrict who can reach the host with the
+  tailnet ACLs.
+- **Lobby API.** The image binds the admin API to `127.0.0.1`. Upstream
+  binds it to every interface, so the build patches `Lobby.kt`, and the build
+  fails if upstream changes that line. Mongo binds to `127.0.0.1` and
+  requires a password.
+- **Not public.** Nothing is forwarded through Tailscale Serve, Funnel or the
+  router. The world joins only this lobby: `SOCIAL_GATEWAY_URL` is local and
+  the gateway token is a generated secret, so it never appears in darkan.org's
+  dev lobby. `DEBUG=false` also makes this lobby refuse community worlds.
+- **Accounts.** Anyone who can reach the lobby can create an account. The
+  tailnet boundary is the only gate. There is no login allowlist like RS-SDK's
+  test-world allowlist.
+
+The Homepage card's **Access** row checks the API listener on every refresh.
+It shows `API EXPOSED` if the listener is bound to anything other than
+loopback.
+
+## Homepage card
+
+The **Darkan: 2012 server** card (`../homepage/services.local.yaml`) reads
+`darkan-status.json`, which `../2004scape/game_status.py` writes every 15 s
+(the existing `2004scape-status.timer`, served by the loopback nginx on 8097).
+Its rows are:
+
+- the world's state and the lobby and Mongo health;
+- the pinned upstream commit and the image build time;
+- the rules (XP, drops, bots);
+- CPU and memory over 24 h, from the same sampler as the other cards;
+- players online (the lobby's `/worldlist`);
+- accounts and player saves (counted inside `darkan-mongo` with its own
+  credentials, so no secret is read);
+- data sizes;
+- the access check.
 
 ## Play
 
@@ -90,5 +137,5 @@ c=(docker compose --project-directory linux-game-server/darkan -f linux-game-ser
 curl -s http://127.0.0.1:4040/health; curl -s http://127.0.0.1:4040/worldlist
 ```
 
-Backups are not wired in yet. When they are, take a `mongodump` of both
+The card shows `not in the backup set`: backups are not wired in yet. When they are, take a `mongodump` of both
 databases plus `world/world.json`. `lobby/cache` can be rebuilt.
