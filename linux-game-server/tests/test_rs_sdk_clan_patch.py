@@ -44,11 +44,14 @@ class ClanPatchWiring(unittest.TestCase):
         main = (RS / "docker-compose.yml").read_text()
         self.assertIn("CLAN_STORAGE_ENABLED: ${RS_SDK_CLAN_STORAGE:-false}", main)
         self.assertIn("CLAN_HISCORES_ENABLED: ${RS_SDK_CLAN_HISCORES:-false}", main)
+        self.assertIn("CLAN_CHAT_ENABLED: ${RS_SDK_CLAN_CHAT:-false}", main)
         shared = (RS / "worlds/world-compose.yml").read_text()
         self.assertIn('CLAN_STORAGE_ENABLED: "false"', shared)
         self.assertIn('CLAN_HISCORES_ENABLED: "false"', shared)
+        self.assertIn('CLAN_CHAT_ENABLED: "false"', shared)
         isolated = (RS / "worlds/isolated-compose.yml").read_text()
         self.assertIn("CLAN_STORAGE_ENABLED: ${WORLD_CLAN_STORAGE_ENABLED:-false}", isolated)
+        self.assertIn("CLAN_CHAT_ENABLED: ${WORLD_CLAN_CHAT_ENABLED:-false}", isolated)
 
 
 if __name__ == "__main__":

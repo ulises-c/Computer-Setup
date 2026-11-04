@@ -46,6 +46,7 @@ services:
       # WORLD_CLAN_STORAGE_ENABLED=true world.sh test up --isolated IMAGE
       CLAN_STORAGE_ENABLED: ${WORLD_CLAN_STORAGE_ENABLED:-false}
       CLAN_HISCORES_ENABLED: ${WORLD_CLAN_HISCORES_ENABLED:-false}
+      CLAN_CHAT_ENABLED: ${WORLD_CLAN_CHAT_ENABLED:-false}
       BUILD_STARTUP: "false"
       BUILD_STARTUP_UPDATE: "false"
       DB_BACKEND: sqlite

@@ -36,6 +36,7 @@ services:
       # (RS_SDK_CLAN_STORAGE=true / RS_SDK_CLAN_HISCORES=true in the compose env).
       CLAN_STORAGE_ENABLED: ${RS_SDK_CLAN_STORAGE:-false}
       CLAN_HISCORES_ENABLED: ${RS_SDK_CLAN_HISCORES:-false}
+      CLAN_CHAT_ENABLED: ${RS_SDK_CLAN_CHAT:-false}
       BUILD_STARTUP: "false"
       BUILD_STARTUP_UPDATE: "false"
       DB_BACKEND: sqlite

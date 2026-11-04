@@ -1,5 +1,5 @@
 diff --git a/server/content/pack/interface.order b/server/content/pack/interface.order
-index a65701e53..f6deb621d 100644
+index a65701e53..d35132667 100644
 --- a/server/content/pack/interface.order
 +++ b/server/content/pack/interface.order
 @@ -172,6 +172,8 @@
@@ -11,48 +11,168 @@ index a65701e53..f6deb621d 100644
  5063
  5064
  201
-@@ -12694,3 +12696,21 @@
+@@ -12694,3 +12696,145 @@
  40753
  40494
  40495
 +40755
-+40756
-+40757
-+40758
++40774
++40775
++40776
++40777
++40778
++40779
++40780
++40781
++40782
++40783
++40784
++40785
++40786
++40787
++40788
++40789
++40790
++40791
++40792
++40793
++40794
++40795
++40796
++40797
++40798
++40799
++40800
++40801
++40802
++40803
++40804
++40805
++40806
++40807
++40808
++40809
++40810
++40811
++40812
++40813
++40814
++40815
++40816
++40817
++40818
++40819
++40820
++40821
++40822
++40823
++40824
++40825
++40826
++40827
++40828
++40829
++40830
++40831
++40832
++40833
++40834
++40835
++40836
++40837
++40838
++40839
++40840
++40841
++40842
++40843
++40844
++40845
++40846
++40847
++40848
++40849
++40850
++40851
++40852
++40853
++40854
++40855
++40856
++40857
++40858
++40859
++40860
++40861
++40862
 +40759
-+40760
 +40761
 +40762
 +40763
-+40764
-+40765
 +40766
++40863
++40864
++40865
++40866
++40867
++40868
++40869
++40760
++40870
 +40767
 +40768
++40871
++40872
++40764
 +40769
 +40770
 +40771
 +40772
++40873
++40874
++40875
++40876
++40877
++40878
++40879
++40880
++40881
++40882
++40883
++40884
++40885
++40886
++40887
++40888
++40889
++40890
++40891
++40892
++40893
++40894
++40895
++40896
++40897
++40898
++40899
++40900
++40901
 diff --git a/server/content/pack/interface.pack b/server/content/pack/interface.pack
-index 98d6efcf2..89958088b 100644
+index 98d6efcf2..f59a7abe6 100644
 --- a/server/content/pack/interface.pack
 +++ b/server/content/pack/interface.pack
-@@ -12694,3 +12694,23 @@
+@@ -12694,3 +12694,147 @@
  40751=grand_exchange:slot11_sell_area_arrow3
  40752=grand_exchange:slot11_sell_label
  40753=grand_exchange:slot11_sell
 +40754=bank_main:clan_storage
 +40755=clan_storage
-+40756=clan_storage:background
-+40757=clan_storage:frame
-+40758=clan_storage:frame_edge
 +40759=clan_storage:title
 +40760=clan_storage:capacity
 +40761=clan_storage:close
 +40762=clan_storage:items
 +40763=clan_storage:inv
 +40764=clan_storage:rank
-+40765=clan_storage:status
 +40766=clan_storage:mode
 +40767=clan_storage:deposit_inv
 +40768=clan_storage:bank
@@ -61,90 +181,891 @@ index 98d6efcf2..89958088b 100644
 +40771=clan_storage_side
 +40772=clan_storage_side:inv
 +40773=bank_main:clan_storage_layer
++40774=clan_storage:com_0
++40775=clan_storage:com_1
++40776=clan_storage:com_2
++40777=clan_storage:com_3
++40778=clan_storage:com_4
++40779=clan_storage:com_5
++40780=clan_storage:com_6
++40781=clan_storage:com_7
++40782=clan_storage:com_8
++40783=clan_storage:com_9
++40784=clan_storage:com_10
++40785=clan_storage:com_11
++40786=clan_storage:com_12
++40787=clan_storage:com_13
++40788=clan_storage:com_14
++40789=clan_storage:com_15
++40790=clan_storage:com_16
++40791=clan_storage:com_17
++40792=clan_storage:com_18
++40793=clan_storage:com_19
++40794=clan_storage:com_20
++40795=clan_storage:com_21
++40796=clan_storage:com_22
++40797=clan_storage:com_23
++40798=clan_storage:com_24
++40799=clan_storage:com_25
++40800=clan_storage:com_26
++40801=clan_storage:com_27
++40802=clan_storage:com_28
++40803=clan_storage:com_29
++40804=clan_storage:com_30
++40805=clan_storage:com_31
++40806=clan_storage:com_32
++40807=clan_storage:com_33
++40808=clan_storage:com_34
++40809=clan_storage:com_35
++40810=clan_storage:com_36
++40811=clan_storage:com_37
++40812=clan_storage:com_38
++40813=clan_storage:com_39
++40814=clan_storage:com_40
++40815=clan_storage:com_41
++40816=clan_storage:com_42
++40817=clan_storage:com_43
++40818=clan_storage:com_44
++40819=clan_storage:com_45
++40820=clan_storage:com_46
++40821=clan_storage:com_47
++40822=clan_storage:com_48
++40823=clan_storage:com_49
++40824=clan_storage:com_50
++40825=clan_storage:com_51
++40826=clan_storage:com_52
++40827=clan_storage:com_53
++40828=clan_storage:com_54
++40829=clan_storage:com_55
++40830=clan_storage:com_56
++40831=clan_storage:com_57
++40832=clan_storage:com_58
++40833=clan_storage:com_59
++40834=clan_storage:com_60
++40835=clan_storage:com_61
++40836=clan_storage:com_62
++40837=clan_storage:com_63
++40838=clan_storage:com_64
++40839=clan_storage:com_65
++40840=clan_storage:com_66
++40841=clan_storage:com_67
++40842=clan_storage:com_68
++40843=clan_storage:com_69
++40844=clan_storage:com_70
++40845=clan_storage:com_71
++40846=clan_storage:com_72
++40847=clan_storage:com_73
++40848=clan_storage:com_74
++40849=clan_storage:com_75
++40850=clan_storage:com_76
++40851=clan_storage:com_77
++40852=clan_storage:com_78
++40853=clan_storage:com_79
++40854=clan_storage:com_80
++40855=clan_storage:com_81
++40856=clan_storage:com_82
++40857=clan_storage:com_83
++40858=clan_storage:com_84
++40859=clan_storage:com_85
++40860=clan_storage:com_86
++40861=clan_storage:com_87
++40862=clan_storage:com_88
++40863=clan_storage:mode_on
++40864=clan_storage:mode_on_box
++40865=clan_storage:mode_item
++40866=clan_storage:mode_item_on
++40867=clan_storage:mode_item_on_box
++40868=clan_storage:com_95
++40869=clan_storage:com_96
++40870=clan_storage:com_98
++40871=clan_storage:bank_text
++40872=clan_storage:deposit_inv_text
++40873=clan_tab
++40874=clan_tab:list
++40875=clan_tab:names
++40876=clan_tab:ranks
++40877=clan_tab:title
++40878=clan_tab:com_6
++40879=clan_tab:com_7
++40880=clan_tab:com_8
++40881=clan_tab:com_9
++40882=clan_tab:com_10
++40883=clan_tab:com_11
++40884=clan_tab:com_12
++40885=clan_tab:com_13
++40886=clan_tab:com_14
++40887=clan_tab:com_15
++40888=clan_tab:com_16
++40889=clan_tab:com_17
++40890=clan_tab:com_18
++40891=clan_tab:com_19
++40892=clan_tab:com_20
++40893=clan_tab:com_21
++40894=clan_tab:com_22
++40895=clan_tab:com_23
++40896=clan_tab:com_24
++40897=clan_tab:com_25
++40898=clan_tab:members
++40899=clan_tab:online
++40900=clan_tab:agent_metadata
++40901=clan_tab:agent_state
 diff --git a/server/content/scripts/clan/interfaces/clan_storage.if b/server/content/scripts/clan/interfaces/clan_storage.if
 new file mode 100644
-index 000000000..849740d43
+index 000000000..4e7d5ff67
 --- /dev/null
 +++ b/server/content/scripts/clan/interfaces/clan_storage.if
-@@ -0,0 +1,167 @@
-+[background]
-+type=rect
-+x=0
-+y=0
-+width=512
-+height=334
-+fill=yes
-+colour=0x282A26
+@@ -0,0 +1,928 @@
++[com_0]
++type=graphic
++x=12
++y=20
++width=88
++height=60
++graphic=tradebacking,0
 +
-+[frame]
-+type=rect
-+x=5
-+y=5
-+width=502
-+height=324
-+fill=yes
-+colour=0x403F34
++[com_1]
++type=graphic
++x=12
++y=80
++width=88
++height=60
++graphic=tradebacking,0
 +
-+[frame_edge]
-+type=rect
-+x=5
++[com_2]
++type=graphic
++x=12
++y=140
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_3]
++type=graphic
++x=12
++y=200
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_4]
++type=graphic
++x=12
++y=260
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_5]
++type=graphic
++x=100
++y=20
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_6]
++type=graphic
++x=100
++y=80
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_7]
++type=graphic
++x=100
++y=140
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_8]
++type=graphic
++x=100
++y=200
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_9]
++type=graphic
++x=188
++y=20
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_10]
++type=graphic
++x=100
++y=260
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_11]
++type=graphic
++x=188
++y=80
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_12]
++type=graphic
++x=188
++y=140
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_13]
++type=graphic
++x=188
++y=200
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_14]
++type=graphic
++x=188
++y=260
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_15]
++type=graphic
++x=276
++y=20
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_16]
++type=graphic
++x=364
++y=80
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_17]
++type=graphic
++x=276
++y=80
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_18]
++type=graphic
++x=276
++y=140
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_19]
++type=graphic
++x=276
++y=200
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_20]
++type=graphic
++x=276
++y=260
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_21]
++type=graphic
++x=364
++y=140
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_22]
++type=graphic
++x=364
++y=20
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_23]
++type=graphic
++x=364
++y=200
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_24]
++type=graphic
++x=364
++y=260
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_25]
++type=graphic
++x=412
++y=20
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_26]
++type=graphic
++x=412
++y=80
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_27]
++type=graphic
++x=412
++y=140
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_28]
++type=graphic
++x=-3
++y=49
++width=36
++height=36
++graphic=miscgraphics,2
++
++[com_29]
++type=graphic
++x=412
++y=200
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_30]
++type=graphic
++x=412
++y=260
++width=88
++height=60
++graphic=tradebacking,0
++
++[com_31]
++type=graphic
++x=12
++y=20
++width=25
++height=30
++graphic=steelborder,0
++
++[com_32]
++type=graphic
++x=-3
++y=85
++width=36
++height=36
++graphic=miscgraphics,2
++
++[com_33]
++type=graphic
++x=-3
++y=121
++width=36
++height=36
++graphic=miscgraphics,2
++
++[com_34]
++type=graphic
++x=-3
++y=157
++width=36
++height=36
++graphic=miscgraphics,2
++
++[com_35]
++type=graphic
++x=-3
++y=193
++width=36
++height=36
++graphic=miscgraphics,2
++
++[com_36]
++type=graphic
++x=-3
++y=229
++width=36
++height=36
++graphic=miscgraphics,2
++
++[com_37]
++type=graphic
++x=-3
++y=265
++width=36
++height=36
++graphic=miscgraphics,2
++
++[com_38]
++type=graphic
++x=479
++y=50
++width=36
++height=36
++graphic=steelborder2,1
++
++[com_39]
++type=graphic
++x=479
++y=86
++width=36
++height=36
++graphic=steelborder2,1
++
++[com_40]
++type=graphic
++x=479
++y=122
++width=36
++height=36
++graphic=steelborder2,1
++
++[com_41]
++type=graphic
++x=479
++y=158
++width=36
++height=36
++graphic=steelborder2,1
++
++[com_42]
++type=graphic
++x=479
++y=194
++width=36
++height=36
++graphic=steelborder2,1
++
++[com_43]
++type=graphic
++x=479
++y=230
++width=36
++height=36
++graphic=steelborder2,1
++
++[com_44]
++type=graphic
++x=479
++y=266
++width=36
++height=36
++graphic=steelborder2,1
++
++[com_45]
++type=graphic
++x=73
++y=304
++width=36
++height=36
++graphic=miscgraphics,3
++
++[com_46]
++type=graphic
++x=109
++y=304
++width=36
++height=36
++graphic=miscgraphics,3
++
++[com_47]
++type=graphic
++x=145
++y=304
++width=36
++height=36
++graphic=miscgraphics,3
++
++[com_48]
++type=graphic
++x=181
++y=304
++width=36
++height=36
++graphic=miscgraphics,3
++
++[com_49]
++type=graphic
++x=217
++y=304
++width=36
++height=36
++graphic=miscgraphics,3
++
++[com_50]
++type=graphic
++x=253
++y=304
++width=36
++height=36
++graphic=miscgraphics,3
++
++[com_51]
++type=graphic
++x=289
++y=304
++width=36
++height=36
++graphic=miscgraphics,3
++
++[com_52]
++type=graphic
++x=325
++y=304
++width=36
++height=36
++graphic=miscgraphics,3
++
++[com_53]
++type=graphic
++x=361
++y=304
++width=36
++height=36
++graphic=miscgraphics,3
++
++[com_54]
++type=graphic
++x=397
++y=304
++width=36
++height=36
++graphic=miscgraphics,3
++
++[com_55]
++type=graphic
++x=433
++y=304
++width=36
++height=36
++graphic=miscgraphics,3
++
++[com_56]
++type=graphic
++x=72
 +y=5
-+width=502
-+height=324
-+fill=no
-+colour=0x706B56
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_57]
++type=graphic
++x=108
++y=5
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_58]
++type=graphic
++x=144
++y=5
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_59]
++type=graphic
++x=180
++y=5
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_60]
++type=graphic
++x=216
++y=5
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_61]
++type=graphic
++x=252
++y=5
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_62]
++type=graphic
++x=288
++y=5
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_63]
++type=graphic
++x=324
++y=5
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_64]
++type=graphic
++x=360
++y=5
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_65]
++type=graphic
++x=396
++y=5
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_66]
++type=graphic
++x=432
++y=5
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_67]
++type=graphic
++x=252
++y=34
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_68]
++type=graphic
++x=37
++y=5
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_69]
++type=graphic
++x=37
++y=304
++width=36
++height=36
++graphic=miscgraphics,3
++
++[com_70]
++type=graphic
++x=12
++y=295
++width=25
++height=30
++graphic=steelborder,2
++
++[com_71]
++type=graphic
++x=475
++y=20
++width=25
++height=30
++graphic=steelborder,1
++
++[com_72]
++type=graphic
++x=439
++y=5
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_73]
++type=graphic
++x=475
++y=295
++width=25
++height=30
++graphic=steelborder,3
++
++[com_74]
++type=graphic
++x=439
++y=304
++width=36
++height=36
++graphic=miscgraphics,3
++
++[com_75]
++type=graphic
++x=288
++y=34
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_76]
++type=graphic
++x=324
++y=34
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_77]
++type=graphic
++x=360
++y=34
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_78]
++type=graphic
++x=396
++y=34
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_79]
++type=graphic
++x=432
++y=34
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_80]
++type=graphic
++x=459
++y=34
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_81]
++type=graphic
++x=216
++y=34
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_82]
++type=graphic
++x=180
++y=34
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_83]
++type=graphic
++x=144
++y=34
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_84]
++type=graphic
++x=108
++y=34
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_85]
++type=graphic
++x=72
++y=34
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_86]
++type=graphic
++x=36
++y=34
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_87]
++type=graphic
++x=17
++y=34
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_88]
++type=layer
++x=36
++y=20
++width=440
++height=299
 +
 +[title]
 +type=text
-+x=14
-+y=10
++x=106
++y=30
 +width=300
-+height=16
++height=14
 +font=b12_full
 +shadowed=yes
 +text=Clan storage
 +colour=0xFF981F
-+
-+[capacity]
-+type=text
-+x=330
-+y=12
-+width=80
-+height=14
-+font=p11_full
-+shadowed=yes
-+text=0 / 800
-+colour=0xFF981F
++center=yes
 +
 +[close]
 +type=text
 +x=419
-+y=12
-+width=80
-+height=14
++y=32
++buttontype=close
++width=68
++height=11
 +font=p11_full
 +shadowed=yes
 +text=Close Window
 +colour=0x808080
 +overcolour=0xFFFFFF
-+buttontype=normal
-+option=Close
 +
 +[items]
 +type=layer
-+x=12
-+y=32
-+width=488
-+height=252
-+scroll=3050
++x=37
++y=55
++width=427
++height=229
++scroll=3799
 +
 +[inv]
 +layer=items
 +type=inv
-+x=10
++x=38
 +y=3
-+width=10
-+height=80
++width=8
++height=100
 +margin=15,6
 +option1=Withdraw 1
 +option2=Withdraw 5
@@ -152,69 +1073,157 @@ index 000000000..849740d43
 +option4=Withdraw All
 +option5=Withdraw X
 +
-+[rank]
-+type=text
-+x=14
-+y=290
-+width=260
-+height=14
-+font=p11_full
-+shadowed=yes
-+text=Your rank:
-+colour=0xFFB83F
-+
-+[status]
-+type=text
-+x=14
-+y=308
-+width=270
-+height=14
-+font=p11_full
-+shadowed=yes
-+text=
-+colour=0xC1B9A4
-+
 +[mode]
++type=graphic
++x=364
++y=291
++buttontype=select
++width=72
++height=36
++graphic=combatboxes,2
++
++[mode_on]
++type=layer
++x=364
++y=291
++width=72
++height=36
++hide=yes
++
++[mode_on_box]
++layer=mode_on
++type=graphic
++x=0
++y=0
++width=72
++height=36
++graphic=combatboxes,3
++
++[mode_item]
++type=graphic
++x=291
++y=291
++buttontype=select
++width=72
++height=36
++graphic=combatboxes,2
++
++[mode_item_on]
++type=layer
++x=291
++y=291
++width=72
++height=36
++hide=yes
++
++[mode_item_on_box]
++layer=mode_item_on
++type=graphic
++x=0
++y=0
++width=72
++height=36
++graphic=combatboxes,3
++
++[com_95]
 +type=text
-+x=290
-+y=290
-+width=110
++x=327
++y=284
++width=70
 +height=14
-+font=p11_full
++font=p12_full
 +shadowed=yes
-+text=Withdraw as: Item
++text=Withdraw as:
 +colour=0xFF981F
-+overcolour=0xFFFFFF
-+buttontype=normal
-+option=Toggle
++
++[com_96]
++type=text
++x=315
++y=301
++width=24
++height=14
++font=p12_full
++shadowed=yes
++text=Item
++colour=0xFF981F
++
++[capacity]
++type=text
++x=75
++y=284
++width=146
++height=14
++font=p12_full
++shadowed=yes
++text=Capacity: 0 / 800
++colour=0xFF981F
++center=yes
++
++[com_98]
++type=text
++x=387
++y=301
++width=27
++height=14
++font=p12_full
++shadowed=yes
++text=Note
++colour=0xFF981F
 +
 +[deposit_inv]
-+type=text
-+x=290
-+y=308
-+width=110
-+height=14
-+font=p11_full
-+shadowed=yes
-+text=Deposit inventory
-+colour=0xFF981F
-+overcolour=0xFFFFFF
++type=graphic
++x=75
++y=291
 +buttontype=normal
++width=72
++height=36
++graphic=combatboxes,2
 +option=Deposit inventory
 +
 +[bank]
++type=graphic
++x=149
++y=291
++buttontype=normal
++width=72
++height=36
++graphic=combatboxes,2
++option=Bank
++
++[bank_text]
 +type=text
-+x=430
-+y=300
-+width=60
++x=149
++y=301
++width=72
 +height=14
-+font=p11_full
++font=p12_full
 +shadowed=yes
 +text=Bank
 +colour=0xFF981F
-+overcolour=0xFFFFFF
-+buttontype=normal
-+option=Bank
++center=yes
++
++[deposit_inv_text]
++type=text
++x=75
++y=301
++width=72
++height=14
++font=p12_full
++shadowed=yes
++text=Deposit inv
++colour=0xFF981F
++center=yes
++
++[rank]
++type=text
++x=40
++y=32
++width=140
++height=11
++font=p11_full
++shadowed=yes
++text=Rank:
++colour=0xFF981F
 +
 +[agent_metadata]
 +type=layer
@@ -252,6 +1261,260 @@ index 000000000..aa24fc6c8
 +option3=Deposit 10
 +option4=Deposit All
 +option5=Deposit X
+diff --git a/server/content/scripts/clan/interfaces/clan_tab.if b/server/content/scripts/clan/interfaces/clan_tab.if
+new file mode 100644
+index 000000000..7ebc3695b
+--- /dev/null
++++ b/server/content/scripts/clan/interfaces/clan_tab.if
+@@ -0,0 +1,248 @@
++type=overlay
++
++[list]
++type=layer
++x=3
++y=20
++width=168
++height=204
++scroll=912
++
++[names]
++layer=list
++type=text
++x=7
++y=6
++width=100
++height=900
++font=p12_full
++shadowed=yes
++text=
++colour=0xFFFFFF
++
++[ranks]
++layer=list
++type=text
++x=96
++y=6
++width=70
++height=900
++font=p12_full
++shadowed=yes
++text=
++colour=0x00FF00
++
++[title]
++type=text
++x=3
++y=4
++width=168
++height=14
++font=b12_full
++shadowed=yes
++center=yes
++text=Clan
++colour=0xFFFF00
++
++[com_6]
++type=graphic
++x=3
++y=20
++width=25
++height=30
++graphic=steelborder,0
++
++[com_7]
++type=graphic
++x=146
++y=20
++width=25
++height=30
++graphic=steelborder,1
++
++[com_8]
++type=graphic
++x=3
++y=194
++width=25
++height=30
++graphic=steelborder,2
++
++[com_9]
++type=graphic
++x=146
++y=194
++width=25
++height=30
++graphic=steelborder,3
++
++[com_10]
++type=graphic
++x=28
++y=5
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_11]
++type=graphic
++x=64
++y=5
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_12]
++type=graphic
++x=100
++y=5
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_13]
++type=graphic
++x=112
++y=5
++width=36
++height=36
++graphic=steelborder2,0
++
++[com_14]
++type=graphic
++x=150
++y=50
++width=36
++height=36
++graphic=steelborder2,1
++
++[com_15]
++type=graphic
++x=150
++y=86
++width=36
++height=36
++graphic=steelborder2,1
++
++[com_16]
++type=graphic
++x=150
++y=122
++width=36
++height=36
++graphic=steelborder2,1
++
++[com_17]
++type=graphic
++x=150
++y=158
++width=36
++height=36
++graphic=steelborder2,1
++
++[com_18]
++type=graphic
++x=-12
++y=50
++width=36
++height=36
++graphic=miscgraphics,2
++
++[com_19]
++type=graphic
++x=-12
++y=86
++width=36
++height=36
++graphic=miscgraphics,2
++
++[com_20]
++type=graphic
++x=-12
++y=122
++width=36
++height=36
++graphic=miscgraphics,2
++
++[com_21]
++type=graphic
++x=-12
++y=158
++width=36
++height=36
++graphic=miscgraphics,2
++
++[com_22]
++type=graphic
++x=28
++y=203
++width=36
++height=36
++graphic=miscgraphics,3
++
++[com_23]
++type=graphic
++x=64
++y=203
++width=36
++height=36
++graphic=miscgraphics,3
++
++[com_24]
++type=graphic
++x=100
++y=203
++width=36
++height=36
++graphic=miscgraphics,3
++
++[com_25]
++type=graphic
++x=111
++y=203
++width=36
++height=36
++graphic=miscgraphics,3
++
++[members]
++type=text
++x=3
++y=226
++width=168
++height=14
++font=p12_full
++shadowed=yes
++center=yes
++text=Members: 0
++colour=0xFFFF00
++
++[online]
++type=text
++x=3
++y=241
++width=168
++height=14
++font=p12_full
++shadowed=yes
++center=yes
++text=Online: 0
++colour=0xFFFF00
++
++[agent_metadata]
++type=layer
++x=0
++y=0
++width=0
++height=0
++hide=yes
++
++[agent_state]
++type=text
++x=0
++y=0
++width=0
++height=0
++layer=agent_metadata
++font=p11_full
++text=
++clientcode=30461
 diff --git a/server/content/scripts/interface_bank/interfaces/bank_main.if b/server/content/scripts/interface_bank/interfaces/bank_main.if
 index 41e65d42c..1893bef53 100644
 --- a/server/content/scripts/interface_bank/interfaces/bank_main.if
@@ -335,43 +1598,131 @@ index 000000000..28a11fd26
 +}
 diff --git a/server/engine/src/engine/clan/ClanChat.ts b/server/engine/src/engine/clan/ClanChat.ts
 new file mode 100644
-index 000000000..dd7fe4119
+index 000000000..a2783c796
 --- /dev/null
 +++ b/server/engine/src/engine/clan/ClanChat.ts
-@@ -0,0 +1,27 @@
+@@ -0,0 +1,115 @@
++import WordEnc from '#/cache/wordenc/WordEnc.js';
++import { db } from '#/db/query.js';
 +import type Player from '#/engine/entity/Player.js';
 +import World from '#/engine/World.js';
-+import { clanStorageEnabled, clanStore } from './ClanLedger.js';
++import Environment from '#/util/Environment.js';
++import { clanChatEnabled, clanStorageEnabled, clanStore } from './ClanLedger.js';
 +import { ClanError } from './ClanStore.js';
-+import { parseClanCommand, runClanCommand } from './ClanCommands.js';
++import { CLAN_CHAT_LINE, clanChatLine, parseClanCommand, runClanCommand } from './ClanCommands.js';
++import { clanRosterChanged, onlineMembers } from './ClanTab.js';
 +
 +const notify = (owner: string, line: string) => World.getPlayerByUsername(owner)?.messageGame(line);
 +
-+/** Public chat hook: true when the text was a clan command (never broadcast). Delegated from MessagePublicHandler. */
++/** Commands that can't change a roster, a rank or a clan name. */
++const READ_ONLY = new Set(['info', 'members', 'help', 'invite', 'access']);
++
++/** Usernames (safe login names) that ignore `sender`. The friend server keeps ignore lists in db.sqlite. */
++export type IgnoreLookup = (sender: string) => Promise<Set<string>>;
++const dbIgnoreLookup: IgnoreLookup = async sender => {
++    const rows = await db
++        .selectFrom('ignorelist as i')
++        .innerJoin('account as a', 'a.id', 'i.account_id')
++        .select('a.username')
++        .where('i.value', '=', sender)
++        .where('i.profile', '=', Environment.node.profile)
++        .execute();
++    return new Set(rows.map(r => r.username));
++};
++let ignoreLookup: IgnoreLookup = dbIgnoreLookup;
++let ignoreWarned = false;
++/** Delivery stays in send order even though the ignore lookup is asynchronous. */
++let queue: Promise<void> = Promise.resolve();
++
++/** Tests only: replace the ignore-list lookup (null restores the db.sqlite lookup). */
++export function setClanChatIgnoreLookup(fn: IgnoreLookup | null): void {
++    ignoreLookup = fn ?? dbIgnoreLookup;
++}
++/** Tests only: resolves when every queued clan chat line has been delivered. */
++export function clanChatDrained(): Promise<void> {
++    return queue;
++}
++
++function sendClanChat(p: Player, body: string): void {
++    if (p.muted_until !== null && p.muted_until > new Date()) return; // as public chat: muted players are silent
++    const store = clanStore();
++    const member = store.member(p.username);
++    const clan = member ? store.clan(member.clan_id) : undefined;
++    if (!member || !clan) {
++        p.messageGame('You are not in a clan. Lines starting with / go to your clan chat.');
++        return;
++    }
++    const line = clanChatLine(clan.display, p.displayName, WordEnc.filter(body));
++    // Logged like public chat (World logs logMessage), tagged so moderators can tell it apart.
++    p.logMessage = `[clan ${clan.display}] ${body}`;
++    const recipients = onlineMembers(clan.id);
++    if (!recipients.includes(p)) recipients.push(p);
++    const sender = p.username;
++    queue = queue
++        .then(() => ignoreLookup(sender))
++        .catch(error => {
++            if (!ignoreWarned) console.error('[clan] ignore-list lookup failed; delivering clan chat without it', error);
++            ignoreWarned = true;
++            return new Set<string>();
++        })
++        .then(ignoring => {
++            for (const r of recipients) {
++                if (r.username !== sender && ignoring.has(r.username)) continue;
++                if (World.getPlayerByUsername(r.username) !== r) continue; // logged out meanwhile
++                r.messageGame(line);
++            }
++        });
++}
++
++/**
++ * Public chat hook (delegated from MessagePublicHandler, after its mute check): true when the text
++ * was a clan command or a clan chat line. Either way it is never broadcast publicly.
++ */
 +export function clanPublicChat(p: Player, text: string): boolean {
 +    if (!clanStorageEnabled()) return false;
 +    const args = parseClanCommand(text);
-+    if (!args) return false;
-+    p.socialProtect = true;
-+    let lines: string[];
-+    try {
-+        lines = runClanCommand(clanStore(), p.username, args, notify);
-+    } catch (error) {
-+        if (error instanceof ClanError) lines = [error.message];
-+        else {
-+            console.error('[clan] command failed', error);
-+            lines = ['Clan commands are unavailable right now.'];
++    if (args) {
++        p.socialProtect = true;
++        let lines: string[];
++        let before: number | undefined;
++        try {
++            before = clanStore().member(p.username)?.clan_id;
++            lines = runClanCommand(clanStore(), p.username, args, notify);
++        } catch (error) {
++            if (error instanceof ClanError) lines = [error.message];
++            else {
++                console.error('[clan] command failed', error);
++                lines = ['Clan commands are unavailable right now.'];
++            }
 +        }
++        for (const line of lines) p.messageGame(line);
++        if (!READ_ONLY.has(args[0] ?? 'help')) {
++            try {
++                clanRosterChanged([before, clanStore().member(p.username)?.clan_id]);
++            } catch (error) {
++                console.error('[clan] roster refresh failed', error);
++            }
++        }
++        return true;
 +    }
-+    for (const line of lines) p.messageGame(line);
++    if (!clanChatEnabled()) return false;
++    const m = CLAN_CHAT_LINE.exec(text);
++    if (!m) return false;
++    p.socialProtect = true;
++    try {
++        sendClanChat(p, m[1].trimEnd());
++    } catch (error) {
++        console.error('[clan] chat failed', error);
++        p.messageGame('Clan chat is unavailable right now.');
++    }
 +    return true;
 +}
 diff --git a/server/engine/src/engine/clan/ClanCommands.ts b/server/engine/src/engine/clan/ClanCommands.ts
 new file mode 100644
-index 000000000..601331340
+index 000000000..da1613280
 --- /dev/null
 +++ b/server/engine/src/engine/clan/ClanCommands.ts
-@@ -0,0 +1,165 @@
+@@ -0,0 +1,176 @@
 +import ObjType from '#/cache/config/ObjType.js';
 +import { toDisplayName } from '#/util/JString.js';
 +import { parseRank, RANK_WORDS, rankName } from './ClanRanks.js';
@@ -383,6 +1734,17 @@ index 000000000..601331340
 + * lost). A leading space or slash before "clan" marks a command; plain "clan ..." stays chat.
 + */
 +export const CLAN_COMMAND = /^[\s/]+clan(?:\s+(.*))?$/i;
++
++/**
++ * OSRS-style clan chat: a public chat line starting with "/" that is not "/clan ...". The word
++ * packer has no "/", so the server sees a leading space; group 1 is the text.
++ */
++export const CLAN_CHAT_LINE = /^[\s/]+(\S.*)$/s;
++
++/** The game message a clan member sees: `[Stud Unit] Clan Founder: text`. */
++export function clanChatLine(clan: string, sender: string, text: string): string {
++    return `[${clan}] ${sender}: ${text}`;
++}
 +
 +export function parseClanCommand(text: string): string[] | null {
 +    const m = CLAN_COMMAND.exec(text.replace(/\s+$/, ''));
@@ -539,22 +1901,32 @@ index 000000000..601331340
 +}
 diff --git a/server/engine/src/engine/clan/ClanHooks.ts b/server/engine/src/engine/clan/ClanHooks.ts
 new file mode 100644
-index 000000000..db4e3db16
+index 000000000..f5a01e6e3
 --- /dev/null
 +++ b/server/engine/src/engine/clan/ClanHooks.ts
-@@ -0,0 +1,6 @@
+@@ -0,0 +1,16 @@
++import type Player from '#/engine/entity/Player.js';
++import { clanTick as storageTick } from './ClanStorage.js';
++import { clanTabTick } from './ClanTab.js';
++
 +/**
 + * The only clan entry points upstream files call (one delegation line each, see
 + * docs/plans/clan-storage.md section 12). Each returns false when the event is not ours.
 + */
-+export { clanButton, clanCount, clanInvButton, clanTick } from './ClanStorage.js';
++export { clanButton, clanCount, clanInvButton } from './ClanStorage.js';
 +export { clanPublicChat } from './ClanChat.js';
++
++/** Per-player world tick: storage screen refresh, bank button, clan tab and presence. */
++export function clanTick(p: Player): void {
++    storageTick(p);
++    clanTabTick(p);
++}
 diff --git a/server/engine/src/engine/clan/ClanLedger.ts b/server/engine/src/engine/clan/ClanLedger.ts
 new file mode 100644
-index 000000000..ad1c435dd
+index 000000000..f1f1d6a3b
 --- /dev/null
 +++ b/server/engine/src/engine/clan/ClanLedger.ts
-@@ -0,0 +1,65 @@
+@@ -0,0 +1,67 @@
 +import { Database } from 'bun:sqlite';
 +import { existsSync, mkdirSync } from 'node:fs';
 +import { dirname } from 'node:path';
@@ -571,6 +1943,8 @@ index 000000000..ad1c435dd
 +/** Feature flags are read here, not in Environment.ts (upstream footprint rule). Off = upstream behaviour. */
 +export const clanStorageEnabled = () => tryParseBoolean(process.env.CLAN_STORAGE_ENABLED, false);
 +export const clanHiscoresEnabled = () => tryParseBoolean(process.env.CLAN_HISCORES_ENABLED, false);
++/** Clan chat ("/" lines) and the clan side tab; needs clans (CLAN_STORAGE_ENABLED) too. */
++export const clanChatEnabled = () => clanStorageEnabled() && tryParseBoolean(process.env.CLAN_CHAT_ENABLED, false);
 +const intEnv = (name: string, fallback: number) => {
 +    const n = Number(process.env[name]);
 +    return Number.isInteger(n) && n > 0 ? n : fallback;
@@ -668,10 +2042,10 @@ index 000000000..818be3f43
 +export const RANK_WORDS = ['deputy owner', 'deputy', 'owner', 'admin', 'general', 'captain', 'lieutenant', 'sergeant', 'corporal', 'recruit'];
 diff --git a/server/engine/src/engine/clan/ClanStorage.ts b/server/engine/src/engine/clan/ClanStorage.ts
 new file mode 100644
-index 000000000..a09d9a8e5
+index 000000000..2c0144bb0
 --- /dev/null
 +++ b/server/engine/src/engine/clan/ClanStorage.ts
-@@ -0,0 +1,366 @@
+@@ -0,0 +1,380 @@
 +import Component from '#/cache/config/Component.js';
 +import InvType from '#/cache/config/InvType.js';
 +import ObjType from '#/cache/config/ObjType.js';
@@ -694,6 +2068,8 @@ index 000000000..a09d9a8e5
 +
 +/** Hidden JSON state component for bots (reserved client code block 30460+, after the GE's 30400-30451). */
 +export const CLAN_STATE_CLIENTCODE = 30460;
++/** The storage grid's slots (clan_storage.if: 8 x 100, the bank's layout with 100 rows). */
++const GRID_SLOTS = 800;
 +/** Bots can't read more than one var-short IF_SETTEXT; stay well below 65535 bytes. */
 +const MAX_STATE_BYTES = 60_000;
 +
@@ -708,6 +2084,8 @@ index 000000000..a09d9a8e5
 +    noted: boolean;
 +    input?: Input;
 +    notice: string;
++    /** Last cooldown/status line told in the chatbox. */
++    status?: string;
 +    error: string | null;
 +    errorReason: string | null;
 +    receipt: ClanStorageState['receipt'];
@@ -733,6 +2111,10 @@ index 000000000..a09d9a8e5
 +function text(p: Player, name: string, value: string) {
 +    const id = com(name);
 +    if (id >= 0) p.write(new IfSetText(id, value));
++}
++function hide(p: Player, name: string, hidden: boolean) {
++    const id = com(name);
++    if (id >= 0) p.write(new IfSetHide(id, hidden));
 +}
 +function message(error: unknown): string {
 +    if (error instanceof ClanError) return error.message;
@@ -814,13 +2196,15 @@ index 000000000..a09d9a8e5
 +    s.clanId = v.clan.id;
 +    s.storeRevision = v.revision;
 +    s.rows = v.items.map(i => i.id);
-+    const display = new Inventory(-1, Math.max(1, v.capacity.max));
-+    v.items.forEach((item, slot) => display.set(slot, { id: item.id, count: item.count }));
++    const display = new Inventory(-1, Math.max(1, Math.min(v.capacity.max, GRID_SLOTS)));
++    v.items.forEach((item, slot) => slot < GRID_SLOTS && display.set(slot, { id: item.id, count: item.count }));
 +    p.write(new UpdateInvFull(com('inv'), display));
-+    text(p, 'title', `${v.clan.name} storage`);
-+    text(p, 'capacity', `${v.capacity.used} / ${v.capacity.max}`);
-+    text(p, 'rank', `Your rank: ${rankName(v.rank)}${v.effectiveRank < v.rank ? ` (acting ${rankName(v.effectiveRank)})` : ''}`);
-+    text(p, 'mode', `Withdraw as: ${s.noted ? 'Note' : 'Item'}`);
++    text(p, 'title', `${v.clan.name} clan storage`);
++    text(p, 'capacity', `Capacity: ${v.capacity.used} / ${v.capacity.max}`);
++    text(p, 'rank', `Rank: ${rankName(v.rank)}${v.effectiveRank < v.rank ? ` (acting ${rankName(v.effectiveRank)})` : ''}`);
++    // The bank's Item/Note select boxes: the lit box is a hidden layer over the plain one.
++    hide(p, 'mode_on', !s.noted);
++    hide(p, 'mode_item_on', s.noted);
 +    const store = clanStore();
 +    const status = v.cooldowns.newMember
 +        ? `New member: withdrawals in ${store.wait(v.cooldowns.newMember)}`
@@ -830,7 +2214,10 @@ index 000000000..a09d9a8e5
 +                const cd = v.items.filter(i => i.cooldownUntil).sort((a, b) => a.cooldownUntil! - b.cooldownUntil!)[0];
 +                return cd ? `You can withdraw ${cd.name} again in ${store.wait(cd.cooldownUntil!)}` : v.canDeposit ? '' : 'Your rank cannot deposit.';
 +            })();
-+    text(p, 'status', status);
++    // The bank screen has no spare line for it: a changed status goes to the chatbox, once.
++    const statusKey = status.replace(/\d+[dhms]/g, '#');
++    if (status && statusKey !== s.status) p.messageGame(status);
++    s.status = statusKey;
 +    publish(p, v);
 +}
 +
@@ -852,7 +2239,7 @@ index 000000000..a09d9a8e5
 +        noteMode: s.noted,
 +        items: v.items.map(i => ({ slot: i.slot, id: i.id, name: i.name, count: i.count, minRank: i.minRank, canWithdraw: i.canWithdraw, cooldownUntil: i.cooldownUntil, reason: i.reason })),
 +        cooldowns: v.cooldowns,
-+        controls: { close: com('close'), bank: com('bank'), mode: com('mode'), depositInventory: com('deposit_inv') },
++        controls: { close: com('close'), bank: com('bank'), mode: com('mode'), item: com('mode_item'), note: com('mode'), depositInventory: com('deposit_inv') },
 +        components: { inv: com('inv'), sideInv: sideInv() },
 +        input: s.input?.kind ?? null,
 +        notice: s.notice,
@@ -997,8 +2384,9 @@ index 000000000..a09d9a8e5
 +        if (script) p.executeScript(ScriptRunner.init(script, p), true);
 +        return true;
 +    }
-+    if (id === com('mode')) {
-+        s.noted = !s.noted;
++    if (id === com('mode') || id === com('mode_item')) {
++        // Bank-style select boxes: "Note" (mode) and "Item" (mode_item).
++        s.noted = id === com('mode');
 +        render(p);
 +        return true;
 +    }
@@ -1040,10 +2428,10 @@ index 000000000..a09d9a8e5
 +}
 diff --git a/server/engine/src/engine/clan/ClanStore.ts b/server/engine/src/engine/clan/ClanStore.ts
 new file mode 100644
-index 000000000..ca86999d7
+index 000000000..7a685c9ec
 --- /dev/null
 +++ b/server/engine/src/engine/clan/ClanStore.ts
-@@ -0,0 +1,672 @@
+@@ -0,0 +1,675 @@
 +import type { Database } from 'bun:sqlite';
 +import { parseRank, RANK, rankName } from './ClanRanks.js';
 +
@@ -1090,6 +2478,8 @@ index 000000000..ca86999d7
 +    showMembers: boolean;
 +    showBankValues: boolean;
 +    showStorage: boolean;
++    /** Clan chat notices when a member logs in or out on this world. */
++    notices: boolean;
 +};
 +export const DEFAULT_SETTINGS: ClanSettings = {
 +    minDeposit: RANK.recruit,
@@ -1100,7 +2490,8 @@ index 000000000..ca86999d7
 +    hiscores: true,
 +    showMembers: true,
 +    showBankValues: true,
-+    showStorage: false
++    showStorage: false,
++    notices: false
 +};
 +/** Settings only the Owner or Deputy owner may change (clan-hiscores.md section 7). */
 +const PRIVACY_SETTINGS = new Set(['hiscores', 'showMembers', 'showBankValues', 'showStorage']);
@@ -1716,6 +3107,227 @@ index 000000000..ca86999d7
 +        return bits.join('') + '.';
 +    }
 +}
+diff --git a/server/engine/src/engine/clan/ClanTab.ts b/server/engine/src/engine/clan/ClanTab.ts
+new file mode 100644
+index 000000000..1b420b419
+--- /dev/null
++++ b/server/engine/src/engine/clan/ClanTab.ts
+@@ -0,0 +1,163 @@
++import Component from '#/cache/config/Component.js';
++import type Player from '#/engine/entity/Player.js';
++import World from '#/engine/World.js';
++import IfSetText from '#/network/game/server/model/IfSetText.js';
++import { clanChatEnabled, clanStore } from './ClanLedger.js';
++import { clanTabContent } from './ClanTabContent.js';
++
++/**
++ * The clan side tab (sidebar slot 7, the empty bottom-left slot of this revision; login.rs2 sets
++ * 0-6 and 8-13) and the online roster behind it. Event-driven: a member's arrival or departure,
++ * and any /clan command that can change a roster, marks that clan dirty; only dirty clans are read
++ * from the ledger and re-rendered (once, for all their online members). Nothing is polled per tick
++ * except an in-memory presence check.
++ */
++export const CLAN_TAB = 7;
++export { CLAN_TAB_CLIENTCODE, CLAN_TAB_ROWS, clanTabContent } from './ClanTabContent.js';
++
++type Presence = { player: Player; clanId: number | null };
++const presence = new Map<string, Presence>();
++const dirty = new Set<number>();
++const shown = new WeakMap<Player, string>();
++const serial = new Map<number, number>();
++let lastSweep = -1;
++
++const root = () => Component.getId('clan_tab');
++const com = (name: string) => Component.getId(`clan_tab:${name}`);
++
++/** Online members of a clan on this world (presence is the authority; no ledger read). */
++export function onlineMembers(clanId: number): Player[] {
++    const out: Player[] = [];
++    for (const p of presence.values()) if (p.clanId === clanId) out.push(p.player);
++    return out;
++}
++
++/** Tells every online member of a clan (except one) a game message. */
++export function tellOnline(clanId: number, line: string, except?: string): void {
++    for (const p of onlineMembers(clanId)) if (p.username !== except) p.messageGame(line);
++}
++
++function clear(p: Player) {
++    shown.delete(p);
++    if (root() >= 0 && p.tabs[CLAN_TAB] === root()) p.setTab(-1, CLAN_TAB);
++}
++
++function notice(clanId: number, who: string, text: string, except: string) {
++    try {
++        const clan = clanStore().clan(clanId);
++        if (clan?.settings.notices) tellOnline(clanId, `[${clan.display}] ${who} ${text}`, except);
++    } catch (error) {
++        console.error('[clan] notice failed', error);
++    }
++}
++
++/** Departures (logout, relog with a new Player object) since the last tick. */
++function sweep() {
++    const live = new Set<Player>(World.playerLoop.all());
++    for (const [name, p] of presence) {
++        if (live.has(p.player)) continue;
++        presence.delete(name);
++        if (p.clanId !== null) {
++            dirty.add(p.clanId);
++            notice(p.clanId, p.player.displayName, 'has logged out.', name);
++        }
++    }
++}
++
++function arrive(p: Player) {
++    let clanId: number | null = null;
++    try {
++        clanId = clanStore().member(p.username)?.clan_id ?? null;
++    } catch (error) {
++        console.error('[clan] membership lookup failed', error);
++    }
++    presence.set(p.username, { player: p, clanId });
++    if (clanId !== null) {
++        dirty.add(clanId);
++        notice(clanId, p.displayName, 'has logged in.', p.username);
++    }
++}
++
++/**
++ * Re-reads the membership of every online player after a /clan command (commands are rare;
++ * a kick, accept or disband changes someone other than the speaker). `touched` are clans whose
++ * ranks or names may have changed without a membership change.
++ */
++export function clanRosterChanged(touched: (number | null | undefined)[] = []): void {
++    if (!clanChatEnabled()) return;
++    for (const id of touched) if (typeof id === 'number') dirty.add(id);
++    let store;
++    try {
++        store = clanStore();
++    } catch {
++        return;
++    }
++    for (const p of presence.values()) {
++        const now = store.member(p.player.username)?.clan_id ?? null;
++        if (now === p.clanId) continue;
++        if (p.clanId !== null) dirty.add(p.clanId);
++        if (now !== null) dirty.add(now);
++        else clear(p.player);
++        p.clanId = now;
++    }
++}
++
++function render(clanId: number) {
++    const store = clanStore();
++    const clan = store.clan(clanId);
++    const viewers = onlineMembers(clanId);
++    if (!clan) {
++        for (const p of viewers) clear(p);
++        return;
++    }
++    const online = new Map(viewers.map(p => [p.username, p]));
++    const seq = (serial.get(clanId) ?? 0) + 1;
++    serial.set(clanId, seq);
++    const content = clanTabContent(clan, store.members(clanId), online, seq);
++    const { state, ...texts } = content;
++    const signature = JSON.stringify({ ...texts, members: state.members });
++    for (const p of viewers) {
++        if (root() < 0) return;
++        if (p.tabs[CLAN_TAB] !== root()) p.setTab(root(), CLAN_TAB);
++        if (shown.get(p) === signature) continue;
++        shown.set(p, signature);
++        for (const [name, value] of Object.entries(texts)) p.write(new IfSetText(com(name), value));
++        p.write(new IfSetText(com('agent_state'), JSON.stringify(state)));
++    }
++}
++
++/** Per-player tick (delegated through ClanHooks.clanTick): presence, tab ownership, dirty clans. */
++export function clanTabTick(p: Player): void {
++    if (!clanChatEnabled()) {
++        if (shown.has(p) || (root() >= 0 && p.tabs[CLAN_TAB] === root())) clear(p);
++        return;
++    }
++    if (World.currentTick !== lastSweep) {
++        lastSweep = World.currentTick;
++        sweep();
++    }
++    const cur = presence.get(p.username);
++    if (!cur || cur.player !== p) arrive(p);
++    else if (cur.clanId !== null && p.tabs[CLAN_TAB] === -1 && p.tabs[3] !== -1) {
++        // A script reset the side tabs (e.g. a cutscene, then initalltabs): put the clan tab back.
++        p.setTab(root(), CLAN_TAB);
++    }
++    if (!dirty.size) return;
++    const ids = [...dirty];
++    dirty.clear();
++    for (const id of ids) {
++        try {
++            render(id);
++        } catch (error) {
++            console.error('[clan] tab render failed', error);
++        }
++    }
++}
++
++/** Tests only. */
++export function resetClanTab(): void {
++    presence.clear();
++    dirty.clear();
++    serial.clear();
++    lastSweep = -1;
++}
+diff --git a/server/engine/src/engine/clan/ClanTabContent.ts b/server/engine/src/engine/clan/ClanTabContent.ts
+new file mode 100644
+index 000000000..b409c567d
+--- /dev/null
++++ b/server/engine/src/engine/clan/ClanTabContent.ts
+@@ -0,0 +1,46 @@
++import { toDisplayName } from '#/util/JString.js';
++import type { ClanTabState } from '../../../../../sdk/clan-types.js';
++import { rankName } from './ClanRanks.js';
++import type { Clan, ClanMember } from './ClanStore.js';
++
++/** Hidden JSON state component of the clan tab (reserved client code block 30460+). */
++export const CLAN_TAB_CLIENTCODE = 30461;
++/** Rows in the tab's scroll list (clan_tab.if is sized for this many). */
++export const CLAN_TAB_ROWS = 60;
++
++/** Anything with a display name: a Player, or a test double. */
++type Online = { displayName: string };
++
++type Row = { name: string; rank: number; online: boolean };
++
++/** Tab text for one clan: online members first (rank order), then everyone else. */
++export function clanTabContent(clan: Pick<Clan, 'id' | 'display'>, members: ClanMember[], online: Map<string, Online>, seq = 0) {
++    const rows: Row[] = [];
++    for (const m of members) if (online.has(m.owner)) rows.push({ name: online.get(m.owner)!.displayName, rank: m.rank, online: true });
++    const onlineCount = rows.length;
++    for (const m of members) if (!online.has(m.owner)) rows.push({ name: toDisplayName(m.owner), rank: m.rank, online: false });
++    const visible = rows.length > CLAN_TAB_ROWS ? rows.slice(0, CLAN_TAB_ROWS - 1) : rows;
++    const names = visible.map(r => r.name);
++    const ranks = visible.map(r => (r.online ? rankName(r.rank) : `@red@${rankName(r.rank)}`));
++    if (visible.length < rows.length) {
++        names.push(`@yel@...and ${rows.length - visible.length} more`);
++        ranks.push('');
++    }
++    const state: ClanTabState = {
++        seq,
++        clan: { id: clan.id, name: clan.display },
++        memberCount: members.length,
++        onlineCount,
++        members: rows.map(r => ({ name: r.name, rank: r.rank, rankName: rankName(r.rank), online: r.online }))
++    };
++    return {
++        title: clan.display,
++        members: `Members: ${members.length}`,
++        online: `Online: ${onlineCount}`,
++        // A literal backslash-n is this client's line break in interface text.
++        names: names.join('\\n'),
++        ranks: ranks.join('\\n'),
++        state
++    };
++}
++
 diff --git a/server/engine/src/network/game/client/handler/IfButtonHandler.ts b/server/engine/src/network/game/client/handler/IfButtonHandler.ts
 index 451b3e05e..b39923925 100644
 --- a/server/engine/src/network/game/client/handler/IfButtonHandler.ts
@@ -2239,6 +3851,92 @@ index cbefdb645..b72ba1adf 100644
                                  <a href="/" class="c">Main menu</a> | <a href="/hiscores?profile=${profile}" class="c">All Hiscores</a>
                              </center>
                          </td>
+diff --git a/server/engine/test/clan-chat.test.ts b/server/engine/test/clan-chat.test.ts
+new file mode 100644
+index 000000000..dfee05bdc
+--- /dev/null
++++ b/server/engine/test/clan-chat.test.ts
+@@ -0,0 +1,80 @@
++// Clan chat ("/" lines) parsing on the wire and the clan side tab's content. The routing itself
++// (members only, online only, mute, filter, ignore, never public) runs against the real handlers
++// in `bun run test:clan:integration`.
++//   bun test server/engine/test/clan-chat.test.ts
++import { describe, expect, test } from 'bun:test';
++import { CLAN_CHAT_LINE, clanChatLine, parseClanCommand } from '../src/engine/clan/ClanCommands.js';
++import { CLAN_TAB_ROWS, clanTabContent } from '../src/engine/clan/ClanTabContent.js';
++import type { ClanMember } from '../src/engine/clan/ClanStore.js';
++import EnginePacket from '../src/io/Packet.js';
++import EngineWordPack from '../src/wordenc/WordPack.js';
++import ClientPacket from '../../webclient/src/io/Packet.js';
++import ClientWordPack from '../../webclient/src/wordfilter/WordPack.js';
++
++function wire(text: string): string {
++    const out = new ClientPacket(new Uint8Array(512));
++    ClientWordPack.pack(out, text);
++    const bytes = out.data.slice(0, out.pos);
++    const buf = EnginePacket.alloc(1);
++    buf.pdata(bytes, 0, bytes.length);
++    buf.pos = 0;
++    const s = EngineWordPack.unpack(buf, bytes.length);
++    buf.release();
++    return s;
++}
++const chat = (typed: string) => {
++    const seen = wire(typed);
++    if (parseClanCommand(seen)) return { command: true, text: null };
++    return { command: false, text: CLAN_CHAT_LINE.exec(seen)?.[1] ?? null };
++};
++
++describe('clan chat lines on the wire', () => {
++    test('"/text" arrives as " Text" and is a clan line', () => {
++        expect(wire('/hello all')).toBe(' Hello all');
++        expect(chat('/hello all')).toEqual({ command: false, text: 'Hello all' });
++    });
++    test('"/clan ..." stays a command, not a chat line', () => {
++        expect(chat('/clan info').command).toBe(true);
++        expect(chat('/clans are fun')).toEqual({ command: false, text: 'Clans are fun' });
++    });
++    test('ordinary public chat is untouched', () => {
++        expect(chat('hello all').text).toBeNull();
++        expect(chat('clan info').command).toBe(false);
++        expect(chat('/').text).toBeNull();
++        expect(chat('/   ').text).toBeNull();
++    });
++    test('digits and punctuation survive', () => {
++        expect(chat('/meet at varrock west, 5 min!').text).toBe('Meet at varrock west, 5 min!');
++    });
++    test('the game message format', () => {
++        expect(clanChatLine('Stud Unit', 'Clan Founder', 'Hi')).toBe('[Stud Unit] Clan Founder: Hi');
++    });
++});
++
++const member = (owner: string, rank: number): ClanMember => ({ owner, clan_id: 1, rank, prev_rank: rank, joined: 0, rank_since: 0, invited_by: null, trusted: 0 });
++
++describe('clan tab content', () => {
++    const members = [member('clan_founder', 9), member('bot_tester', 5), member('member_one', 3), member('bot_geometry', 1)];
++    test('online first in rank order, offline after in red, counts', () => {
++        const online = new Map([
++            ['bot_geometry', { displayName: 'Bot Geometry' }],
++            ['bot_tester', { displayName: 'Bot Tester' }]
++        ]);
++        const c = clanTabContent({ id: 1, display: 'Stud Unit' }, members, online, 4);
++        expect(c.title).toBe('Stud Unit');
++        expect(c.members).toBe('Members: 4');
++        expect(c.online).toBe('Online: 2');
++        expect(c.names.split('\\n')).toEqual(['Bot Tester', 'Bot Geometry', 'Clan Founder', 'Member One']);
++        expect(c.ranks.split('\\n')).toEqual(['Captain', 'Recruit', '@red@Owner', '@red@Sergeant']);
++        expect(c.state).toMatchObject({ seq: 4, clan: { id: 1, name: 'Stud Unit' }, memberCount: 4, onlineCount: 2 });
++        expect(c.state.members.map(m => m.online)).toEqual([true, true, false, false]);
++    });
++    test('a roster longer than the list ends with "...and N more"; the JSON keeps everyone', () => {
++        const many = Array.from({ length: CLAN_TAB_ROWS + 25 }, (_, i) => member(`bot_${i}`, 1));
++        const c = clanTabContent({ id: 2, display: 'Big' }, many, new Map());
++        const rows = c.names.split('\\n');
++        expect(rows.length).toBe(CLAN_TAB_ROWS);
++        expect(rows.at(-1)).toBe('@yel@...and 26 more');
++        expect(c.state.members.length).toBe(CLAN_TAB_ROWS + 25);
++    });
++});
 diff --git a/server/engine/test/clan-commands.test.ts b/server/engine/test/clan-commands.test.ts
 new file mode 100644
 index 000000000..176598185
@@ -2393,10 +4091,10 @@ index 000000000..959268ec2
 +});
 diff --git a/server/engine/test/clan-integration.ts b/server/engine/test/clan-integration.ts
 new file mode 100644
-index 000000000..9b00f5e53
+index 000000000..7e942a544
 --- /dev/null
 +++ b/server/engine/test/clan-integration.ts
-@@ -0,0 +1,342 @@
+@@ -0,0 +1,454 @@
 +// Clan storage integration: real packed content, Player inventories/saves, compiled bank scripts,
 +// native handlers (bank-screen button, storage grid, count dialog, public chat), the SDK porcelain
 +// over the encoded hidden state, and the clan hiscore routes. Temp ledger only.
@@ -2409,6 +4107,7 @@ index 000000000..9b00f5e53
 +process.env.GE_DATABASE = join(dir, 'market.sqlite');
 +process.env.CLAN_STORAGE_ENABLED = 'true';
 +process.env.CLAN_HISCORES_ENABLED = 'true';
++process.env.CLAN_CHAT_ENABLED = 'true';
 +const { default: World } = await import('../src/engine/World.js');
 +const { default: Component } = await import('../src/cache/config/Component.js');
 +const { default: ObjType } = await import('../src/cache/config/ObjType.js');
@@ -2431,6 +4130,10 @@ index 000000000..9b00f5e53
 +const { clanStore, resetClanStore } = await import('../src/engine/clan/ClanLedger.js');
 +const { clanTick } = await import('../src/engine/clan/ClanHooks.js');
 +const { CLAN_STATE_CLIENTCODE } = await import('../src/engine/clan/ClanStorage.js');
++const { CLAN_TAB, CLAN_TAB_CLIENTCODE } = await import('../src/engine/clan/ClanTab.js');
++const { setClanChatIgnoreLookup, clanChatDrained } = await import('../src/engine/clan/ClanChat.js');
++const { default: WordEnc } = await import('../src/cache/wordenc/WordEnc.js');
++const { PlayerInfoProt } = await import('../src/network/rsbuf/index.js');
 +const { handleClanHiscores, clearClanHiscoresCache } = await import('../src/web/pages/ClanHiscores.js');
 +// Client-side word packer, as the lite client and the standard client use it.
 +const { default: ClientWordPack } = await import('../../webclient/src/wordfilter/WordPack.ts' as string);
@@ -2438,11 +4141,15 @@ index 000000000..9b00f5e53
 +const sdkModule = '../../../sdk/index.ts',
 +    actionsModule = '../../../sdk/actions.ts',
 +    clanActionsModule = '../../../sdk/clan-actions.ts',
-+    stateModule = '../../webclient/src/bot/clan-storage-state.ts';
++    stateModule = '../../webclient/src/bot/clan-storage-state.ts',
++    tabStateModule = '../../webclient/src/bot/clan-tab-state.ts',
++    clanChatModule = '../../../sdk/clan-chat.ts';
 +const { BotSDK } = await import(sdkModule);
 +const { BotActions } = await import(actionsModule);
 +const { CLAN_BANK_BUTTON_ID, CLAN_STORAGE_ROOT_ID } = await import(clanActionsModule);
 +const { collectClanStorageState, CLAN_STORAGE_CLIENTCODE } = await import(stateModule);
++const { collectClanTabState, CLAN_TAB_CLIENTCODE: LITE_TAB_CLIENTCODE } = await import(tabStateModule);
++const { parseClanChatLine, clanChatCommand } = await import(clanChatModule);
 +
 +let passed = 0;
 +const ok = (cond: unknown, what: string) => {
@@ -2452,6 +4159,10 @@ index 000000000..9b00f5e53
 +try {
 +    World.reload();
 +    World.gameMap.init();
++    WordEnc.load('data/pack');
++    // Ignore lists live in db.sqlite (friend server); the test injects them instead.
++    let ignores = new Map<string, Set<string>>();
++    setClanChatIgnoreLookup(async sender => ignores.get(sender) ?? new Set());
 +    const inv = InvType.getId('inv'),
 +        coins = ObjType.getId('coins'),
 +        logs = ObjType.getId('logs'),
@@ -2482,6 +4193,8 @@ index 000000000..9b00f5e53
 +    let slot = 1;
 +    const agentState = new Map<string, any>();
 +    const messages = new Map<string, string[]>();
++    const tabText = new Map<string, Map<number, string>>();
++    const publicHeard = new Map<string, number>();
 +    const load = (name: string) => {
 +        const p = PlayerLoading.load(name, new Packet(new Uint8Array()), null);
 +        p.x = west!.x + 1;
@@ -2492,9 +4205,14 @@ index 000000000..9b00f5e53
 +        World.players[p.slot] = p;
 +        World.playerLoop.add(BigInt(p.slot), p);
 +        messages.set(name, []);
++        tabText.set(name, new Map());
++        publicHeard.set(name, 0);
 +        const stateId = Component.getId('clan_storage:agent_state');
++        const tabRoot = Component.getId('clan_tab');
 +        p.write = (m: any) => {
 +            if (m.msg !== undefined) messages.get(name)!.push(m.msg);
++            if (m.constructor?.name === 'MessagePublic') publicHeard.set(name, publicHeard.get(name)! + 1);
++            if (m.component !== undefined && m.text !== undefined && Component.get(m.component)?.rootLayer === tabRoot) tabText.get(name)!.set(m.component, m.text);
 +            if (m.component !== stateId || !m.text) return;
 +            // Encode with the real IF_SETTEXT encoder into a socket-sized buffer, then parse like the lite client.
 +            const packet = Packet.alloc(1);
@@ -2710,6 +4428,98 @@ index 000000000..9b00f5e53
 +    ok(JSON.stringify(clanStore().contents(clanId)) === snapshot, 'ledger reopened with identical contents');
 +    ok(clanStore().log(clanId, 200).filter(r => r.action === 'deposit' || r.action === 'withdraw').every(r => r.world !== null && r.coord !== null), 'audit rows carry world and coord');
 +
++    // ---- clan side tab (slot 7) and clan chat ("/" lines)
++    const tab = (p: P, name: string) => tabText.get(p.username)!.get(Component.getId(`clan_tab:${name}`)) ?? '';
++    const tabState = (p: P) => collectClanTabState([{ clientCode: LITE_TAB_CLIENTCODE, text: tab(p, 'agent_state'), children: null }], 0);
++    ok(CLAN_TAB_CLIENTCODE === LITE_TAB_CLIENTCODE, 'engine and lite client agree on the tab clientcode');
++    ok(Component.getId('clan_tab') > 40773, 'clan tab uses a reserved interface id');
++    for (const p of [tester, geometry, outsider]) clanTick(p);
++    ok(tester.tabs[CLAN_TAB] === Component.getId('clan_tab') && geometry.tabs[CLAN_TAB] === Component.getId('clan_tab'), 'members get the clan tab in slot 7');
++    ok(outsider.tabs[CLAN_TAB] === -1, 'non-members keep slot 7 empty');
++    ok(tab(tester, 'title') === 'Stud Unit' && tab(tester, 'online') === 'Online: 2' && tab(tester, 'members') === 'Members: 2', `tab header: ${tab(tester, 'title')} / ${tab(tester, 'members')} / ${tab(tester, 'online')}`);
++    ok(tab(tester, 'names').split('\\n').join(',') === 'Bot Tester,Bot Geometry', `tab names (online, rank order): ${tab(tester, 'names')}`);
++    ok(tabState(tester)?.onlineCount === 2 && tabState(tester)?.members[1].rankName === 'Captain', 'tab JSON for bots');
++
++    // move the outsider far away: a public broadcast would reach it as MESSAGE_PUBLIC
++    const recruit = load('clan_member');
++    recruit.x += 2;
++    outsider.x += 40;
++    say(tester, '/clan invite clan member');
++    say(recruit, '/clan accept stud unit');
++    clanTick(recruit);
++    clanTick(tester);
++    ok(tab(tester, 'online') === 'Online: 3' && recruit.tabs[CLAN_TAB] === Component.getId('clan_tab'), 'a join updates the tab live');
++    const quiet = (p: P) => {
++        p.chatMessage = null;
++        p.masks = 0;
++    };
++    for (const p of [tester, geometry, recruit, outsider]) quiet(p);
++    const heardBefore = publicHeard.get('outsider')!;
++    ok(say(geometry, clanChatCommand('hello stud unit')), 'a "/" line is handled');
++    await clanChatDrained();
++    const line = '[Stud Unit] Bot Geometry: Hello stud unit';
++    ok(lastMsg(tester) === line && lastMsg(recruit) === line && lastMsg(geometry) === line, `members (and the speaker) get the clan line: ${lastMsg(tester)}`);
++    ok(!messages.get('outsider')!.includes(line), 'non-members do not');
++    ok(geometry.chatMessage === null && (geometry.masks & PlayerInfoProt.CHAT) === 0, 'no overhead/public chat for the speaker');
++    ok(publicHeard.get('outsider') === heardBefore, 'no out-of-range public broadcast');
++    ok(JSON.stringify(parseClanChatLine(line)) === JSON.stringify({ clan: 'Stud Unit', sender: 'Bot Geometry', text: 'Hello stud unit' }), 'SDK parses the clan line');
++    say(tester, '/clan create nothing');
++    ok(tester.chatMessage === null && (tester.masks & PlayerInfoProt.CHAT) === 0, '/clan commands are never public either');
++    // word filter like public chat
++    const rude = 'what the fuck';
++    say(recruit, '/' + rude);
++    await clanChatDrained();
++    ok(lastMsg(tester).startsWith('[Stud Unit] Clan Member: ') && lastMsg(tester).endsWith(WordEnc.filter('What the fuck')) && WordEnc.filter('What the fuck') !== 'What the fuck', `filtered: ${lastMsg(tester)}`);
++    // ignore: bot_tester ignores clan_member
++    ignores.set('clan_member', new Set(['bot_tester']));
++    const testerCount = messages.get('bot_tester')!.length;
++    say(recruit, '/anyone there');
++    await clanChatDrained();
++    ok(messages.get('bot_tester')!.length === testerCount && lastMsg(geometry) === '[Stud Unit] Clan Member: Anyone there', 'a member ignoring the speaker does not get the line');
++    ignores = new Map();
++    // mute: the upstream mute check drops it before the clan hook
++    recruit.muted_until = new Date(Date.now() + 60_000);
++    const geoCount = messages.get('bot_geometry')!.length;
++    ok(!say(recruit, '/muted words') && recruit.chatMessage === null, 'muted players cannot clan chat (nor chat publicly)');
++    await clanChatDrained();
++    ok(messages.get('bot_geometry')!.length === geoCount, 'muted line delivered to nobody');
++    recruit.muted_until = null;
++    // non-member
++    say(outsider, '/hello');
++    ok(/not in a clan/.test(lastMsg(outsider)) && outsider.chatMessage === null, `non-member "/" line is not public: ${lastMsg(outsider)}`);
++    // rank change, logout/login (with notices), kick
++    say(tester, '/clan rank clan member corporal');
++    clanTick(tester);
++    ok(/Corporal/.test(tab(tester, 'ranks')), 'rank change updates the tab');
++    say(tester, '/clan set notices on');
++    recruit.unlink(); // logged out: gone from the player loop
++    World.currentTick++;
++    clanTick(tester);
++    ok(tab(tester, 'online') === 'Online: 2' && /@red@Corporal/.test(tab(tester, 'ranks')), `logout: offline member listed in red (${tab(tester, 'ranks')})`);
++    ok(lastMsg(geometry) === '[Stud Unit] Clan Member has logged out.', `logout notice: ${lastMsg(geometry)}`);
++    World.playerLoop.add(BigInt(recruit.slot), recruit);
++    World.currentTick++;
++    clanTick(recruit);
++    clanTick(tester);
++    ok(tab(tester, 'online') === 'Online: 3' && lastMsg(tester) === '[Stud Unit] Clan Member has logged in.', 'login: tab and notice');
++    recruit.tabs[3] = Component.getId('inventory'); // login.rs2 has set the ordinary tabs
++    recruit.tabs[CLAN_TAB] = -1; // a script reset the side tabs
++    clanTick(recruit);
++    ok(recruit.tabs[CLAN_TAB] === Component.getId('clan_tab'), 'tab restored after a tab reset');
++    say(tester, '/clan kick clan member');
++    clanTick(tester);
++    ok(recruit.tabs[CLAN_TAB] === -1 && tab(tester, 'members') === 'Members: 2', 'kick clears the kicked player\'s tab and updates the roster');
++    say(tester, '/clan set notices off');
++    // flag off: "/" lines are ordinary chat again, the tab goes away
++    process.env.CLAN_CHAT_ENABLED = 'false';
++    quiet(geometry);
++    say(geometry, '/plain chat');
++    ok(geometry.chatMessage !== null, 'CLAN_CHAT_ENABLED=false: "/" lines are upstream public chat');
++    clanTick(geometry);
++    ok(geometry.tabs[CLAN_TAB] === -1, 'CLAN_CHAT_ENABLED=false: no clan tab');
++    process.env.CLAN_CHAT_ENABLED = 'true';
++    outsider.x -= 40;
++
 +    // ---- leave / rejoin cooldown via chat
 +    say(geometry, '/clan leave');
 +    ok(!clanStore().member('bot_geometry'), 'left');
@@ -2738,6 +4548,294 @@ index 000000000..9b00f5e53
 +} finally {
 +    rmSync(dir, { recursive: true, force: true });
 +    process.exit(process.exitCode ?? 0);
++}
+diff --git a/server/engine/test/clan-layout.test.ts b/server/engine/test/clan-layout.test.ts
+new file mode 100644
+index 000000000..db3c575ca
+--- /dev/null
++++ b/server/engine/test/clan-layout.test.ts
+@@ -0,0 +1,102 @@
++// The clan screens are copies of the bank and friends-list layouts (owner: "exactly the same style
++// as the bank UI"). Compares the .if sources: every piece of the bank's frame, its grid, fonts and
++// colours must be in clan_storage at the same place; only the listed clan differences may differ.
++//   bun test server/engine/test/clan-layout.test.ts
++import { describe, expect, test } from 'bun:test';
++import { readFileSync } from 'node:fs';
++
++const root = new URL('../../content/', import.meta.url);
++type Com = Record<string, string>;
++function parse(path: string): Map<string, Com> {
++    const out = new Map<string, Com>();
++    let cur: Com | null = null;
++    for (const line of readFileSync(new URL(path, root), 'utf8').split('\n')) {
++        const m = /^\[(.+)\]$/.exec(line);
++        if (m) out.set(m[1]!, (cur = {}));
++        else if (cur && line.includes('=')) cur[line.slice(0, line.indexOf('='))] = line.slice(line.indexOf('=') + 1);
++    }
++    return out;
++}
++const bank = parse('scripts/interface_bank/interfaces/bank_main.if');
++const clan = parse('scripts/clan/interfaces/clan_storage.if');
++const geometry = (c: Com) => [c.type, c.x, c.y, c.width, c.height, c.graphic ?? '', c.font ?? '', c.colour ?? '', c.shadowed ?? ''].join('|');
++
++describe('clan storage = bank layout', () => {
++    test('every bank frame graphic and layer is copied unchanged', () => {
++        for (const [name, c] of bank) {
++            if (!/^com_\d+$/.test(name) || c.type !== 'graphic' || c.buttontype) continue;
++            expect(geometry(clan.get(name) ?? {}), name).toBe(geometry(c));
++        }
++        expect(geometry(clan.get('com_88')!)).toBe(geometry(bank.get('com_88')!));
++    });
++    test('title, close, scroll area and item grid keep the bank geometry and fonts', () => {
++        const same = (a: string, b: string, keys: string[]) => {
++            for (const k of keys) expect(clan.get(b)![k], `${b}.${k}`).toBe(bank.get(a)![k]);
++        };
++        same('com_90', 'title', ['type', 'y', 'height', 'font', 'colour', 'shadowed']);
++        same('com_91', 'close', ['type', 'x', 'y', 'width', 'height', 'buttontype', 'font', 'text', 'colour', 'overcolour']);
++        same('com_92', 'items', ['type', 'x', 'y', 'width', 'height']);
++        same('inv', 'inv', ['type', 'x', 'y', 'width', 'margin', 'option1', 'option2', 'option3', 'option4', 'option5']);
++        expect(clan.get('inv')!.layer).toBe('items');
++        // The title stays centred on the bank title's centre line.
++        const bt = bank.get('com_90')!, ct = clan.get('title')!;
++        expect(+ct.x + +ct.width / 2).toBe(+bt.x + Math.floor(+bt.width / 2));
++    });
++    test('the four bottom boxes and their labels sit where the bank puts them', () => {
++        for (const [a, b] of [['com_93', 'mode'], ['com_94', 'mode_item'], ['com_99', 'deposit_inv'], ['com_100', 'bank']]) {
++            for (const k of ['x', 'y', 'width', 'height', 'graphic']) expect(clan.get(b)![k], `${b}.${k}`).toBe(bank.get(a)![k]);
++        }
++        for (const [a, b] of [['com_93', 'mode_on_box'], ['com_94', 'mode_item_on_box']]) expect(clan.get(b)!.graphic).toBe(bank.get(a)!.activegraphic);
++        for (const n of ['com_95', 'com_96', 'com_98']) expect(geometry(clan.get(n)!)).toBe(geometry(bank.get(n)!));
++        for (const n of ['capacity', 'deposit_inv_text', 'bank_text']) {
++            expect(clan.get(n)!.font, n).toBe('p12_full');
++            expect(clan.get(n)!.colour, n).toBe('0xFF981F');
++        }
++    });
++    test('no component added beyond the listed clan differences', () => {
++        const extra = [...clan.keys()].filter(n => !bank.has(n));
++        expect(extra.sort()).toEqual(
++            ['agent_metadata', 'agent_state', 'bank', 'bank_text', 'capacity', 'close', 'deposit_inv', 'deposit_inv_text', 'items', 'mode', 'mode_item', 'mode_item_on', 'mode_item_on_box', 'mode_on', 'mode_on_box', 'rank', 'title'].sort()
++        );
++    });
++});
++
++describe('clan tab = friends-list frame', () => {
++    const friends = parse('scripts/player/interfaces/friends.if');
++    const tab = parse('scripts/clan/interfaces/clan_tab.if');
++    test('frame graphics copied, list where the friends list is', () => {
++        for (const [name, c] of friends) if (c.type === 'graphic' && !c.buttontype) expect(geometry(tab.get(name) ?? {}), name).toBe(geometry(c));
++        const list = tab.get('list')!, fl = friends.get('com_0')!;
++        for (const k of ['type', 'x', 'y', 'width', 'height']) expect(list[k]).toBe(fl[k]);
++        expect(tab.get('title')!.font).toBe(friends.get('com_1')!.font);
++        expect(tab.get('title')!.colour).toBe(friends.get('com_1')!.colour);
++    });
++});
++
++describe('reserved interface ids', () => {
++    const pack = new Map<string, number>(
++        readFileSync(new URL('pack/interface.pack', root), 'utf8')
++            .trim()
++            .split('\n')
++            .map(l => [l.slice(l.indexOf('=') + 1), Number(l.slice(0, l.indexOf('=')))])
++    );
++    const order = readFileSync(new URL('pack/interface.order', root), 'utf8').trim().split('\n').map(Number);
++    test('every clan component has a reserved id listed once in interface.order, roots contiguous', () => {
++        for (const [file, rootName] of [['scripts/clan/interfaces/clan_storage.if', 'clan_storage'], ['scripts/clan/interfaces/clan_storage_side.if', 'clan_storage_side'], ['scripts/clan/interfaces/clan_tab.if', 'clan_tab']] as const) {
++            const ids = [rootName, ...[...parse(file).keys()].map(n => `${rootName}:${n}`)].map(n => pack.get(n));
++            for (const id of ids) {
++                expect(id, rootName).toBeGreaterThan(40753);
++                expect(order.filter(o => o === id).length).toBe(1);
++            }
++            const at = order.indexOf(ids[0]!);
++            expect(order.slice(at, at + ids.length)).toEqual(ids as number[]);
++        }
++        expect([...pack.keys()].filter(n => /^clan_storage:/.test(n)).every(n => parse('scripts/clan/interfaces/clan_storage.if').has(n.split(':')[1]!))).toBe(true);
++    });
++    test('existing clan ids kept (SDK constants)', () => {
++        expect(pack.get('bank_main:clan_storage')).toBe(40754);
++        expect(pack.get('clan_storage')).toBe(40755);
++        expect(pack.get('clan_storage:inv')).toBe(40763);
++        expect(pack.get('clan_storage:agent_state')).toBe(40770);
++    });
++});
+diff --git a/server/engine/test/clan-preview.ts b/server/engine/test/clan-preview.ts
+new file mode 100644
+index 000000000..b6540c321
+--- /dev/null
++++ b/server/engine/test/clan-preview.ts
+@@ -0,0 +1,174 @@
++// Render the bank and the clan screens with the real client drawing code (packed interfaces,
++// real sprites and fonts), so their layouts can be compared side by side. Temp ledger only.
++// Run from server/engine after a pack build: bun test/clan-preview.ts [output-directory]
++import { mkdtempSync, rmSync, readFileSync, mkdirSync } from 'node:fs';
++import { tmpdir } from 'node:os';
++import { resolve, join } from 'node:path';
++import { Jimp } from 'jimp';
++import { strict as assert } from 'node:assert';
++const temp = mkdtempSync(join(tmpdir(), 'clan-preview-'));
++process.env.GE_DATABASE = join(temp, 'market.sqlite');
++process.env.CLAN_STORAGE_ENABLED = 'true';
++process.env.CLAN_CHAT_ENABLED = 'true';
++const out = resolve(process.argv[2] ?? '../../screenshots/clan');
++mkdirSync(out, { recursive: true });
++const { default: World } = await import('../src/engine/World.js');
++const { default: Component } = await import('../src/cache/config/Component.js');
++const { default: InvType } = await import('../src/cache/config/InvType.js');
++const { default: ObjType } = await import('../src/cache/config/ObjType.js');
++const { default: Packet } = await import('../src/io/Packet.js');
++const { PlayerLoading } = await import('../src/engine/entity/PlayerLoading.js');
++const { openClanStorage, clanButton } = await import('../src/engine/clan/ClanStorage.js');
++const { clanTick } = await import('../src/engine/clan/ClanHooks.js');
++const { clanStore } = await import('../src/engine/clan/ClanLedger.js');
++const { playerAccount } = await import('../src/engine/clan/ClanAccount.js');
++const { default: UpdateInvFull } = await import('../src/network/game/server/model/UpdateInvFull.js');
++try {
++    World.reload();
++    const clientRoot = new URL('../../webclient/src/', import.meta.url);
++    await import(new URL('lite/dom-shim.ts', clientRoot).href);
++    const { ItemViewer } = await import(new URL('viewer/ItemViewer.ts', clientRoot).href);
++    const viewer = new ItemViewer();
++    viewer.initFromData(
++        {
++            config: readFileSync('data/pack/client/config'),
++            textures: readFileSync('data/pack/client/textures'),
++            versionlist: readFileSync('data/pack/client/versionlist'),
++            ondemand: readFileSync('data/pack/ondemand.zip')
++        },
++        { lazyModels: true }
++    );
++    const { default: IfType } = await import(new URL('config/IfType.ts', clientRoot).href);
++    const { default: JagFile } = await import(new URL('io/JagFile.ts', clientRoot).href);
++    const { default: PixFont } = await import(new URL('graphics/PixFont.ts', clientRoot).href);
++    const { default: Pix2D } = await import(new URL('graphics/Pix2D.ts', clientRoot).href);
++    const { default: Pix3D } = await import(new URL('dash3d/Pix3D.ts', clientRoot).href);
++    const { default: Pix8 } = await import(new URL('graphics/Pix8.ts', clientRoot).href);
++    const { Client } = await import(new URL('client/Client.ts', clientRoot).href);
++    const jag = (name: string) => new JagFile(readFileSync(`data/pack/client/${name}`));
++    const title = jag('title');
++    const fonts = ['p11_full', 'p12_full', 'b12_full', 'q8_full'].map((name, i) => PixFont.depack(title, name, i === 3));
++    IfType.init(jag('interface'), jag('media'), fonts);
++    const client = Object.create(Client.prototype);
++    Object.assign(client, { p11: fonts[0], overMainComId: -1, overSideComId: -1, overChatComId: -1, objDragArea: 0, selectedArea: 0, var: new Array(2000).fill(0), varCache: new Array(2000).fill(0) });
++    const players: any[] = [];
++    const load = (name: string) => {
++        const p = PlayerLoading.load(name, new Packet(new Uint8Array()), null);
++        p.x = 3185;
++        p.z = 3436;
++        p.slot = players.length + 1;
++        World.players[p.slot] = p;
++        World.playerLoop.add(BigInt(p.slot), p);
++        players.push(p);
++        p.write = (message: any) => {
++            const c = IfType.list[message.component];
++            if (message.component === undefined || !c) return;
++            switch (message.constructor.name) {
++                case 'IfSetText':
++                    c.text = message.text;
++                    break;
++                case 'IfSetHide':
++                    c.hide = message.hidden;
++                    break;
++                case 'UpdateInvFull':
++                    c.linkObjType.fill(0);
++                    c.linkObjNumber.fill(0);
++                    message.inv.items.forEach((item: any, i: number) => {
++                        if (item && i < c.linkObjType.length) {
++                            c.linkObjType[i] = item.id + 1;
++                            c.linkObjNumber[i] = item.count;
++                        }
++                    });
++                    break;
++            }
++        };
++        return p;
++    };
++    const png = async (pixels: Int32Array, width: number, height: number, name: string) => {
++        const rgba = Buffer.alloc(pixels.length * 4);
++        pixels.forEach((rgb: number, i: number) => {
++            rgba[i * 4] = (rgb >> 16) & 255;
++            rgba[i * 4 + 1] = (rgb >> 8) & 255;
++            rgba[i * 4 + 2] = rgb & 255;
++            rgba[i * 4 + 3] = 255;
++        });
++        await new Jimp({ width, height, data: rgba }).write(join(out, name + '.png') as `${string}.png`);
++    };
++    // Main screen + backpack side panel, the layout a player sees (no 3D scene behind).
++    const screen = async (main: string, side: string, name: string) => {
++        const width = 512 + 18 + 190;
++        const pixels = new Int32Array(width * 334);
++        pixels.fill(0x3e3529);
++        Pix2D.setPixels(pixels, width, 334);
++        Pix3D.setRenderClipping();
++        client.drawInterface(IfType.list[Component.getId(main)], 0, 0, 0);
++        client.drawInterface(IfType.list[Component.getId(side)], 530, 36, 0);
++        await png(pixels, width, 334, name);
++    };
++    const sidebar = async (iface: number, name: string) => {
++        const pixels = new Int32Array(190 * 261);
++        pixels.fill(0x3e3529);
++        Pix2D.setPixels(pixels, 190, 261);
++        Pix3D.setRenderClipping();
++        client.drawInterface(IfType.list[iface], 0, 0, 0);
++        await png(pixels, 190, 261, name);
++    };
++
++    const owner = load('clan_founder');
++    const a = load('bot_tester');
++    const b = load('bot_geometry');
++    const store = clanStore();
++    store.create('clan_founder', 'Stud Unit');
++    for (const [who, rank] of [
++        ['bot_tester', 5],
++        ['bot_geometry', 3]
++    ] as const) {
++        store.invite('clan_founder', who);
++        store.accept(who);
++        store.trust('clan_founder', who);
++        store.setRank('clan_founder', who, rank);
++    }
++    for (const name of ['member_one', 'member_two', 'clan_member', 'member_three', 'member_four']) {
++        store.invite('clan_founder', name);
++        store.accept(name);
++    }
++    const inv = InvType.getId('inv');
++    const items = ['coins', 'lobster', 'logs', 'iron_ore', 'coal', 'rune_platelegs', 'swordfish', 'oak_logs', 'mithril_bar', 'lawrune', 'naturerune', 'bones', 'cow_hide'];
++    const ids = items.map(n => ObjType.getId(n));
++    // Storage rows written directly (display fixture only; deposits are covered by clan-integration.ts).
++    const clanId = store.member('clan_founder')!.clan_id;
++    ids.slice(0, 11).forEach((id, i) => store.db.query('INSERT INTO clan_item(clan_id,item,count,seq) VALUES(?,?,?,?)').run(clanId, id, i === 0 ? 1_250_000 : 40 + i * 17, i + 1));
++    store.db.query('UPDATE clan SET revision=revision+1 WHERE id=?').run(clanId);
++    for (const [i, id] of ids.entries()) owner.invAdd(inv, id, ObjType.get(id).stackable ? 25 + i : 1);
++    // Backpack as the side panel shows it (bank_side and clan_storage_side read the same inv).
++    for (const side of ['bank_side:inv', 'clan_storage_side:inv']) owner.write(new UpdateInvFull(Component.getId(side), owner.getInventory(inv)!));
++
++    // The real bank screen: bank inv filled with a few items.
++    const bankInv = owner.getInventory(InvType.getId('bank'))!;
++    ids.slice(0, 11).forEach((id, i) => bankInv.add(id, i === 0 ? 1_250_000 : 40 + i * 17));
++    owner.write(new UpdateInvFull(Component.getId('bank_main:inv'), bankInv));
++    // A clan member's bank screen shows the Clan storage button (hidden for everyone else).
++    IfType.list[Component.getId('bank_main:clan_storage_layer')].hide = false;
++    await screen('bank_main', 'bank_side', 'bank');
++
++    assert(openClanStorage(owner));
++    await screen('clan_storage', 'clan_storage_side', 'clan-storage');
++    clanButton(owner, Component.getId('clan_storage:mode'));
++    await screen('clan_storage', 'clan_storage_side', 'clan-storage-note');
++    // A new Recruit sees the status line (new-member wait) under the title.
++    const raven = load('clan_member');
++    raven.write = owner.write;
++    assert(openClanStorage(raven));
++    await screen('clan_storage', 'clan_storage_side', 'clan-storage-new-member');
++
++    // Clan tab with two members online.
++    for (const p of [owner, a, b]) clanTick(p);
++    assert.equal(owner.tabs[7], Component.getId('clan_tab'));
++    await sidebar(Component.getId('clan_tab'), 'clan-tab');
++    await sidebar(Component.getId('friends'), 'friends-tab');
++    console.log('Native client renders written to ' + out);
++} finally {
++    clanStore().db?.close?.();
++    rmSync(temp, { recursive: true, force: true });
++    await Promise.all([World.loginThread.terminate(), World.friendThread.terminate(), World.loggerThread.terminate()]);
 +}
 diff --git a/server/engine/test/clan-store.test.ts b/server/engine/test/clan-store.test.ts
 new file mode 100644
@@ -3370,22 +5468,24 @@ index 000000000..107327fcc
 +    process.exit(process.exitCode ?? 0);
 +}
 diff --git a/server/webclient/src/bot/StateCollector.ts b/server/webclient/src/bot/StateCollector.ts
-index 16c5fc55b..1336c1912 100644
+index 16c5fc55b..d904ebcef 100644
 --- a/server/webclient/src/bot/StateCollector.ts
 +++ b/server/webclient/src/bot/StateCollector.ts
-@@ -7,6 +7,7 @@ import type ClientPlayer from '#/dash3d/ClientPlayer.js';
+@@ -7,6 +7,8 @@ import type ClientPlayer from '#/dash3d/ClientPlayer.js';
  import type ClientObj from '#/dash3d/ClientObj.js';
  import IfType from '#/config/IfType.js';
  import { collectGEState } from './ge-state.js';
 +import { collectClanStorageState } from './clan-storage-state.js';
++import { collectClanTabState } from './clan-tab-state.js';
  import { getDialogPageId } from './dialog-page.js';
  import ObjType from '#/config/ObjType.js';
  import NpcType from '#/config/NpcType.js';
-@@ -182,6 +183,7 @@ export class BotStateCollector implements ScanProvider {
+@@ -182,6 +184,8 @@ export class BotStateCollector implements ScanProvider {
              bank: this.collectBankState(),
              trade: this.collectTradeState(),
              ge: collectGEState(IfType.list, c.mainModalId ?? -1),
 +            clanStorage: collectClanStorageState(IfType.list, c.mainModalId ?? -1),
++            clan: collectClanTabState(IfType.list, c.sideIcon?.[7] ?? -1),
              inGame: c.ingame || false,
              combatEvents: [...this.combatEvents], // Return copy of events
              dialog: this.collectDialogState(),
@@ -3479,6 +5579,71 @@ index 000000000..f1d12cee0
 +                    s.components
 +                    ? s
 +                    : null;
++            } catch {
++                return null;
++            }
++        }
++        for (const child of c.children ?? []) {
++            const state = scan(child, depth + 1);
++            if (state) return state;
++        }
++        return null;
++    };
++    return scan(root);
++}
+diff --git a/server/webclient/src/bot/clan-tab-state.test.ts b/server/webclient/src/bot/clan-tab-state.test.ts
+new file mode 100644
+index 000000000..2e080aca0
+--- /dev/null
++++ b/server/webclient/src/bot/clan-tab-state.test.ts
+@@ -0,0 +1,16 @@
++import { describe, expect, test } from 'bun:test';
++import { collectClanTabState, CLAN_TAB_CLIENTCODE } from './clan-tab-state.js';
++
++const state = { seq: 3, clan: { id: 1, name: 'Stud Unit' }, memberCount: 2, onlineCount: 1, members: [{ name: 'Clan Founder', rank: 9, rankName: 'Owner', online: true }, { name: 'Clan Member', rank: 1, rankName: 'Recruit', online: false }] };
++
++describe('clan tab state reader', () => {
++    test('finds the hidden JSON under the slot-7 interface', () => {
++        const list = [{ clientCode: 0, text: null, children: [1] }, { clientCode: 0, text: null, children: [2] }, { clientCode: CLAN_TAB_CLIENTCODE, text: JSON.stringify(state), children: null }];
++        expect(collectClanTabState(list, 0)).toEqual(state);
++    });
++    test('no tab, bad JSON or a wrong shape read as null', () => {
++        expect(collectClanTabState([], -1)).toBeNull();
++        expect(collectClanTabState([{ clientCode: CLAN_TAB_CLIENTCODE, text: '{', children: null }], 0)).toBeNull();
++        expect(collectClanTabState([{ clientCode: CLAN_TAB_CLIENTCODE, text: '{"seq":1}', children: null }], 0)).toBeNull();
++    });
++});
+diff --git a/server/webclient/src/bot/clan-tab-state.ts b/server/webclient/src/bot/clan-tab-state.ts
+new file mode 100644
+index 000000000..714e5f518
+--- /dev/null
++++ b/server/webclient/src/bot/clan-tab-state.ts
+@@ -0,0 +1,37 @@
++import type { ClanTabState } from '../../../../sdk/clan-types.js';
++// Module augmentation instead of an edit to bot/types.ts (upstream footprint, clan-storage.md section 12).
++declare module './types.js' {
++    interface BotState {
++        /** The clan side tab (sidebar slot 7); null when not in a clan. */
++        clan?: ClanTabState | null;
++    }
++}
++interface Component {
++    clientCode: number;
++    text: string | null;
++    children: number[] | null;
++}
++/** Hidden JSON state component of the clan side tab (engine ClanTab.ts). */
++export const CLAN_TAB_CLIENTCODE = 30461;
++/** Reads the server's roster snapshot from the interface in sidebar slot 7 (`root` = its id, -1 = none). */
++export function collectClanTabState(list: Component[], root: number): ClanTabState | null {
++    if (root < 0) return null;
++    const scan = (id: number, depth = 0): ClanTabState | null => {
++        const c = list[id];
++        if (!c || depth > 6) return null;
++        if (c.clientCode === CLAN_TAB_CLIENTCODE) {
++            try {
++                const s = JSON.parse(c.text ?? '') as ClanTabState;
++                return Number.isSafeInteger(s.seq) && s.clan && Array.isArray(s.members) ? s : null;
 +            } catch {
 +                return null;
 +            }
