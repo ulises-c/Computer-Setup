@@ -1932,16 +1932,17 @@ index 000000000..aa7a2a945
 +}
 diff --git a/server/engine/src/web/pages/ClanHiscores.ts b/server/engine/src/web/pages/ClanHiscores.ts
 new file mode 100644
-index 000000000..18ce9c810
+index 000000000..cbecb5ecf
 --- /dev/null
 +++ b/server/engine/src/web/pages/ClanHiscores.ts
-@@ -0,0 +1,272 @@
+@@ -0,0 +1,273 @@
 +import { db } from '#/db/query.js';
 +import { clanHiscoresEnabled, clanStore } from '#/engine/clan/ClanLedger.js';
 +import { rankName } from '#/engine/clan/ClanRanks.js';
 +import type { Clan, ClanStore } from '#/engine/clan/ClanStore.js';
 +import Environment from '#/util/Environment.js';
 +import { tryParseInt } from '#/util/TryParse.js';
++import { toDisplayName } from '#/util/JString.js';
 +import { escapeHtml, ENABLED_SKILLS, QUEST_POINTS_HISCORE_TYPE } from '../utils.js';
 +import { CLAN_METRICS, rankClans, rankMembers, totals, metricValue, type ClanMemberStats, type ClanMetric, type ClanSummary } from './ClanBoards.js';
 +
@@ -2089,10 +2090,10 @@ index 000000000..18ce9c810
 +
 +function activity(store: ClanStore, clanId: number, limit = 20) {
 +    return store.log(clanId, limit, ['create', 'join', 'leave', 'kick', 'rank', 'disband']).map(r => {
-+        const who = r.actor.replace(/_/g, ' ');
++        const who = toDisplayName(r.actor);
 +        let text: string;
 +        const [target, rank] = (r.detail ?? '').split(':');
-+        const t = target?.replace(/_/g, ' ');
++        const t = target ? toDisplayName(target) : '';
 +        if (r.action === 'create') text = `${who} founded the clan`;
 +        else if (r.action === 'join') text = `${who} joined`;
 +        else if (r.action === 'leave') text = `${who} left`;
@@ -2119,7 +2120,7 @@ index 000000000..18ce9c810
 +        ranks,
 +        totals: { totalLevel: t.totalLevel, totalXp: t.totalXp, questPoints: t.qp, bankValue: clan.showBankValues ? t.bank : null, storageValue: t.storage, wealth: t.wealth, averageLevel: t.average },
 +        memberList: clan.showMembers
-+            ? rankMembers(clan, 'overall').map(m => ({ name: m.owner.replace(/_/g, ' '), rank: rankName(m.rank), totalLevel: m.totalLevel, totalXp: m.totalXp, questPoints: m.qp, bankValue: clan.showBankValues ? m.bank : null }))
++            ? rankMembers(clan, 'overall').map(m => ({ name: toDisplayName(m.owner), rank: rankName(m.rank), totalLevel: m.totalLevel, totalXp: m.totalXp, questPoints: m.qp, bankValue: clan.showBankValues ? m.bank : null }))
 +            : null,
 +        activity: activity(store, clan.id)
 +    };
@@ -2182,7 +2183,7 @@ index 000000000..18ce9c810
 +        body = '<p class="dim">This clan keeps its member list private.</p>';
 +    } else {
 +        const rows = rankMembers(clan, metric)
-+            .map(m => `<tr><td align="right">${m.position}</td><td><a class="c" href="/hiscores/player/${encodeURIComponent(m.owner)}?profile=${profile}">${escapeHtml(m.owner.replace(/_/g, ' '))}</a></td><td>${rankName(m.rank)}</td><td align="right">${fmt(m.totalLevel)}</td><td align="right">${fmt(m.qp)}</td><td align="right">${clan.showBankValues ? fmt(m.bank) : '-'}</td><td align="right">${formatValue(metric, m.value)}</td></tr>`)
++            .map(m => `<tr><td align="right">${m.position}</td><td><a class="c" href="/hiscores/player/${encodeURIComponent(m.owner)}?profile=${profile}">${escapeHtml(toDisplayName(m.owner))}</a></td><td>${rankName(m.rank)}</td><td align="right">${fmt(m.totalLevel)}</td><td align="right">${fmt(m.qp)}</td><td align="right">${clan.showBankValues ? fmt(m.bank) : '-'}</td><td align="right">${formatValue(metric, m.value)}</td></tr>`)
 +            .join('\n');
 +        body = `<p style="font-size:11px">${metricLinks(profile, metric, m => clanHref(clan.name, profile, `&tab=members&metric=${m}`))}</p>
 +<table class="list" width="100%"><tr><td align="right"><b>#</b></td><td><b>Member</b></td><td><b>Rank</b></td><td align="right"><b>Total</b></td><td align="right"><b>QP</b></td><td align="right"><b>Bank gp</b></td><td align="right"><b>${metricLabel(metric)}</b></td></tr>${rows}</table>`;
@@ -3259,7 +3260,7 @@ index 000000000..0beb7b10b
 +});
 diff --git a/server/engine/test/fixtures/clan-hiscores.ts b/server/engine/test/fixtures/clan-hiscores.ts
 new file mode 100644
-index 000000000..d34714122
+index 000000000..107327fcc
 --- /dev/null
 +++ b/server/engine/test/fixtures/clan-hiscores.ts
 @@ -0,0 +1,105 @@
@@ -3316,9 +3317,9 @@ index 000000000..d34714122
 +    assert.equal((await get('/api/hiscores/clans?metric=nope')).status, 400);
 +    const page = await get('/hiscores/clan/stud%20unit');
 +    assert.equal(page.status, 200);
-+    assert.ok(page.text.includes('Founded') && page.text.includes('alice founded the clan') && page.text.includes('bob joined') && page.text.includes('bob is now Sergeant'), 'overview + activity feed');
++    assert.ok(page.text.includes('Founded') && page.text.includes('Alice founded the clan') && page.text.includes('Bob joined') && page.text.includes('Bob is now Sergeant'), 'overview + activity feed');
 +    const members = await get('/hiscores/clan/stud%20unit?tab=members&metric=overall');
-+    assert.ok(members.text.includes('alice') && members.text.includes('Sergeant'));
++    assert.ok(members.text.includes('>Alice</a>') && members.text.includes('Sergeant'), 'display names');
 +    assert.ok(!members.text.includes('hidden') && !members.text.includes('staffy'), 'hidden and staff accounts are not listed');
 +    const duo = await get('/hiscores/clan/duo');
 +    assert.equal(duo.status, 200);
