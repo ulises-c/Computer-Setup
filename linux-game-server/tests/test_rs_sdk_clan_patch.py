@@ -36,6 +36,14 @@ class ClanPatchWiring(unittest.TestCase):
             self.assertRegex(path, r"^server/(engine|content|webclient|gateway)/")
         self.assertIn("server/engine/src/engine/clan/ClanStore.ts", paths)
 
+    def test_binary_hunks_are_complete(self):
+        # The clan tab icon lives in back.png: a patch made without --binary only says
+        # "Binary files differ" and git apply would fail the build.
+        self.assertNotIn("Binary files ", self.patch)
+        self.assertRegex(self.patch, r"diff --git a/server/content/sprites/back\.png b/server/content/sprites/back\.png\nindex [0-9a-f]{40}\.\.[0-9a-f]{40} 100644\nGIT binary patch\n")
+        readme = (RS / "README.md").read_text()
+        self.assertIn("git diff --binary 1599b86fe..feat/clan-storage", readme)
+
     def test_patch_set_hash_covers_the_patch(self):
         world = (ROOT / "2004scape/world.sh").read_text()
         self.assertIn("sha256sum Dockerfile ./*.js ./*.patch", world)

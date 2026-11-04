@@ -1515,6 +1515,24 @@ index 000000000..7ebc3695b
 +font=p11_full
 +text=
 +clientcode=30461
+diff --git a/server/content/scripts/clan/sprites/clan_tab_icon.png b/server/content/scripts/clan/sprites/clan_tab_icon.png
+new file mode 100644
+index 0000000000000000000000000000000000000000..2362787df01fb2d0e78f0bf3c1cfe471fe312a1c
+GIT binary patch
+literal 445
+zcmV;u0Yd(XP)<h;3K|Lk000e1NJLTq0015U0015c1^@s6J20-I0004mNkl<Zc%1E4
+zJ5B>J5FM|!Sc%+#oF;AB903{*M8y$OhNN354L8XR0BvV9j%H&I^RZWg0`VkE-gw`8
+z_M7o40RQ+U1ba2ac^;$vZX+jH0@KIC{5agb_~s3qPSeN*Af8})zb{YYn0lN}H2r+c
+z;yTUK@l_ELOg&C7iAVx(XXPCZixY3L_ss&l3{*>p!yz{dMu+ub0-NpSn<<$Ms|#qH
+z>w9IBnO#jaBC=*mKy%KKOl_bs8`yNI@lrFb)1diyyw1fTK(29WggyIhH%}>2niusn
+zc=mNlrW2@O@p?@J@kzV|-4au(C7KqsY%uSA7LoTbtad3{9C;%l(gt|U9N~7C)la6j
+zb2P-0qG4%jBqgA)jyXeBykgwXf^iLysKpruKk5wiQRB6+gmF!|I-*?pWPSXx3<pPU
+zEaH@PqR?F0r>&)Nu$GRg95pV|NY8EETA1fru{>1Ub!vrCy3QmmIc-hk@Y5$YP92sK
+ntD!V(s1{hVfu=tI@W=55xH<N{OLp3600000NkvXXu0mjfz2m}X
+
+literal 0
+HcmV?d00001
+
 diff --git a/server/content/scripts/interface_bank/interfaces/bank_main.if b/server/content/scripts/interface_bank/interfaces/bank_main.if
 index 41e65d42c..1893bef53 100644
 --- a/server/content/scripts/interface_bank/interfaces/bank_main.if
@@ -1546,6 +1564,547 @@ index 41e65d42c..1893bef53 100644
 +overcolour=0xFFFFFF
 +buttontype=normal
 +option=Clan storage
+diff --git a/server/content/sprites/back.png b/server/content/sprites/back.png
+index e0ea0e1c05bf58a5bfd3acc2e9b7cc1150914e04..16c27c2768fb4531f3cd07c2f13a67e9944c13df 100644
+GIT binary patch
+delta 17851
+zcmb`uc|6s5|2}@tnChn7ib#}3202MtiepT=k;*!j26ZHajASh|@*WMLD2gl{Ox6)|
+zENw(tvL#MQQJL%<)fgc~w(s?NpPKt~|Gtm!AHT=<I~j78_xrV6&+EFL*XxvB^;K)_
+zSFv(mu9qy9U-pukEqHM$HR9#`$UT|S!0v#S?>dTYHrYh!9US<lljf1f#+vKD+d8uG
+zpEbhWKNnVO#-3I!JLPL-t@zI;MNZqdZ+XAuW_8>@lk^yCN520lmDwQa*W7X-J)%F)
+zWOMrqip$I%2vSJl%C*EQq{Qq@lS@eUJLlJ@bouh8v(}85yhlkwRGGC&IE%5=#&J_Z
+zQ_bF~?=6#qqGWBlcDmKPh~1cbn)S*=>uK`Of-UCMdq3_g9bZO5a>E*4Ewg`aYm0sh
+zTYV^s{Q4r0GM)HdJuy1S$vG~hd@!>^+A^<H=q!toqvy;}_RZ7a==C#n>i3p@laPGF
+z+Lc^Cc4MmGS&AE0NB)v3xVbg?(Xz6~{tB$e$!}GT>hwt2W~uqz_c3FsbvgLmPg3Nr
+zo~W%~e^%AJz*G6L*R9}pC-fQOHjZ(|b=HSX!gs19)bBma3U4SCO3YHbcB!ekeAq<N
+zH(TAYHMxlVyrSMKuPv4$Ym>qa%boo|RSb3q`!!JiV<J4M(L#5bABU78%D<KB_&L95
+zw~K49l<jOw_gqrl==^&x{Ng7rW#u^boJUpn>CVkl18i$X3)V?nEUk}GkSvrF=XXNW
+zH~H{s7V~NH+m$wsE!JCNbOsY7P2Em;R9V}qi~Hs&v%(b;&Uk#CknGx+fcbwB_*=4H
+zy-w>9<&tefQ87DHtX<nN3emRR7mZzd8CjM=CS<WZ^f~?t8h4~4;+ZZ|?(}7>8RuVN
+zjxL^!3EVL9%S)}S<{In9>^{89M_Ac1nK>wR*fQBiILnebdA86{rOZ`6v1uQ@Y(}`Y
+zMh>N?B5s9IHfH;t%lB^DYg;O`v}4D`rsf$btXVIc8<wN)`1|L-s17t4pBx|CH9Ofo
+zAI6p2+!}O9H7hD-Vt3`sKB?U<LuEi0lXI$H%3HkMBz&vY6;;fa?JKV0Bd)T?Wk{aD
+zDG;-Xctr0BexaIT6|~PQpVnv%$|`$)w|?u}H4RK3E+0-jz)5u|O4^*Yh^K}9=Wovi
+zRdbEG<7Yj7^}$}?4qR1nvq4LD0^^5+Qntn}L-xlMG*ShzDP2!vH=d<;T%@<({^4G4
+ziM(c(FI$Wk{h>ocWUC)HiBe2+ZWhb^I3m%pqaW)5w6gKll>InKsLVR;!PX*zq}L{g
+zwZ+ViDOBXk+DPbgaPiGsyBykdo-{L^(*n<p&8G}qaZT%g&?%6*>*J;c<pd*!x(DYA
+z8`*>=hxw=7R`sLBk6O~lMi*XI(yOlLEH(Y-MCGs1-IVi{%ewspN?FfGZ)$iQ9X-qv
+zz{uNK0%xsVSpuAzl)QsduU;Phmr~oiqZ$$M_p|$?P?1GLq&)Zwy{K*XsG;BP<eY$h
+zRn95*LvhB~WF|+Ck$@`eOOV7we{_zkOHu>}Y?BC*uO|i960@W$CwV9J>7CA-5>fuU
+zvoAD7dsJ<GgbErqu?5~Zp)5v3{O9`@3|iWi3guZ7NR=)IP$f{p+_3tsMbG$y*LqrB
+z-01Qdf_86AJ`EBtWeIpxPW?FG9ne5Zu5e1R%w)h)l@d20)sP=+Bv1H<#*LrJBCBfa
+zE#m+A(JN}>*em6Yd$I&ZGt_(Ev?o7G-ZEgMKF}1qQJ=#GUT;-Snx5A1`Ej?{!>2(5
+z7wsc}58;9`ynzSwFj)e5&C0l7uWHVzyn~D+p-(?3`X{T8p~3m0<7Z6$Z9F&3;Re0U
+z1;S<H@mx9m6m0(g2RJ`Ai(%tA*m!(Jqy*6w45%8Lgj?mrg}V=|!3+-56R=GZ0@IcX
+zacT-vaDC8P>0+5{Wp{JINLOA_Cg6(IzAhtLifL~E(U>JzD%36Tj#_#WNVWW33Vj!3
+zO*Nd;BqwV9l7w<i<d(KIGBJ9PIKCHcA;sV$&I)(fO3$OnTUf`{@1(h#o||49VOF()
+zrWZbD8d!ULd9^inYN&TPOi<se6L^s6Xu0hcBX=VYlSe05sk>6{y<D5uoTY|^#(O!T
+z)~+FAPj@raU1nt}{b$)~!8E?xO34(H47bnBZr;%UVJf?y7vF0&{~&$A=6(65%_z#5
+z;mO4|j*bj=TX`!%$ohmPD*$5M9jdE`p==Tk);yu9^2)?pI7!GOrv}e~1=wPyZh8|&
+z(G5qGAA<?TzE{`htl=5p5vx1WccghqLQ8FWp){x!^F7%Y9@J(8WCrxFv2yHXKpgI+
+zc=TlB_PlpT-yKadq*q6R6N;_1OrEZ@kwbZ<STiW-3H!uv$wT6bv`8@$6cUoHUColo
+z3g@h7i*&Em7+?AKW*%lOvcW3jI)!Jknch(zJx^$gK_OtUSSG(^?tM>U6;5k_7-dbD
+zxjT(8v`iW5dChDim!T&<W)Mq1Qn<Dcz_{+Ultu{zqV6-=LBBEi*t%eQls+Gjk4hJ-
+ztoF@*WrBjFchULNwaEq9{cJ66lwbXf2NdIqt65A?pK1fMcpIOb<guxW3CWN~7Q>^=
+zB+1Z3E(Y^)l2VPqg3xoLN>FFv_10R048r_Bd-TZDcdl~A_Fx1%KrtvgGy6rnGR~=q
+z7_VTu(zMU}%e>Ng9F#S&n-|BGOWl>$ucc@f^Pz)JtiTVryN^v4AY-CYUOxpqaIG=>
+zg0ah{L_yp*i;RFQFx9r(nI4V=AIiB{V7k;R!sucNjP^L#f}#N{Vl-8G`8_%vd%f?D
+z#X$L>n{|8(;zutDS5EpY!8f3*vP}YRA$Fsw8#o0sS$McGvyR|WIppn}`SgRzk3SLZ
+zhzX|NPdj{HKRRaI@X&6yXC{4Ik^0C}2H9q*O|S_0lJbh{iZM2kBX#g!k2ORGWe~{z
+zc_5%5833a>D|{y-p>D4?*2+@)EPxA*=woQvR0o~w5^jqmm-FD%_+_hIY>IXtxX?xY
+z*Mn_qEL}Y-J4?DfAqMQ%FSo>K<kakAsKe2aeaKR4%d!L(p4$#Q(Qjc*Y$loqCkMqQ
+z2qRVK-K0@6Ow__zs_dJ@sPH`RsC<x5p0!j*)%t|wfL<cgYdWgrNi74k6zE&lhUhZQ
+z_sT4RnEbaQvmV${?Cx}6hhKjvD#Fh)*$&7pH*%@p3qqsWXZOViVeSKLmO|P+V!U7|
+zJr2e-HKTS>S_f*j0=Vs#$?niH*e-6EamZ-E-JKI1)Qp(fTHaT;2T=?xHR?Yy+6=NA
+z`j~bjBBkt5vluG+F&0)QJ0Oz@Q=?Jh3e%IU<-!=SwDS{3<t`-?T1{sDdHRbnM=Ta6
+zG?6TopP5??qyi4cb+=gRE|t|225nx`Hel5Ye7%-|ceSGQQ-*cM*QD-hx6IQh?^tV2
+zOWn0CG1$=*mI8R7%(|Tzwx*h`@PqYRW1E_5@XdtW2fB9&dPzzK_1%_SG;E>;TAv<&
+zU)4~aW?ZjB<S2EQ*>_KxQHrI9oa0o@X@|`HiXLeLbBtP;`;h+SLMU~7mR)x~q;d0H
+zPvxBOs<paqW0~v5jj8cmio0&1cl6?eS|$EmtK@TPYBa`GXhmZQB!UIo8m;Peii_dG
+z9+zUgK!pOS^sM_XPH^=p9>4B!$$8G|2C)+#y-lL*P-8;()D2<I7tg4-{R?A@%vECs
+z)LMz-;leAbT_fu^VVM)hQjoHeC0>Gng?wxGO%7ZKXCY3;0_ecOwoHB}=!Sid-RL!X
+zw@<aB%tWKiS|ZOHdvBLTY}r=m6tS(eJ5_4its+JbErWPNWr{$UQ?ow72$Trx7Vpsm
+zbQ))?O(eml6TquYV0XA>V^w>-3CVQTb!uQA-GFGTUZp$IxhFLLrG)(&Q1dyL7i;X|
+z2!Mc~X}|*vG&Vdy`^11aB+A+Vj%abPeI9(D`MGcDV}e8><uvxDUp)-rYHptvmLRJc
+z?tbX^0O!{7)-{$n0nQ__YBBELfW<J8rC1#!XWY@974C=9p;y{RSclkH)Z^j<PQ;mi
+zIK~#UsdfkQ*#AKuD619fKtU$Ba_9fw-Y`*Wq82JK7O!d^yc>i_q?&-M(h^2A2Yxf1
+zk1t;f2BnVn#oR}Hd%Ua-T9}GL8z;zoJ-QaU)v!w<RbUc+!<w=AMscG&sMRRi+7*R1
+z<122NM~oLuvJpM#IGE5H+H7099%p|TdVdb2i4Ksz1*wAir&X%x7wfm^42o}ri_9yC
+zp}a=5xPmk{DI_-e!Qv8W=l>yE1$890t=d|v0p`$*_&Hh^d-Q!FOWVV!sr$O)+u>yU
+z*@4Zpy3S0I&D*DvuoXIU2ySEeCHZrhI1KXVZ&|06k1~ef^v2U#1C2RPHg9j>I*gW6
+zah4WWE52hwv&&M0!Na!kS)H#us^&T_yT$ZVyoELLnv;Y!KP~sU8sO|G<&N9Lg~MsW
+z+=S=%FtAe5d~}Etg=@iNBsiz?dng#sQ~B`Q6QZet=Fe@x5yYf3w+=<s`Ir^(6&0ci
+z8Q~8=)x5%hN52N`lB;tZU<Z4VQ)4`N6oO&P*Y!h=aJWl}5h@kp5$!+|=#KkV??nU4
+zq6b8bMh`=S%4@DLaI5hHEj5d^Bq^$_eq5U;Yg!OPejmmEbm>S`&U99WADxe;De5Gz
+zoYu_3HM+UW(lajWI@4U$J^j}z4Qe)`@?jn~j2mW^*Gw8>Skp@n4A7kz`zE8I@K=Cs
+zaYa`Q*KvcTkV5G<>C|m4YRrE8Y3t9j6o?f7*Ftt6qz7InNS=*IS?xQhrHI09mURIj
+z+xgBKd|?fLTeChf${3P8pjPZkoIO!Yv{2~D`9k_<z<&6^^TZt2Z}sNJZX`03(|t6k
+z>6i+Y5RTr%MfL8TOthEJ-&U3__RUKY0z(D#$Eul**85G8uFFn6reKiIkX;FQ!{8dy
+z+tuu~&9by3>-$L={DjLMCwspp!9t(gErHFXc@-fI=jdzCl(JfDv`1rCk_>&5iM|M#
+zswD6z^3EcF0fa>|7^8lMGD%MIK%w-`7_a5k=J9DG4fq3X_`JU2O0p0?VRxrEx?PJ!
+z1VR_=D6mKK)1kNr285Srj-~Sk47v`IEJWHuqGkjMW@SRu+4Bdyc4t5S1d{37cTCka
+z(`=<j3(?c$!o#8I@RtE7<O^$`vAP95c&|NtAgY+iUe(tBi~D}QEyV|C&^qTdTigxK
+zS^GR3v=ZsA(C!r0er=8z!-rIt1|5LVNIb5aGhO{bcktWpxl=jO-Te;C5N-yb_;Qto
+z?$ms4FaTOK)vr5y60HF`{yx}8w0<X{48#~jk?6oA{KMq;>Uq>ZIbT@yUg(O^ZzB5w
+z8w~k_rOxm1S6DW?8GIKXkz)7LZ>u>1EkqEyBJv)QY=yqe*NIItTZk7S(x~DiTwy(0
+zFY6*jf}25ALLvSNKR;UY*I$PrxnosHie`8E9I`C;WS2;GcNJqb!JZUM8T19>Qa+}_
+zC#W<hfY^hO1FDx(Lz-d$7Z!`IUp#awzi5a&b&9mOU~ArMWOP9T#ATKVaTUwYnIB)9
+z{-^f#=f{Fe-aPx8QqWSiLxZ#ww}&A?(dQtQ8?dB^5kH~XwRhC;^B*|JTGS^^Pvkaw
+zBxS(Oub{^=LPgT%i%%thEHUTa!WH>kIS(|-=lq;JD=J+pD$$IfBT=Q>RVM7eG!TS6
+zJx8}h$g4<`ix4ZAT1zHvM(i`98~`$gq)`012CgFart_=P#c9rs2{*cDQoT@9H)3{@
+zPRBC^CCmQ;SYfyD6rYdJ!|hx<-X98YLZZdXZ+<$>+CvBh8q;xwbcyk3LC`VxQt`wd
+z=aK~`%N&4Aj03~Fnsh?U(=5B0JKfU~=T|>AP|u1Y<xqzDyHB!EwCQQ%siPs)N-t+u
+zg9uyyTAH$MF4o~AH=wddl?EMJybH#IYua|VmHX^rV9J095|sO-@ymMkvUK29$OL7D
+zYH~%uV+-p~P~gaK&d|%#X@^ZUbJ8f<#z|)g;ZiP%)~1FOE9>R&NXHQG%^>bn0PVp=
+zqd|bUUc=XnZuU5##vsd8ccj-nM(9QFLXzSEpZY0?GJM&9<+L_wiwlw|Ls;BV<bGg-
+zWFa0|3IP~sU*XwyuaG7(Q5kdq(jtEZ_S6fIhGzUer~jgT17JjBsjH(?<J!&Q-4}@?
+zcDU6QvvbrC;ns5C1tJH#PWU*5K$*lv@C{aU+|esF^?Ubh{0%N8=fT%kRND9I=Rs?H
+z4T7QldpGq{w0OC?a~B-4yJ8Tnh+6fovFWv^wdL(fm_>gDv@M9Z+hMr5Ns4qQjBjjW
+zw)<4|QzReP#wv6*5O-jJn^YRzk%nc4jb?IcsB$%uGxaKA(&&INN?Fs2LZGMv*9-aB
+zwi%K<;^r`a>IQ=9?%9{;d#AA5zx2C#&qm)s`~lV(hf%Lw%YSUyx%A@qa6Tl1Ik*X}
+zHv=}L5q2GR5QF54DZDYA-XI5PqmqgCl^3@Y-;f!QsTzZLINak`CO0Z^3f<R_q*Q$K
+zbRygjIZD|XXO|$8CMAb{dSVSpnhwF?gG1;Wj<k%dHAm;jasrA;>7X22lf4oC4dv?2
+zFnJY5sNg~7-Rb*<*Z@Q_R@IdCl=dWWfH<JBhMz*v<|OTb_0(QtQZiVN+L$Frb>1Ee
+zy6l=l)-(gV)LCALJ}{@IBaifF(PVVQ^6;}YLSAo0Nkb23i~!guy98;J4K39qU6DxL
+z1#+UJD2i^^zgIWMHHl?SqBo5;cVt`Mw3EDO3qP)ay(d8lNMh-yUfYU)kD%y$Z=6fO
+z3gN)Q-7<NPi>qg|*k*Vr`f4_Vgc|Ms2qftnF&>5c!FBaD2twQ`44OpXFqnhzYW(04
+zm5`%HIGj_HXYGoXh>b9u<`1-zpYTK{4h{*My+lZEPvSB3$9-P&e>He3v*5RHfD9Ve
+zE=1~1x9RfYiS-*&!bKs=Qg-i->L8w^AEEy1Ayx6N1b9aDy(q+O9Ul<D7S;yJ*Kbr!
+zbM`y=5cXKvM9vfqRNmWox|;s?M<Na}ka}`XT|3SeYhbDl7*)O;H;TqES>tCC#zxlm
+zcYZ6=&zNOQqWp0&ikR$iOM2rp@EtiK76DX@?*IbGcRCh@ZVy|qt_G1ISyDF1B6J!;
+zZVjINbQN&X8mnGW{;rTU1U5YAEZvuoDvk|eH}Xh|_c?Y~q=5u`Nr78yJFZMLI@8<M
+zTJCc{<d)0d83^CHjUv=QzKQtcAUR|~%lm1h;lyDRvD71-UKJBv_-j(cBp(Xm;G_sD
+z!K53lzLWNg+<e5@J4sNYjI0r5QZN#*pMo=-d3kB>=mSj0KG{$Lqn5(#ad`1*KC~O9
+zR|V@qp9qmm%_>z8H`Kg4rV1>F;cSg$VU5lQqEK(*?ED@LY9c`Qv~zDpKTqSu$$w8|
+zuB!>SJG01KdwvD!>COCRo}wAbYo=f%nuq~Zd4(ng`iOKAz=-!a*vnu&Caypfk^X@E
+z2~8YxuoiWo3)U7>L57c8VLH6mcvopHj%^m3kxU8Q*h8WsK2an^gw-YmY;&|yDv*OI
+zA|F+aDM0yjRJ|Y(Ra^2FYM=?Fd>E?6-8z~V(0>6hGp;DR(+@Qnid93<gMOYA0~%|b
+zia3#eCYJ;S5}X<(x^3fqe1Gfi{h8ZiRh=4;ip0Rnt{{tTEl><4n6_`{6T4y>u#ahP
+zz)p$pj;^sBQYFa(Y5bR3QN7kUxFc1aOb~<nY=Zb!(P7IFvKy=J`F2g_A1_<^JrHDJ
+zY>j?OU{jJ}*Ir(nF)AMJ0sEMOaXVu#bG!cNB20?RNU5z+3H|vQI&;HW4yqj|bEJL}
+z>UI@sYS0k@g<ioN@rZgg<$3S?Lc^*G2#^fKo-212%!gL%@`y)I8f*`^6bl~i(F2p0
+zH+R(dTDNCVGeGm?a_6^Zbd!K{IVQ=ch_P_Qd5RUkR*}PGmw;_gD|`+)urB@zv-O21
+zn;fWx5%a)R>qbwc*f<^GjACQ?edSJG9JmISs`UA|TEoLfe~E0kmy1yS`pl`JCEW}0
+zL$JPIo=YD~S{UaoBv1>Z^P3V&7fW!+X{(9cx(ft9$PS@A+fBl|Vq7abACp~Wl8#(~
+z93Bdo)*zZop>Waxiuo<ss<3w01RZdm^?@3V$Dh(5eyWF)N|EaS{V}v$ScB>B$&2!u
+zbue5Wo%U{=zYm)Ms!2R@^d@TYDC#Rw4M}F)R+=CHWEp<ui;#+P|Lirr&(T4eZu#1&
+zy-*so^h2I0?)Xtxzn(`9ei8wquBTv!%1+-sqxDL3evQ<hmaTC5&`5(s>U6%Xk+Z_e
+zaRi40bTG4d?0&<#vB8m0e!jzRE`oQ%&rr%G#f=d~*h>dK4IrxeY!BcN3M=nc6Pchx
+zgT@phb9`#V5yL-$!*jI2phv<9CX$?h;^IaUVfM2Rb58k*vlDSFR#C_&7j{?7XZr#N
+z)8Wv45Kd2nqR$u(wUD5LPix-d^X52bC#DO4aEA)e-b+)abgYW#a8Yq179=?6r-L}I
+z(Qm1EHg^8eUrR&Y=}(c4=s(y9Cv5?k3c(j)WB@-WZs%zIi;!E{<fIX^g{ASM2;J20
+zC8}7Di9(tPE25eRzU|1egML0AO$Iih`zF(<*C-+R1v#Mj^_7Y3Peh?`W{oruGiQa@
+z{f~Q)IoE37G&Sc`J{_C#{1yJkEhxJ;B(wk$z~pFqk+GBD))<43ARZU?2FYOQz!hQ|
+zB+y}isYV!8mjJJaE({&udYpr@_rSraEv^I;-9nH$CYlpxMNT{<a^mVWE<6aMtq7gt
+z(lP2o)hxl|Yd24Bqgr&}U?<{Zc6L2QArl%YfARNOCY|^p2Y_8f#y~Dqn?h%QuyiGt
+z5P#Dt0l7uVCF5)#(iy=&LtyBGZh+&6GJ5tzsmHZ`!4+@Zv3X!eNMFIrz=Looqx~(^
+z$Xe`#h$H3!+lXVZ6#XW`kvYHyJ^nHi)H9As5k6p*JWxdB*bhWmN5ThpI{k_9K#3OK
+z`*e~%wq5&tg{Z(^cI84`*z^N^;NAb@J*fYGHxY4nj%#2oavP}^!@-#b4hRALyA|KP
+zHHzkj4e{NNP6JW8&BtfuN<ThC@2%CKQ389*<%5E-5X`n8=7J-<KPf(SW9i!g(<=ea
+zMEV2$eriA+;sp`$s^Tg9fVgQNeZGeCY_vgbNkV5eZv}u6$d1wRGNMW(OyEFp(GY*i
+zK!>jxX~}^C#7dk{sQ<csbdOGi0g*^HMd#h{Z;7{-0A5<WkEAkP`asct2BKC5_5Xv0
+zV)E$<4POS1RY<npC)(DClUP&o0g5=IY_$KiNd0pw5TMA|;yV@yl`Bt@`NllNcKH}7
+z%`})DE{q{!g49_OJ+Ntd-1#XP2mgMCKty~{^xx1W5xJkR&QQO-IeZw-^A9-jPrK^{
+zkS9uLrX4=2^N9Ya1nghw7+kvq&UrVgq8BPdjjVeN?j$V&Zfi;(`vbO=s}!;=9LxHU
+z&kqpUBmj?6fNUOQAjp@Zb1wdY2inYu5wDXMN#^=EXdoM(+t5C*K@L#VvZ4})b$qX#
+zB*~f;f^~5mOp*}k`P))5>+9f>pD^uxqlP#DrqPX-16>f0qG!rKba9os?~-vJ9)m0@
+zKFzb6v<+x&o0{eGnuBNdcMq%!89%SHi^QJ?qQ3Z`gO*MiUc)FlBE=mapb5%CpN<Ak
+z;8F5hWt)Z7=hA)J6KclPNp!#s3#TQq%sOOlQW&|OtV=uAB#|Pb0?V+Qd>H5d^rF9C
+zV}&~M!`lek;6VvK>kQ*#H_>F(Sd17tW<z+HqkaXErD~Zqa>?@IZcpY7ECI0Z{5#1N
+zbK(}JpYA7XOJP%CD&f=JYGhqbXyW3z_@98gU=ln~uQ9G$dBV6K@j7aqW)=YL32G?_
+z>sdon8`>hQ)#K8|h*VCq5QW^}%JEne<|cCG9kbW)5iA6x$Q9A_>q0we9{@3eyW=Gp
+zQixvKY1TpT-hxFTWCM>)EOkOS;gtq-sb05c@0riXQ4=j|6M<>Zl%Q2WRvtfwu?JUg
+z&*CeFJJu4tY%Bdy6{sfefGg64>`vc>f2;<V4Fa=1Y?(*FiO{6KhoL@q{DJQ5z`9pD
+z<CaK_=+x0!`#dtNQXwu5e%ZH$xUj7$keH)7|3DB4E}i#+bd#I<n9+zf{yY`j5?^Nt
+znc|ip2I5)q;fUa^^aqvX(G>X0xS!UbT4^AI$&h@*?a^n2+a!=5k&m8{{C&3j;D0R|
+zEGz<H%m&MbF9~w6Wvh<!r{XO*&?*(ehg@pODWS2yjGgpjgSMbU<P4A`fdBZzkGt2K
+z9Hnb1N+6Rm1a2wh3(aEEXW^W1Y`B9b_BKV)e(sAky8Ri*7$%n>X5f)eub~-n1a#zq
+z4W!ZdoLsVZR9;a#+5<pRzX=*a8h<uK`_mQx(N^SKjsBonKl^8ob~p)*hG`jpV@86*
+z5?tpY&MKNH>&9%~`}lMjE`w%*K3^rrgK!GyB*{^lWggTl=%)|j#O`>^gZgM`LQ??Z
+z!|@lrk^fR!SQxDS_R=@cPd@8)cz<8oXH@rqK<$8u@S@1|yH|((`>b^ACb4}2%Z~iR
+zqi6A9Z;^M0-mI}xJG6(=3fmDXsqt{xqrC}h+r$fJA{(ug4(tvU%qh8g?dnf5Usay}
+zZRNcVM;jZ1nVdnk<uVJmwIWJ&%a66MNN}><SXcDJ8OK(;T}r3JC%(wEVv86UDjIOj
+zl?&2W{2sXO#J3Yk%~=L_Qlo?{@LkEkA~NHa`sjYQwb_z)|5bi_{R>TM6EEH=Qu|Hd
+zZl%+|T|0++?Nd5^!*bbKuC|e?f4igqnZK{AY@k?iS9-<oQ`!R;)SgwXPmHf#%)Ku^
+zc$FJu)9`$JTl>SvbX+OYNHsY1__3YWz4mdH>K@tcvOaT#zHr9MdsYcffzhpkOW!C;
+zWQZ?)<HlV<{azH}8fV-@U(I(<l-kAd^{RiEpKD#zwNpjuEXy*Zby0@i%Ea60YhoSe
+zqNk$xgY0nsdqGl<8DvY+w^cS$)!D0bx<N9vs3^oqc3*K($k3WrA>8J^yi1(1k;d&E
+z){%Wr3<V!<y<OFC?7nH+3Snwn?CJ)Q`IjH2-(?T|dzZ+po6NCU!6Wlx=gUs2U$`6=
+zez;E0{}hJI6EMtWzj!L1DD{WIQBgAdRzX8WWwwZ9s_&0BHY_85y@B9gSKcds_Ea1@
+zwI)+c0{dW~sI08VnM$oTJ=7_1HbyiJFa7iKB`fZd^>{(MxdD|S-u`evL00OI+U(=U
+z>h8KT2ZO&>({^;6Gx%no<DAJ+(Tq+_x$bM{?Cr<4Yw0@r*I+o4V!vE2O<(g1($ov%
+zv76kq)&)jRie-qg(<7tJrWO8tedciYb+*-+UQhmtY|XS<Pry+SWmXiTcYVF+?~w)R
+z_&^4il|kK758ohhC)IAFL2GBS-b#X!6_dwZ<C5beY<0z=$c|3^=Zdng3o=*UV`fXH
+zUBwT>T&;Cl^81RHlj||%_pPwgolx=JWA{LQklmbhB>wHO<-bqe#DcV9UVG0tTAb<4
+zKj?3C$lqun_@J!zzy0+NQFFEOw{N<rKHCv*+;mW&EXyEykCH*Lg<!)-=&Gn*)eje)
+z{X=u5?0;QeC;yjXgWmPNPAC4>TPvO3sdT#VRI5@Pz9vG$hrenSjGGio9DZ>rSJJ*`
+zr&Ht2B`QAbP3P~MG!1{5xipxS_=m>YR@1gIA7N^YM>Q?XI#g193x4lde@=-#o88Kr
+zZCH4l7<_#0wDD^GraE<B*IL(TT9X}Z#=McgQKi^xA6;USspH$R$|u`OT>YDBrhje~
+z<eIbTRlRTe<u`26)Slpj-PiGoTh9p^Tv~=#@&pnaO;1gP;yw8ryIg4)U|%S<2y4Bj
+zAa_aEs!TC6J6%6r=FyaMH_pGgP<OVrsQp&J5$3(&`0$C)#_6ct{x!Gmb2zpDkk^G)
+zCGL`T14V;&bG94-$~XJQbVKHqc<+w8s@|@Gq$mqn6o_YN?TuW|Feu(&;3L?2#_OWJ
+z{fd#xm+b8^k#^K+LNsM&Cz;w8e9#noF;~kZXtdRp+c)<5<E0JiO5qza-njOhl*aNK
+zU$?07TjK_=nQ9ja7}X4a#Z$byiC^e<|CKG7!PQoAnTtlfT(9|<y!-n4+wR(C!rPV$
+zZ+q)wZyC8>n|o=4rl1IuD{=FTakPr}Rf0SjN=@eGtb=;o@K<jXqs_cS{@&g<-=6{4
+z`YpjKKPVe)EJ%+s*qCuSM=miQ<H|K$rFBe~`HUgs$KJ$?j@Tr!+P<g%_96e!>cv>T
+z)<yGu4;NOp3bhI@3|7vWYn@2r@38LN*m>KT!iBj}$v+Hkeph61iaK1UgzDf4SSX#Y
+z<8Vr!a5%#S&fa3r-&Yw5W{BrTn?+&Avn3_UZ}(Z2-_E#pu5md21D}1eSL#2p+jYpl
+zDP=;e-Mk>`2U}ggrjM(^3%S^O;}HT7(FCXA0y#BpdEXExQ?fAqM^=mMk2V7?62T@j
+zRE|7@kR+*z+1ixD;gjkO&#@*N0Ro9HG&hyscKUs#zS~+-X|}eyj&sfVZ}u;iwjH=|
+zAvs=eWviiJ!}AggJ%9ElyVPr&h%ERtO;<4u6}5E7Jg?<%d~f=o;|dvO10LfG1J+T3
+zEGh;&<N6Kt@!Dud!Q}Cr<vYFHR1(C+Tc6zu7B^4~?!*)dt!Pp3i#Cg7r{nfwWQqiB
+z&3*4%8cDUT%y_mz_V(4Fe841+b2&6$o2RvZn^9o5;i|xsnxawZT5jFf4X}0&VuV1I
+z=_^Ho6)}hm@z#;cRGdxW(ZH)QqUWy3zu4f2a`gZo^*b8->oVKbE~){_V?~3qpn;Le
+zm%G0S>0@I}v9gpYVcwE0+OobO>qS$Gmj7-W`GdhNFT(?OZp${AH0jgt?F3-S5{+;B
+zaIs%DbE!dD*0OC|o>gHH)h=58AU^t<Dx4qkntpYjGJswgC=R$T7B!2)ba8Pfe<P*S
+z0TyRuH3eh6X?m|3UYTiSq*`&-av66?hUK!+P7ddp<|ZDgpsL|85au<7ebD8=RR9bq
+zzEu#g@Qjb$xS{T?ijgYB!XQJeAl<fegRITh+Kz-Fs58bWXB6ZQL?uz=9RYIootXAP
+z0f-+48R>*IY4y3Oyv^v@II3MTb@^)0%h!y$<*4MtHa4?Y-V`{uOz${Eq?!j|6_c4j
+z^;Rzi5x*H}1`|Z9EO$|G`F;7$AFP#2GWul67$WQM4q7^Q`%)*>Cw|eLm*ZCeWP{!;
+zX`TQ`mAeGH9%*JP_Io61&*9Fj@Grsx7eoP;f~nLP(XOGZLj_%2Wz?cuW?27`=No!G
+z&s`f-h21b*6?wqETlC~qb^5`%uL8b<P#USiz_^g%ZmjceB7EpIk)K#eIjTOZvN{s)
+zjY%2`CQ6Cy&zOPnbhR{GWgD#$`^9F_dwn6kI$0k34OdOQ{YAI>qu^gBqRnh!T7Yd1
+zXG-7ZOm93HYuAv?X6l|(Q7Boq@omX_R@)y`C5rDfqP1T}UFN1v!$E;xgezu8JirGd
+zG~*{Or&5c&!DaE5%RGS6Jnc7HyZmcvrUl797XW9uuM3<#ZEPycF?c`$j1*7I0P!z8
+z|MueijcJf0>>#9wt4%LgQAnS)+ge;qiPm$wco4w7=_tt48+>?+1`Kg>Lq~f)4sF$>
+zOdIk*_N$^~J7s{2-X}gckCZ`A;wHo_{4~GTuEtQrK&?O<L=>z+H4<O8g1OEX+Uqh`
+zJ90S=v<ireq;DO#P%?#bW;2MEcX11_>;9n)gsuD55G*PmFJIek9(~dnK*0X9^;Wi1
+z`1QfjTXL@p<oJlPxA)1THEJHj<ULWh7S1P*=$rD<?r4}8X?cUn*>~#gzI%c=F`^m$
+zN8lWax1mgF0OY^B<}jNwd@=vL7Wb$5kq-;P9@&!Es27l}PC{pW4yU-<T%YaBPeNw<
+zk3>-=88j(A-yjQtpr#6thbuk2VNs*M%}9%T>Bd-*Jggs~_b0<&t~Q?_m#<ztKPPfm
+zBszHE^|u8HPN+caos%amxRfBauwi<~yXTYApp>RFuz&49<+|-2Q>7|^gwI}{f%D`S
+zxiAyV%%yBf%KmGH!PrXhgJoG(LD`nE?Xyq2XEzb07%u2{tDM@J&N^8O_9WE{m4gpk
+z!(AfdL{PHB`iv|{{9$kKLH^x8pr+xwNF~#v9X=@*Hyq~27SU;-Hy-Aly9DUf()Bqv
+z5z2!zqGodBUjrZ5a-fPk{d{vsOMvbMJoB*Cu7TGf+@V>BQ5S{64U_5vA7qN+y@xZy
+z8jb{o5#V#5kA66`vo564?N+A`Y}s9RyUwTL9=I^Z)*Z&xhSK}DlN&aYvcqjMKr$YM
+z951G#I;8}oHT>|d!$fQscV))#NHdtTWCH;Z?1r9yjTJ8K^d}1F{U(?z=kAiB;GX``
+zkgET>3-<L*J2ZwEag-(j{Li#01EFpH>%{iChVGKUI7zH|UhAS08KD~z<6%&s5vwR5
+zH%V_LY{4bC<NRCdXImG^jDx=p>-^!Z%M5wjKpDU+whYH}wZTz_xdxgJe>nO#Ig>fj
+z1qnY2bOm0fpKtA+n=|f8q<uoS`{KJAMUC=<PYw!*pabwM3eAOD0cNltZ#f{CfeYgl
+zO_jHA%73h0x3B^>5}pjr1mS<tm%%;}txD(VCWaP5K1q1e&l^x5K5VwD*uBgH&{54?
+zS^%pvc;UkH<iq}<%~^Q7Xz-%>b_Is0K77U{PZ8z%dzZj$+~F@r?*%^d)n%H+sCehS
+zqymHvHq4toET4h~)!ucV?&G+jb6K9coC&iJa|>T$MH8n^0%=9`24=&E!2lG^XeT%3
+zS(Lvq<7AufRpJw98zy0>D4E(bYXC!+G8~rs*+$%hQJnxD!9xZc*S~Q~`w<mGy*`6(
+z4>is;r?rW;@=@C>k8Y^Lbybdm0MhL%9lga054`kdB*yP_wM5OAJ-M`yOYSG)6XLXK
+zBST_lF73Bl>Ne}B$VqkLAq_Ib<L0Id(GyhXraR9ycM`uLw@+4E_Tyhm7GX|w8;1)}
+zL}VflbjL*g0ABKPgL`9HE|$iwoh-lVmj;t~7HtZCpl38tM3+@lE;)1QaAmicov!Np
+zO)W2X93tKqcfkXGM%Vk|$pGRe)#HejS{D+#;^c>4PNA)Za|4C8tO`(0DG$X{fWO@X
+zlO}5TOWq-cLD}#PLKeZV{;|I<Pj98ioz&I#U#lx&Q^hj^&-5Q5{cVXw%?qEKI(5Te
+zCJuLgn=u#i@R+)HUiIR%jfwH*ob7$Y_Gr0zi=F&wm&M5)_<WP(k*^cub2nTSK^xM3
+z;#>9GJ5-d2DD_zWBCLaIP6QCGo>T94JTb2b$Xu%PO=3J?3)3uf(b&k<QbzrDRrdC>
+zkCD};0}8$5>bBB<7<6}y-G92P;`Ut^G-x+w?ps7U=^SCYf#t#dl7uH%mO>UstZRI3
+z8i1)A;05~~AIuGCk(WfPd>`4T%J)`4-&^bCJ$BTe-S2dsnp3lK?@f)})~3(*d)bMl
+z7P%7WWlPGSS5divUco@IV09{5H>J}Nw6(o_2`vd$^{#sqRBi@P0m);De<NNqf^;j8
+zEws4U+k$jEb-veu)p>o!54y_KT>*~;BlPEG3f{*j3jdoao!-h*gk=KDSh!kpybes<
+z$xng5VFSNs6D#iw!vA&Lj8=htqr-v>;&4#b{-Js+rR6JHFysC6d)(G~Is2cQKr>vB
+zu9dsI?%6GL2Xwb=(J}s0_y)2ORps>F0Lq4|sK7JG7+98FPxq!yn4(i!p6V?~4<bXX
+z9U56ye^*{==F$zHp%3&Px>`yUas<qM*naEZD3a$y_M5#lKlfV!<J>iuk*i$h-pD>#
+zX?gfgC*p}nlZ}oRv4&`jN^Elchu=xpBV_UJxPp}ZL5s-s6i`6SuS;eaX<C_N$Boyz
+zJ;;NhwrqGVioY_SOO$B4Wr~(~at#ITJAD}hnL0xuzD0X=(D4|f!AfFTa#xccx${W;
+za=b+z)Y?4!CH7a^zDJel1_GPx#nSY=^Kmf@Eoz%lWRnmDZDhk?hxjUk1YavO41c-B
+zn+t!O(F}91wN>V3^b$l3=5&K@r11<OhD>_K7eSo;Kxq-6(lvnC3qHnpO(sV1$?>g=
+z=pJPpSPh=~cRd6RbaK;cA90zkmgx7rPoKXlkb!?vNYObKZGp#DrXEAv1NW<SZ&&vh
+zt@sCwBurAKeO}-hu69Z}9)vL>5~@^J<h74BSTq1hgG0w&MIkvJ`!iNWfwACVi3`Kq
+z_kpO2LrBjuH*okm+#W=HB}n!6Yv(AKcApv70nC5?!vl}`@d&C0VZ~FshE)OI6^<Ih
+z#$xIA5%FENEfyKlvmF}GNO)xBIju<KF3_Q5B((cEgG<u2KGBYrDkc^P-2NJ1;N4zb
+zdetuj7(i2lr|7O^2faY>sM}*ymQyYYgQDRZx)LVEJnSsMXbuT_E75k-u%TH9-skJv
+zxJbcoktG@Ho2DK=yEV)GVMWvr(dwfEH0y9L4QuUB%e;k;j}Z*`+&r`s1V;yK5)IFN
+zqx4qh0)OHew%^jPR6+VRv!0(BI8t-X0IHSE)&&zUH^Wt>wT6Ns@L~)y8IU4fE;jOs
+z@rR2-t;(|4>h#=U)Uo|mcT$<Slofh;@L<<dL&38Ed}H9V@mQpH3Uqn^WIf>{!wPAY
+zFj+yqk14?gj8Qn0RpwIGk2**0-&_JT)y)kM+&<h3mjj5}9U=x6w{{5mxVrMI?Hpsy
+z_W9UR`=?s#wrFRsy!W8HYkd5v^nq_q&)i4o@yP!VbNS7p`bR~#&wefEyPf7Ml4J5A
+zR7&J^_O|1nXeA_5&duZvAR?knYa-SiGT=iBeK=A8+GZ!hRi-;=+Ui2Q5)E-Z+R@Ni
+zBj3&jHUcKO*UsH44uOHKHl;JmkcW%VzMunye<N4$NIk}PLsfl~FB^LlV1P{9(CQ)1
+zWg%NCIMz;Cz%BlZCvX;)jHW3~(_QcGE3Ok0KHA4i58;YXZ@<%i<BhpA@y%cv1VW9J
+zApvBO<dGgFkVo-gIvgH4e<TsPU@a!vJW+IadwJ~JM;EKm$sW>2)cRGf9m@LHUgShM
+z%j=lo6iIjv`n+7mddhtGv@;o`n1+lPaBVk_G%F38#J?3j`9KrffY>E-DK-Sc!viCJ
+zfF==4f&(`)a7#~w&1*8mJ&5}2*vOtiV|e0QtH?ek4Iw{VURwThj)Ufjwg`A7h2Vj_
+z7&O9y$UfVE%eD(y=(zfa{<gf1ATMIzf^QToNA2*J=GbISS_^@m2oQTKumuPbx{H&P
+z;2SYulwKXS)RBW2t8q-kCOm=e!Q4leX}Ao3_XN)22~nml3KWPJUi!C!9<BX^mR-?~
+znzs40`Om%{^or!XX2*zv0uZ*q*43G|eX-WUCK2Y2j)!s$HX11E9HRTbx`(=RY$UZO
+zzbz_t*Zx)R^=p1lhY7_W4o5Zs=|fu;INiA)(gqFM=W4lFGww1Kw);9<Hps?M5pY04
+z%BGF1SO08n&Bv%>uU8`|h}MGw7D&Te7va5PbFrK0Xvvog{5#EsO{(Vt0y;;^(${F3
+zHh`*7QQZ{^A7vd#z=T#4;#v1m@Qs@pl!3OMBw=J(etds!XE)V_G{@&AOH%;%$VC88
+zyq8N6ax@8&mB7*>kFN@CfS|p&v=ph*-6%7yhL2Im5)9fOD$|H!=H61zTnanC!C-|a
+z>Exy5bv`qb-b$~F$?@3Aat6tjhm?dYDv+E*<h#R2he|29Y*JS;m({NR7{wPysICim
+zFp=&-ZnQ2+L-#=%142d<+p$Cbp#gBn3j2J{9o~6pt~p!Cg7hsW8n>%J8o5Bmt@|d(
+z`m3A>gm&UDGZ&1ToJo{|e;W!qY+ZDh0SjhBN=O;{Cl3j}g~dat7<dL29WUUnCg!br
+zG4jizA0qoaKMNfnJb{<17t2^h>Roq2?t0xq&pI-jq-PSOBA43>Bqt+qUQeopc(Nls
+zIj?>`w;?gqZ?SaX^lM>@o8N7bxoH3Zy&!5%A?kshsXHi;xwPlY?^>&vh$w<5PjBdy
+zkwg}9<fnt4nPD7H(*K&a#TozVHGQW!D}L{yXe>PfGg(obpBP?uYWbK94KVYJUoL#q
+ziQs&dEs?7xw73MwMIj29WL@AhQI}2u7{GV0p9=HYoC01j@zT3NF_Y>fX2MiI-J1^P
+zSe6pRw0?c!*hym`R@(M~{NG`H?kB9^^?*5&3!Os`1bG7IA+`39Ab>uSc6kVJl}SXI
+zi$pp`rRb(b4fAtqnMm=&X$IjC`PU;RvS-jogl~Xho;ZfH3X)2Pk&flAAUT-;k?|VO
+zoIz*Gq{Y(W2WzmCpLoWUHZk$e-512gyA?8*R+wjq!Jio@+UnBC3Mb8gLj=u$!~oy?
+zZaHnotTL&kD>F!$ljc_o{0F4M*PFqfV_+6FNHu~k(;3&))n(h>s*oAWt1Bg9Z)C7@
+zHje(G5H_T-<nV$tcB0TUNLob;;TO7F00Q#p$Q9O1+=-q8iR54g3Gq=}W!f8}(1@|)
+zy&G9;@i6hkd|7idC^430se*&6?yeP+!FjwVRr<brh~y3*WqS2YFQy$Z3N{jDiznQO
+z`ClwOHJF=@12qI;5zDrbnLzwY5YXTVq<m2JJBKFuL3AL<@!&kzts578ekZO5VIetA
+d*^`AYei>;Tx+PI}{2%yl&rUM~j^4pj{|mv5wpaiF
+
+delta 17290
+zcmb_?dqB-;+wM2Un9r0kvk(<})mkBxtdc}##*)t7lu;xqokZy{)Rca&F=SDCTa^wv
+zj8e(Dnh;Hq=)4l9kPfnHF{INBMYON`S?u@Q-?zWL_aA$voLcMoJ%{VQ?(4dq)mSk$
+z``XxlYK_r&kuOkg<sSWYD{yOMN<{JXgO0xI7WrPa`d!lDbIrTOsI-4{RJF9<CPsan
+z+JO_EgO2k(&mN58R|VWZlDy1t-N?g@1EJ~3o)<*IVe7)iij5&oOXQ&eE``Mp?u6zU
+z=){@{Bvz~Noh=lf3C#=Ejy->~wmi(bc;M@OW=%QH#)e%rzr=F(`^;{e58jC3x>K+7
+za!cly$U+08#-=WJm;GL6T)AveBERWmqWG(zav7d;xpkmkKEXvtJ61RGkmU(Gad5GN
+zTAaB%FH~$H<LN2+x~Q1C-L8tCx6ka#w_2_A`?%<m%3oqVYZ5$fR|)o+nReb9qrF#J
+zTP|og%mr2V_orAL3GGgGPk-Q@Y0{ls6s>)$=cvD_f8Sbt8r(rM+VVtg_MIe=T3nTt
+zwPs?7ljC4PA6Aj$tZHy)g4#3seUZ0p`M78U`*Q~S%v=V!(Pu}>-nJeIIug@tu*NV*
+zs^3uZJ08@X=jjr3xhz+Ie3EFXo>H0x*TIXsmSTZroQcjUsj$jU4(z)3OKfwJsL4T7
+zM;v5kADHYzo8>Jt)Q&YwIB3~vn2~u$SxtZZNqR}K!_qkOC)sYizJlA<#f!YRj!EA}
+zOYvEp;)u0GYpY>LFafb;W_9+RWKoHO3tm){P&9WvW}7va`@A7_t%U&%b1<>SYFxB+
+zalv97%-4DeiBUPzm)*@11?DB;ZPsJb68GC{@4Z#~lf^Zwu6vs!OarS8=M_6N;b)p@
+ziI!eGADWJXrms${vyMDTWScC)+`M?+CG*4c=y9n+?-Qy91&h69so!eV{}St0lkl2*
+z^RmT%D3^P$wNKFIenDh3Y%O$jd*r7-KEx^HwESl1;nQ1^##+;$h6(0byz1=08h)VS
+zq<i%VL5a$0!)oKAgB3e39Io3U_8UmP&a1C~CDh(~Da0l9KO91E<+31m>AHpKQ{|~o
+zo*35KbM?-Fb;A0~t!_MTYdUB<acUONIKe90PApp+IuD1FxIaeC06R`+kd@<%)Akt`
+z9X_G`rP;Zk8bh5f|0lqz;1Szs0S4MAfjcKfQVdy>jXwnDl_Xefsjn?xJwXjaq^cPV
+z*m3sf6f<voJ``dz=pd9&AFSIrUE{nD&T&D+6_bV7je(33hm!eclCcjiIxZ@Jb*^Hr
+z7C1rqi`^SjTCRqv#a+w$R?C-wjT7P*<nZh)qH+vAZ@_EnuM3NDg1O_OF$i#{{YhL^
+zils=PpTgb28Akzm{7lKyz&zPn<4S&KHi6o7Rac&;?GA&+8G}^bW|J~97twxq-x@Qq
+z^mg=zk$n}&Ih6QW+&?US=`XmAcLG@2d!2PYZ}|B5|Mo?GWn9ahM{TV^+YGX6J%})F
+z;^{!hiNS&`yoF)|7ZvL<zTEI|)#LZ+bd1h}8iC2x*_k|_z`PKK%O-2hTnA10Nl}|-
+zVvVsjaC?h?q1)r}Z{wmz?y!PXR!a`dRyPQ&sV#3GeZPC;aSZ2nq2i%T2*kN@7b<pN
+z{Uq)icPgOdv8a~Zb3gT$EICgA!~}F=n=!PGV(2Lh4FtF%o8mh*D7O>G0zGb5S&g%@
+zHU(^No69{OgRqR{inGiGtt|h*0M%dsks#1g5L;`VC8_f0j<-BvFAnBFUJ2&9Q|Oxt
+zdBAtk_+S?mwYYyI?zdXp9OL|1Rx%!8F6^>I^@O>kUV5|3D9{~cNbD6P1*g2s^OPEQ
+zCtGP}sLl_l6Z&WKjI;5896Jlyq99AbojlPMXPszEKG+i97AN}G4jVEQL|a^|<;n%e
+zp05Uwi9AkVqrhm(^=yN}OL9U_C3o99DCnekE0t7br7xxgaN<X=r_FDi{<3%Pg8KM*
+zYy?;AV28(XHd`;=(+>cR%5g4e-w~=8ckQ83hS3>flT<Yur&^C&R$YeLdy6>mtfM_j
+z&DbzyK=Q4Y_9qEICLdH}J*F};EamhTI=(J84@tB(HZ;j=af)~PHqSAbia|!^fP>IC
+zYi=S{mx1=zATbb8UqK&FZ^{B8fbU%+AUcY+s32G;k41y2jJVYG>Selp*4$0HLXLi_
+zKn*5;EHJwtzyo6?jU`&E*KbJu@l^5}yW(z<E`Wt0LY%w-Nu5}G9kG3J9gg&lY%S|S
+zSTJ@M3{J=y5+o6p<QQiD8HN><)Q5va4K-Vv25lQiw%;e<uAJTiluP>ycK#6>&{l)m
+z-Le2DC5s1PE6#9`mr#|*mcXjx4vjg&Lp8Hm&QDc914oB_GK_0*?(}$^D!*AQ8w#nn
+zuTKrC6Y7P!q!ux@V`L|1z-G8htmUFCGwm%>YfyZRU5oCX6fI4tnoB^$W3T{!58l&~
+z`Oa=UN8$Kj)-xZjTiEu8&a`%p1A}Wsj0iVl-nKI|&OZZEB<|_PUIWks6@s`1<)gHZ
+zq7(w(399bKJicw$qAc)CGFn9%)@X5p>tE|*JtjJF|0RZdUH$RIP;uYLJzRTqruqLc
+zC91cq3~d|r{{iPg+8I9MthO68DsUKc-@7x(%k(C8^;@m4^v9P_gZjlDl`C$Hw}0Du
+zH0aB8ADnuE#a0_)V+S6gg<mpa((B4|vgh!^uM;Y~YajtUv%~=4-d6cu!vvA8P$#ws
+zQ%|(qJtYbc$qYM{{8DGy=(GHRl*V}UBHaWj@Gzj_qLMOd#Y3}X;0`7%UFrjfmV|hg
+zwcP31z3~djxyj5v#o3d!Yds|hh=t=BwYlhk{|(e_!1)jD>zxPN6|ca^9Uj-Q4(dj0
+zErJ<=>xiualb<<gCXx;T%-!i^!hc2$mm6#EMY*uX(E3a4-1Q1QazfnzfQM$$7;2wz
+zG^BouxVxpbD*7|RWr)*Lw7{&A`5bfzPCP-BEAb9YwzEi$tF7DkAD>Wii+?-RDP$s1
+zBxKKRWi=;^tE^Tm(-?jH+F<n022OTwu=8&lZI|mw1z?Dj+!SMZl9x+hc!_7wyDC~2
+zI_!Cz^RA4~U4$vraPs&~4m=xOVXgxQ$p8w+HiI)1fDYFFL{Eu`Kbo55PZk}^X>C#_
+zwT!($h1BA4Tsf+jM*Oh~i2~XsvLr8C8_;m)f^k+5oCa4LK0U8$<MU<uGY6ipj#xV}
+z*`A8sS3C9=G%2wx#^qF&f@(iQOWe!)#&v$*OnSatnfe$hmf>eFuU)ztOA_%O^$gqP
+zzt=&D234C)!mo8gbsG|6XRt>uBq>O30>aq#L?U?{&v#zD%b<xozG*p*^|)}nb0!Z{
+zIuFi{*5)8JZ}FK>u0<)@L5kI3@-%{;QhoQESPYp6c$iH}gmP{vd$@)7j|rm#=SOe(
+zI`E3?(4R<aff3lQ^(u&;=(JMtENInQk8Uf4f@26#@b&bp!GeWdH8;3-4JERriOJfD
+zmh$X^Zja-GYf+onE-240(^YMZL(r%+6O&QBGNOmTykN$du~H&Bta^zDZ%HM;&&5Rr
+z!cu04)&<tkckE16S91RB$pV~@*358MCSlYPs(j7tZKIj2<Oe1juNFu+t88L_2yGXT
+zG|n5l)mL!Ald!ghH<ZmZEhLi_coYCLRsgIRXWiDRXtK0Bz7a$H4dJ7${?7vQh{7r!
+zdRrP1(u64myZTtaHKWFx3;oE17_?as0qhqJk|k-ZiyJRQi7@awiTZisk1na8<q!Rp
+zG&>M1w>G_tFNQF|ijg6&($SZfm_10dblYK&txix=wQ({DVV#$Hd=4#*sbatZMT$~l
+z?L!YVwI7P<T9`G5wk!J$*aBgeptqIgFbvryk7fEl5#p$@eTQ*n?RUbi8eeP8&9(9K
+z&g+ZA^VZlAZ$iU0Dr7pJ@r$pEPH$0Tg<y^0;9Mw0Xu`xr;*h-5CmycM{WNdk^#dEV
+z<?-|Cq4AYWIO)~juF81{qC~0*phewak;k+#*2O4sboplI!p`i#KZbU$fvxNGINo1y
+z;ZxdTs^h4f)TJS2g8UpNHpGyScR~ob5f<bU$`jw*&={>q4C&ji9(3-ffa<}{@I2}l
+z?cD2)5F|RWwu1b{(4Wyc<a|(_5X%g=icy-Z$Iv!W+a9n}Sgiq<e<>c_kBTS1Q3TaY
+zAlQi0VNDB#-)oo>xXqxegK&G2wg%WESpnAcDRHn3{Yb#t906Gfp$YVz7z7T%%S1zM
+z+iq9+Dm+w?dwOyHH-jZhd;z{IxhbI}<(jvMqqS4k*kO;*^E^m0yfB?u((GN6*BHOg
+zOD#c^MTE*~iRll>F5@nb>x6)X%>04mu~H65l%lUgS5VUkIsL7cKSW$TBbREKFjqT6
+z;Ywqcb|?3iPC&(7uHfHJ61e~tp)ucTQ8yotnhYZLCcp>U>I%^Xf@l?>cH`o@lY9au
+z?C~$P*_o1QHa=)Z`@FCzOB2kwI4ek=3%jN$&z#rWKUZgsAsO$n+s|nPL?wc$Ws3@P
+zc&I9{rR@YY=r&J-u2lAB;BymtU~M^Ehkt(i4krerk7jh|HsCGj-M@>#Z|?7fdc{(O
+z`@Hhx#`1cI)(N8;ao<4pa^_i>k#R^4CV09rzPlsYFri|Du8{O<&1&+iQhfjz=>g7(
+zD1mkf`tE!Cb8uvT?JjF+d>3NWKND2!zSoL++RX6BB$yiG&#ywsM_Ia|?Ze5j^2U~<
+zF~CQYOTZtKL|lo(Qaz<!eH0<yeD9-0XXPIBheBCjN(s+leq=mJJ;13kJ_Z_=6?*Uo
+z4kl7eBW+Ey1q$O1k`(M;`wZ4qJJw!1_T{k#^%4h=BP$NQp6gTn>JV&jE<i7}0w&+}
+zhwB6xnFYlWV`n~IdOQ43O$zf>e}f=og&uy-yXN6_Y))n^v?0iazVQf!^1Mm7AdASl
+zsgqEgx=0+{9^TeLs+B2@(hB_svcS-u*LjR^IIlMR1v<Y<n1*M4^F*QGt9&Va@H6Q8
+zje0Ls8MJi*IvNWab^=NI;*+A%d-nAq;-s<AB*Z}qS7T98``zo3CF`$GGg#EW8Jf^=
+zjbY&{2ch%lDZOQH7i|7c0Mt{%f~c&@9^eFsSD>4rVg#UHHG%>)!4EM7B%RNfuU|tV
+zJ#y?of8R9NUgFSnWa8^!cn&l@^l+H=Om&;#la28&JCfl8pf}SjWbst$*a9+%OX;)&
+zkKi9MZ^{)8!$6O-g0*_<$5oCt?9)3lW3Vm{n)wSeOnq~$egkrxq_G&O-ruzSc2o}S
+zd)_`T2cBa5Xc`}L<`;BREVNV)*3F#<7Vx3nPqX-i#X|z^jAz;zu10+d=725=g`aR<
+zG+YPoscu8c++Uv?u0uA0oCLK{(Y%;?Rv{58$dH=tnPevRYLF0t^v6T@9U_;_EJ_Ii
+zEd*RE-rwjQPUPMhElzp5IAsa)E2KZBtFob2Nwb{Q&IqlBjwn)Bx~8@Mx_A0iubPoE
+zYf5T(n_Ij&%b>ox6m)o1MY>YpsaOQ5B>sSa)<b}Wr0y^1OQ94ecywrDnSAs6zuGUu
+z6nYLMHxu{Tm<Cl(T=71+?A@_4BL8VN!~YJYn>4lwzKppg5C=@zfBrYFOG0nyZWxV#
+zKG#pVGXoSxt%V#3#R0dCZ&9x!bCL1#%kZn}PFKG;V6o+OXorM|mP8QJ6@)?^9*?K%
+zDd~}9p<Z7H%aqH6Bk1kPJ5n>l8_xao$t0XXaK@4+LpvJ;&_kTFPT9|m@ucW0<|b5u
+zaXthJlwXat9@Fc=8)_*VW&)!`c5950%H{lP(Vs0&f$g~3dTsaBy)Q!pz#O3grT2g%
+z#3e-JeOBr=&&=%AaHLy!`eK}-ZJr1f6>CVm@IeKfhaarr&<6T0af8igCLDD{&I#iU
+zy@Az|#H<r0TAL20puu#b%Y@d;gmDe2gEuCw==W8#frJDa!H(haAcss|Xf%{Ejz@bh
+z&IA}B5sq=#U<d>;1O|h4mI*g^(v)-2x;EeCye)Gjkf&50S(qWJ+!w3X_dX#UZxGiI
+zo`>h2uJ&q*7<xP#?eJ}XZrKIIGYBFeX5bSNss!*@%_LJic?(GpK1G2#@X{<h7cf!E
+zA`_{VhYi`kw({EYUy$3@fW}y-Y~<q6p(!Y&2HV@;<0rcpKhH%4QQ3YnrW72zs6Y!a
+z@44|LAKESjQq{w?p1+0XNG-<@&$j}JphCt&vfZ7aW?TeKz!GI&c(FIFySbaK4U>q#
+z^mdRYuw{LLiP{40D7F8RNNP9dtD&-n>%u@aiGOw|5l||ZtxQ+_^AZre856!P{Jept
+zK;{tcADL-YSRN4$#h%5G73foYFR2+oN4xHzU}<l+LZebk*GmqkLme!Fv`?ry?`n`u
+zRL7CvCxrq*q@750ZZAI5wbls+w%CD`mM%3E(%B^FU3XB)qZNa%!ti|_9=U$7)4)gt
+z^o}{+@J2a9?lLQf0UR`KbQ28Y%yW58wb@7nk(yD@0QL5-bs8+#dBlPP@jj%C9ETOx
+zFtX;2!tJ=HBj$YIyy6Z>lGU4yU;v>J+ShqI%nZJRn!^I-+?$DWA+SV7DFZ6nd(8v`
+zc8c)-rj^GIIKXuabDW1KC&0erZXjZ;CQKP4dD)`4T5FCX-2ue*h$IntH8U}L66S!y
+z4>Y$>G3$VsWpgHp_vEqD-Frd<QlOHb?1C0vG150_pFmpd*@c3JJ}%2)BI2X$Yg;L}
+z(}fjdFPH+P9G^r5iKEh^@|(ll$<H^Vq7#4Y+Ygyn!SDMXaDrhkt@yZ=4m^a5NUe|x
+z&rY<=LS}%-;G>W1`i-T*sSmv~|8-}9v=j>Qrc7A&Gj&-6GRGhEZzcvZ_9|-$4BNft
+z5+wZ(VY?evpX2~1NFYS7!OY5?B&PTvt@s0p88M_Kurc;be?7Av)6R`9fVxM@T-Yeu
+zO)Z4%aJ5(Iy>$zbB`wplMGOCLANOCL#{EA$ZsO||D2v306tuW3a?AvfC2Q<d4aPv%
+z?3E&EmUx@lUwP+OyRr4%GGy{-<WhcMwRg=%n_@)uzX-+7i&6$$P=FO-biNcy8sGY=
+zBQ#W&$}tITg|Jyi)P@uoesj7a-GB>(9i_~STq6W46M_b0&T++qR`fC=edv`@M(ANY
+zxu<nGqQ2`WOQ_n9@4vn2vn*9unSq_7LU1Rn`=-JDX7;)ddM}n#;vG;e28#O+W^GA0
+zSjrqIi_Ha_l3VbirjA&m<abJr!}HXYmJO9hf7bQ{>TP~shmw&>2%;;`N)GC^8nNP8
+zzuuR{TZv;3F+q@%I&;v>r4|VGL4QfHJW)+H8$N(VuyT%6?CY}88If<p2-G-Q@O|jv
+zYA+YizlNb>C+>$JW+}-+o-`oAV)KAcxM)QC2!~SF;voPyORLVa`~bxXJO3KDWDtTZ
+zwdq6Q?lXIFe(^|c*?aX~1smb!&S;pc3sXLN`9Z|Ena^16-MVh!(*JJ{jCi}At6%YM
+zP-FO@|8A}N+>@{sU;;%zbOl#5G9l+1*YIe2aTOHCHU5C%jAetoxNq215;_QF;p`G6
+zk6-$;<yM1ioSea>-LI)P)OuizxLlf^g<uGFb<d$1q@8ajgCCJ=TXijG0TYY8Nr|&i
+zR_(w38+TdOk&HcUCQ5|FkyLw0lfw~U&VGNR|8Y9pO5%3Ei%DZ6d~g7-aZ{!vrb{?#
+zn3ghu&iI6%Ex#j+NzGl#cjF;<L4dSZqgOj(!NgKPq<){C0q#q77z7-_3U?ApvR++X
+zKurr-NFK*`;4#pC92BiwvShX3xa98^C;4g^erpe$gS93?p0+1f{mUNbUi}pJdGMeL
+z*)?dm!yuooXExu!&{oJBF}ge|Cn_fxi6Nx<Nm0b$@Hh;Fa0&CID9l!HoChO=u3N=5
+zFC4~w(_kG_rq)KJ4>T|yDMtBC9~k#3QLpd!UJTE}CgB08q?K$10b)xTTo%;vFPNwS
+z+Xomew0Nc=aO*dmvB(kktVSyL(M53X#Uz{j=I?ahtFH9OaZ48LvlP)9cTFZlOpT7@
+z&2&S(w<X9i^gJ`R<n?Htv<=YsPAxcoMIF#3BGewqe^eF-^zW3C`YL{S2RC9!^|0NU
+z5^wBAJ!<_tvzUkjAx$ixZE&YJ1_5>v_y>qA%1uFd9vXmqWIWx6-V<@j1EG#RJA{Ll
+zh#?TjmK)>dTJb}IB65phtX!0ZNg`mIj|*_G+f`u{`8Gn<<dZoVs|%Usr?}S~t}C(_
+zdvUtP%g}iVRaO{Bqo|!@zS#?pG70g-2Fex<&SW<WOlOd#VzCH}MRa1#T<QdulEM$P
+zUJF}3RK5}4$S8(Rf)7$~Jgf0!x(QTp!-rVt3Tw@}LL55+Xy`Jx1<?8kyooH$1YAA@
+z5Tzapv3!LTe#uS!hV2F*iC#ls1CravZ~pD&L*Idre2rA-T3Igu%?oJo1v2RRPD;(P
+zj>d!;tEQ+QcL{kPx;VBFf{-Fbk|VH6@(-5_iu)%$S2Clmkfpel%RPBb%Xj^C3a6KY
+zOR>q}6L6?ll$1reAEX1*OjsF{Vx&gKLl%<L4>&>u>&ANqtIf<TtNWD2DIwMC7B>0S
+zJ)_uoej}2icfq?m>>b8&>_#*WH_OoL5#zP@24SinE>*FmgdF|xsaX<7bsK8l1TD-9
+z#`2`d%$~5&ikG0=fCV^U5?IV{7U6<BeqL+t$<!-fm|<+iS_r%>SA}*ju4DHpT)EYM
+z`?GTR!9d74=pJGx<b9CB&{EG{euFwSZY~=R-*+^*ImGFHKXu>cUjbbVhMP3FC~QA2
+zTktEinXa7$C=(ll;F&h&S{M#B6wLI<k^3dAZ~x0AFSIjcC{QjC{KF?{v<vM!ihsMR
+z5G)NWPYvv=!$rY|`x}byb;K}rEMuDv-cB$_mc*b$K`y^fLY&Vu^x#Zn4Zm*@t1B7c
+zZ2js8PY8!Y1J3=#HMS-pxp{egD!XrP+lC%z2pl)jE+bN9ogY3*ak^517%1X{XGLmF
+z!3g4=561gi?N7Ki#r4>`UanH({m|@jR+QAC{@A5KwHH2OP=U_{AUvS!3VaTLo9fkr
+zi?RcWcxGu1*8LFY2>`H%SmWH`LGt(jAL9=syiWGGR=vxDAX5IgSX2b3eFZzkiTle&
+z-}Mer?zvI<C>)}_Lq{xq0^#MYG3=%i+ksm#Twu}tCA%i)5J?fiRXn7|z&=ny_g~n`
+zE~5;8=qfxBv`3eyI1PD6GBf>%7=)y0!R!av5fowOWW-P?P?<%Lm;X|l1U_u#M`LWQ
+zxX5%PU8AhV;lm}N7P<-hyv*!@=G+g6#tx9xdEeYH5y=nbC+v0<TI@P*Rq-IwBQJ4_
+zTBI=HqtE4^Bl9A;fqQhDV&v)P-}zYuLF?u+4pZFhv%5=VD~K2$ZV?Ba8=lDNh+Dnh
+z+mq-*0<8}%Gn|37G8}s;<RBSy3iRP@*zFO^N5GYcDkxt=QMhz^xIXe5rhRXJ=T|9!
+zEbH4JgKvApEXYk`9)d?~Fk`xrBddy>Me*4L9S*ES+{D&_V2=fmA{digs%4yv-iOP$
+za-;>wGFOcBuTef4a=zLN`UR-o%52{0EvWNbd8fCWf#k$(D?TI9_wUVnKi@pG;(ElT
+zY&tnKPK=G7Ptj{*Jf4TImmOR(MGr8PY0#U8EM$5sG+0CxQ|*<)1QI@^;0yRVc0!qq
+zvw|fjV7b9o;rhRD7t(^!u~=9)jsnbrv2__wqHb{Ih_5Sju%KVijpE*>Y$UvbvXbSv
+zB(pKS%PAjCBDrHW$w=iNtEI(k6)+K(iX&tPaktLyCe0?rH5jaDoiT0uI8)q+0eU*I
+z=Y0&a*@qu+zmAoVMnGIlpNSx00J9ths$_R>=fUEsNUP~gfkV1cVo^IKaW35S%bqZa
+z=7S~6e%g*tCQJbBP!P<n>Tu;%aPfcrJFW}DZP-eHN_>DQ@@)p}$O6;;cG6Mp;ica~
+zgrJ@XO(r4O@y$>z9&lZ-Be>)>v&WW@gz+=*peq|y4t0UeqBo;!QAh)GQF`?A%|MS8
+zK4^e6`TEo=pKtaCL0T;d>23x%u^t#2SQ;cy{~Cz`ANn7M%iJe?ofi*^(pPnU{$d>8
+zbzXbVxKdn|;)eP=-30o43|N!%MRjARaBO%#rbZL%T5e|V!nj%?V-UD**#QmV=r)k-
+zmnA;dgO5NAt=%Ue39a7%OA@y1ck3q}vl1<-kP&nhfz43KFgQ>}t#lWL+0M+GtA|f2
+zP(XPN;R&u0c2;lU#25oN!%1FPDK5Rj@98(7IUu-%Zkf9t_f{Kp6V8L=SB$>J1^YfT
+zv{f%A%FtJ&*ol(g*(dDYaW(szwJXoQy>?^8sgQpJz5lm^`Lnida0;^z@MxF)6*1a-
+zA>mN1Q)R(Le%O`BPi>wA`u*GKV&gV$|Naa2m%m7F6i5fR@-wF>HL99<O-qX%`l@(q
+z`#oo?V6)DZGWVWiDV5XGT!RlZs`_RMMP3KL-yZ+>l&Cvf`8Quxxn=z<e`sWwIP{f8
+zlyu?JmBF{Z`&DzUjhW9PvlRhn_t*!CC&pGhRnEfu=8NV@?re?Me$o?W)w?X?(8Ng`
+z#*;LzS!SKyxT?vrI<)SnQux7TxAu>3R5i8co5@Eezp}9j^fu9bAbz}Zms`lWv}sLI
+zQaq@CR)O}?8+hFz(XW~TuHAxhMnTcn>m4#3mHj-=@@{r`>ewm!<?vQ5x}3bqHE`yW
+za%)Xj&1Y%y+zbBOBr972s%@1mdY5q~`pyNDZUpsI>=ZW|n~J33?=eZ<R8RbYuUi)$
+zwKfpbDn7B$SY0qOO*Ah;S1})HPsN4%;>VF&f^FS`Z97+PorQ&)b(U8czB%Wvf5m*Q
+zrSz$0wv4~OI!}~ur<&Un+py?{{Y>qczhdPDrfbEWY7^tUW^L%_g7Ov9@tb|%rmgad
+zu~|Vpd}(OnATou#soLinch6{W-6Jck`}_77=O+dx>1&gwKi6tn?P6r|@?pB{Tu*50
+zKa}uVY|D^C_(5#$1~YkTi;-dTl3!<-iY(&-7GwoUae}_nAAYH!DaHZI!@qc&(|vo_
+z8Pznduy2-I@PUbw<ZRWJai6HlMP5T+8UH#1FIoA@rv7-3qi|_uWR;<1+~bw9+q+&I
+zOPTn<$T0Gvd;Qbt8k)^>Yz|C}U32qkRFG~Rj`8Y6ubv+Y-TR$99o4UdU3A_OEG>^T
+z@4O+>T>3-~NX`FpN9CGodM8evH<i=Y{rc=qSM9IQ4s9-bcgSj-QQ-yCz;g?Y4_i+5
+zO_(EHmuaqJH($rjdF8L2^maa;+kS8Q!y`p$(<02x<nuouK`X$ulh^pgR8Qxmug``A
+zy*-K(OPC{R*(I|t#CB^vnDba*TlhqBy?(yP>+(WCdE%rMQ{U!r+F0p|18LJFZK3D7
+z%A>q*e)ntn{$yaP*f&fXtt*Mr9k}wqPONEMf8>OLYK(FHmlqHDI%*gjT~4-~9Ft$U
+zV6?$nlYp2d3{M&=zHek$eY|H#|3$?=|C9zTnCdB-r;<5Ew+^LMy{X0C(spf9YEaW^
+z>2m9t7Z2s8dUBP5SC_l=*>RqUiP8;he&wjKSMRH{U!~<QTsj-5e{{SDgEo8jt~Og?
+zw>@Ti{NFYNNS~%wM4AJ)Zm3b;_IrOyg>S@eVOz7tHXaHxlk-hQlC)_mIKT~Wb8>d4
+zS3FH!<D=NS*#}OrzZ+_3J103#I?L^J?M_t^W(uREIMim;apXm<2jb)GMHP`^L)uf@
+z!W%O$O-n2E-*&FZf7_QkRu@cK*}Dw&BAz(OmsXeR8M)lgr+4+aAG}QfnTNK@zYR`H
+zd$Mxt<MN-Cg#Lc*i>_2<#;2Cc95T%pTP~?T63vs`eK99R(!;STl!qU5W++@?#DF<6
+zZI_$*kMiP*r%{;0ekGyU`)2umRhmm%=_UT?(DMUDRO{0o)fF8&rJcXBa^knaw;Jk8
+z^M>_%*v<pyn4Hp7PX-FnJm(~*l0E*an@+^1T259M@Qo&D1h*Vn*39iN3A`Jh>RD+v
+zJ|pF?*xj#>ipnblv<F6pqX|P_=`ZziMO_no-Dhpc|LUwcCQuR@R2j4*erL*zYP0c&
+z@4j$6Ey}-8xuE)n%xRwWk-uVt=txoDJ*~e9ViyJg5a!qwPGBmEk~$H&E{r`Wbv#H+
+z!$~gnF7R)A6gyd4uD`!J-*jMB?t^^0a-Ut{RX1dzQGdl^#*M4YriKF3<+2xlq%>^a
+z+o%filB1A{zT6S{H0n;>H@A#wy<cYq;TXk_-CtDvJw>@{$?T<C{iyCEjm9SW;ZbSR
+z!VmKChiz<&vEN7V22KcOtV{7;1u#|K7rQ=Q$^Sa-ae2i<v+>zKrA;%vWvi?N(s-&o
+zRl8}i<(w%8rC=2dpvLO(Oi#salQo?;Dz1iEwg2F#p}J|Sou#d7AWGJ@Pzxn<(`@|4
+z^lB;&9_oW0j{>H><(~g2cN&}};Rq&l#!sViON#f@5^0{9;MeW!8h9oK?CEq`WanUb
+zIP+9!6wQHW66{?2<%~<ag=NEU%dk2L3Jq)kW*AxjWF=o8Omz_FPJL>M*n8DL<oVGG
+zM#TG$J@|bD)6odLyR)&wQ>AIOE;zw}Gg)jo^v}C5LTWlZdC#?~kF{LlXOzA9+&QTu
+z;@Z<FP%=&r^~XKm<+j8NTNXQU_(n75rhla>X!{2QG#9Y5rzX*~8UugPQCN2&Bxza9
+zv#Vb|*ZMz?#(f;le6I2S>fwKu%N#YF95pO-?9QZlR@%P^sI`jHMfGfIxoc$N=fX+P
+z`vpp8umy+DZ&X#%(54f2-O+w;+4|mPiGbA*$W3ai?2AJx#vY>)WZVIVD+o#YG-^L>
+z&mpTH<v4|ge2(h5(rxyEw$Sh-$Ai+HuAR=k%kW-f1@*tc0mrZn)wK?fLNoU^!RrM*
+z@2YxQss99>KQ<%7;{dp4N7m0lfNs|pW?p=>?w)rCpDNSrP{$UiX1oj4x$z=nj)}4R
+zC&mWpT9@qM{4LO-Qf7?4vay<Le3%>g;YP9L<bB6fAJuIj2rOF_d_ZXu*0s~sEx)}t
+zz_t9#8LQS6URYTvNSNcCgx@2|W<N^<QO;7dtPKp9BVNBwy3xA(^?YE?%xh?2e#qOl
+zwM3r(9C?4*-*KKmp1s)8+_uo2gH%A>)6DJ4CqB#IUaywu`ImMWXbkn1z4r&ecY2#N
+z5vMU2jH-gwp=V^rT3)Amu3qb4NaP3dsP@@4(qgng4hfSN&6`<B6@2EwlcO@%fn~Se
+zR2e_l`mABFq3o?z*5Q$u_7SxUBX7E=Vs!5RIy~W^Y|mYEA=f=y1MbH2FGk!fj;sz6
+zW7bWpC6<#L`WJ?tTW2YK_*8TEj)qMwL1C|t9Ba-PJbesp%_VbpI`_U+V|bujNmqZV
+zJL(%-g`?L)GuJos;%J9Zl{j%h_`x$k)*k!8xu__sU2ad)W`q776N^*#hA7d4SONXt
+z0VKZ85~`S5J3}1`7*cS|#5K3dBgIzlhj(+b#Pd4%fz_YV!JZw+aZISY70eNM1;?%h
+zKWuln<zp(@9?$i~FIcmX^o1bu#@@_R#?!xi@j49Z>R<ap+_?q~2_2tWLZmq{7XUP=
+z`f6D1Llmqtdg|R*<^wThej#-V-Pa8+b)x=&-t0bW=@a8ar#xLFkL2Dz4xs=D`I?Gc
+zMhB)uUgX?SI<#ys2$YS+MidcYzClqE2dAaQLD!<Qzl`WOJv!*60<dHArEjXfStN;<
+z*e9j#|0^~I0A7<P>QB1+;{Ke+*-XO>BpF@uw|LQiB(i$&SlOrvcF)&L{-+ef=`WpK
+z{PyL{tf2IQNgNs}w*R-m7Zn#S`foF(?i^`8pf~!)Fr$V9gLLz+TJ7pi@sc3F;MmG|
+zN#SC~JpTmh49~=b&ws9Ucx_<Yqf(FH*wW|b5reO})lj4LPgC1M@knTa-R-UJ!BTrV
+zPA}H|p`fv&k!&g!-21N0WuBzg!jhJ)$u})nOxo4<F_9toXuj~;QN6Noo3*UO&)%Qu
+zbpOdw1^CunpLq#-4;TdaY#BubHNSe)_M7|qW&(G~`>uJU2THGMuvSN`Kpw&tou+tY
+z3y_p<^{X2<3q8uU9QGgxl7*NJ_zU_V(V>akLYWdk*JP4StOUU!On=T~C;*{iDhf|B
+zCq*}FL+s^+gU%n@(uKZRtZ6fcP_aK**3xn`Z5q~H^s@A-9Mu~Y(OG}YM9L*d3g=kc
+z2ByqtemF2n?X1BaL^$tM%FV|+{{|MSf8G$_YW6`B29&+if>0j%W21A@@K+>9MDs*m
+z{Ic+Mv5a5i6m<EuhPGt)Yn8??OoEmDy3h5@RiNIq=va=d80a9`g5P$!eizK$DiV2x
+zE1LxK0so5q<4uBpeXS)X!SmVXJyxCNb;eM1x^)N1j6g%ek-R_kx8bhShqlf>u!=zk
+z=UWJIsG?g({gaU<6-1>&=1EciZ(7@@$k9tC_}zMAPJDW1U1rFUyDx?u8R0$j;dU*H
+z{43U1xpjH<<DDHBXB0O*)zkx-BpPjoyipf8FM1<Bel_>hX8qvT^UbEt708WGy_o{n
+z_prnBObitO%t*7^CYdo@Qj^cF)Oi<IOI$nS3QY%+)&_nsD3;XQLJ#3NdqM|4%gUHz
+zbIWJf_V^2n--x;6SLL<G^hmM8r8UjeUL*J->`@@dEf-k7V7llE8e_to#X4|45>k!f
+zGG5rDfrX*EkV=!EYbDG{cZ=C5QIurR6m2gw=1nc`drtH&EzR>a<<?PE5v<xmOW&;E
+zJZ*w+rH})9QPG!#Zg!Rf61A7Y$^d|{mvyCi#ZBmzsCo4JUuRUKXTgDz2|~TFGlt3_
+zz(&E+YG}hK!gqa;MBq?hxQPLhuWL<C2gBXMHx3Jen+J`iG|9p>(66_xAM6auN##s_
+zopJd5=*Uqh&(i0#UJ}ZUt0ax9EUV`VD&Lq34n^}!Wmx@!(Q~`gC+aV~5eajwYwf&N
+z3?h4V+2hYi6XRw-GkJfCOfM)Qir(rpS-bL0RZzSnE?zR2@0TLUSSvULk>z_(YVMo_
+zbKx0zB(Y%SYR)b4h@r{g`hCapO@W%5$6Bg_QoAJ#iG0Y|M>k{^yMCxgGix;v07=U{
+zvwnu)Wzt7a|8g=k4;G{#i+kgY?8TWh3;Z4a4Ly;)PF+A4OB_NAI`>1$47p!RtZ$m<
+zYSdifWNsr|Ky=NVivo4QpPMR+N&ke_+>p7R4uSUdjn*BAUmJ+ChGSmII`$K_rq$_g
+zd+=Oe{DHwE>#(zLa4fC5*vFFDi>+BdZ(V=GXO}auF;lxCvv;W^VgSA>)(T81m}_k-
+zI0TJ;bLL}LZeUsEQ%#Gx#?_<}0lABI<(&p5x-fPzKo}4E+v7Um?6yai{Y6|H+tjC;
+zS%)7LE%)ckTYu{sT>lxWzkiyBCbj|A|IY(@5uaoVrGF7xE+~Lu{G%M+=zsr1u3Pa_
+zu!yNOvm3JyFmfc9g?^CT7OLCt>c)K3p61x_qpD^rVwn|7e*y#lmvnI2RBc!iF!A^E
+zn1^c!fMEGi9vY=I$-kXe-^p=%YDY(MxsKbrQlF>EufE+2u%SCat)Jx-?qaTBw(2In
+z>L%F_g-?nvj$EZyJM3_%C${Xqj&7dF4td3;o+<&fxs!(R?z{2Mfh|WK83?L7JRv|1
+z!(}t?BBA{O&6o<FYhgRi;cf243-iBsFx>TY=r|Eltg@f>T(U^zGRPwHz`I;Lf7QCU
+z$?I&^_ANIF9=Z8_?7{EvC&vIA>H-KX{7xv#b=1fcp~<dV_k=7u4EjwRZWiw*@WM}+
+z)1)vPzD^p$4rKK#nBN2TUgkVrG3^lnX?uKM66nKna>AUM_F}i4!lu;`bCAz)S%*`h
+z22pOvQx;oZ1~H|oKdOUXqtInT*5U9o(L9yh2mRB)I@6wOX`o0fCyST+8NX&66o{@|
+zq^MP<Z1B>6vkEpUdJ$lizZ?iunHVRZ3x|&aH5(7!okJV2H8{4N`)dMM_BkG`5cX=}
+zkQ;@QU@szSoBi7cojhS8npWSsD0h8`4h`0npZ|h2b*4~kl@BwdoWp^a{<b53C5kM+
+zCp2jnKw=r!KYaS9ipYax{r;3<&`#DekpUg?_eb|aVitC^Ve=G@FqgYK9SnuRz?Czh
+z@O2TBt#nS>>FP<`0v_2sY!1o=xq%7|L2DbR^ZY4=!S8?Bh7N%RH@||KMc<~`0Dcr9
+z%+%0445YDi@9M?b!vnR={H%<jp7remYs!YF{5FVZb4%su%q>@UqoQJ%Jtwp4gw$m^
+zcIy5>?~ih0IrL1VIB3_?5OL<I;sZ05g3f{fM?>NpH)fWBMG%f0KcHCP@(JE50CYZx
+z1|665*c@wV5T${D4#=|^E(cC>#NkW~2am~^58cP5=F1rw(CviC`^U3RZhLXNf7ZTZ
+zp~x6n3_=G8=eX|}q#ln5bAV@Lg9Jc{gaEJc(0*^0RNxngK|2M=T>daHQ6VT-ZV(&-
+zjA86X{tlC1J=eGyIfyR@x`Rnvv7bpt1CyEV|FfHsygRD;0X(`N_6Ctu0Tu&n)!vX9
+zd+m`KBU8NDw=mSS;!RZ%HE6H1lvVQabydx_5H*4+Gs1#7&?tRBsoKWAz^)v!d9wEG
+zd{eIAvTxWgv!8u*aWHY2Q!<4!k@eu5J1=eCQ`_?T=y7!?oX_pJKkJV)ELxer90M3P
+ze$l8J10w;&)&EyUdtlgWtiyMIwdy;O&myEQjjHXf6Q`x+H<>ipDkn0vIsBD|wu-Lx
+z{p0Rbf2cXhS}qWV8T~MJWKuh<YUITy5_ChAsYs`ccc-Aeb-51U(Z1Q}3&p>MtsYnt
+z?$7c+tJ3#_z%k;hM?Sk0q7)EJkO-ku4!oR6q1BU%Gc3%e8m}jH3Kfxc_@e<qq|&hH
+z)9Il#KD)RxJBojrI4L9LX_OTLF%S_n7a9PNge=m1&sNtx029_ry{u0m@C{6K?7~5F
+zU=xkgEMUeb)cW;7;kwo%lYzGHlTwR7aFLW)n6jYCv2bN2x-~wk2R1V#azXo5dt@!(
+z4qdMg|AK)@Uo@{tG!Jno8g%jZf<t73EzZQuUu?+~8=?U|ix==%$fGsc@u|6!wR3ql
+z?Xglc#fUjshf5r2nIE#3iJ?i$<Z#fHH)O>J{))9?;0TTl$~p`YIP{f*&p17}N5W1d
+zN-o}VGHw8-dXmtxoSra;r0OORl}u$$owaMA3M&;$satUD)r+71C|PR;RLY(k^;#V2
+z`8w>8WO9p^FLiP7&?<QO##LuxI<!8mt`dMn-*qpyU}Pv!L<OXE0$-l%;pPe!1&^$A
+z4czs^1V@l(EG+uL?=LUZ+K}H}ZVmdEqwAZk$Y)Fl9K#1;@higL%?8cGzq_Jb+`=km
+zUg9G}v$K@qSpWg~Gg!|5%}e^7vt{$Yh;!e=R|IMtF!4QG63f|8UM#uCTyf^b$c5^T
+z3Qa}n2=*)IoKgegzfObCKo01*<Y$O7<kOCYrUeiU0ut2UVZzO)MENI00q2N5(C!pB
+z5D2sP9UIn%O<4*9`W<B&EA|sraqt3GKpp(GB=c1MN{SRfba|GOR~(=oNomJm5afqF
+zj~+aWU3ozLAv%Nw(P#Q<4aCaLSLRF<;lPoxe&E3+2&qr-ZX)7@z@d4uB@O)(A^4e?
+zk-wWw9iE2%$6Ty0N~qFNV|W%t+f*&tG5}&O{uK#ED%AWedg0)7xIK!#a7*Hx^kB}c
+zyb8v1A30P2G-G$;z;l+>#_N+(tq#0Q-`WxO>8PD6r0KGp_*CC`DpCHY?dnU6U=e-{
+zlsakTzh96TUGm7Bl_`W6W{a=HD8*TnjsBqyL5t}mHLlWy13@;}bSB1;-WH=e<btKC
+xQLYO~nCPg1pEK=@$`7r3swqctY#5z-%zxFrzeRqh_iy;mVwJ7v+;>}k`XAdGrbz$*
+
 diff --git a/server/engine/src/engine/World.ts b/server/engine/src/engine/World.ts
 index c57ddd64f..879e914d9 100644
 --- a/server/engine/src/engine/World.ts
@@ -3109,26 +3668,28 @@ index 000000000..7a685c9ec
 +}
 diff --git a/server/engine/src/engine/clan/ClanTab.ts b/server/engine/src/engine/clan/ClanTab.ts
 new file mode 100644
-index 000000000..1b420b419
+index 000000000..6985b32c6
 --- /dev/null
 +++ b/server/engine/src/engine/clan/ClanTab.ts
-@@ -0,0 +1,163 @@
+@@ -0,0 +1,181 @@
 +import Component from '#/cache/config/Component.js';
 +import type Player from '#/engine/entity/Player.js';
 +import World from '#/engine/World.js';
 +import IfSetText from '#/network/game/server/model/IfSetText.js';
 +import { clanChatEnabled, clanStore } from './ClanLedger.js';
-+import { clanTabContent } from './ClanTabContent.js';
++import { clanTabContent, clanTabHelp } from './ClanTabContent.js';
 +
 +/**
 + * The clan side tab (sidebar slot 7, the empty bottom-left slot of this revision; login.rs2 sets
-+ * 0-6 and 8-13) and the online roster behind it. Event-driven: a member's arrival or departure,
++ * 0-6 and 8-13) and the online roster behind it. Its icon is painted into the sidebar background
++ * (content/sprites/back.png), so with the feature on every player gets the tab: members see the
++ * roster, everyone else a short how-to (clanTabHelp). Event-driven: a member's arrival or departure,
 + * and any /clan command that can change a roster, marks that clan dirty; only dirty clans are read
 + * from the ledger and re-rendered (once, for all their online members). Nothing is polled per tick
 + * except an in-memory presence check.
 + */
 +export const CLAN_TAB = 7;
-+export { CLAN_TAB_CLIENTCODE, CLAN_TAB_ROWS, clanTabContent } from './ClanTabContent.js';
++export { CLAN_TAB_CLIENTCODE, CLAN_TAB_ROWS, clanTabContent, clanTabHelp } from './ClanTabContent.js';
 +
 +type Presence = { player: Player; clanId: number | null };
 +const presence = new Map<string, Presence>();
@@ -3156,6 +3717,19 @@ index 000000000..1b420b419
 +    shown.delete(p);
 +    if (root() >= 0 && p.tabs[CLAN_TAB] === root()) p.setTab(-1, CLAN_TAB);
 +}
++
++const HELP = 'help';
++/** The not-in-a-clan view (feature on, player outside any clan). */
++function help(p: Player) {
++    if (root() < 0) return;
++    if (p.tabs[CLAN_TAB] !== root()) p.setTab(root(), CLAN_TAB);
++    if (shown.get(p) === HELP) return;
++    shown.set(p, HELP);
++    for (const [name, value] of Object.entries(clanTabHelp())) p.write(new IfSetText(com(name), value));
++}
++
++/** Ordinary side tabs are up (login.rs2 has run, no cutscene/tutorial tab reset in progress). */
++const tabsUp = (p: Player) => p.tabs[3] !== -1;
 +
 +function notice(clanId: number, who: string, text: string, except: string) {
 +    try {
@@ -3212,6 +3786,7 @@ index 000000000..1b420b419
 +        if (now === p.clanId) continue;
 +        if (p.clanId !== null) dirty.add(p.clanId);
 +        if (now !== null) dirty.add(now);
++        else if (tabsUp(p.player)) help(p.player);
 +        else clear(p.player);
 +        p.clanId = now;
 +    }
@@ -3222,7 +3797,7 @@ index 000000000..1b420b419
 +    const clan = store.clan(clanId);
 +    const viewers = onlineMembers(clanId);
 +    if (!clan) {
-+        for (const p of viewers) clear(p);
++        for (const p of viewers) help(p);
 +        return;
 +    }
 +    const online = new Map(viewers.map(p => [p.username, p]));
@@ -3253,10 +3828,12 @@ index 000000000..1b420b419
 +    }
 +    const cur = presence.get(p.username);
 +    if (!cur || cur.player !== p) arrive(p);
-+    else if (cur.clanId !== null && p.tabs[CLAN_TAB] === -1 && p.tabs[3] !== -1) {
++    else if (cur.clanId !== null && p.tabs[CLAN_TAB] === -1 && tabsUp(p)) {
 +        // A script reset the side tabs (e.g. a cutscene, then initalltabs): put the clan tab back.
 +        p.setTab(root(), CLAN_TAB);
 +    }
++    const now = presence.get(p.username);
++    if (now && now.player === p && now.clanId === null && tabsUp(p) && (p.tabs[CLAN_TAB] !== root() || shown.get(p) !== HELP)) help(p);
 +    if (!dirty.size) return;
 +    const ids = [...dirty];
 +    dirty.clear();
@@ -3278,10 +3855,10 @@ index 000000000..1b420b419
 +}
 diff --git a/server/engine/src/engine/clan/ClanTabContent.ts b/server/engine/src/engine/clan/ClanTabContent.ts
 new file mode 100644
-index 000000000..b409c567d
+index 000000000..63d715fcb
 --- /dev/null
 +++ b/server/engine/src/engine/clan/ClanTabContent.ts
-@@ -0,0 +1,46 @@
+@@ -0,0 +1,75 @@
 +import { toDisplayName } from '#/util/JString.js';
 +import type { ClanTabState } from '../../../../../sdk/clan-types.js';
 +import { rankName } from './ClanRanks.js';
@@ -3328,6 +3905,35 @@ index 000000000..b409c567d
 +    };
 +}
 +
++
++/**
++ * What a player outside any clan sees in the clan tab (feature on): how to start or join one. The
++ * same components as the roster (no extra interface), with an empty bot state (state.clan = null).
++ */
++export function clanTabHelp() {
++    const lines = [
++        'You are not in a clan.',
++        '',
++        '@yel@Start a clan:',
++        '/clan create NAME',
++        '',
++        '@yel@Join a clan:',
++        'Ask a member to invite',
++        'you, then type:',
++        '/clan accept NAME',
++        '',
++        '@yel@Clan chat:',
++        'Start a line with /'
++    ];
++    return {
++        title: 'Not in a clan',
++        members: 'Type the commands in',
++        online: 'the public chat box.',
++        names: lines.join('\\n'),
++        ranks: '',
++        agent_state: ''
++    };
++}
 diff --git a/server/engine/src/network/game/client/handler/IfButtonHandler.ts b/server/engine/src/network/game/client/handler/IfButtonHandler.ts
 index 451b3e05e..b39923925 100644
 --- a/server/engine/src/network/game/client/handler/IfButtonHandler.ts
@@ -4091,15 +4697,15 @@ index 000000000..959268ec2
 +});
 diff --git a/server/engine/test/clan-integration.ts b/server/engine/test/clan-integration.ts
 new file mode 100644
-index 000000000..7e942a544
+index 000000000..f38b45cf5
 --- /dev/null
 +++ b/server/engine/test/clan-integration.ts
-@@ -0,0 +1,454 @@
+@@ -0,0 +1,467 @@
 +// Clan storage integration: real packed content, Player inventories/saves, compiled bank scripts,
 +// native handlers (bank-screen button, storage grid, count dialog, public chat), the SDK porcelain
 +// over the encoded hidden state, and the clan hiscore routes. Temp ledger only.
 +//   bun run test:clan:integration
-+import { mkdtempSync, rmSync } from 'node:fs';
++import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 +import { tmpdir } from 'node:os';
 +import { join } from 'node:path';
 +import { strict as assert } from 'node:assert';
@@ -4433,9 +5039,22 @@ index 000000000..7e942a544
 +    const tabState = (p: P) => collectClanTabState([{ clientCode: LITE_TAB_CLIENTCODE, text: tab(p, 'agent_state'), children: null }], 0);
 +    ok(CLAN_TAB_CLIENTCODE === LITE_TAB_CLIENTCODE, 'engine and lite client agree on the tab clientcode');
 +    ok(Component.getId('clan_tab') > 40773, 'clan tab uses a reserved interface id');
++    const { packedMismatches, iconPixels } = await import('./clan-tab-icon.js');
++    const iconMissing = await packedMismatches(readFileSync('data/pack/client/media'));
++    ok(iconMissing.length === 0 && (await iconPixels()).length > 300, `packed backbase2 carries the clan tab icon (${iconMissing.length} pixels missing)`);
++    outsider.tabs[3] = -1; // before login.rs2 has set the ordinary tabs
 +    for (const p of [tester, geometry, outsider]) clanTick(p);
 +    ok(tester.tabs[CLAN_TAB] === Component.getId('clan_tab') && geometry.tabs[CLAN_TAB] === Component.getId('clan_tab'), 'members get the clan tab in slot 7');
-+    ok(outsider.tabs[CLAN_TAB] === -1, 'non-members keep slot 7 empty');
++    ok(outsider.tabs[CLAN_TAB] === -1, 'non-member: no clan tab before the ordinary tabs are up');
++    outsider.tabs[3] = Component.getId('inventory'); // login.rs2 has set the ordinary tabs
++    clanTick(outsider);
++    ok(outsider.tabs[CLAN_TAB] === Component.getId('clan_tab'), 'non-members get the clan tab too (its icon is in the sidebar background)');
++    ok(tab(outsider, 'title') === 'Not in a clan' && /\/clan create NAME/.test(tab(outsider, 'names')) && /\/clan accept NAME/.test(tab(outsider, 'names')), `non-member help view: ${tab(outsider, 'title')} / ${tab(outsider, 'names')}`);
++    ok(tab(outsider, 'members') !== '' && tab(outsider, 'ranks') === '' && tabState(outsider) === null, 'help view: no roster, no bot state (state.clan = null)');
++    const helpWrites = tabText.get(outsider.username)!.size;
++    tabText.get(outsider.username)!.clear();
++    clanTick(outsider);
++    ok(tabText.get(outsider.username)!.size === 0 && helpWrites > 0, 'help view is sent once, not every tick');
 +    ok(tab(tester, 'title') === 'Stud Unit' && tab(tester, 'online') === 'Online: 2' && tab(tester, 'members') === 'Members: 2', `tab header: ${tab(tester, 'title')} / ${tab(tester, 'members')} / ${tab(tester, 'online')}`);
 +    ok(tab(tester, 'names').split('\\n').join(',') === 'Bot Tester,Bot Geometry', `tab names (online, rank order): ${tab(tester, 'names')}`);
 +    ok(tabState(tester)?.onlineCount === 2 && tabState(tester)?.members[1].rankName === 'Captain', 'tab JSON for bots');
@@ -4508,7 +5127,7 @@ index 000000000..7e942a544
 +    ok(recruit.tabs[CLAN_TAB] === Component.getId('clan_tab'), 'tab restored after a tab reset');
 +    say(tester, '/clan kick clan member');
 +    clanTick(tester);
-+    ok(recruit.tabs[CLAN_TAB] === -1 && tab(tester, 'members') === 'Members: 2', 'kick clears the kicked player\'s tab and updates the roster');
++    ok(recruit.tabs[CLAN_TAB] === Component.getId('clan_tab') && tab(recruit, 'title') === 'Not in a clan' && tabState(recruit) === null && tab(tester, 'members') === 'Members: 2', 'kick turns the kicked player\'s tab into the help view and updates the roster');
 +    say(tester, '/clan set notices off');
 +    // flag off: "/" lines are ordinary chat again, the tab goes away
 +    process.env.CLAN_CHAT_ENABLED = 'false';
@@ -4659,10 +5278,10 @@ index 000000000..db3c575ca
 +});
 diff --git a/server/engine/test/clan-preview.ts b/server/engine/test/clan-preview.ts
 new file mode 100644
-index 000000000..b6540c321
+index 000000000..52f316d4a
 --- /dev/null
 +++ b/server/engine/test/clan-preview.ts
-@@ -0,0 +1,174 @@
+@@ -0,0 +1,225 @@
 +// Render the bank and the clan screens with the real client drawing code (packed interfaces,
 +// real sprites and fonts), so their layouts can be compared side by side. Temp ledger only.
 +// Run from server/engine after a pack build: bun test/clan-preview.ts [output-directory]
@@ -4831,6 +5450,57 @@ index 000000000..b6540c321
 +    assert.equal(owner.tabs[7], Component.getId('clan_tab'));
 +    await sidebar(Component.getId('clan_tab'), 'clan-tab');
 +    await sidebar(Component.getId('friends'), 'friends-tab');
++
++    // The bottom-right of the game frame as the client draws it: sidebar background pieces, the open
++    // tab's interface, the bottom tab row (Client.ts draw order: backbase2, the open tab's red stone,
++    // then side icons 7-12; slot 7 has none, its icon is in backbase2 itself).
++    const media = jag('media');
++    const piece = (name: string, flip?: 'v') => {
++        const s = Pix8.depack(media, name, 0);
++        if (flip === 'v') s.vflip();
++        return s;
++    };
++    const icons = Array.from({ length: 13 }, (_, i) => Pix8.depack(media, 'sideicons', i));
++    const frame = async (iface: number, active: number, name: string) => {
++        const pixels = new Int32Array(765 * 503);
++        Pix2D.setPixels(pixels, 765, 503);
++        for (const [n, x, y] of [
++            ['backvmid2', 516, 205],
++            ['backright2', 743, 205],
++            ['backvmid3', 496, 357],
++            ['backhmid1', 516, 160],
++            ['invback', 553, 205]
++        ] as const)
++            piece(n).plotSprite(x, y);
++        Pix3D.setRenderClipping();
++        if (iface >= 0) client.drawInterface(IfType.list[iface], 553, 205, 0);
++        const bar = new Int32Array(269 * 37);
++        Pix2D.setPixels(bar, 269, 37);
++        piece('backbase2').plotSprite(0, 0);
++        if (active === 7) piece('redstone1', 'v').plotSprite(42, 0);
++        if (active === 8) piece('redstone2', 'v').plotSprite(74, 0);
++        [
++            [74, 2],
++            [102, 3],
++            [137, 4],
++            [174, 2],
++            [201, 2],
++            [226, 2]
++        ].forEach(([x, y], i) => icons[7 + i].plotSprite(x, y));
++        for (let y = 0; y < 37; y++) pixels.set(bar.subarray(y * 269, y * 269 + 269), (466 + y) * 765 + 496);
++        const crop = new Int32Array(269 * 298);
++        for (let y = 0; y < 298; y++) crop.set(pixels.subarray((205 + y) * 765 + 496, (205 + y) * 765 + 765), y * 269);
++        await png(crop, 269, 298, name);
++    };
++    await frame(Component.getId('clan_tab'), 7, 'sidebar-member-clan-open');
++    await frame(Component.getId('friends'), 8, 'sidebar-member-friends-open');
++    // A player outside any clan: the same tab, how-to view.
++    const outsider = load('outsider');
++    outsider.tabs[3] = Component.getId('inventory');
++    clanTick(outsider);
++    assert.equal(outsider.tabs[7], Component.getId('clan_tab'));
++    await frame(Component.getId('clan_tab'), 7, 'sidebar-nonmember-clan-open');
++    await frame(Component.getId('friends'), 8, 'sidebar-nonmember-friends-open');
 +    console.log('Native client renders written to ' + out);
 +} finally {
 +    clanStore().db?.close?.();
@@ -5356,6 +6026,165 @@ index 000000000..0beb7b10b
 +        expect(t.store.log(clanId, 100).map(r => r.action)).toEqual(expect.arrayContaining(['create', 'invite', 'join', 'deposit', 'refused']));
 +    });
 +});
+diff --git a/server/engine/test/clan-tab-icon.test.ts b/server/engine/test/clan-tab-icon.test.ts
+new file mode 100644
+index 000000000..23cc585a2
+--- /dev/null
++++ b/server/engine/test/clan-tab-icon.test.ts
+@@ -0,0 +1,65 @@
++// The clan tab icon painted into the sidebar background (see clan-tab-icon.ts) and the tab's
++// not-in-a-clan view. The packed media check runs when a pack build exists (data/pack/client/media);
++// `bun run test:clan:integration` always checks it.
++//   bun test server/engine/test/clan-tab-icon.test.ts
++import { existsSync, readFileSync } from 'node:fs';
++import { fileURLToPath } from 'node:url';
++import { describe, expect, test } from 'bun:test';
++import { Jimp } from 'jimp';
++import { clanTabHelp } from '../src/engine/clan/ClanTabContent.js';
++import { BACK_PATH, backMismatches, iconPixels, packedMismatches } from './clan-tab-icon.js';
++
++const MEDIA = fileURLToPath(new URL('../data/pack/client/media', import.meta.url));
++const REDSTONE = fileURLToPath(new URL('../../content/sprites/redstone1.png', import.meta.url));
++
++describe('clan tab icon', () => {
++    test('back.png carries the icon (re-stamp: bun test/clan-tab-icon.ts)', async () => {
++        expect((await iconPixels()).length).toBeGreaterThan(300);
++        expect(await backMismatches()).toEqual([]);
++    });
++
++    test('it sits inside the slot-7 tab: click box and the red stone drawn when the tab is open', async () => {
++        const stone = await Jimp.read(REDSTONE);
++        const { width, height, data } = stone.bitmap;
++        // The client draws redstone1 flipped vertically at backbase2 (42,0) for tab 7.
++        const opaque = (x: number, y: number) => {
++            const sx = x - 42;
++            const sy = height - 1 - y;
++            if (sx < 0 || sy < 0 || sx >= width || sy >= height) return false;
++            const i = (sy * width + sx) * 4;
++            return data[i + 3] !== 0 && !(data[i] === 255 && data[i + 1] === 0 && data[i + 2] === 255);
++        };
++        for (const p of await iconPixels()) {
++            expect(p.x >= 44 && p.x <= 78 && p.y >= 0 && p.y < 37).toBe(true); // Client.ts: x 540-574, y 466-502
++            expect(opaque(p.x, p.y)).toBe(true);
++        }
++    });
++
++    test('back.png stays within one 255-colour palette (the pack tool would quantize it otherwise)', async () => {
++        const back = await Jimp.read(BACK_PATH);
++        const colours = new Set<number>();
++        const d = back.bitmap.data;
++        for (let i = 0; i < d.length; i += 4) colours.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
++        expect(colours.size).toBeLessThan(255);
++    });
++
++    test.skipIf(!existsSync(MEDIA))('the packed media archive carries it in backbase2', async () => {
++        expect(await packedMismatches(readFileSync(MEDIA))).toEqual([]);
++    });
++});
++
++describe('clan tab for players outside a clan', () => {
++    const help = clanTabHelp();
++    test('says how to start and join a clan', () => {
++        expect(help.title).toBe('Not in a clan');
++        expect(help.names).toContain('/clan create NAME');
++        expect(help.names).toContain('/clan accept NAME');
++        expect(help.ranks).toBe('');
++    });
++    test('no bot state: state.clan stays null', () => {
++        expect(help.agent_state).toBe('');
++    });
++    test('lines fit the list column (p12, 161 px: about 26 characters)', () => {
++        for (const line of help.names.split('\\n')) expect(line.replace(/@[a-z]{3}@/g, '').length).toBeLessThanOrEqual(26);
++    });
++});
+diff --git a/server/engine/test/clan-tab-icon.ts b/server/engine/test/clan-tab-icon.ts
+new file mode 100644
+index 000000000..37c25e50b
+--- /dev/null
++++ b/server/engine/test/clan-tab-icon.ts
+@@ -0,0 +1,82 @@
++// The clan tab icon. This client revision loads 13 side icons and draws none at sidebar slot 7, so
++// the icon is painted into the sidebar background instead (content/sprites/back.png, from which the
++// pack tool cuts `backbase2`): no client code. The source icon lives in a clan-owned file; this
++// script stamps it into back.png and checks that it is there.
++//   bun test/clan-tab-icon.ts           # (from server/engine) stamp the icon into back.png
++//   bun test/clan-tab-icon.ts --check   # exit 1 when back.png lacks the icon
++// Placement: inside the slot-7 tab stone, backbase2 (496,466) + (46,4). Every icon pixel lies under
++// the opaque part of `redstone1v`, which the client draws over the background when the tab is open,
++// so the open tab shows the plain red stone (like an icon-less tab) and nothing peeks out of it.
++import { fileURLToPath } from 'node:url';
++import { Jimp } from 'jimp';
++import JagFile from '../../webclient/src/io/JagFile.js';
++import Pix8 from '../../webclient/src/graphics/Pix8.js';
++
++export const ICON_PATH = fileURLToPath(new URL('../../content/scripts/clan/sprites/clan_tab_icon.png', import.meta.url));
++export const BACK_PATH = fileURLToPath(new URL('../../content/sprites/back.png', import.meta.url));
++/** backbase2's origin in back.png (tools/pack/sprite/media.ts BACK_PIECES). */
++export const BACKBASE2 = { x: 496, y: 466 } as const;
++/** Top-left of the 30x30 icon frame, relative to backbase2. */
++export const ICON_AT = { x: 46, y: 4 } as const;
++
++export type IconPixel = { x: number; y: number; rgb: number };
++
++/** Opaque icon pixels, in backbase2 coordinates. */
++export async function iconPixels(): Promise<IconPixel[]> {
++    const icon = await Jimp.read(ICON_PATH);
++    const out: IconPixel[] = [];
++    const { width, height, data } = icon.bitmap;
++    for (let y = 0; y < height; y++) {
++        for (let x = 0; x < width; x++) {
++            const i = (y * width + x) * 4;
++            if (data[i + 3] === 0) continue;
++            out.push({ x: ICON_AT.x + x, y: ICON_AT.y + y, rgb: (data[i] << 16) | (data[i + 1] << 8) | data[i + 2] });
++        }
++    }
++    return out;
++}
++
++/** Icon pixels that back.png does not carry (0 = stamped). */
++export async function backMismatches(): Promise<IconPixel[]> {
++    const back = await Jimp.read(BACK_PATH);
++    const { width, data } = back.bitmap;
++    return (await iconPixels()).filter(p => {
++        const i = ((BACKBASE2.y + p.y) * width + BACKBASE2.x + p.x) * 4;
++        return ((data[i] << 16) | (data[i + 1] << 8) | data[i + 2]) !== p.rgb || data[i + 3] !== 255;
++    });
++}
++
++/** Icon pixels that packed backbase2 does not carry (decoded with the client's own sprite reader). */
++export async function packedMismatches(media: Uint8Array) {
++    const sprite = Pix8.depack(new JagFile(media), 'backbase2', 0);
++    return (await iconPixels()).filter(p => {
++        const x = p.x - sprite.xof;
++        const y = p.y - sprite.yof;
++        const index = sprite.data[y * sprite.wi + x] & 0xff;
++        return index === 0 || sprite.bpal[index] !== p.rgb;
++    });
++}
++
++export async function stampIcon(): Promise<number> {
++    const back = await Jimp.read(BACK_PATH);
++    const { width, data } = back.bitmap;
++    const pixels = await iconPixels();
++    for (const p of pixels) {
++        const i = ((BACKBASE2.y + p.y) * width + BACKBASE2.x + p.x) * 4;
++        data[i] = (p.rgb >> 16) & 255;
++        data[i + 1] = (p.rgb >> 8) & 255;
++        data[i + 2] = p.rgb & 255;
++        data[i + 3] = 255;
++    }
++    await back.write(BACK_PATH as `${string}.png`);
++    return pixels.length;
++}
++
++if (import.meta.main) {
++    if (process.argv.includes('--check')) {
++        const bad = await backMismatches();
++        console.log(bad.length ? `back.png lacks ${bad.length} clan tab icon pixels` : 'back.png carries the clan tab icon');
++        process.exit(bad.length ? 1 : 0);
++    }
++    console.log(`stamped ${await stampIcon()} icon pixels into ${BACK_PATH}`);
++}
 diff --git a/server/engine/test/fixtures/clan-hiscores.ts b/server/engine/test/fixtures/clan-hiscores.ts
 new file mode 100644
 index 000000000..107327fcc
