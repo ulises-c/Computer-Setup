@@ -30,6 +30,8 @@ card and game client stay unchanged. The portal offers:
 - **Bot controller** (`/rs-sdk/bot-controller/`): the only page that changes
   anything. The owner assigns a registry routine per bot (or Stop / Hold), and the
   workstation's no-LLM controller daemon applies it. See [Bot controller](#bot-controller).
+- **World selector** (`/rs-sdk/worlds`): every game world with its status and a Play link.
+  See [World selector](#world-selector).
 - **Play**, **HiScores**, **Grand Exchange**, and a link back to Homepage.
 
 `/rs-sdk/wiki` is a collection chooser, not a combined search. Each collection's
@@ -521,6 +523,31 @@ owner identity, origin, JSON body and CSRF token as the controller, only for ite
 list, rate-limited to 60 per minute and audited. The page has the live map's CSP exception
 (`script-src 'self'; connect-src 'self'`) and no frames. Tests: `test_central_bank.py` (status
 shaping, the store, the exchange and icon copy, the HTTP routes and the JS logic).
+
+## World selector
+
+`/rs-sdk/worlds` renders the world list the game server's status timer publishes every
+15 s (`2004scape/game_status.py` → `rs-sdk/worlds/worlds.py`, also served on the tailnet as
+`/rs-sdk-worlds.json`). It shows one card per world:
+
+- Live/Test role, online/offline with the container state, and players online;
+- shared or isolated mode (an isolated test world runs on its own data copy, and progress
+  there is thrown away);
+- hoppable, allowlist (test worlds admit allowlisted accounts only), and any shutdown countdown;
+- the short upstream commit, patch set and image id;
+- a Play link to the world's web client (disabled while it is offline).
+
+Below the cards, a table gives each world's SDK `SERVER` / `GATEWAY_URL` values for `bot.env`.
+The page also shows the list's note and generation time, and flags the list as stale after
+120 s.
+
+The page is rendered on the server and uses no JavaScript, so it keeps the strict CSP. It
+reloads itself every 30 s with `<meta http-equiv="refresh">`. Compose mounts
+`linux-game-server/2004scape/status` read-only at `/worlds` (`--worlds
+/worlds/rs-sdk-worlds.json`). It mounts the directory rather than the file because the timer
+replaces the file atomically, and a single-file bind would keep the old inode. A missing,
+empty, oversized or malformed list shows "World list unavailable" (HTTP 200), never an error.
+Web URLs that are not http(s) get no link.
 
 ## Install
 

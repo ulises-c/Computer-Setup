@@ -34,6 +34,9 @@ services:
       - "${PORTAL_OWNER_LOGIN:-}"
       - --public-origin
       - "https://${PORTAL_GAME_DOMAIN:?Run portal/install.sh}"
+      # World selector: the world list the game server's status timer publishes.
+      - --worlds
+      - /worlds/rs-sdk-worlds.json
     ports:
       - "127.0.0.1:8098:8098"
     volumes:
@@ -63,6 +66,15 @@ services:
         source: ${PORTAL_CONTROLLER_DIR:?Run portal/install.sh}
         target: /controller
         read_only: false
+        bind:
+          create_host_path: false
+      # World list (rs-sdk-worlds.json, also served as /rs-sdk-worlds.json), written by the status
+      # timer (2004scape/game_status.py). The directory, not the file: the timer replaces the file
+      # atomically, and a single-file bind would keep showing the old one.
+      - type: bind
+        source: ../../2004scape/status
+        target: /worlds
+        read_only: true
         bind:
           create_host_path: false
       # Writable: requested pages/images, taken by the source-side sync.

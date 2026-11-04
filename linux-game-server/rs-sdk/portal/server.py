@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
 import central_bank
 import controller
 import live
+import worlds_page
 from snapshot_policy import read_policy
 
 BASE = '/rs-sdk'
@@ -42,11 +43,11 @@ def esc(value):
     return escape(str(value) if value is not None else '—', quote=True)
 
 
-def layout(title, body, wiki=False, footer='Companion · no database downloads or background polling; bots are controlled only from the owner-only Bot controller page.'):
+def layout(title, body, wiki=False, footer='Companion · no database downloads or background polling; bots are controlled only from the owner-only Bot controller page.', head=''):
     theme = 'wiki-page' if wiki else 'game-page'
     menu_title = 'Wiki navigation' if wiki else 'Game tools'
     note = 'Read-only article cache' if wiki else 'Account state is not live presence.'
-    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)} · RS-SDK</title><style>{STYLE}</style></head><body class="{theme}"><div class="world"><header><nav><a class="brand" href="{BASE}/">RS-SDK / companion</a><a href="{BASE}/live-map">Live map</a><a href="{BASE}/bot-controller/">Bot controller</a><a href="{BASE}/central-bank/">Central bank</a><a href="{BASE}/accounts">Accounts</a><a href="{BASE}/benchmarks">Benchmarks</a><a href="{BASE}/wiki">Wikis</a></nav></header><div class="page-layout"><aside class="tool-menu"><h2>{menu_title}</h2><a href="{BASE}/">Companion home</a><a href="{BASE}/live-map">Live map</a><a href="{BASE}/bot-controller/">Bot controller</a><a href="{BASE}/central-bank/">Central bank</a><a href="{BASE}/accounts">Account Database</a><a href="{BASE}/benchmarks">Benchmarks</a><a href="{BASE}/wiki/2004scape">2004Scape Wiki</a><a href="{BASE}/wiki/rs-sdk">RS-SDK Wiki</a><a href="{BASE}/wiki/scraped">Scraped Wiki</a><p>{note}</p></aside><main>{body}<footer>{footer}</footer></main></div></div></body></html>'''
+    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)} · RS-SDK</title>{head}<style>{STYLE}</style></head><body class="{theme}"><div class="world"><header><nav><a class="brand" href="{BASE}/">RS-SDK / companion</a><a href="{BASE}/worlds">Worlds</a><a href="{BASE}/live-map">Live map</a><a href="{BASE}/bot-controller/">Bot controller</a><a href="{BASE}/central-bank/">Central bank</a><a href="{BASE}/accounts">Accounts</a><a href="{BASE}/benchmarks">Benchmarks</a><a href="{BASE}/wiki">Wikis</a></nav></header><div class="page-layout"><aside class="tool-menu"><h2>{menu_title}</h2><a href="{BASE}/">Companion home</a><a href="{BASE}/worlds">World selector</a><a href="{BASE}/live-map">Live map</a><a href="{BASE}/bot-controller/">Bot controller</a><a href="{BASE}/central-bank/">Central bank</a><a href="{BASE}/accounts">Account Database</a><a href="{BASE}/benchmarks">Benchmarks</a><a href="{BASE}/wiki/2004scape">2004Scape Wiki</a><a href="{BASE}/wiki/rs-sdk">RS-SDK Wiki</a><a href="{BASE}/wiki/scraped">Scraped Wiki</a><p>{note}</p></aside><main>{body}<footer>{footer}</footer></main></div></div></body></html>'''
 
 
 @contextmanager
@@ -217,8 +218,10 @@ def split_route(path, prefix):
 
 
 class Portal:
-    def __init__(self, root, game_url, homepage_url, wanted=None, live_path=None, controller_dir=None, owner_login=None, public_origin=None):
+    def __init__(self, root, game_url, homepage_url, wanted=None, live_path=None, controller_dir=None, owner_login=None, public_origin=None, worlds_path=None):
         self.root = root
+        # The game server's world list (status timer's rs-sdk-worlds.json, read-only mount).
+        self.worlds_path = worlds_path
         self.live_path = live_path
         # Bot controller: desired state lives in its own writable mount; the daemon's status
         # arrives beside live.json (read-only mount, written on the host by controller.py exchange).
@@ -335,6 +338,14 @@ class Portal:
 <p class="note">Positions and state come from the SDK gateway’s latest frame for each bot, read by the bot workstation with HTTP state requests and published here; who is in the world (including bots whose SDK client has disconnected, and other players by name only) comes from the game server’s public player list; nothing on this page can control, log in or message a bot. Activity combines the running routine, combat, dialogs and skills gaining XP. Underground areas appear in the map’s folded dungeon bands, as in the game’s own world map.</p>
 <script src="{BASE}/live-map.js" defer></script>'''
         return layout('Live map', body, footer='Companion · the live map polls a read-only JSON snapshot; it has no controls.')
+
+    def worlds_page(self):
+        try:
+            body, head = worlds_page.page(self.worlds_path)
+        except Exception:  # A malformed list must never break the page.
+            body, head = '<h1>World selector</h1><p class="note live-warning" role="status"><b>World list unavailable</b>: it could not be read.</p>', ''
+        return layout('World selector', body, head=head,
+                      footer='Companion · world selector: read-only, from the world list the game server publishes every 15 s.')
 
     def controller_status(self):
         return controller.read_status(self.controller_status_path)
@@ -521,9 +532,10 @@ class Portal:
                 ('06 / THIS GAME', '2004Scape Wiki', BASE + '/wiki/2004scape', WIKIS['2004scape'][2]),
                 ('07 / SERVER KNOWLEDGE', 'RS-SDK Wiki', BASE + '/wiki/rs-sdk', WIKIS['rs-sdk'][2]),
                 ('08 / EXTERNAL KNOWLEDGE', 'Scraped Wiki', BASE + '/wiki/scraped', WIKIS['scraped'][2]),
-                ('09 / GAME', 'Play', self.game_url + '/', 'Open the browser client. Your human and bot accounts share this SDK world.'),
-                ('10 / RANKINGS', 'HiScores', self.game_url + '/hiscores', 'Browse the game server’s player rankings.'),
-                ('11 / TRADING', 'Grand Exchange', self.game_url + '/market.html', 'Open the server’s market and trading page.'),
+                ('09 / WORLDS', 'World selector', BASE + '/worlds', 'Every game world with its status, players and a Play link; test worlds are marked.'),
+                ('10 / GAME', 'Play', self.game_url + '/', 'Open the browser client. Your human and bot accounts share this SDK world.'),
+                ('11 / RANKINGS', 'HiScores', self.game_url + '/hiscores', 'Browse the game server’s player rankings.'),
+                ('12 / TRADING', 'Grand Exchange', self.game_url + '/market.html', 'Open the server’s market and trading page.'),
             ]
             body = '<div class="eyebrow">2004SCAPE / RS-SDK WORLD</div><h1>RS-SDK Companion</h1><p>Play, inspect your accounts, compare runs and explore what the bots know.</p><div class="grid">'
             body += ''.join(f'<a class="card" href="{esc(url)}"><small>{tag}</small><b>{title} ↗</b><p>{description}</p></a>' for tag, title, url, description in cards)
@@ -531,6 +543,10 @@ class Portal:
             return 200, layout('Companion', body)
         if path == BASE + '/live-map':
             return 200, self.live_page(params)
+        if path == BASE + '/worlds':
+            return 200, self.worlds_page()
+        if path == BASE + '/worlds/':
+            raise Redirect(BASE + '/worlds')
         if path == BASE + '/bot-controller':
             raise Redirect(BASE + '/bot-controller/')
         if path == BASE + '/bot-controller/':
@@ -923,6 +939,7 @@ def main():
     parser.add_argument('--host', default='127.0.0.1')
     parser.add_argument('--wanted', type=Path, help='Writable SQLite file for requested pages and images (omit to record nothing)')
     parser.add_argument('--live', type=Path, help='Live fleet snapshot written by live.py receive (omit for no live data)')
+    parser.add_argument('--worlds', type=Path, help='World list JSON published by the game server status timer (omit: world list unavailable)')
     parser.add_argument('--controller', type=Path, help='Writable directory for the bot controller desired state (omit: read-only controller page)')
     parser.add_argument('--owner-login', default=os.environ.get('PORTAL_OWNER_LOGIN', ''), help='Tailscale login allowed to change controller state')
     parser.add_argument('--public-origin', default=os.environ.get('PORTAL_PUBLIC_ORIGIN', ''), help='https://host of the portal as browsers see it (Origin check)')
@@ -931,7 +948,8 @@ def main():
     server.portal = Portal(args.root.expanduser().resolve(), args.game_url, args.homepage_url,
                            args.wanted.expanduser() if args.wanted else None,
                            args.live.expanduser() if args.live else None,
-                           args.controller.expanduser() if args.controller else None, args.owner_login, args.public_origin)
+                           args.controller.expanduser() if args.controller else None, args.owner_login, args.public_origin,
+                           args.worlds.expanduser() if args.worlds else None)
     server.serve_forever()
 
 

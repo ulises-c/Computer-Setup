@@ -335,3 +335,25 @@ footer { margin-top: 32px; padding-top: 18px; border-top: 1px solid #68563866; c
 .cb-toggle button[aria-pressed="false"]:disabled { color: #555; }
 .cb-pending { font-size: 12px; color: #7a3b00; font-style: italic; }
 .cb-by { display: block; margin-top: 2px; font-size: 11px; color: #333; }
+
+/* World selector (/rs-sdk/worlds): one paper card per world, no script. */
+.world-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 18px; margin: 24px 0; }
+.world-card { color: var(--ink); padding: 22px 24px; background: radial-gradient(ellipse at 25% 10%, #f5e3ab66, transparent 65%), linear-gradient(95deg, #bda46c77, transparent 5%, transparent 95%, #a7895177), var(--paper); border: 1px solid #c2a262; border-block: 5px ridge #deca8e; box-shadow: 0 4px 15px #0007, inset 0 0 28px #8d6e3333; display: flex; flex-direction: column; }
+.world-card.offline { filter: saturate(.55); }
+.world-card small { display: block; font-size: 10px; letter-spacing: 1px; color: #756449; }
+.world-card h2 { color: var(--ink); text-shadow: none; margin: 6px 0 8px; }
+.world-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.world-badge { font: bold 11px Arial, sans-serif; text-transform: uppercase; letter-spacing: 1px; padding: 2px 8px; border: 1px solid #6b5530; color: #3d2f1b; background: #f5e3ab88; }
+.world-badge.tone-live { color: #fff; background: #2f5d2a; border-color: #1f3d1c; }
+.world-badge.tone-test { color: #fff; background: #5b3b8c; border-color: #3d275e; }
+.world-badge.tone-ok { color: #1f3d1c; border-color: #2f5d2a; }
+.world-badge.tone-bad { color: #fff; background: #8a2d1c; border-color: #5e1e12; }
+.world-badge.tone-warn { color: #1a0a00; background: #e0b440; border-color: #8a6a2d; }
+.world-note { color: #5e1e12; font-weight: bold; font-size: 13px; margin: 0 0 8px; }
+.world-facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0 0 18px; font-size: 13px; }
+.world-facts dt { color: #5b492c; font-size: 11px; text-transform: uppercase; letter-spacing: .35px; padding-top: 2px; }
+.world-facts dd { margin: 0; color: var(--ink); }
+.world-facts code { font-size: 12px; }
+.world-play { margin-top: auto; display: block; text-align: center; font: bold 16px Georgia, serif; padding: 12px 16px; color: #1a1205; background: var(--gold); border: 2px solid #6b5530; }
+.world-play:hover { background: #f0dba4; text-decoration: none; }
+.world-play.disabled { color: #6b5f4a; background: #c9b98f; border-style: dashed; cursor: not-allowed; }

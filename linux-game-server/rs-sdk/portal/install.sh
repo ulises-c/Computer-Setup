@@ -37,6 +37,8 @@ if [[ ! -f "$SCRIPT_DIR/assets/worldmap.png" || ! -f "$SCRIPT_DIR/assets/worldma
   python3 "$SCRIPT_DIR/worldmap.py" --jag "$JAG" --out "$SCRIPT_DIR/assets"
   rm -f "$JAG"
 fi
+# World selector: the status timer writes the world list here (mounted read-only).
+mkdir -p "$REPO_ROOT/linux-game-server/2004scape/status"
 [[ -f "$REPO_ROOT/server-base/timezone.env" ]] || bash "$REPO_ROOT/server-base/timezone.sh"
 if [[ -f "$SCRIPT_DIR/.env" ]]; then
   cp -p "$SCRIPT_DIR/.env" "$SCRIPT_DIR/.env.previous"
