@@ -40,6 +40,9 @@ services:
       BUG_REPORTS_FILE: /opt/world-state/bug-reports.jsonl
       GE_DATABASE: /opt/server/data/market.sqlite
       GE_ENABLED: "false"
+      # Clans and clan storage live in the same ledger: world 1 owns them too.
+      CLAN_STORAGE_ENABLED: "false"
+      CLAN_HISCORES_ENABLED: "false"
       BUILD_STARTUP: "false"
       BUILD_STARTUP_UPDATE: "false"
       DB_BACKEND: sqlite
