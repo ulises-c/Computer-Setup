@@ -44,5 +44,8 @@ repos:
     rev: v5.0.0
     hooks:
       - id: check-json
+      # Patch files are byte-exact (diff context lines end in spaces): never "fix" them.
       - id: end-of-file-fixer
+        exclude: \.patch$
       - id: trailing-whitespace
+        exclude: \.patch$

@@ -427,7 +427,7 @@ cmd_role() {
 
 # --- candidates ---------------------------------------------------------------------
 patch_set() {
-  (cd "$GAME_DIR/rs-sdk" && sha256sum Dockerfile ./*.js) | sha256sum | cut -c1-12
+  (cd "$GAME_DIR/rs-sdk" && sha256sum Dockerfile ./*.js ./*.patch) | sha256sum | cut -c1-12
 }
 
 cmd_candidate_build() {
