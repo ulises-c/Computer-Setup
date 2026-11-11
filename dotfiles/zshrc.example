@@ -41,12 +41,41 @@ command -v pyenv &>/dev/null && eval "$(pyenv init -)"
   export PIPX_DEFAULT_PYTHON="$PYENV_ROOT/shims/python3"
 
 export NVM_DIR="$HOME/.nvm"
-[[ -s $NVM_DIR/nvm.sh ]] && source "$NVM_DIR/nvm.sh"
-[[ -s $NVM_DIR/bash_completion ]] && source "$NVM_DIR/bash_completion"
-# macOS: brew's node may shadow nvm's — force the default alias, dropping any
-# prefix conflict
-[[ "$OSTYPE" == darwin* ]] && command -v nvm &>/dev/null && \
-  nvm use --delete-prefix default --silent 2>/dev/null
+# Sourcing nvm.sh costs ~0.5 s per shell, and ~3 s when it also resolves the
+# default alias. On Linux, put the default node on PATH directly and load nvm
+# itself, with its completion, on first use.
+if [[ -s $NVM_DIR/nvm.sh ]]; then
+  _nvm_bin=()
+  if [[ "$OSTYPE" != darwin* ]]; then
+    # Follow the alias files: default → lts/* → lts/krypton → v24.x.y
+    _nvm_ver=default
+    repeat 5; do
+      [[ -r $NVM_DIR/alias/$_nvm_ver ]] || break
+      _nvm_ver=$(<"$NVM_DIR/alias/$_nvm_ver")
+    done
+    [[ $_nvm_ver == (node|stable) ]] && _nvm_ver=''
+    # Newest installed version matching it (exact, or a partial like "24")
+    _nvm_bin=( $NVM_DIR/versions/node/v${_nvm_ver#v}(|.*)/bin(N/nOn) )
+    [[ -z $_nvm_ver ]] && _nvm_bin=( $NVM_DIR/versions/node/v*/bin(N/nOn) )
+  fi
+  if (( $#_nvm_bin )); then
+    # Drop any nvm node inherited from a parent shell, then put the default first
+    path=( ${_nvm_bin[1]} ${path:#$NVM_DIR/versions/node/*} )
+    nvm() {
+      unfunction nvm
+      source "$NVM_DIR/nvm.sh" --no-use
+      [[ -s $NVM_DIR/bash_completion ]] && source "$NVM_DIR/bash_completion"
+      nvm "$@"
+    }
+  else
+    # macOS, or no installed default: load nvm now (completion follows compinit)
+    source "$NVM_DIR/nvm.sh"
+    # macOS: brew's node may shadow nvm's — force the default alias, dropping
+    # any prefix conflict
+    [[ "$OSTYPE" == darwin* ]] && nvm use --delete-prefix default --silent 2>/dev/null
+  fi
+  unset _nvm_bin _nvm_ver
+fi
 
 # pnpm — enabled by setup.sh via corepack (the pnpm binary itself is a corepack
 # shim on PATH via nvm). Global CLI binaries land in $PNPM_HOME/bin.
@@ -87,7 +116,14 @@ fi
 # macOS: brew-provided completion definitions (must precede compinit)
 [[ -d /opt/homebrew/share/zsh/site-functions ]] && \
   FPATH="/opt/homebrew/share/zsh/site-functions:$FPATH"
-autoload -Uz compinit && compinit
+# Own dump file: Ubuntu's /etc/zsh/zshrc already ran compinit on the system
+# fpath and wrote ~/.zcompdump. Sharing that file, the two calls disagree on
+# the file count and each rebuilds the dump on every start (~2.5 s).
+autoload -Uz compinit && compinit -d "${XDG_CACHE_HOME:-$HOME/.cache}/zcompdump-$ZSH_VERSION"
+# nvm completion when nvm loaded eagerly above (the lazy path sources it
+# itself). After compinit: sourced earlier it runs its own on a shorter fpath.
+(( $+functions[nvm_ls] )) && [[ -s $NVM_DIR/bash_completion ]] && \
+  source "$NVM_DIR/bash_completion"
 zstyle ':completion:*' menu select
 zstyle ':completion:*' matcher-list 'm:{a-z}={A-Z}'
 zstyle ':completion:*' list-colors "${(s.:.)LS_COLORS}"
