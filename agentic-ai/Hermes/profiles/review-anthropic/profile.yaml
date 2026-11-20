@@ -1,4 +1,0 @@
-description: 'Read-only reviewer on Bedrock Claude Opus. Two roles: the Anthropic
-  seat for double-blind-review, and the kanban reviewer for work done by OpenAI-family
-  models. Never implements.'
-description_auto: false
