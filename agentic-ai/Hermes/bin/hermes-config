@@ -2,7 +2,8 @@
 # Deterministic sync between Hermes and private config repos: a work repo, a
 # personal repo, or both (a repo is enabled when its REMOTE is set in .env), so
 # the same tool serves a work machine and a personal-only setup. The repos hold
-# user-authored skills and, in one of them, a backup of cron jobs and scripts.
+# user-authored skills and, in one of them, a per-machine state backup (cron
+# jobs, scripts, config, memory, units).
 #
 # The repos are the source of truth: Hermes reads them through
 # skills.external_dirs, which also makes them read-only to the background
@@ -21,6 +22,8 @@ ENV_FILE="${HERMES_CONFIG_SYNC_ENV:-$HERMES_CFG_DIR/.env}"
 HERMES_HOME_DIR="${HERMES_HOME:-$HOME/.hermes}"
 LOCAL_SKILLS="$HERMES_HOME_DIR/skills"
 KINDS=()
+# shellcheck source=../lib/never-copy.sh
+source "$HERMES_CFG_DIR/lib/never-copy.sh"
 
 # sk- needs a left boundary: "task-driven-development" would otherwise match.
 SECRET_PATTERNS='AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{30,}|glpat-[A-Za-z0-9_-]{20,}|xox[abeprs]-[A-Za-z0-9-]{10,}|xapp-[A-Za-z0-9-]{10,}|ATATT[A-Za-z0-9_=-]{20,}|(^|[^A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----'
@@ -48,8 +51,9 @@ usage: hermes-config <command>
   scan [work|personal] secret scan + work-marker scan (personal) of the working tree
   pull                 fast-forward the enabled repos from origin
   push                 scan, then push the enabled repos (refuses uncommitted changes)
-  sync                 unattended: pull --ff-only, back up cron, commit all changes, push (cron entry point)
-  backup-cron          snapshot cron jobs + scripts into the backup repo (no commit)
+  sync                 unattended: pull --ff-only, back up state, commit all changes, push (cron entry point)
+  backup-state         snapshot this machine's Hermes state into machines/<host>/ of the
+                       backup repo (no commit); backup-cron is an alias
   hook <work|personal> pre-commit entry point (scans the index)
   pre-push <work|personal>
                        pre-push entry point (scans what the push publishes)
@@ -70,6 +74,12 @@ load_env() {
   # shellcheck source=/dev/null
   source "$ENV_FILE"
   set +a
+  # An ssh agent that needs a passphrase prompt refuses to sign in a cron run,
+  # and ssh then does not fall back to the key file. This lets .env name the
+  # key file directly. A GIT_SSH_COMMAND already in the environment wins.
+  if [[ -n "${HERMES_CONFIG_SYNC_SSH_COMMAND:-}" && -z "${GIT_SSH_COMMAND:-}" ]]; then
+    export GIT_SSH_COMMAND="$HERMES_CONFIG_SYNC_SSH_COMMAND"
+  fi
   local k
   for k in work personal; do
     [[ -n "$(kind_var "$k" REMOTE)" ]] || continue
@@ -438,7 +448,9 @@ push_oid() {
   git -C "$dir" config "branch.$branch.remote" origin && git -C "$dir" config "branch.$branch.merge" "refs/heads/$branch"
 }
 
-current_external_dirs() { hermes config get skills.external_dirs 2>/dev/null | sed -n 's/^- //p'; }
+# Hermes prints list items as "- item" or indented "  - item", depending on
+# how the value was last written.
+current_external_dirs() { hermes config get skills.external_dirs 2>/dev/null | sed -nE 's/^[[:space:]]*- //p'; }
 norm_path() { realpath -m "${1/#\~/$HOME}"; }
 
 set_external_dirs() {
@@ -596,12 +608,25 @@ cmd_verify() {
   for k in "${KINDS[@]}"; do
     if grep -qxF "$(norm_path "$(kind_dir "$k")/skills")" <<< "$ext"; then ok "external_dirs has $k"; else err "external_dirs is missing the $k repo"; fi
   done
+  section "state backup"
+  verify_state_backup
   section collisions
   c="$(collisions)"
   if [[ "$c" == none ]]; then ok "no name collisions"; else while IFS= read -r line; do err "$line"; done <<< "$c"; fi
   printf '\n'
   if (( ERRORS )); then printf '%d check(s) failed\n' "$ERRORS" >&2; exit 1; fi
   printf 'all checks passed\n'
+}
+
+verify_state_backup() {
+  local kind host problem
+  kind="$(state_backup_kind)" host="$(state_host)"
+  problem="$(state_target_problem "$kind")"
+  if [[ -n "$problem" ]]; then err "$problem"
+  elif [[ "$kind" == off ]]; then warn "state backup is off; this machine's cron jobs, config and memory are not backed up (set HERMES_CONFIG_SYNC_STATE_BACKUP=personal|work)"
+  elif [[ -z "$host" || "$host" == */* || "$host" == .* ]]; then err "bad state backup host name: '$host'"
+  else ok "state backup → $kind repo (machines/$host/)"
+  fi
 }
 
 cmd_adopt() {
@@ -715,15 +740,19 @@ cmd_pre_push() {
   (( ! rc )) || die "push blocked by hermes-config"
 }
 
-# --- cron backup -------------------------------------------------------------
-# Snapshot every profile's cron jobs and scripts into <repo>/cron/<host>/<profile>/.
-# Keyed by host because one personal repo is shared by several machines. Only
-# the fields a user configures are kept (see CRON_CONFIG_FIELDS), so a scheduled
-# run by itself never makes a diff. A job or script that names work (in the
-# personal repo) or looks like it holds a secret is left out, so one bad job
-# cannot block every other commit to the repo. Any read or write error fails the
-# whole backup and leaves the repo's cron/ as it was: a half-read snapshot would
-# otherwise be committed as the deletion of the good one.
+# --- state backup ------------------------------------------------------------
+# Snapshot this machine's Hermes state into <repo>/machines/<host>/: per Hermes
+# home (default = the root, else the profile name) its cron jobs, scripts,
+# config, SOUL, memory and hook allowlist; for the root also agent-hooks/; and
+# at host level the Hermes systemd user units, locally edited stock skills and
+# the names (never the values) in the root .env. Keyed by host because one
+# repo is shared by several machines. Only the cron fields a user configures
+# are kept (see CRON_CONFIG_FIELDS), so a scheduled run by itself never makes a
+# diff. A file that names work (in the personal repo) or looks like it holds a
+# secret is left out, so one bad file cannot block every other commit to the
+# repo. Any read or write error fails the whole backup and leaves the repo as
+# it was: a half-read snapshot would otherwise be committed as the deletion of
+# the good one.
 
 # Whitelist of what create_job/update_job in hermes-agent cron/jobs.py store as
 # configuration; everything else (state, next/last run, claims, pending slots,
@@ -738,11 +767,32 @@ CRON_CONFIG_FIELDS='with_entries(select(.key | IN("id", "name", "prompt", "skill
 # shellcheck disable=SC2016
 CRON_REDACT_TARGETS='def redact: if type == "string" then split(",") | map(if test(":") then sub(":.*"; ":<redacted>") else . end) | join(",") else . end; if $redact then (.deliver |= redact) | (.failure_deliver |= redact) | (if .origin then .origin = "<redacted>" else . end) else . end'
 
-cron_backup_kind() {
-  local kind="${HERMES_CONFIG_SYNC_CRON_BACKUP:-}"
+# Per-home files copied when they are regular files. A symlinked one is
+# tracked where it points (install.sh links the portable ones).
+STATE_FILES=(config.yaml SOUL.md profile.yaml shell-hooks-allowlist.json memories/MEMORY.md memories/USER.md)
+# Host-level names under machines/<host>/; a profile with one of these names
+# (or "default", the root's) would collide with them.
+STATE_HOST_DIRS=(default systemd stock-skill-edits env-names.txt)
+
+# HERMES_CONFIG_SYNC_STATE_BACKUP wins; unset, the older
+# HERMES_CONFIG_SYNC_CRON_BACKUP keeps current installs working.
+state_backup_kind() {
+  local kind="${HERMES_CONFIG_SYNC_STATE_BACKUP:-${HERMES_CONFIG_SYNC_CRON_BACKUP:-}}"
   if [[ -z "$kind" ]]; then if enabled personal; then kind=personal; else kind=off; fi; fi
   printf '%s' "$kind"
 }
+
+# Why the state backup target cannot be used; nothing when it is off or an
+# enabled repo. verify reports it; sync and backup-state refuse to run.
+state_target_problem() {
+  case "$1" in
+    off) ;;
+    work|personal) enabled "$1" || printf 'state backup target is the %s repo, which is not enabled' "$1" ;;
+    *) printf "state backup target '%s' is not work, personal or off" "$1" ;;
+  esac
+}
+
+state_host() { printf '%s' "${HERMES_CONFIG_SYNC_STATE_HOST:-${HERMES_CONFIG_SYNC_CRON_HOST:-$(hostname -s)}}"; }
 
 hermes_root() {
   local root="${HERMES_CONFIG_SYNC_HERMES_ROOT:-$HERMES_HOME_DIR}"
@@ -750,10 +800,10 @@ hermes_root() {
   printf '%s' "$root"
 }
 
-# cron_refuse <kind> <file> [<relpath>]: whether the file (and the path it
+# state_refuse <kind> <file> [<relpath>]: whether the file (and the path it
 # will have in the repo) may go into <kind>'s repo. 0 = refuse (prints the
 # reason), 1 = allow, >= 2 = scanner error (the caller must not back it up).
-cron_refuse() {
+state_refuse() {
   local kind="$1" file="$2" rel="${3:-}"
   run_scan "$kind" stage_file "$file" "$rel" || return 2
   if [[ -n "$SCAN_SECRETS" ]]; then printf 'possible secret'; return 0; fi
@@ -761,118 +811,302 @@ cron_refuse() {
   return 1
 }
 
-cron_fail() { printf 'cron backup: %s\n' "$*" >&2; }
+state_fail() { printf 'state backup: %s\n' "$*" >&2; }
 
-# Rebuilds <dir>/cron/<host>/ from the live state. Prints nothing on success;
-# stores what it skipped in $SKIPPED_FILE for the caller to report. Returns 1
-# with the reason on stderr on any error, before touching <dir>/cron. Callers
-# run it under `||`, where set -e is off, so every step is checked by hand.
-export_cron() {
-  local kind="$1" dir="$2" host root tmp rc=0
-  host="${HERMES_CONFIG_SYNC_CRON_HOST:-$(hostname -s)}"
-  if [[ -z "$host" || "$host" == */* || "$host" == .* ]]; then cron_fail "bad cron backup host name: '$host'"; return 1; fi
+# Runtime files, caches, credentials and backups (lib/never-copy.sh): never
+# copied, wherever they sit, and not reported (they are expected, not a
+# problem to fix).
+never_copy() { hermes_never_copy "$1"; }
+
+left_out() { printf '%s\n' "$*" >> "$STATE_TMP/skipped" || { state_fail "cannot write to $STATE_TMP"; return 1; }; }
+
+# The secret scan only knows token shapes, and a password or API key in a
+# config.yaml is free text. Matching YAML shapes one by one kept missing
+# some, so the snapshot copy is redacted by word, whole line, with no YAML
+# parsing. A line holding a credential word (CRED, any case, anywhere) is
+# kept only when it is a plain `key: value` or `- key: value` whose value is
+# a ${NAME} reference, null, ~, true, false, a number or empty quotes, so
+# max_tokens and the other *_tokens limits stay. Any other such line becomes
+# `key: <redacted>` (`# <redacted line>` when no key can be read), and the
+# blank or further-indented lines below it go too: its block, list, block
+# scalar or the rest of a multi-line value. A list at a `key:`'s own indent
+# is its value too (PyYAML writes lists that way), even when the key cannot
+# be read. Comment lines are copied
+# as they are. This over-redacts (token_counter: tiktoken loses its value),
+# the copy need not be valid YAML, and no config is left out for its shape.
+CONFIG_REDACT_AWK="$(cat <<'AWK'
+BEGIN {
+  skip = -1; CRED = "password|passwd|secret|token|api_key|apikey|bearer|credential"
+  # [- ]key<spaces>: with the key quoted, or plain; neither holds { [ ] } , : #
+  KEY = "^ *(- +)?(\"[^]{}[,\"]*\"|'[^]{}[,']*'|[^]{}[,:#\"' \t][^]{}[,:#]*)[ \t]*:([ \t]|$)"
+  REF = "\\$\\{[a-z_][a-z0-9_]*\\}"
+  SAFE = "^(" REF "|\"" REF "\"|'" REF "'|null|~|true|false|[-+]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)|\"\"|'')$"
+}
+# Match without a CRLF file's \r (else "\r" is not blank); copy the raw line.
+{ raw = $0; sub(/\r$/, "") }
+skip >= 0 {
+  match($0, /^ */)
+  if ($0 ~ /^[ \t]*$/ || RLENGTH > skip || (seq && RLENGTH == skip && $0 ~ /^ *-([ \t]|$)/)) next
+  skip = -1
+}
+$0 ~ /^[ \t]*(#|$)/ || tolower($0) !~ CRED { print raw; next }
+{
+  match($0, /^ */); ind = RLENGTH
+  if (!match($0, KEY)) { print substr($0, 1, ind) "# <redacted line>"; skip = ind; seq = ($0 !~ /^ *-/); next }
+  head = substr($0, 1, RLENGTH); val = substr($0, RLENGTH + 1)
+  sub(/[ \t]*:[ \t]?$/, "", head)
+  sub(/^[ \t]+/, "", val); sub(/[ \t]+#.*$/, "", val); sub(/[ \t]+$/, "", val)
+  if (tolower(val) ~ SAFE) { print raw; next }
+  print head ": <redacted>"; skip = ind; seq = (head !~ /^ *-/)
+}
+AWK
+)"
+
+# state_add <kind> <src file> <tree path> <label>: copies one file into the
+# snapshot (a config.yaml redacted on the way), then scans the copy (so what
+# is scanned is what is kept) and drops it, recorded as left out, when the
+# scan refuses it. 1 on any error.
+state_add() {
+  local kind="$1" src="$2" rel="$3" label="$4" dst="$STATE_TMP/tree/$3" why rc
+  if never_copy "$rel"; then return 0; fi
+  if [[ "${rel##*/}" == config.yaml ]]; then
+    { mkdir -p "$(dirname "$dst")" && awk "$CONFIG_REDACT_AWK" "$src" > "$dst" && chmod --reference="$src" "$dst"; } \
+      || { state_fail "cannot copy $src"; return 1; }
+  else
+    { mkdir -p "$(dirname "$dst")" && cp -P --preserve=mode "$src" "$dst"; } || { state_fail "cannot copy $src"; return 1; }
+  fi
+  why="$(state_refuse "$kind" "$dst" "$rel")" && rc=0 || rc=$?
+  case "$rc" in
+    0) { left_out "$label: $why" && rm -f "$dst"; } || { state_fail "cannot drop left-out $label"; return 1; } ;;
+    1) ;;
+    *) state_fail "scan of $label failed: $why"; return 1 ;;
+  esac
+}
+
+# state_tree <kind> <src dir> <tree path> <label>: every regular file under
+# src, hidden names skipped. A symlink, to a file or a dir, is never followed
+# (Hermes refuses ones that leave scripts/): it is reported as left out. Names
+# go NUL-delimited through a file, so find's failure is seen and a name with a
+# newline stays one name (it is left out: the left-out list is line-based).
+state_tree() {
+  local kind="$1" src="$2" rel="$3" label="$4" list="$STATE_TMP/list" f sub
+  { find -P "$src" -mindepth 1 \( -name '.*' "${HERMES_NEVER_COPY_FIND[@]}" \) -prune \
+    -o \( -type l -o -type f \) -print0 > "$list.raw" && LC_ALL=C sort -z "$list.raw" > "$list"; } \
+    || { state_fail "cannot list $src"; return 1; }
+  while IFS= read -r -d '' f; do
+    sub="${f#"$src/"}"
+    if never_copy "$rel/$sub"; then continue; fi
+    if [[ "$sub" == *$'\n'* ]]; then left_out "$label ${sub//$'\n'/\\n}: name has a newline" || return 1; continue; fi
+    if [[ -L "$f" ]]; then left_out "$label $sub: symlink" || return 1; continue; fi
+    state_add "$kind" "$f" "$rel/$sub" "$label $sub" || return 1
+  done < "$list"
+}
+
+# Rebuilds <dir>/machines/<host>/ from the live state. Prints nothing on
+# success; stores what it skipped in $SKIPPED_FILE for the caller to report.
+# Returns 1 with the reason on stderr on any error, before touching the repo.
+# Callers run it under `||`, where set -e is off, so every step is checked by
+# hand.
+export_state() {
+  local kind="$1" dir="$2" host root gitdir rc=0
+  host="$(state_host)"
+  if [[ -z "$host" || "$host" == */* || "$host" == .* ]]; then state_fail "bad state backup host name: '$host'"; return 1; fi
   root="$(hermes_root)"
-  if [[ ! -d "$root" ]]; then cron_fail "Hermes root $root does not exist"; return 1; fi
-  tmp="$(mktemp -d)" || { cron_fail "cannot create a temp dir"; return 1; }
-  { snapshot_cron "$kind" "$host" "$root" "$tmp" && install_cron_snapshot "$dir" "$host" "$tmp"; } || rc=1
-  rm -rf "$tmp"
+  if [[ ! -d "$root" ]]; then state_fail "Hermes root $root does not exist"; return 1; fi
+  # Staged inside .git: git ignores it, and it is on the repo's filesystem, so
+  # the old and new snapshots move by rename, not by copy.
+  gitdir="$(git -C "$dir" rev-parse --absolute-git-dir)" || { state_fail "cannot find the git dir of $dir"; return 1; }
+  STATE_TMP="$(mktemp -d "$gitdir/hermes-state.XXXXXX")" || { state_fail "cannot create a temp dir in $gitdir"; return 1; }
+  STATE_KEEP=0
+  if ! snapshot_state "$kind" "$host" "$root"; then state_fail "$dir left as it was"; rc=1
+  elif ! install_state_snapshot "$dir" "$host"; then rc=1
+  fi
+  if (( ! STATE_KEEP )); then rm -rf "$STATE_TMP"; fi
   return "$rc"
 }
 
-# Builds $tmp/tree/<profile>/ and $tmp/skipped. Touches nothing outside $tmp.
-snapshot_cron() {
-  local kind="$1" host="$2" root="$3" tmp="$4" home profile jobs n i f label why rc out list rel redact=true
-  [[ "$kind" == work ]] && redact=false
-  : > "$tmp/skipped" || { cron_fail "cannot write to $tmp"; return 1; }
+# Builds $STATE_TMP/tree/ and $STATE_TMP/skipped. Touches nothing outside it.
+snapshot_state() {
+  local kind="$1" host="$2" root="$3" home profile f
+  : > "$STATE_TMP/skipped" || { state_fail "cannot write to $STATE_TMP"; return 1; }
   for home in "$root" "$root"/profiles/*; do
     [[ -d "$home" ]] || continue
-    if [[ "$home" == "$root" ]]; then profile=default; else profile="$(basename "$home")"; fi
-    out="$tmp/tree/$profile"
-    jobs="$home/cron/jobs.json"
-    n=0
-    if [[ -e "$jobs" || -L "$jobs" ]]; then
-      # An empty file makes jq print nothing and exit 0: that is corrupt too.
-      n="$(jq '.jobs | if type == "array" then length else error(".jobs is not an array") end' "$jobs")" || n=
-      [[ "$n" =~ ^[0-9]+$ ]] || { cron_fail "cannot read or parse $jobs"; return 1; }
-    fi
-    if (( n > 0 )); then
-      mkdir -p "$tmp/jobs/$profile" || { cron_fail "cannot create $tmp/jobs/$profile"; return 1; }
-      for (( i = 0; i < n; i++ )); do
-        f="$tmp/jobs/$profile/$(printf '%06d' "$i").json"
-        jq -S --argjson i "$i" --argjson redact "$redact" \
-          ".jobs[\$i] | $CRON_CONFIG_FIELDS | $CRON_REDACT_TARGETS" "$jobs" > "$f" \
-          || { cron_fail "cannot export job $i of $jobs"; return 1; }
-        label="$(jq -r '"\(.id // "?") (\(.name // ""))"' "$f")" || { cron_fail "cannot read back job $i of $jobs"; return 1; }
-        why="$(cron_refuse "$kind" "$f")" && rc=0 || rc=$?
-        case "$rc" in
-          0) { printf '%s/%s job %s: %s\n' "$host" "$profile" "$label" "$why" >> "$tmp/skipped" && rm -f "$f"; } \
-               || { cron_fail "cannot record left-out job $label"; return 1; } ;;
-          1) ;;
-          *) cron_fail "scan of job $label failed: $why"; return 1 ;;
-        esac
-      done
-      if compgen -G "$tmp/jobs/$profile/*.json" >/dev/null; then
-        { mkdir -p "$out" && jq -S -s '{jobs: sort_by(.id | tostring)}' "$tmp/jobs/$profile"/*.json > "$out/jobs.json"; } \
-          || { cron_fail "cannot write the $profile jobs snapshot"; return 1; }
+    if [[ "$home" == "$root" ]]; then profile=default
+    else
+      profile="$(basename "$home")"
+      if printf '%s\n' "${STATE_HOST_DIRS[@]}" | grep -qxF "$profile"; then
+        left_out "$host/$profile profile: name clashes with machines/$host/$profile" || return 1
+        continue
       fi
     fi
-    # Never follow a symlink (Hermes refuses ones that leave scripts/): a link,
-    # to a file or a dir, is left out and reported, and not descended into.
-    if [[ -L "$home/scripts" ]]; then
-      printf '%s/%s script dir scripts: symlink\n' "$host" "$profile" >> "$tmp/skipped" || { cron_fail "cannot write to $tmp"; return 1; }
-    elif [[ -d "$home/scripts" ]]; then
-      list="$(find -P "$home/scripts" -mindepth 1 -name '.*' -prune -o \( -type l -o -type f \) -print | LC_ALL=C sort)" \
-        || { cron_fail "cannot list $home/scripts"; return 1; }
-      while IFS= read -r f; do
-        [[ -n "$f" ]] || continue
-        rel="${f#"$home/scripts/"}"
-        if [[ -L "$f" ]]; then
-          printf '%s/%s script %s: symlink\n' "$host" "$profile" "$rel" >> "$tmp/skipped" || { cron_fail "cannot write to $tmp"; return 1; }
-          continue
-        fi
-        why="$(cron_refuse "$kind" "$f" "$rel")" && rc=0 || rc=$?
-        case "$rc" in
-          0) printf '%s/%s script %s: %s\n' "$host" "$profile" "$rel" "$why" >> "$tmp/skipped" \
-               || { cron_fail "cannot write to $tmp"; return 1; }
-             continue ;;
-          1) ;;
-          *) cron_fail "scan of script $rel failed: $why"; return 1 ;;
-        esac
-        { mkdir -p "$out/scripts/$(dirname "$rel")" && cp -P --preserve=mode "$f" "$out/scripts/$rel"; } \
-          || { cron_fail "cannot copy script $f"; return 1; }
-      done <<< "$list"
+    snapshot_jobs "$kind" "$host" "$home" "$profile" || return 1
+    if [[ -L "$home/scripts" ]]; then left_out "$host/$profile script dir scripts: symlink" || return 1
+    elif [[ -d "$home/scripts" ]]; then state_tree "$kind" "$home/scripts" "$profile/scripts" "$host/$profile script" || return 1
+    fi
+    for f in "${STATE_FILES[@]}"; do
+      if [[ -f "$home/$f" && ! -L "$home/$f" ]]; then state_add "$kind" "$home/$f" "$profile/$f" "$host/$profile file $f" || return 1; fi
+    done
+    if [[ "$profile" == default && -d "$home/agent-hooks" && ! -L "$home/agent-hooks" ]]; then
+      state_tree "$kind" "$home/agent-hooks" default/agent-hooks "$host/default hook" || return 1
+    fi
+  done
+  snapshot_units "$kind" "$host" && snapshot_stock_skills "$kind" "$host" "$root" && snapshot_env_names "$kind" "$host" "$root" || return 1
+  # A refused file can leave its dir empty; git would drop it anyway.
+  if [[ -d "$STATE_TMP/tree" ]]; then find "$STATE_TMP/tree" -depth -type d -empty -delete || { state_fail "cannot tidy $STATE_TMP"; return 1; }; fi
+}
+
+# <profile>/jobs.json: the configuration fields of each job that passes the scan.
+snapshot_jobs() {
+  local kind="$1" host="$2" home="$3" profile="$4" jobs="$3/cron/jobs.json" n=0 i f label why rc redact=true
+  [[ "$kind" == work ]] && redact=false
+  if [[ -e "$jobs" || -L "$jobs" ]]; then
+    # An empty file makes jq print nothing and exit 0: that is corrupt too.
+    n="$(jq '.jobs | if type == "array" then length else error(".jobs is not an array") end' "$jobs")" || n=
+    [[ "$n" =~ ^[0-9]+$ ]] || { state_fail "cannot read or parse $jobs"; return 1; }
+  fi
+  (( n > 0 )) || return 0
+  mkdir -p "$STATE_TMP/jobs/$profile" || { state_fail "cannot create $STATE_TMP/jobs/$profile"; return 1; }
+  for (( i = 0; i < n; i++ )); do
+    f="$STATE_TMP/jobs/$profile/$(printf '%06d' "$i").json"
+    jq -S --argjson i "$i" --argjson redact "$redact" \
+      ".jobs[\$i] | $CRON_CONFIG_FIELDS | $CRON_REDACT_TARGETS" "$jobs" > "$f" \
+      || { state_fail "cannot export job $i of $jobs"; return 1; }
+    label="$(jq -r '"\(.id // "?") (\(.name // ""))"' "$f")" || { state_fail "cannot read back job $i of $jobs"; return 1; }
+    why="$(state_refuse "$kind" "$f")" && rc=0 || rc=$?
+    case "$rc" in
+      0) { left_out "$host/$profile job $label: $why" && rm -f "$f"; } || { state_fail "cannot record left-out job $label"; return 1; } ;;
+      1) ;;
+      *) state_fail "scan of job $label failed: $why"; return 1 ;;
+    esac
+  done
+  if compgen -G "$STATE_TMP/jobs/$profile/*.json" >/dev/null; then
+    { mkdir -p "$STATE_TMP/tree/$profile" && jq -S -s '{jobs: sort_by(.id | tostring)}' "$STATE_TMP/jobs/$profile"/*.json > "$STATE_TMP/tree/$profile/jobs.json"; } \
+      || { state_fail "cannot write the $profile jobs snapshot"; return 1; }
+  fi
+}
+
+# systemd/<unit>: user units matching HERMES_CONFIG_SYNC_SYSTEMD_UNITS (set
+# but empty = none). A symlinked unit is tracked where it points.
+snapshot_units() {
+  local kind="$1" host="$2" udir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user" globs=() f g name
+  read -r -a globs <<< "${HERMES_CONFIG_SYNC_SYSTEMD_UNITS-hermes-*.service hermes-*.timer}"
+  (( ${#globs[@]} )) && [[ -d "$udir" ]] || return 0
+  for f in "$udir"/*; do
+    [[ -f "$f" && ! -L "$f" ]] || continue
+    name="${f##*/}"
+    for g in "${globs[@]}"; do
+      # shellcheck disable=SC2053  # $g is a glob on purpose
+      if [[ "$name" == $g ]]; then state_add "$kind" "$f" "systemd/$name" "$host systemd unit $name" || return 1; break; fi
+    done
+  done
+}
+
+# stock-skill-edits/<name>/: a copy of each stock skill named in
+# HERMES_CONFIG_SYNC_STOCK_SKILLS, found by name under the root's skills/.
+# Hermes would overwrite such an edit on update; this keeps a record of it.
+snapshot_stock_skills() {
+  local kind="$1" host="$2" root="$3" names=() name skills rel
+  read -r -a names <<< "${HERMES_CONFIG_SYNC_STOCK_SKILLS:-}"
+  (( ${#names[@]} )) || return 0
+  skills="$(list_skills "$root/skills")"
+  for name in "${names[@]}"; do
+    rel="$(awk -F'\t' -v n="$name" '$1 == n { print $2 }' <<< "$skills")"
+    if [[ -z "$rel" || "$name" == */* || "$name" == .* ]]; then left_out "$host stock skill $name: not found under $root/skills" || return 1
+    elif [[ "$rel" == *$'\n'* ]]; then left_out "$host stock skill $name: more than one skill has this name" || return 1
+    else state_tree "$kind" "$root/skills/$rel" "stock-skill-edits/$name" "$host stock skill $name file" || return 1
     fi
   done
 }
 
-# Replaces <dir>/cron/<host>/ with the snapshot in $tmp and hands the
-# left-out list to $SKIPPED_FILE. Everything that can fail on bad input has
-# already failed in snapshot_cron.
-install_cron_snapshot() {
-  local dir="$1" host="$2" tmp="$3"
-  mv "$tmp/skipped" "$SKIPPED_FILE" || { cron_fail "cannot write $SKIPPED_FILE"; return 1; }
-  rm -rf "$dir/cron/$host" || { cron_fail "cannot remove the old $dir/cron/$host"; return 1; }
-  if [[ -d "$tmp/tree" ]]; then
-    { mkdir -p "$dir/cron" && mv "$tmp/tree" "$dir/cron/$host"; } || { cron_fail "cannot move the snapshot into $dir/cron/$host"; return 1; }
-  fi
-  rmdir "$dir/cron" 2>/dev/null || true
+# env-names.txt: the variable names the root .env defines, so a rebuild knows
+# what to fill in. The sed keeps only the name; no value is ever written. A
+# quote left open at the end of an assignment line starts a multi-line value,
+# and a line ending in a backslash goes on to the next one; either way later
+# lines can look like NAME=..., so rather than guess, no file then (the awk
+# prints the reason and exits 0; 1 = clean).
+ENV_OPEN_QUOTE_AWK="$(cat <<'AWK'
+/\\$/ { why = "a line ending in a backslash (continued on the next line)"; exit }
+/^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=/ {
+  q = ""; prev = " "
+  for (i = index($0, "=") + 1; i <= length($0); i++) {
+    c = substr($0, i, 1)
+    if (q == "'") { if (c == "'") q = "" }
+    else if (q == "\"") { if (c == "\\") i++; else if (c == "\"") q = "" }
+    else if (c == "\\") i++
+    else if (c == "#" && prev ~ /[[:space:]]/) break
+    else if (c == "'" || c == "\"") q = c
+    prev = c
+  }
+  if (q != "") { why = "a multi-line quoted value"; exit }
+}
+END { if (why == "") exit 1; print why }
+AWK
+)"
+snapshot_env_names() {
+  local kind="$1" host="$2" env="$3/.env" out="$STATE_TMP/env-names" rc=0 why
+  [[ -e "$env" ]] || return 0
+  why="$(awk "$ENV_OPEN_QUOTE_AWK" "$env")" || rc=$?
+  case "$rc" in
+    0) left_out "$host env-names.txt: .env has $why; not guessing which lines are names"; return ;;
+    1) ;;
+    *) state_fail "cannot read $env"; return 1 ;;
+  esac
+  sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=.*/\2/p' "$env" | LC_ALL=C sort -u > "$out" \
+    || { state_fail "cannot read the variable names in $env"; return 1; }
+  if [[ -s "$out" ]]; then state_add "$kind" "$out" env-names.txt "$host env-names.txt"; fi
 }
 
-cmd_backup_cron() {
-  local kind dir
-  kind="$(cron_backup_kind)"
-  [[ "$kind" != off ]] || die "cron backup is off (set HERMES_CONFIG_SYNC_CRON_BACKUP=personal|work)"
-  check_kind "$kind"
+# Replaces <dir>/machines/<host>/ with the snapshot and hands the left-out
+# list to $SKIPPED_FILE. Everything that can fail on bad input has already
+# failed in snapshot_state. The old snapshot is moved aside (into $STATE_TMP,
+# under .git), the new one moved in, and only then is the old one deleted; if
+# the new one cannot move in, the old one goes back. A symlinked machines/,
+# machines/<host> or cron/ is refused: removing through it would delete
+# outside the snapshot, or (cron -> machines) the new snapshot itself. Then
+# drops this host's old cron/<host>/ (the layout before machines/); other
+# hosts' dirs there are theirs to move.
+install_state_snapshot() {
+  local dir="$1" host="$2" target="$1/machines/$2" p
+  for p in "$dir/machines" "$target" "$dir/cron"; do
+    if [[ -L "$p" ]]; then state_fail "$p is a symlink; not writing the snapshot through it; $dir left as it was"; return 1; fi
+  done
+  mv "$STATE_TMP/skipped" "$SKIPPED_FILE" || { state_fail "cannot write $SKIPPED_FILE; $dir left as it was"; return 1; }
+  if [[ -e "$target" ]]; then
+    mv -T "$target" "$STATE_TMP/old" || { state_fail "cannot move the old $target aside; $dir left as it was"; return 1; }
+  fi
+  if [[ -d "$STATE_TMP/tree" ]] && ! { mkdir -p "$dir/machines" && mv -T "$STATE_TMP/tree" "$target"; }; then
+    if [[ ! -e "$STATE_TMP/old" ]]; then state_fail "cannot move the snapshot into $target; there was no previous one"
+    elif mv -T "$STATE_TMP/old" "$target"; then state_fail "cannot move the snapshot into $target; the previous one is back in place"
+    else
+      STATE_KEEP=1
+      state_fail "cannot move the snapshot into $target, nor put the previous one back; it is in $STATE_TMP/old"
+    fi
+    return 1
+  fi
+  rm -rf "$STATE_TMP/old" || { state_fail "new snapshot in place, but cannot delete the old one in $STATE_TMP/old"; STATE_KEEP=1; return 1; }
+  rmdir "$dir/machines" 2>/dev/null || true
+  if [[ -d "$dir/cron" ]]; then
+    rm -rf "$dir/cron/$host" || { state_fail "new snapshot in place, but cannot remove the old $dir/cron/$host"; return 1; }
+    rmdir "$dir/cron" 2>/dev/null || true
+  fi
+}
+
+cmd_backup_state() {
+  local kind dir problem
+  kind="$(state_backup_kind)"
+  [[ "$kind" != off ]] || die "state backup is off (set HERMES_CONFIG_SYNC_STATE_BACKUP=personal|work)"
+  problem="$(state_target_problem "$kind")"
+  [[ -z "$problem" ]] || die "$problem"
   dir="$(kind_dir "$kind")"
   [[ -d "$dir/.git" ]] || die "$kind repo not cloned; run: hermes-config install"
   SKIPPED_FILE="$(mktemp)"
-  if ! export_cron "$kind" "$dir"; then
+  if ! export_state "$kind" "$dir"; then
     rm -f "$SKIPPED_FILE"
-    die "cron backup failed (see above); $dir/cron left as it was"
+    die "state backup failed (see above)"
   fi
   if [[ -s "$SKIPPED_FILE" ]]; then printf 'not backed up:\n'; sed 's/^/  /' "$SKIPPED_FILE"; fi
   rm -f "$SKIPPED_FILE"
-  git -C "$dir" status --short -- cron
+  git -C "$dir" status --short -- machines cron
 }
 
 # Unattended commit + push for cron. Per enabled repo: fast-forward from
@@ -881,7 +1115,11 @@ cmd_backup_cron() {
 # repo that did; exit 1 with the reason on anything it will not do alone
 # (diverged history, a guard hit, a failed push). Never forces, never resets.
 cmd_sync() {
-  local lock_dir="${XDG_RUNTIME_DIR:-/tmp}" k dir rc=0
+  local lock_dir="${XDG_RUNTIME_DIR:-/tmp}" k dir rc=0 problem
+  # Checked before anything is fetched or committed: a bad target must fail
+  # the run, not quietly skip the backup while the skills still sync.
+  problem="$(state_target_problem "$(state_backup_kind)")"
+  [[ -z "$problem" ]] || die "$problem; nothing synced (set HERMES_CONFIG_SYNC_STATE_BACKUP=personal|work|off)"
   exec 9> "$lock_dir/hermes-config-sync.lock"
   flock -n 9 || die "another hermes-config sync is running"
   check_origins
@@ -899,18 +1137,19 @@ sync_repo() {
     printf '%s: local and origin have diverged, or uncommitted edits touch files that changed upstream; resolve by hand in %s\n' "$kind" "$dir" >&2
     return 1
   fi
-  if [[ "$kind" == "$(cron_backup_kind)" ]]; then
-    SKIPPED_FILE="$dir/.git/hermes-cron-skipped.new"
-    if ! export_cron "$kind" "$dir"; then
+  if [[ "$kind" == "$(state_backup_kind)" ]]; then
+    SKIPPED_FILE="$dir/.git/hermes-state-skipped.new"
+    if ! export_state "$kind" "$dir"; then
       rm -f "$SKIPPED_FILE"
-      printf '%s: cron backup failed (see above); nothing committed or pushed\n' "$kind" >&2
+      printf '%s: state backup failed (see above); nothing committed or pushed\n' "$kind" >&2
       return 1
     fi
-    # Report left-out jobs only when that set changes, not every night.
-    seen="$dir/.git/hermes-cron-skipped"
+    # Report left-out files only when that set changes, not every night.
+    seen="$dir/.git/hermes-state-skipped"
+    rm -f "$dir/.git/hermes-cron-skipped"  # its name before the state backup
     if ! cmp -s "$SKIPPED_FILE" "$seen" 2>/dev/null && [[ -s "$SKIPPED_FILE" || -e "$seen" ]]; then
-      if [[ -s "$SKIPPED_FILE" ]]; then printf '%s: cron backup left out:\n' "$kind"; sed 's/^/  /' "$SKIPPED_FILE"
-      else printf '%s: cron backup no longer leaves anything out\n' "$kind"; fi
+      if [[ -s "$SKIPPED_FILE" ]]; then printf '%s: state backup left out:\n' "$kind"; sed 's/^/  /' "$SKIPPED_FILE"
+      else printf '%s: state backup no longer leaves anything out\n' "$kind"; fi
     fi
     if ! mv "$SKIPPED_FILE" "$seen"; then printf '%s: cannot record the left-out list in %s\n' "$kind" "$seen" >&2; return 1; fi
   fi
@@ -922,7 +1161,8 @@ sync_repo() {
     changes="$(git -C "$dir" diff --cached --name-status)"
     names="$(sed -nE 's#^[A-Z][0-9]*\t(.*\t)?skills/(.*/)?([^/]+)/(SKILL\.md|references/.*|templates/.*|scripts/.*|assets/.*)$#\3#p' <<< "$changes" | LC_ALL=C sort -u | paste -sd' ')"
     if [[ -n "$names" ]]; then parts+=("skills ($names)"); fi
-    if grep -qE $'^[A-Z][0-9]*\t(.*\t)?cron/' <<< "$changes"; then parts+=("cron backup"); fi
+    # cron/ is the layout before machines/: its removal is part of the backup.
+    if grep -qE $'^[A-Z][0-9]*\t(.*\t)?(machines|cron)/' <<< "$changes"; then parts+=("state backup"); fi
     (( ${#parts[@]} )) || parts+=("config")
     msg="chore: sync $(IFS=,; printf '%s' "${parts[*]}" | sed 's/,/, /g')"
     body="Automated nightly commit by hermes-config sync."$'\n\n'"$changes"
@@ -979,7 +1219,7 @@ main() {
     status|verify|migrate|adopt|classify) FOREIGN_CACHE="$(foreign_names)" ;;
   esac
   case "$cmd" in
-    hook|pre-push|scan|push|sync|adopt|backup-cron) require_terms ;;
+    hook|pre-push|scan|push|sync|adopt|backup-state|backup-cron) require_terms ;;
     migrate) if [[ "${1:-}" == --apply ]]; then require_terms; fi ;;
   esac
   case "$cmd" in
@@ -994,7 +1234,7 @@ main() {
     pull)     cmd_pull ;;
     push)     cmd_push ;;
     sync)     cmd_sync ;;
-    backup-cron) cmd_backup_cron ;;
+    backup-state|backup-cron) cmd_backup_state ;;
     hook)     cmd_hook "$@" ;;
     pre-push) cmd_pre_push "$@" ;;
     *) usage >&2; exit 2 ;;

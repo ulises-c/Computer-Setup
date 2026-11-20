@@ -19,6 +19,7 @@ T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
 export GIT_CEILING_DIRECTORIES="$T"
 export XDG_RUNTIME_DIR="$T"  # private sync lock: never contend with a real or parallel run
+export XDG_CONFIG_HOME="$T/xdg"  # the state backup reads systemd user units from here, never the real ones
 FAILS=0
 pass() { printf '  ok   %s\n' "$1"; }
 fail() { printf '  FAIL %s\n' "$1" >&2; FAILS=$(( FAILS + 1 )); }
@@ -34,7 +35,57 @@ check() {
   if "$@" >/dev/null; then pass "$desc"; else fail "$desc"; fi
 }
 expect_out() { if grep -qE -- "$1" "$T/out"; then pass "$2"; else fail "$2"; sed 's/^/       /' "$T/out" >&2; fi; }
-reject_out() { if grep -qE -- "$1" "$T/out"; then fail "$2"; sed 's/^/       /' "$T/out" >&2; else pass "$2"; fi; }
+reject_out() {
+  local rc=0
+  grep -qE -- "$1" "$T/out" || rc=$?
+  case "$rc" in 1) pass "$2" ;; 0) fail "$2"; sed 's/^/       /' "$T/out" >&2 ;; *) fail "$2 (grep failed, rc=$rc)" ;; esac
+}
+# absent <desc> <text> <command...>: passes only when the command succeeds and
+# its full output (saved first, so grep -q cannot cut it short) lacks text.
+absent() {
+  local desc="$1" text="$2" rc=0
+  shift 2
+  "$@" > "$T/inspect" 2> "$T/inspect.err" || rc=$?
+  if (( rc )); then fail "$desc (inspection failed, rc=$rc)"; sed 's/^/       /' "$T/inspect.err" >&2; return; fi
+  grep -qF -- "$text" "$T/inspect" || rc=$?
+  case "$rc" in 1) pass "$desc" ;; 0) fail "$desc (found)" ;; *) fail "$desc (grep failed, rc=$rc)" ;; esac
+}
+# absent_in <desc> <text> <dir>: no file under dir (outside .git) holds text.
+absent_in() {
+  local rc=0
+  grep -rqF --exclude-dir=.git -- "$2" "$3" 2> "$T/inspect.err" || rc=$?
+  case "$rc" in 1) pass "$1" ;; 0) fail "$1 (found)" ;; *) fail "$1 (grep failed, rc=$rc)"; sed 's/^/       /' "$T/inspect.err" >&2 ;; esac
+}
+# none_found <desc> <find args...>: passes only when find succeeds and
+# prints nothing.
+none_found() {
+  local desc="$1" rc=0
+  shift
+  find "$@" -print > "$T/inspect" 2> "$T/inspect.err" || rc=$?
+  if (( rc )); then fail "$desc (find failed, rc=$rc)"; sed 's/^/       /' "$T/inspect.err" >&2
+  elif [[ -s "$T/inspect" ]]; then fail "$desc (found)"; sed 's/^/       /' "$T/inspect" >&2
+  else pass "$desc"; fi
+}
+
+printf 'test helpers\n'
+# A negative check must fail, not pass, when its inspection fails or the
+# match sits early in a large output (grep -q would cut the pipe).
+# helper_counts <n> <desc> <helper call...>: the call must record exactly n
+# failures; they are then taken back, so only this check's result counts.
+helper_counts() {
+  local want="$1" desc="$2" before="$FAILS"
+  shift 2
+  "$@" >/dev/null 2>&1
+  local got=$(( FAILS - before ))
+  FAILS="$before"
+  if (( got == want )); then pass "$desc"; else fail "$desc (recorded $got failures, want $want)"; fi
+}
+helper_fails() { helper_counts 1 "$@"; }
+helper_fails "absent fails when the inspection fails" absent x needle false
+helper_fails "absent fails on an early match in a large output" absent x needle bash -c 'echo needle; seq 1 300000'
+helper_counts 0 "absent passes on clean output" absent x needle echo hay
+helper_fails "absent_in fails when grep fails" absent_in x needle "$T/no-such-dir"
+helper_fails "none_found fails when find fails" none_found x "$T/no-such-dir"
 
 skill() {
   local dir="$1" name="$2" body="${3:-plain procedure}"
@@ -154,6 +205,17 @@ if grep -qF -- "- ~/.agents/skills" <<< "$ext"; then pass "pre-existing external
 if grep -qF -- "$T/clones/personal/skills" <<< "$ext"; then pass "personal repo in external_dirs"; else fail "personal repo in external_dirs"; fi
 expect_rc 0 "install is idempotent" "$TOOL" install
 if (( $(hermes config get skills.external_dirs | grep -c clones) == 2 )); then pass "no duplicate external_dirs entries"; else fail "no duplicate external_dirs entries"; fi
+# Hermes prints a list it read back from config.yaml with indented items
+# ("  - /path"); every one of them must still be parsed.
+hermes config set skills.external_dirs "[\"~/.agents/skills\", \"~/more/skills\", \"$T/clones/work/skills\", \"$T/clones/personal/skills\"]" >/dev/null
+check "hermes prints external_dirs items indented" grep -qE '^[[:space:]]+- ~/more/skills$' <(hermes config get skills.external_dirs)
+expect_rc 0 "install with indented external_dirs" "$TOOL" install
+ext="$(hermes config get skills.external_dirs)"
+if grep -qF -- "- ~/.agents/skills" <<< "$ext" && grep -qF -- "- ~/more/skills" <<< "$ext"; then pass "every indented pre-existing dir kept"; else fail "every indented pre-existing dir kept"; fi
+if (( $(grep -c clones <<< "$ext") == 2 )); then pass "indented repo entries not duplicated"; else fail "indented repo entries not duplicated"; fi
+expect_rc 0 "verify config checks with indented external_dirs" "$TOOL" verify
+expect_out '\[ OK \] external_dirs has work' "verify finds the work repo in indented external_dirs"
+expect_out '\[ OK \] external_dirs has personal' "verify finds the personal repo in indented external_dirs"
 
 printf 'refresh-markers\n'
 check "terms fetched across pages" grep -qx widget-server "$T/terms"
@@ -504,7 +566,7 @@ check "remote has the clean commit" test "$(git -C "$PC" rev-parse HEAD)" = "$(g
 expect_rc 0 "idle sync after the guard tests" "$TOOL" sync
 if [[ -s "$T/out" ]]; then fail "idle sync stays silent"; sed 's/^/       /' "$T/out" >&2; else pass "idle sync stays silent"; fi
 
-printf 'cron backup\n'
+printf 'state backup: cron jobs + scripts\n'
 unset HERMES_CONFIG_SYNC_CRON_BACKUP
 export HERMES_CONFIG_SYNC_CRON_HOST=testhost
 mkdir -p "$HERMES_HOME/cron" "$HERMES_HOME/profiles/p1/cron" "$HERMES_HOME/scripts/lib" "$HERMES_HOME/scripts/.cache"
@@ -520,7 +582,7 @@ printf '#!/usr/bin/env bash\necho clean\n' > "$HERMES_HOME/scripts/clean.sh"; ch
 printf 'helper\n' > "$HERMES_HOME/scripts/lib/util.sh"
 printf '#!/usr/bin/env bash\n# pages on ACME-9\n' > "$HERMES_HOME/scripts/work.sh"
 printf 'cache\n' > "$HERMES_HOME/scripts/.cache/state"
-P="$T/clones/personal/cron/testhost"
+P="$T/clones/personal/machines/testhost"
 expect_rc 0 "backup-cron snapshots jobs" env HERMES_CONFIG_SYNC_ENV="$T/env-personal" "$TOOL" backup-cron
 expect_out "job j_work \(work\): names 'acmecorp'" "work-named job left out, with the reason"
 expect_out 'job j_secret \(leaky\): possible secret' "secret job left out"
@@ -536,28 +598,28 @@ check "scripts backed up, mode kept" test -x "$P/default/scripts/clean.sh"
 check "nested scripts backed up" test -f "$P/default/scripts/lib/util.sh"
 if [[ -e "$P/default/scripts/work.sh" || -e "$P/default/scripts/.cache" ]]; then fail "work-named and hidden scripts not copied"; else pass "work-named and hidden scripts not copied"; fi
 expect_rc 0 "sync commits the cron backup" env HERMES_CONFIG_SYNC_ENV="$T/env-personal" "$TOOL" sync
-expect_out 'personal: cron backup left out:' "left-out jobs reported on first sync"
-expect_out 'personal: committed [0-9a-f]+ — chore: sync cron backup' "cron commit message"
-check "personal remote has the backup" git --git-dir="$T/remote-personal.git" cat-file -e HEAD:cron/testhost/default/jobs.json
+expect_out 'personal: state backup left out:' "left-out jobs reported on first sync"
+expect_out 'personal: committed [0-9a-f]+ — chore: sync state backup' "state backup commit message"
+check "personal remote has the backup" git --git-dir="$T/remote-personal.git" cat-file -e HEAD:machines/testhost/default/jobs.json
 jq '.jobs[0].next_run_at = "2031-01-01T03:00:00" | .jobs[0].last_status = "error" | .jobs[0].repeat.completed = 9' "$HERMES_HOME/cron/jobs.json" > "$T/j" && mv "$T/j" "$HERMES_HOME/cron/jobs.json"
 expect_rc 0 "sync after a run" env HERMES_CONFIG_SYNC_ENV="$T/env-personal" "$TOOL" sync
 if [[ -s "$T/out" ]]; then fail "run-only changes and the same left-out set stay silent"; sed 's/^/       /' "$T/out" >&2; else pass "run-only changes and the same left-out set stay silent"; fi
 jq '.jobs |= map(select(.id != "j_clean"))' "$HERMES_HOME/cron/jobs.json" > "$T/j" && mv "$T/j" "$HERMES_HOME/cron/jobs.json"
 rm -f "$HERMES_HOME/scripts/clean.sh"
 expect_rc 0 "sync records a removed job" env HERMES_CONFIG_SYNC_ENV="$T/env-personal" "$TOOL" sync
-expect_out 'chore: sync cron backup' "removal committed"
+expect_out 'chore: sync state backup' "removal committed"
 if [[ -e "$P/default/jobs.json" || -e "$P/default/scripts/clean.sh" ]]; then fail "removed job and script gone from the backup"; else pass "removed job and script gone from the backup"; fi
-check "other host's backup untouched" bash -c "mkdir -p '$T/clones/personal/cron/otherhost' && touch '$T/clones/personal/cron/otherhost/keep' && env HERMES_CONFIG_SYNC_ENV='$T/env-personal' '$TOOL' backup-cron >/dev/null && test -f '$T/clones/personal/cron/otherhost/keep'"
-rm -rf "$T/clones/personal/cron/otherhost"
+check "other host's backup untouched" bash -c "mkdir -p '$T/clones/personal/machines/otherhost' && touch '$T/clones/personal/machines/otherhost/keep' && env HERMES_CONFIG_SYNC_ENV='$T/env-personal' '$TOOL' backup-state >/dev/null && test -f '$T/clones/personal/machines/otherhost/keep'"
+rm -rf "$T/clones/personal/machines/otherhost"
 expect_rc 0 "backup into the work repo" env HERMES_CONFIG_SYNC_ENV="$T/env-work" HERMES_CONFIG_SYNC_CRON_BACKUP=work "$TOOL" backup-cron
-check "work repo keeps work-named jobs" test "$(jq -r '[.jobs[].id] | join(",")' "$T/clones/work/cron/testhost/default/jobs.json")" = j_work
-check "work repo still blocks secrets" bash -c "! grep -rqF '$FAKE_AWS' '$T/clones/work/cron'"
-rm -rf "$T/clones/work/cron"
+check "work repo keeps work-named jobs" test "$(jq -r '[.jobs[].id] | join(",")' "$T/clones/work/machines/testhost/default/jobs.json")" = j_work
+absent_in "work repo still blocks secrets" "$FAKE_AWS" "$T/clones/work/machines"
+rm -rf "$T/clones/work/machines"
 expect_rc 1 "bad host label refused" env HERMES_CONFIG_SYNC_ENV="$T/env-personal" HERMES_CONFIG_SYNC_CRON_HOST=../x "$TOOL" backup-cron
 expect_rc 1 "backup off is explicit" env HERMES_CONFIG_SYNC_ENV="$T/env-work" "$TOOL" backup-cron
 unset HERMES_CONFIG_SYNC_CRON_HOST
 
-printf 'cron backup: config fields only, fails safe, no symlinks\n'
+printf 'state backup: config fields only, fails safe, no symlinks\n'
 export HERMES_CONFIG_SYNC_CRON_HOST=testhost
 TP=(env HERMES_CONFIG_SYNC_ENV="$T/env-personal" "$TOOL")
 PC="$T/clones/personal"
@@ -570,7 +632,7 @@ jq '.jobs += [{id: "j_keep", name: "keep", prompt: "summarize my notes", skills:
   last_dispatch: {at: "2029-01-02T06:00:00", slot: "2029-01-02T06:00:00"}, last_fire_error: null,
   quota_hold_until: null, future_runtime_field: 1}]' "$J" > "$T/j" && mv "$T/j" "$J"
 expect_rc 0 "sync backs up a job carrying scheduler runtime fields" "${TP[@]}" sync
-expect_out 'chore: sync cron backup' "whitelisted job committed"
+expect_out 'chore: sync state backup' "whitelisted job committed"
 KEEP='.jobs[] | select(.id == "j_keep")'
 check "scheduler runtime and unknown fields not in the backup" test "$(jq "$KEEP"' | [has("state", "pending_slot", "run_claim", "last_dispatch", "last_fire_error", "quota_hold_until", "future_runtime_field"), (.repeat | has("completed"))] | any' "$P/default/jobs.json")" = false
 check "configuration fields kept" test "$(jq "$KEEP"' | .name == "keep" and .prompt == "summarize my notes" and .skills == ["tidy-notes"] and .schedule.expr == "0 6 * * *" and .repeat == {times: 3} and .enabled == true and .deliver == "local" and .created_at == "2029-01-01T00:00:00"' "$P/default/jobs.json")" = true
@@ -582,14 +644,14 @@ expect_rc 0 "sync after scheduler-only changes" "${TP[@]}" sync
 if [[ -s "$T/out" ]]; then fail "scheduler-only changes stay silent"; sed 's/^/       /' "$T/out" >&2; else pass "scheduler-only changes stay silent"; fi
 check "scheduler-only changes make no commit" test "$(git -C "$PC" rev-parse HEAD)" = "$before"
 cp "$J" "$T/jobs.good"
-GOOD_TREE="$(git -C "$PC" rev-parse HEAD:cron/testhost)"
+GOOD_TREE="$(git -C "$PC" rev-parse HEAD:machines/testhost)"
 # The last pushed backup is still in place: clone working tree, clone HEAD, remote.
 backup_intact() {
-  [[ -z "$(git -C "$PC" status --porcelain -- cron)" ]] \
-    && [[ "$(git -C "$PC" rev-parse HEAD:cron/testhost)" == "$GOOD_TREE" ]] \
-    && [[ "$(git --git-dir="$RP" rev-parse HEAD:cron/testhost)" == "$GOOD_TREE" ]]
+  [[ -z "$(git -C "$PC" status --porcelain -- machines cron)" ]] \
+    && [[ "$(git -C "$PC" rev-parse HEAD:machines/testhost)" == "$GOOD_TREE" ]] \
+    && [[ "$(git --git-dir="$RP" rev-parse HEAD:machines/testhost)" == "$GOOD_TREE" ]]
 }
-check "good backup present on the remote" git --git-dir="$RP" cat-file -e HEAD:cron/testhost/default/jobs.json
+check "good backup present on the remote" git --git-dir="$RP" cat-file -e HEAD:machines/testhost/default/jobs.json
 
 before="$(git -C "$PC" rev-parse HEAD)"
 printf '\nlocked edit\n' >> "$PC/skills/general/fresh/SKILL.md"
@@ -604,10 +666,10 @@ expect_out 'personal: pushed 1 commit' "edit pushed after the lock is gone"
 
 printf '{"jobs": [' > "$J"
 expect_rc 1 "backup-cron fails on a malformed jobs.json" "${TP[@]}" backup-cron
-expect_out 'cron backup failed' "malformed jobs.json is reported"
+expect_out 'state backup failed' "malformed jobs.json is reported"
 check "malformed jobs.json: backup-cron keeps the backup" backup_intact
 expect_rc 1 "sync fails on a malformed jobs.json" "${TP[@]}" sync
-expect_out 'personal: cron backup failed' "sync names the failed cron backup"
+expect_out 'personal: state backup failed' "sync names the failed state backup"
 check "malformed jobs.json: sync keeps the backup, here and on the remote" backup_intact
 printf '{"jobs": {"j_keep": {}}}\n' > "$J"
 expect_rc 1 "backup-cron fails when .jobs is not an array" "${TP[@]}" backup-cron
@@ -644,7 +706,7 @@ check "empty profiles change nothing" backup_intact
 mkdir -p "$T/bare-root/cron"
 printf '{"jobs": []}\n' > "$T/bare-root/cron/jobs.json"
 expect_rc 0 "backup-cron with no profiles dir and no scripts dir" env HERMES_CONFIG_SYNC_HERMES_ROOT="$T/bare-root" HERMES_CONFIG_SYNC_CRON_HOST=host2 "${TP[@]}" backup-cron
-if [[ -e "$PC/cron/host2" ]]; then fail "nothing to back up writes nothing"; else pass "nothing to back up writes nothing"; fi
+if [[ -e "$PC/machines/host2" ]]; then fail "nothing to back up writes nothing"; else pass "nothing to back up writes nothing"; fi
 rm -rf "$HERMES_HOME/profiles/p2" "$HERMES_HOME/profiles/p3" "$T/bare-root"
 
 mkdir -p "$T/outside/dir"
@@ -663,10 +725,387 @@ rm -f "$HERMES_HOME/scripts/linked.sh" "$HERMES_HOME/scripts/linked-dir"
 
 jq '.jobs = []' "$T/jobs.good" > "$J"
 expect_rc 0 'sync with {"jobs": []}' "${TP[@]}" sync
-expect_out 'chore: sync cron backup' "emptied job list committed"
+expect_out 'chore: sync state backup' "emptied job list committed"
 if [[ -e "$P/default/jobs.json" ]]; then fail "emptied job list removes the jobs backup"; else pass "emptied job list removes the jobs backup"; fi
-if git --git-dir="$RP" cat-file -e HEAD:cron/testhost/default/jobs.json 2>/dev/null; then fail "removal pushed"; else pass "removal pushed"; fi
+absent "removal pushed" machines/testhost/default/jobs.json git --git-dir="$RP" ls-tree -r --name-only HEAD
 unset HERMES_CONFIG_SYNC_CRON_HOST
+
+printf 'state backup: machine files\n'
+export HERMES_CONFIG_SYNC_STATE_HOST=testhost
+H="$HERMES_HOME" M="$PC/machines/testhost" U="$XDG_CONFIG_HOME/systemd/user"
+mkdir -p "$H/memories" "$H/agent-hooks/lib/__pycache__" "$H/scripts/__pycache__" "$H/scripts/mcp-tokens" "$T/linked" "$U"
+printf 'be brief\n' > "$H/SOUL.md"
+printf '{"allow": ["echo"]}\n' > "$H/shell-hooks-allowlist.json"
+printf 'remember the plan\n' > "$H/memories/MEMORY.md"
+printf 'user key %s\n' "$FAKE_AWS" > "$H/memories/USER.md"
+printf 'not a tracked memory file\n' > "$H/memories/notes.md"
+printf '#!/usr/bin/env bash\necho hook\n' > "$H/agent-hooks/on-start.sh"
+chmod 755 "$H/agent-hooks/on-start.sh"
+printf 'helper\n' > "$H/agent-hooks/lib/util.py"
+printf 'bytecode\n' > "$H/agent-hooks/lib/__pycache__/util.cpython-312.pyc"
+printf 'every script, not only the ones a job names\n' > "$H/scripts/adhoc.sh"
+printf 'bytecode\n' > "$H/scripts/__pycache__/tool.cpython-312.pyc"
+printf 'bytecode\n' > "$H/scripts/tool.pyc"
+printf 'lock\n' > "$H/scripts/run.lock"
+printf 'old\n' > "$H/scripts/run.sh.bak-20290101"
+printf 'X=1\n' > "$H/scripts/.env.local"
+printf '{}\n' > "$H/scripts/auth.json"
+printf 'db\n' > "$H/scripts/cache.db"
+printf 'db\n' > "$H/scripts/cache.db-wal"
+printf '{"token": 1}\n' > "$H/scripts/mcp-tokens/server.json"
+# p1: a symlinked config.yaml (tracked where it points), a SOUL that names work.
+printf 'model: linked\n' > "$T/linked/config.yaml"
+ln -s "$T/linked/config.yaml" "$H/profiles/p1/config.yaml"
+printf 'You help with Acmecorp deploys.\n' > "$H/profiles/p1/SOUL.md"
+printf 'name: p1\n' > "$H/profiles/p1/profile.yaml"
+mkdir -p "$H/profiles/p1/agent-hooks" && printf 'x\n' > "$H/profiles/p1/agent-hooks/h.sh"
+mkdir -p "$H/profiles/systemd" && printf 'clash\n' > "$H/profiles/systemd/SOUL.md"
+mkdir -p "$H/profiles/env-names.txt" && printf 'clash\n' > "$H/profiles/env-names.txt/SOUL.md"
+# p4: a real config.yaml with credentials no token pattern knows.
+CFG_PASS="sentinelNotATokenShape""123" CFG_KEY="plainSentinel""456"
+mkdir -p "$H/profiles/p4"
+cat > "$H/profiles/p4/config.yaml" <<EOF
+model:
+  default: some-model
+  max_tokens: 4096
+  api_key: "$CFG_KEY"
+  base_url: \${SOME_VAR}
+dashboard:
+  basic_auth:
+    username: me
+    password_hash: $CFG_PASS
+compression:
+  threshold_tokens: 50000
+  summary_tokens_ceiling: 8000
+context_tokens: 128000
+proactive_prune_tokens: 1000
+secret_ref: "\${OTHER_VAR}"
+token_limit: null
+EOF
+# p5: other YAML shapes of a credential: a flow map, a parent key ending in
+# ":", list items, quoted keys. p6/p7: a flow map and a credential's quoted
+# value that run over lines; the file is still copied, redacted.
+CFG_FLOW="flowSentinel""111" CFG_PARENT="parentSentinel""222" CFG_LIST="listSentinel""333"
+CFG_QUOTED="quotedSentinel""444" CFG_FLOWLIST="flowListSentinel""555" CFG_OPEN="openFlowSentinel""666" CFG_OPENQ="openQuoteSentinel""777"
+CFG_ANCHOR="anchoredSentinel""811" CFG_SPACED2="spacedKeySentinel""812" CFG_SPACED3="spacedKeySentinel""813" CFG_FLOWNEXT="flowNextSentinel""814"
+CFG_BLOCK="blockSentinel""815" CFG_TAG="tagSentinel""816" CFG_ANCHOR2="anchorValueSentinel""817" CFG_SEQ="seqSentinel""818"
+mkdir -p "$H/profiles/p5" "$H/profiles/p6" "$H/profiles/p7" "$H/profiles/p8" "$H/profiles/p9" "$H/profiles/p10"
+cat > "$H/profiles/p5/config.yaml" <<EOF
+model: {default: some-model, api_key: "$CFG_FLOW"}
+before_parent: kept-1
+credentials:
+  value: $CFG_PARENT
+  nested:
+    deeper: $CFG_PARENT
+after_parent: kept-2
+servers:
+  - name: alpha
+  - api_key: $CFG_LIST
+  - token:
+      value: $CFG_LIST
+  - {name: beta, secret: "$CFG_FLOWLIST"}
+"api_key": $CFG_QUOTED
+'client_secret':
+  - $CFG_QUOTED
+limits: {max_tokens: 4096, threshold_tokens: 50000}
+plain: ok
+EOF
+printf 'extra: {a: 1, b: 2,\n  c: 3, api_key: "%s"}\nflow: {name: x,\n  api_key:\n    "%s"}\nplain: ok\n' "$CFG_OPEN" "$CFG_FLOWNEXT" > "$H/profiles/p6/config.yaml"
+printf 'api_key: "first part\n  %s"\nplain: ok\n' "$CFG_OPENQ" > "$H/profiles/p7/config.yaml"
+# p8: shapes a key-by-key match missed (an anchored flow map, a space before
+# a quoted key's colon), a block scalar, a tag, an anchor and an alias, and a
+# list at the parent's own indent (how PyYAML writes one).
+cat > "$H/profiles/p8/config.yaml" <<EOF
+model: &primary {default: some-model, api_key: "$CFG_ANCHOR"}
+other:
+  default: some-model
+  "api_key" : "$CFG_SPACED2"
+  'auth_token' : '$CFG_SPACED3'
+api_key: |
+  $CFG_BLOCK line one
+
+  $CFG_BLOCK line two
+password: !!str $CFG_TAG
+anchored_token: &tok $CFG_ANCHOR2
+alias_secret: *tok
+api_keys:
+- $CFG_SEQ
+- $CFG_SEQ
+after: kept-b
+EOF
+# p9: credential-named keys whose values are kept, and a comment.
+cat > "$H/profiles/p9/config.yaml" <<'EOF'
+# the api_key comes from the environment
+compression:
+  threshold_tokens: 350000
+model:
+  max_tokens: 4096
+other_token: ${REFERENCED_VAR}
+api_key: ""
+use_token: false
+token_counter: tiktoken
+EOF
+# p10: no credential at all, but a quoted string over lines with braces in
+# it: copied whole, never left out for its shape.
+printf 'model:\n  default: some-model\nagent:\n  system_prompt: "Return results using this layout:\n    {\n      result: text\n    }"\n  note: fine\n' > "$H/profiles/p10/config.yaml"
+ENV_VALUE="envvalue""-must-not-leak-42"
+printf '# COMMENTED=%s\nFOO_TOKEN=%s\nexport BAR_NAME="%s"\n\nnot a var line\n' "$ENV_VALUE" "$ENV_VALUE" "$ENV_VALUE" > "$H/.env"
+printf '[Service]\nExecStart=hermes gateway\n' > "$U/hermes-gateway.service"
+printf '[Timer]\nOnCalendar=daily\n' > "$U/hermes-sync.timer"
+printf '[Service]\nExecStart=true\n' > "$U/other.service"
+printf '[Service]\nExecStart=true\n' > "$T/linked/hermes-linked.service"
+ln -s "$T/linked/hermes-linked.service" "$U/hermes-linked.service"
+printf '\nLocal edit.\n' >> "$S/general/stock-skill/SKILL.md"
+mkdir -p "$S/general/stock-skill/scripts/__pycache__"
+printf 'bytecode\n' > "$S/general/stock-skill/scripts/__pycache__/x.cpython-312.pyc"
+printf 'old\n' > "$S/general/stock-skill/SKILL.md.bak"
+export HERMES_CONFIG_SYNC_STOCK_SKILLS="stock-skill no-such-skill"
+# The layout before machines/: this host's dir moves, another host's stays.
+mkdir -p "$PC/cron/testhost/default" "$PC/cron/otherhost" "$PC/machines/otherhost/default"
+printf '{"jobs": []}\n' > "$PC/cron/testhost/default/jobs.json"
+printf 'keep\n' > "$PC/cron/otherhost/keep"
+printf 'keep\n' > "$PC/machines/otherhost/default/keep"
+git -C "$PC" add -A && git -C "$PC" -c commit.gpgsign=false commit -qm "chore: old layout"
+expect_rc 0 "backup-state snapshots the machine" "${TP[@]}" backup-state
+expect_out 'testhost/default file memories/USER.md: possible secret' "file with a secret left out, with the reason"
+expect_out "testhost/p1 file SOUL.md: names 'Acmecorp'" "work-named file left out of the personal repo"
+expect_out 'testhost stock skill no-such-skill: not found' "unknown stock skill reported, not fatal"
+expect_out 'testhost/systemd profile: name clashes' "profile clashing with a host-level dir reported"
+expect_out 'testhost/env-names\.txt profile: name clashes' "profile named env-names.txt left out and reported"
+expect_out '^ ?[?MAD]+ +machines/testhost' "backup-state shows the git status of machines/"
+reject_out "$FAKE_AWS" "backup-state does not echo the secret"
+reject_out 'testhost/p(6|7|8|9|10) file config\.yaml' "config.yaml over lines or with odd shapes: never left out, so not reported"
+for f in default/config.yaml default/SOUL.md default/shell-hooks-allowlist.json default/memories/MEMORY.md p1/profile.yaml \
+  p1/jobs.json default/scripts/adhoc.sh default/agent-hooks/on-start.sh default/agent-hooks/lib/util.py \
+  systemd/hermes-gateway.service systemd/hermes-sync.timer stock-skill-edits/stock-skill/SKILL.md env-names.txt; do
+  check "$f backed up" test -f "$M/$f"
+done
+check "agent-hooks mode kept" test -x "$M/default/agent-hooks/on-start.sh"
+check "stock skill copy has the local edit" grep -q 'Local edit' "$M/stock-skill-edits/stock-skill/SKILL.md"
+check "env-names.txt holds the sorted names" test "$(cat "$M/env-names.txt")" = $'BAR_NAME\nFOO_TOKEN'
+for f in default/memories/USER.md default/memories/notes.md p1/config.yaml p1/SOUL.md p1/agent-hooks \
+  systemd/hermes-linked.service systemd/other.service stock-skill-edits/no-such-skill; do
+  if [[ -e "$M/$f" || -L "$M/$f" ]]; then fail "$f not backed up"; else pass "$f not backed up"; fi
+done
+none_found "caches, locks, backups, .env, auth.json, databases and mcp-tokens never copied" "$M" \( -name __pycache__ -o -name '*.pyc' \
+  -o -name '*.lock' -o -name '*.bak*' -o -name '.env*' -o -name auth.json -o -name '*.db*' -o -name mcp-tokens \)
+check "this host's old cron/ dir removed" test ! -e "$PC/cron/testhost"
+check "another host's cron/ dir kept" test -f "$PC/cron/otherhost/keep"
+check "another host's machines/ dir kept" test -f "$PC/machines/otherhost/default/keep"
+expect_rc 0 "sync commits the machine state" "${TP[@]}" sync
+expect_out 'personal: committed [0-9a-f]+ — chore: sync state backup' "machine state commit message"
+expect_out 'personal: state backup left out:' "changed left-out set reported"
+check "remote has the machine state" git --git-dir="$RP" cat-file -e HEAD:machines/testhost/default/memories/MEMORY.md
+check "remote has the env names" bash -c "git --git-dir='$RP' show HEAD:machines/testhost/env-names.txt | grep -qx FOO_TOKEN"
+absent "old cron/ dir removal pushed" cron/testhost/ git --git-dir="$RP" ls-tree -r --name-only HEAD
+absent_in "no .env value in the working tree" "$ENV_VALUE" "$PC"
+absent "no .env value in the clone's history" "$ENV_VALUE" git -C "$PC" log -p --all
+absent "no .env value in the pushed history" "$ENV_VALUE" git --git-dir="$RP" log -p --all
+absent "no secret anywhere in the pushed history" "$FAKE_AWS" git --git-dir="$RP" log -p --all
+C4="$M/p4/config.yaml"
+check "config.yaml: credential values redacted" grep -qx '    password_hash: <redacted>' "$C4"
+check "config.yaml: quoted api_key redacted" grep -qx '  api_key: <redacted>' "$C4"
+check "config.yaml: \${VAR} references kept" bash -c "grep -qxF '  base_url: \${SOME_VAR}' '$C4' && grep -qxF 'secret_ref: \"\${OTHER_VAR}\"' '$C4'"
+check "config.yaml: numeric *_tokens keys and null kept" bash -c "grep -qx '  max_tokens: 4096' '$C4' && grep -qx '  threshold_tokens: 50000' '$C4' && grep -qx '  summary_tokens_ceiling: 8000' '$C4' && grep -qx 'context_tokens: 128000' '$C4' && grep -qx 'proactive_prune_tokens: 1000' '$C4' && grep -qx 'token_limit: null' '$C4'"
+C5="$M/p5/config.yaml"
+check "config.yaml: a flow map naming a credential is redacted whole" grep -qx 'model: <redacted>' "$C5"
+check "config.yaml: a credential parent ending in : is redacted with its subtree" grep -qx 'credentials: <redacted>' "$C5"
+check "config.yaml: credential list items redacted" bash -c "grep -qx '  - api_key: <redacted>' '$C5' && grep -qx '  - token: <redacted>' '$C5' && grep -qx '  # <redacted line>' '$C5'"
+check "config.yaml: quoted credential keys redacted" bash -c "grep -qx '\"api_key\": <redacted>' '$C5' && grep -qx \"'client_secret': <redacted>\" '$C5'"
+check "config.yaml: ordinary keys around them kept" bash -c "grep -qx 'before_parent: kept-1' '$C5' && grep -qx 'after_parent: kept-2' '$C5' && grep -qx '  - name: alpha' '$C5' && grep -qx 'plain: ok' '$C5'"
+check "config.yaml: a flow map with a credential word is redacted, even with numbers" grep -qx 'limits: <redacted>' "$C5"
+C6="$M/p6/config.yaml" C7="$M/p7/config.yaml" C8="$M/p8/config.yaml" C9="$M/p9/config.yaml"
+check "config.yaml: flow map over lines: copied, the credential line redacted" bash -c "grep -qxF 'extra: {a: 1, b: 2,' '$C6' && grep -qx '  c: <redacted>' '$C6' && grep -qx 'plain: ok' '$C6'"
+check "config.yaml: flow map over lines, credential key on a later line, value below it: redacted" bash -c "grep -qxF 'flow: {name: x,' '$C6' && grep -qx '  api_key: <redacted>' '$C6' && test \"\$(grep -c . '$C6')\" = 5"
+check "config.yaml: credential quoted over more-indented lines: redacted with them" bash -c "test \"\$(cat '$C7')\" = \$'api_key: <redacted>\nplain: ok'"
+check "config.yaml: anchored flow map redacted" grep -qx 'model: <redacted>' "$C8"
+check "config.yaml: quoted keys with a space before the colon redacted" bash -c "grep -qx '  \"api_key\": <redacted>' '$C8' && grep -qx \"  'auth_token': <redacted>\" '$C8'"
+check "config.yaml: block scalar credential redacted with all its lines" bash -c "grep -qx 'api_key: <redacted>' '$C8' && ! grep -q 'line one\|line two' '$C8'"
+check "config.yaml: tagged, anchored and alias values redacted" bash -c "grep -qx 'password: <redacted>' '$C8' && grep -qx 'anchored_token: <redacted>' '$C8' && grep -qx 'alias_secret: <redacted>' '$C8'"
+check "config.yaml: a list at the credential key's own indent redacted" bash -c "grep -qx 'api_keys: <redacted>' '$C8' && ! grep -q '^- ' '$C8'"
+check "config.yaml: ordinary keys around odd shapes kept" bash -c "grep -qx 'other:' '$C8' && grep -qx '  default: some-model' '$C8' && grep -qx 'after: kept-b' '$C8'"
+check "config.yaml: plain values that need no redaction kept" bash -c "grep -qx '  threshold_tokens: 350000' '$C9' && grep -qx '  max_tokens: 4096' '$C9' && grep -qxF 'other_token: \${REFERENCED_VAR}' '$C9' && grep -qx 'api_key: \"\"' '$C9' && grep -qx 'use_token: false' '$C9'"
+check "config.yaml: comment lines copied as they are" grep -qx '# the api_key comes from the environment' "$C9"
+check "config.yaml: any other value under a credential word redacted (over-redaction)" grep -qx 'token_counter: <redacted>' "$C9"
+check "config.yaml: quoted text over lines with braces, no credential: copied whole" cmp -s "$H/profiles/p10/config.yaml" "$M/p10/config.yaml"
+for v in "$CFG_PASS" "$CFG_KEY" "$CFG_FLOW" "$CFG_PARENT" "$CFG_LIST" "$CFG_QUOTED" "$CFG_FLOWLIST" "$CFG_OPEN" "$CFG_OPENQ" \
+  "$CFG_ANCHOR" "$CFG_SPACED2" "$CFG_SPACED3" "$CFG_FLOWNEXT" "$CFG_BLOCK" "$CFG_TAG" "$CFG_ANCHOR2" "$CFG_SEQ"; do
+  absent_in "config credential not in the working tree ($v)" "$v" "$PC"
+  absent "config credential not in the clone's history ($v)" "$v" git -C "$PC" log -p --all
+  absent "config credential not in the pushed history ($v)" "$v" git --git-dir="$RP" log -p --all
+done
+# The redactor fed directly, under both awks the tool may meet as `awk`.
+REDACT_AWK="$(sed -n '/^CONFIG_REDACT_AWK=/,/^AWK$/p' "$TOOL" | sed '1d;$d')"
+check "redactor program read from the tool" test -n "$REDACT_AWK"
+# redacts <desc> <input> <text that must go> <line that must stay>
+redacts() {
+  local desc="$1" input="$2" gone="$3" kept="$4" a rc
+  for a in gawk mawk; do
+    if ! command -v "$a" >/dev/null; then printf '  skip %s (%s not installed)\n' "$desc" "$a"; continue; fi
+    rc=0; printf '%s' "$input" | "$a" "$REDACT_AWK" > "$T/redacted" 2>&1 || rc=$?
+    if (( rc )); then fail "$desc ($a failed, rc=$rc)"; sed 's/^/       /' "$T/redacted" >&2
+    elif grep -qF -- "$gone" "$T/redacted" || ! grep -qxF -- "$kept" "$T/redacted"; then fail "$desc ($a)"; sed 's/^/       /' "$T/redacted" >&2
+    else pass "$desc ($a)"; fi
+  done
+}
+redacts "redactor: CRLF blank line inside a block scalar does not end it" $'password: |\r\n  amber-one\r\n\r\n  amber-two\r\nmodel: demo\r\n' amber $'model: demo\r'
+redacts "redactor: list under an unreadable credential header redacted" $'"api_keys[primary]":\n- violet-one\n- violet-two\nmodel: demo\n' violet 'model: demo'
+redacts "redactor: unreadable credential list item keeps its siblings" $'servers:\n  - {name: alpha, secret: violet-one}\n  - name: beta\n' violet '  - name: beta'
+redacts "redactor: tab after the sequence dash still a list item" $'api_keys:\n-\tviolet-one\n-\tviolet-two\nmodel: demo\n' violet 'model: demo'
+expect_rc 0 "second sync with nothing changed" "${TP[@]}" sync
+if [[ -s "$T/out" ]]; then fail "second sync is silent"; sed 's/^/       /' "$T/out" >&2; else pass "second sync is silent"; fi
+if (( EUID != 0 )); then
+  chmod 000 "$H/memories/MEMORY.md"
+  expect_rc 1 "backup-state fails on an unreadable memory file" "${TP[@]}" backup-state
+  absent "unreadable memory file: machines/ left as it was" machines git -C "$PC" status --porcelain -- machines
+  chmod 644 "$H/memories/MEMORY.md"
+fi
+mv "$H/agent-hooks" "$T/linked/agent-hooks" && ln -s "$T/linked/agent-hooks" "$H/agent-hooks"
+expect_rc 0 "backup-state with a symlinked agent-hooks" "${TP[@]}" backup-state
+check "symlinked agent-hooks not copied" test ! -e "$M/default/agent-hooks"
+rm "$H/agent-hooks" && mv "$T/linked/agent-hooks" "$H/agent-hooks"
+expect_rc 0 "backup-state with no systemd units" env HERMES_CONFIG_SYNC_SYSTEMD_UNITS= "${TP[@]}" backup-state
+check "empty unit list copies no unit" test ! -e "$M/systemd"
+expect_rc 0 "backup-state with a custom unit glob" env HERMES_CONFIG_SYNC_SYSTEMD_UNITS='other.*' "${TP[@]}" backup-state
+check "custom unit glob picks its units" bash -c "[[ -f '$M/systemd/other.service' && ! -e '$M/systemd/hermes-gateway.service' ]]"
+rm -rf "$PC/cron/otherhost" && mkdir -p "$PC/cron/testhost/default" && printf '{}\n' > "$PC/cron/testhost/default/jobs.json"
+expect_rc 0 "backup-state drops the last old cron/ dir" "${TP[@]}" backup-state
+check "empty cron/ removed" test ! -e "$PC/cron"
+WM="$T/clones/work/machines"
+expect_rc 0 "state backup into the work repo" env HERMES_CONFIG_SYNC_ENV="$T/env-work" HERMES_CONFIG_SYNC_STATE_BACKUP=work "$TOOL" backup-state
+check "work target keeps a work-named file" grep -q Acmecorp "$WM/testhost/p1/SOUL.md"
+check "work target still leaves the secret out" test ! -e "$WM/testhost/default/memories/USER.md"
+rm -rf "$WM"
+expect_rc 0 "CRON_BACKUP picks the target when STATE_BACKUP is unset" env HERMES_CONFIG_SYNC_ENV="$T/env-work" HERMES_CONFIG_SYNC_CRON_BACKUP=work "$TOOL" backup-state
+check "CRON_BACKUP fallback wrote the work repo" test -f "$WM/testhost/p1/jobs.json"
+rm -rf "$WM"
+expect_rc 1 "STATE_BACKUP=off wins over CRON_BACKUP" env HERMES_CONFIG_SYNC_ENV="$T/env-work" HERMES_CONFIG_SYNC_STATE_BACKUP=off HERMES_CONFIG_SYNC_CRON_BACKUP=work "$TOOL" backup-state
+expect_out 'state backup is off' "off is named"
+expect_rc 0 "CRON_HOST still labels the host" env -u HERMES_CONFIG_SYNC_STATE_HOST HERMES_CONFIG_SYNC_ENV="$T/env-work" HERMES_CONFIG_SYNC_CRON_BACKUP=work HERMES_CONFIG_SYNC_CRON_HOST=oldlabel "$TOOL" backup-cron
+check "CRON_HOST fallback label used (backup-cron alias)" test -f "$WM/oldlabel/p1/jobs.json"
+expect_rc 0 "STATE_HOST wins over CRON_HOST" env HERMES_CONFIG_SYNC_ENV="$T/env-work" HERMES_CONFIG_SYNC_CRON_BACKUP=work HERMES_CONFIG_SYNC_STATE_HOST=newlabel HERMES_CONFIG_SYNC_CRON_HOST=oldlabel "$TOOL" backup-state
+check "STATE_HOST label used, other host kept" bash -c "[[ -f '$WM/newlabel/p1/jobs.json' && -f '$WM/oldlabel/p1/jobs.json' ]]"
+rm -rf "$WM"
+
+printf 'state backup: replacing the snapshot\n'
+# Every path, type, mode, link target and file hash under a dir.
+tree_sum() { (cd "$1" && find . -printf '%p %y %m %l\n' | LC_ALL=C sort && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum); }
+expect_rc 0 "backup-state before the replacement tests" "${TP[@]}" backup-state
+SNAP="$(tree_sum "$PC/machines")"
+check "a good run leaves no staging dir in .git" bash -c "! compgen -G '$PC/.git/hermes-state.*'"
+mv "$PC/machines" "$T/machines-real" && ln -s "$T/machines-real" "$PC/machines"
+expect_rc 1 "machines/ a symlink: refused" "${TP[@]}" backup-state
+expect_out 'machines is a symlink' "machines/ a symlink: says why"
+check "machines/ a symlink: nothing deleted or written behind it" test "$(tree_sum "$T/machines-real")" = "$SNAP"
+rm "$PC/machines" && mv "$T/machines-real" "$PC/machines"
+ln -s machines "$PC/cron"
+expect_rc 1 "cron/ a symlink to machines/: refused" "${TP[@]}" backup-state
+check "cron/ a symlink to machines/: the snapshot survives" test "$(tree_sum "$PC/machines")" = "$SNAP"
+rm "$PC/cron"
+mv "$PC/machines/testhost" "$T/host-real" && ln -s "$T/host-real" "$PC/machines/testhost"
+expect_rc 1 "machines/<host> a symlink: refused" "${TP[@]}" backup-state
+check "machines/<host> a symlink: link and its target kept" bash -c "[[ -L '$PC/machines/testhost' && -f '$T/host-real/default/SOUL.md' ]]"
+rm "$PC/machines/testhost" && mv "$T/host-real" "$PC/machines/testhost"
+check "snapshot back in place for the next cases" test "$(tree_sum "$PC/machines")" = "$SNAP"
+if (( EUID != 0 )); then
+  mode="$(stat -c %a "$PC/machines")"
+  chmod 555 "$PC/machines"
+  expect_rc 1 "read-only machines/: backup-state fails" "${TP[@]}" backup-state
+  expect_out 'left as it was' "read-only machines/: says the repo is unchanged"
+  chmod "$mode" "$PC/machines"
+  check "read-only machines/: previous snapshot intact" test "$(tree_sum "$PC/machines")" = "$SNAP"
+fi
+# An mv that fails only when it moves the new tree in: the old one must come back.
+mkdir -p "$T/fakemv"
+# shellcheck disable=SC2016  # the fake mv's own code, expanded when it runs
+printf '#!/usr/bin/env bash\nfor a in "$@"; do [[ "$a" == */tree ]] && { echo "mv: injected failure" >&2; exit 1; }; done\nexec %q "$@"\n' "$(command -v mv)" > "$T/fakemv/mv"
+chmod +x "$T/fakemv/mv"
+printf 'changed\n' > "$H/SOUL.md.new" && cp "$H/SOUL.md" "$T/soul.keep" && mv "$H/SOUL.md.new" "$H/SOUL.md"
+expect_rc 1 "failed move of the new snapshot: backup-state fails" env PATH="$T/fakemv:$PATH" "${TP[@]}" backup-state
+expect_out 'previous one is back in place' "failed move of the new snapshot: says the old one is back"
+check "failed move of the new snapshot: previous snapshot intact" test "$(tree_sum "$PC/machines")" = "$SNAP"
+check "failed move of the new snapshot: no staging dir left" bash -c "! compgen -G '$PC/.git/hermes-state.*'"
+mv "$T/soul.keep" "$H/SOUL.md"
+
+printf 'state backup: multi-line .env values\n'
+cp "$H/.env" "$T/env.keep"
+for q in "'" '"'; do
+  [[ "$q" == "'" ]] && qn=single || qn=double
+  printf 'FIRST=1\nTOKEN=%sfirst line\nfragmentName=remaining text\nlast line%s\nexport LAST=2\n' "$q" "$q" > "$H/.env"
+  expect_rc 0 "multi-line $qn-quoted .env value: backup-state still runs" "${TP[@]}" backup-state
+  expect_out 'testhost env-names.txt: .env has a multi-line quoted value' "multi-line $qn-quoted .env value: left-out report names the reason"
+  check "multi-line $qn-quoted .env value: no env-names.txt" test ! -e "$M/env-names.txt"
+  absent_in "multi-line $qn-quoted .env value: inner name not in the repo" fragmentName "$PC"
+done
+# Spaces around "=" (TOKEN = "...) still open a quote; a trailing backslash
+# continues the line. Neither inner line may become a name.
+for shape in spaced continued; do
+  if [[ $shape == spaced ]]; then
+    printf 'FIRST=1\nTOKEN = "first line\nspacedFragment=zzz\nlast line"\n' > "$H/.env"; frag=spacedFragment why='a multi-line quoted value'
+  else
+    printf 'FIRST=1\nCONT=prefix\\\ncontFragment=zzz\n' > "$H/.env"; frag=contFragment why='a line ending in a backslash'
+  fi
+  expect_rc 0 "$shape .env value over lines: backup-state still runs" "${TP[@]}" backup-state
+  expect_out "testhost env-names.txt: .env has $why" "$shape .env value over lines: left-out report names the reason"
+  check "$shape .env value over lines: no env-names.txt" test ! -e "$M/env-names.txt"
+  absent_in "$shape .env value over lines: inner name not in the working tree" "$frag" "$PC"
+  expect_rc 0 "$shape .env value over lines: sync" "${TP[@]}" sync
+  absent "$shape .env value over lines: inner name not in the clone's history" "$frag" git -C "$PC" log -p --all
+done
+printf 'SPACED = 1\nexport TIGHT=2\n' > "$H/.env"
+expect_rc 0 "NAME = value .env line: backup-state" "${TP[@]}" backup-state
+check "NAME = value .env line: name written" test "$(cat "$M/env-names.txt" 2>/dev/null)" = $'SPACED\nTIGHT'
+# Quotes that close on their line, a quote inside the other kind, an escaped
+# quote and a quote in a comment are all single-line.
+printf "A='x \"y\" z' # it's fine\nB=\"p 'q' \\\\\" r\"\nC=plain\\\\'s\nexport D='' E=\"\"\n" > "$H/.env"
+expect_rc 0 "single-line quoted .env values: backup-state" "${TP[@]}" backup-state
+check "single-line quoted .env values: names written" test "$(cat "$M/env-names.txt" 2>/dev/null)" = $'A\nB\nC\nD'
+mv "$T/env.keep" "$H/.env"
+expect_rc 0 "backup-state with the usual .env again" "${TP[@]}" backup-state
+
+printf 'state backup: a file name with a newline\n'
+NLF="$H/scripts/report"$'\n'"notes.sh"
+printf 'x\n' > "$NLF"
+expect_rc 0 "newline file name: backup-state still runs" "${TP[@]}" backup-state
+expect_out 'testhost/default script report\\nnotes\.sh: name has a newline' "newline file name: reported, the newline escaped"
+check "newline file name: other scripts still copied" test -f "$M/default/scripts/adhoc.sh"
+none_found "newline file name: not copied" "$M" -name $'*\n*'
+rm -f "$NLF"
+
+printf 'state backup: never-copy names on directories\n'
+mkdir -p "$H/scripts/archive.bak-old" "$H/scripts/state.db" "$H/agent-hooks/auth.json"
+printf 'k\n' > "$H/scripts/archive.bak-old/keep.txt"
+printf 'd\n' > "$H/scripts/state.db/data.txt"
+printf 'p\n' > "$H/agent-hooks/auth.json/payload.txt"
+expect_rc 0 "never-copy dirs: backup-state" "${TP[@]}" backup-state
+for f in default/scripts/archive.bak-old default/scripts/state.db default/agent-hooks/auth.json; do
+  check "never-copy dirs: $f/ not copied" test ! -e "$M/$f"
+done
+reject_out 'keep\.txt|data\.txt|payload\.txt' "never-copy dirs: skipped silently, like never-copy files"
+check "never-copy dirs: the rest still copied" test -f "$M/default/agent-hooks/on-start.sh"
+rm -r "$H/scripts/archive.bak-old" "$H/scripts/state.db" "$H/agent-hooks/auth.json"
+"${TP[@]}" verify > "$T/out" 2>&1 || true
+expect_out '\[ OK \] state backup → personal repo \(machines/testhost/\)' "verify reports the state backup target"
+env HERMES_CONFIG_SYNC_STATE_BACKUP=off "${TP[@]}" verify > "$T/out" 2>&1 || true
+expect_out '\[WARN\] state backup is off' "verify warns when the state backup is off"
+expect_rc 1 "verify fails on a bad state backup target" env HERMES_CONFIG_SYNC_STATE_BACKUP=both "${TP[@]}" verify
+expect_out "state backup target 'both' is not work, personal or off" "bad target is named"
+# sync checks the target before it fetches or commits anything: a bad one
+# must not quietly skip the backup while the skills still sync.
+printf 'pending\n' > "$PC/skills/r25-pending.md"; printf 'pending\n' > "$WC/skills/r25-pending.md"
+heads() { git -C "$PC" rev-parse HEAD; git -C "$WC" rev-parse HEAD; git --git-dir="$RP" rev-parse HEAD; git --git-dir="$T/remote-work.git" rev-parse HEAD; }
+HEADS="$(heads)"
+expect_rc 1 "sync with an unknown state backup target fails" env HERMES_CONFIG_SYNC_STATE_BACKUP=both HERMES_CONFIG_SYNC_ENV="$T/env" "$TOOL" sync
+expect_out "state backup target 'both' is not work, personal or off" "sync names the unknown target"
+check "unknown target: nothing committed or pushed in either repo" test "$(heads)" = "$HEADS"
+expect_rc 1 "sync with a target repo that is not enabled fails" env HERMES_CONFIG_SYNC_STATE_BACKUP=work "${TP[@]}" sync
+expect_out "state backup target is the work repo, which is not enabled" "sync names the disabled target"
+check "disabled target: nothing committed or pushed" test "$(heads)" = "$HEADS"
+expect_rc 0 "sync with the state backup off still syncs" env HERMES_CONFIG_SYNC_STATE_BACKUP=off "${TP[@]}" sync
+check "state backup off: the pending change is committed and pushed" test "$(git -C "$PC" rev-parse HEAD)" = "$(git --git-dir="$RP" rev-parse HEAD)" -a "$(git -C "$PC" rev-parse HEAD)" != "$(sed -n 1p <<< "$HEADS")"
+rm "$WC/skills/r25-pending.md"
+rm -rf "$H/profiles/systemd" "$H/profiles/env-names.txt" "$H/profiles/p4" "$H/profiles/p5" "$H/profiles/p6" "$H/profiles/p7" "$H/profiles/p8" "$H/profiles/p9" "$H/profiles/p10"
+unset HERMES_CONFIG_SYNC_STATE_HOST HERMES_CONFIG_SYNC_STOCK_SKILLS
 
 printf '\n'
 if (( FAILS )); then printf '%d failure(s)\n' "$FAILS" >&2; exit 1; fi
