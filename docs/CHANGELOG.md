@@ -6,6 +6,18 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com). Remaining
 work lives in [TODO.md](TODO.md); the design rationale for the unified layout is
 in [UNIFICATION.md](UNIFICATION.md).
 
+## Unreleased — faster zsh startup
+
+### Fixed
+- Interactive zsh took ~9 s to start (every tmux window and terminal tab) and now takes ~1.2 s.
+  On Ubuntu, `/etc/zsh/zshrc` runs its own `compinit` on the system fpath and writes
+  `~/.zcompdump`. The zshrc's `compinit` shared that file, saw a different file count, and
+  rebuilt the dump on every start (~2.5 s). It now keeps its own dump under
+  `$XDG_CACHE_HOME/zcompdump-$ZSH_VERSION`. On Linux, nvm loads on first use: the shell puts the
+  default alias's newest installed node on PATH (following `default` → `lts/*` → version through
+  the alias files) instead of sourcing `nvm.sh` (~3 s with the `lts/*` default). macOS, or a
+  default with no installed version, still loads nvm eagerly.
+
 ## Unreleased — 2004Scape backup and maintenance safety
 
 ### Added
